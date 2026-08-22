@@ -638,6 +638,10 @@ The two Lanciani plate bearings quoted in `rome.ts` (the Circus Maximus at 119°
 Colosseum's major axis at 68°) were measured off item 5 below by converting the survey's
 lat/lon to pixel coordinates against that image's stated bounding box.
 
+**Items 9–11 were added in the Rome fabric pass** (`docs/ROME-FABRIC.md`), from plates the owner
+supplied plus their full-resolution originals; **item 12 records the three he supplied that were
+rejected, and the reason for each.** One of those three is not a map of Rome at all.
+
 ### 1. Plan of Ancient Rome (Clarke, 1830)
 - **Creator:** William Barnard Clarke; Society for the Diffusion of Useful Knowledge;
   engraved by J. & C. Walker; published by Baldwin & Cradock. 1830.
@@ -795,6 +799,106 @@ returns nothing usable there.
   its arena axis to ~9°, and the Circus Maximus's centre to 27 m with a long axis of
   **118.8°** against the 120° in the survey.
 - Local: `agea-2012-ortofoto-EPSG3004-2307658_4638583_2314671_4643263-4096px.jpg`
+
+### 9. Shepherd, *Historical Atlas* — "Plan of Imperial Rome", 1:25 000, c. AD 350
+
+The plate the owner supplied for the Rome fabric pass (`docs/ROME-FABRIC.md` §4). **The single
+most complete named index of the Aurelian circuit in the whole reference pool**: every gate
+named, all fourteen Augustan regions numbered, the consular roads outside the wall and the
+named internal streets inside it (Alta Semita, Vicus Longus, Vicus Patricius, Subura, Clivus
+Suburanus, Broad Way = Via Lata), the aqueducts, and every major monument picked out in yellow
+at its own plan shape — **superimposed on the modern street grid**, which is what makes it
+georeferenceable against items 5 and 8.
+
+- **Creator:** William Robert Shepherd (1871–1934), *Historical Atlas*, New York: Henry Holt
+  and Company, 1911; the UT Austin copy is the 1923/1926 edition, pages 22–23, "Plans of Rome
+  and Athens".
+- **Asset pages:**
+  - <https://commons.wikimedia.org/wiki/File:Shepherd-c-022-023.jpg> — the whole plate, and
+    the file page that carries the formal licence tag.
+  - <https://maps.lib.utexas.edu/maps/historical/history_shepherd_1923.html> — the
+    Perry-Castañeda Library Map Collection index entry, `rome_athens_imperial_plans.jpg`.
+- **Licence (verbatim, Commons `{{PD-old-auto-expired}}` + `{{PD-mark}}`):** "This work is in
+  the public domain in its country of origin and other countries and areas where the copyright
+  term is the author's life plus 70 years or fewer." / "This file has been identified as being
+  free of known restrictions under copyright law, including all related and neighboring
+  rights." Author died 1934; first US publication 1911, i.e. before 1 January 1930.
+- **Licence (verbatim, UT Austin, `https://maps.lib.utexas.edu/maps/faq.html`):** "Most of the
+  maps scanned by the University of Texas Libraries and served from this web site are in the
+  public domain… **No permissions are needed to copy them. You may download them and use them
+  as you wish.** … We appreciate credit to 'University of Texas Libraries' as the source of the
+  scanned images." *Attribution preserved here as required.*
+- **Two files, and why both.**
+  - `shepherd-1923-plan-of-imperial-rome-350ad-2826px.jpg` — **2826 × 2158**, the Rome half
+    only, at more than twice the linear resolution of the Commons plate. This is the file the
+    owner supplied. Immediate source: `http://www.emersonkent.com/images/rome_350_ad.jpg`,
+    whose own page credits "University of Texas at Austin. Historical Atlas by William
+    Shepherd (1923-26)"; EXIF records an HP ScanJet 4600 scan dated 2010-08-19. The scan is a
+    **slavish reproduction of a two-dimensional public-domain work** and therefore carries no
+    new copyright in the US — the same PD-Art reasoning already recorded for the Lanciani
+    plates at items 2–4 above. 2 319 542 bytes, SHA-256 `c1a8262b81afd595…`.
+  - `shepherd-1911-plate22-rome-and-athens-full-1550px.jpg` — **1550 × 1932**, the complete
+    plate from Commons: Imperial Rome, **Plan of Republican Rome** (the Servian circuit and its
+    four regions, which the crop above only carries as a small inset), Athens, and the
+    Acropolis. Lower resolution; kept as the licence anchor and for the Republican plan.
+    1 089 546 bytes, SHA-256 `a8701d162494162d…`.
+- **Measured scale.** The plate declares 1:25 000 and carries two independent bars. Measured on
+  the 2826 px file: the yards bar spans 800 yd (731.5 m) in 348.3 px and the stadia bar spans
+  4 stadia (740 m, at 1 stadium = 625 Roman feet = 185.0 m) in 353.3 px — **2.100 and 2.094 m
+  per pixel, agreeing to 0.3 %.** So the file covers about 5 935 × 4 532 m of ground and
+  resolves a 43 m rotunda as 20 px. **Use it for completeness and for names, not for
+  dimensions**: item 5 (Lanciani georectified, 1.71 m/px, worst residual 1.26 m over 7 km) is
+  four times more accurate and is the raster `src/city/overlay.ts` is already fitted to.
+
+### 10. Kiepert / *Encyclopædia Britannica* 11th ed. — "Plan of Ancient Rome", 1911
+
+The second plate the owner supplied, replaced here with the full-resolution Commons original
+(his copy was a 960 px thumbnail). Its value over item 9 is that it is a **metric** plate — it
+carries a bar in metres *and* one in *pedes Romani antiqui* — and that it distinguishes
+Republican from Imperial fabric in colour, which is the §6.3 "state in 271" filter. It is also
+by the same hand and from the same volume as `reference/rome-aurelian/middleton-1911-eb11-aurelian-wall-tower-plan.jpg`,
+so the two register against each other.
+
+- **Creator:** based on Heinrich Kiepert, *Formae Orbis Antiqui* (c. 1894), by permission of
+  Dietrich Reimer, Berlin; engraved by Emery Walker. *Encyclopædia Britannica*, 11th edition,
+  vol. 23 (1911), article "Rome" (J. H. Middleton), fig. 7, facing p. 586.
+- **Asset page:** <https://commons.wikimedia.org/wiki/File:EB1911_Rome_-_ancient_map.jpg>
+- **File:** <https://upload.wikimedia.org/wikipedia/commons/d/db/EB1911_Rome_-_ancient_map.jpg>
+- **Licence (verbatim, `{{PD-Britannica}}`):** "This image comes from the 13th edition of the
+  Encyclopædia Britannica or earlier. The copyrights for that book have expired in the United
+  States because the book was first published in the US with the publication occurring before
+  January 1, 1931. As such, this image is in the public domain in the United States."
+- 2430 × 1799 JPEG, 2 209 556 bytes, SHA-256 `dfd1780fcc552ab2…`. Not georeferenced.
+- Local: `kiepert-eb1911-plan-of-ancient-rome-2430px.jpg`
+
+### 11. ColdEel / Joris1919 — the fourteen regions, the roads and the river as a clean diagram
+
+The third plate the owner supplied, replaced here with the Commons original PNG (his copy was a
+rescaled WebP). Dutch labels. It is not a survey and must not be measured for footprints; what
+it gives, and gives better than anything else in the pool, is **the road armature as a graph**:
+which consular road enters which gate, which internal street links which two regions, and where
+the fourteen regional boundaries run — with a 0–1 km bar to keep it honest. Used in
+`docs/ROME-FABRIC.md` §5 to rank the roads.
+
+- **Creator:** fr:User:ColdEel (original, French Wikipedia); edited by nl:Gebruiker:Joris1919.
+  2006/2007. *The same Joris1919 whose photographs of the Muro Torto, Porta Pinciana and the
+  Castra Praetoria are already in `reference/rome-aurelian/`.*
+- **Asset page:** <https://commons.wikimedia.org/wiki/File:Plan_Rome-_Regiones.png>
+- **File:** <https://upload.wikimedia.org/wikipedia/commons/a/a2/Plan_Rome-_Regiones.png>
+- **Licence (verbatim, `{{PD-self}}` by the author):** "This work has been released into the
+  public domain by its author, ColdEel. This applies worldwide."
+- 1128 × 900 PNG, 204 554 bytes, SHA-256 `afa20c15fdd29b10…`.
+- Local: `coldeel-2006-rome-14-regions-and-roads-1128px.png`
+
+### 12. Three files the owner supplied that were NOT taken, and why
+
+Recorded so that nobody spends a second pass on them.
+
+| supplied as | what it actually is | verdict |
+| --- | --- | --- |
+| `rome city map 200 ad.jpg`, 1600 × 906 | **Not Rome. It is Roman *London*** — the Thames, Southwark, Ludgate, Newgate, Bishopsgate, Aldgate, Cripplegate fort, the Walbrook, the Temple of Mithras. It also carries "**© 1999 Encyclopædia Britannica, Inc.**" burnt into the plate. | **Rejected twice over**, on subject and on licence. Not committed, not usable, not to be re-fetched. |
+| `rome city map.webp`, 2453 × 3347 | A colour German atlas plate, "**Die Stadt Rom / Rom zur Kaiserzeit**", 1:30 000, sheet 33, with insets of the Forum Romanum (1:4 000) and the Kaiserfora (1:8 000). Almost certainly from an edition of **F. W. Putzgers *Historischer Schul-Atlas*** (Velhagen & Klasing) — Commons' full-text index confirms Putzger carries a plate of that title — but **the edition, and therefore the date, could not be established**, and Putzger ran from 1877 into the present. Its legend is the most useful thing in the whole set: it colour-codes fabric as Republican / Augustan / AD 14–250 / late antique, and it shades "*vermutlich bewohntes oder besiedeltes Stadtgebiet*" — probably-inhabited city area, which is exactly the layer the fabric pass needs. | **Not committed.** Licence not established, so the asset rule forbids it. **Cited as an external reference only.** To land it: find the plate on Commons or the Internet Archive with an edition date, confirm pre-1930 publication or author-life+70, and fetch *that* copy through the usual check. Worth someone's half hour. |
+| `rome city map 3.jpg`, 500 × 432 | An untitled crop of a modern illustrated map — ancient monuments in orange over a present-day street plan. No title, no scale bar, no legend, no attribution, no creator, and too small to measure anything from. | **Not committed.** Unidentifiable provenance and no research value at 500 px. |
 
 ### How the georeference is used in-engine
 
@@ -1190,3 +1294,77 @@ No search was made on any game wiki, mod repository, asset store, or "ancient Ro
 reconstruction" image board. Those are exactly where the *Rome II* extractions live, and the
 cost of one of them entering a pool that sits next to `reference/rome2/` is far higher than
 the value of anything they contain.
+
+---
+
+## Trailer music — `tools/scratch/trailer2-music.mjs` input (not shipped, not in `public/`)
+
+One audio file was downloaded for the second trailer's music bed. **It is not a game asset**: it
+is not under `public/assets/`, it is not in `public/assets/manifest.json`, `fetch-assets.mjs`
+does not know about it, and no build or runtime code path reads it. The game's own sound remains
+100 % procedurally synthesised by `src/audio/Synth.ts` with no sampled audio of any kind, exactly
+as `docs/video/README.md` describes. This entry exists because the asset rules apply to anything
+downloaded, shipped or not.
+
+| | |
+| --- | --- |
+| Title | **Song Of The Forge** |
+| Creator | **Scott Buckley** |
+| Asset page | <https://www.scottbuckley.com.au/library/song-of-the-forge/> |
+| Download URL | `https://www.scottbuckley.com.au/library/wp-content/uploads/2025/11/SongOfTheForge.mp3` |
+| Licence | **CC BY 4.0** — <https://creativecommons.org/licenses/by/4.0/> |
+| Format | MP3, MPEG-1 Layer III, 320 kb/s, 44.1 kHz, joint stereo, 205.869 s |
+| Size | 8,238,222 bytes |
+| SHA-256 | `5be7859f5846bf80f93c4d936991e76616c8b147c178ba7e77b292191b3b5d48` |
+| Attribution | **required** — see below |
+| Where it is used | `docs/video/TRAILER-2.md`; the bed is the track's 166.24 s – 194.51 s |
+
+### The licence, quoted from the track's own page
+
+> This work is licensed under a Creative Commons Attribution 4.0 International License; meaning
+> it's free for use in any project (including commercial) as long as I'm credited.
+
+### The attribution, in the form the creator's own page asks for
+
+> 'Song Of The Forge' by Scott Buckley - released under CC-BY 4.0. www.scottbuckley.com.au
+
+That string is reproduced **in the trailer itself**, as a credit line burned into the end card's
+last 3.5 s, and here. CC BY 4.0 §3(a)(1) requires identification of the creator, a copyright
+notice or licence notice where supplied, the licence URI, and an indication of whether the
+material was modified. Taken in order: the creator is named; the licence is named and its URI is
+above; and **the material was modified** — a 28.267 s window was excerpted from the 205.869 s
+original and given a linear fade over its last 0.9 s. Nothing was pitched, time-stretched,
+re-equalised, layered or remixed.
+
+### Verification performed on the download
+
+- **Licence read on the individual asset's own page**, not on a listing page and not on an
+  aggregator. The library index states CC BY 4.0 for the collection and the track page states it
+  again for this track, with the attribution string to use.
+- **Downloaded from the creator's own domain**, over the URL published on that page, in one hop:
+  `curl` reported `http=200`, `content-type: audio/mpeg`, and a final effective URL identical to
+  the requested one — no redirect to a mirror, no re-upload site, no link shortener, no
+  intermediary. No account was created, nothing was logged into, and no payment information was
+  entered anywhere.
+- **Format allowlist:** `.mp3`. No archive, no installer, no executable, no script was downloaded
+  in the course of this work.
+- **Magic bytes and payload shape:** `file` reports `Audio file with ID3 version 2.3.0, contains:
+  MPEG ADTS, layer III, v1, 320 kbps, 44.1 kHz, JntStereo`. The head matches none of
+  `fetch-assets.mjs`'s `FORBIDDEN_HEADS` (`MZ`, `ELF`, the four Mach-O magics, the fat/Java magic,
+  `#!`) and is not an HTML or XML error page. It decoded cleanly to 9,881,712 samples per channel
+  through `OfflineAudioContext.decodeAudioData`, which is the strongest available evidence that
+  the bytes are what they claim to be: a non-audio payload does not decode.
+- **Malware tooling on this machine:** there is no ClamAV, `rkhunter` or `chkrootkit` installed,
+  and macOS's `xprotect` command exposes `update`/`logs`/`version`/`check`/`status` and no
+  per-file scan subcommand. What was checked instead: `xprotect status` reports **launch scans
+  enabled and background scans enabled** with signature version **5356 (installed 2026-08-19)**,
+  so the file has been seen by the system scanner in the ordinary course; `xattr -l` shows the
+  file carries no `com.apple.quarantine` flag and only `com.apple.provenance`; and `spctl` /
+  `codesign` are not applicable, because the payload is not an executable or a bundle. The
+  SHA-256 above pins exactly what was examined.
+- **Nothing was taken from a game.** No Total War, Rome II or other commercial-game audio was
+  downloaded, extracted, referenced or listened to. The alternative sources considered were
+  Kevin MacLeod's `freepd.com` — **rejected because the site is offline as of August 2026 and its
+  closure notice is not a licence statement** — and Pixabay, rejected because the Pixabay Content
+  Licence is neither CC0 nor CC BY and its redistribution terms are not clean for a video that
+  ships as a release asset.

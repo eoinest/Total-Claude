@@ -237,6 +237,49 @@ export const SIEGE_UNITS: UnitTypeDef[] = [
     description: 'The gang on the trunk. Roofed in green hide against the fire dropped on them from the gatehouse.',
   },
   {
+    id: 'great-ram-crew',
+    name: 'Great Ram Crew',
+    nativeName: 'Grosswidderfolk',
+    faction: Faction.Germanic,
+    unitClass: 'heavy-infantry',
+    /**
+     * Forty-eight, and the number is the machine's own layout read back rather than a
+     * guess — the same derivation as `ram-crew`'s thirty-two.
+     *
+     * `Siege.musterRams` puts a great ram's gang **six** abreast against a gate ram's four,
+     * rows 0-3 alongside the trunk and every row after them behind the tail at
+     * `-(GREAT_RAM_HALF_D + (row - 3) * 0.95)`. `SHED_COVER_REACH` is 4.6 m past the tail,
+     * so the last row still under the roof is row 7 at 9.60 m against a 10.40 m reach; row 8
+     * would stand at 10.55 and be shot at in the open. Eight rows of six is 48.
+     *
+     * That is the whole of it: this is the crew the shed can cover, and a crew the shed
+     * cannot cover is a crew that dies. The machine is 4.8 x 11.6 m against the gate ram's
+     * 3.8 x 8.4, so 48 men on 11.6 m of trunk is the same crowding as 32 on 8.4.
+     */
+    strength: 48,
+    /*
+     * The same men as `ram-crew` in every other respect, deliberately. A *testudo arietaria*
+     * at scale is a bigger machine worked by the same gang, not better soldiers, and giving
+     * the new unit a stat line of its own would be a balance decision dressed as a
+     * definition. If this ever wants to differ it should differ for a measured reason.
+     */
+    meleeAttack: 30, meleeDamage: 12, apDamage: 4, meleeDefence: 26,
+    armour: 30, shieldDefence: 10, chargeBonus: 4, bonusVsCavalry: 0,
+    attackRate: 0.6, reach: 1.0,
+    // No missile: under the shed you have both hands on the trunk and a roof over you.
+    walkSpeed: 1.1, runSpeed: 2.0, chargeSpeed: 2.2, mass: 104, stamina: 90,
+    morale: 62, discipline: 1.0,
+    appearance: {
+      weapon: 'axe', shield: 'none', armour: 'leather',
+      helmet: 'spangenhelm', crest: 'none', cloak: false, bareChested: false,
+      variance: 0.55, heightScale: 1.05, shieldEmblem: 'none',
+      tunicColour: 0x4b4436, legColour: 0x6a5a41,
+    },
+    formations: ['line', 'loose'],
+    abilities: [],
+    description: 'The gang on the great trunk. Nine minutes of swinging at brickwork under a roof of hide, and nowhere to hide if it burns.',
+  },
+  {
     id: 'onager',
     name: 'Onager Battery',
     nativeName: 'Onagri',

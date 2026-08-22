@@ -19,7 +19,7 @@
 import type { QualityTier } from '../core/Engine';
 import { DEFAULT_MAP_ID, getMap, isMapId, type MapId } from '../maps';
 import { formation } from './formations';
-import { Faction } from './types';
+import { Faction, SOLDIER_POOL_CAPACITY } from './types';
 import { unitType } from '../units/roster';
 
 export type Difficulty = 'easy' | 'normal' | 'hard' | 'legendary';
@@ -217,6 +217,20 @@ export interface StormPlan {
   ladder: string;
   /** The gang on the ram. */
   ram: string;
+  /**
+   * The gang on the **great** ram, where this army brings one. Optional, and optional is
+   * the point.
+   *
+   * A *testudo arietaria* at scale is not a machine every siege train has. Scipio's park in
+   * 146 has four towers, four ladder parties, a ram and three batteries and is already at
+   * `MAX_UNITS_PER_SIDE`; the Juthungi's is at the cap too and buys its great ram by giving
+   * up a squadron of horse (see `siegeJuthungi`). Making the slot optional is what lets one
+   * army field one without the other having to, and without a second table.
+   *
+   * `siegeRosterFor` emits it right after `ram`, so the menu row and the deployment order
+   * agree, and an army without one simply has no row.
+   */
+  greatRam?: string;
   /** Batteries standing off and shooting at the parapet. */
   batteries: readonly string[];
   /** The host waiting its turn in the open, which is most of an assault. */
@@ -290,6 +304,7 @@ export const STORM_PLANS: Partial<Record<Faction, StormPlan>> = {
     tower: 'tower-assault',
     ladder: 'escalade-party',
     ram: 'ram-crew',
+    greatRam: 'great-ram-crew',
     batteries: ['onager'],
     host: ['juthungi-warband'],
     hostFormation: 'horde',
@@ -337,7 +352,10 @@ export const siegeRosterFor = (f: Faction, role: SiegeRole): readonly string[] =
     return p ? [...p.wall, ...p.engines, ...p.reserve] : [];
   }
   const p = STORM_PLANS[f];
-  return p ? [p.tower, p.ladder, p.ram, ...p.batteries, ...p.host, ...p.horse] : [];
+  return p
+    ? [p.tower, p.ladder, p.ram, ...(p.greatRam ? [p.greatRam] : []),
+      ...p.batteries, ...p.host, ...p.horse]
+    : [];
 };
 
 /**
@@ -492,19 +510,36 @@ export const DEFAULT_CONFIG: BattleConfig = {
   },
   /**
    * And the storm: four towers, four ladder parties at three ladders apiece (the twelve
-   * `tools/probe-siege.mjs` measures), one ram, three onager batteries and the host behind.
+   * `tools/probe-siege.mjs` measures), one ram, **one great ram**, three onager batteries,
+   * the host behind and one squadron of horse.
    *
    * Twenty units is exactly `MAX_UNITS_PER_SIDE`, so the Juthungi start the assault full: a
    * player adding a fifth tower has to give up something, which is the correct shape for the
    * decision and not an accident of the numbers.
+   *
+   * **The great ram is paid for out of the horse, and this is the trade rather than a
+   * silent nineteenth-and-a-half unit.** The list was at twenty with two squadrons of
+   * `juthungi-riders`, and `STORM_PLANS.horse`'s own comment says what they are for:
+   * *"Horse on the wings, with nothing to do until a gate opens."* Measured on the shipped
+   * assault at `5338249`, that is literally true — no cavalry unit is ever ordered at the
+   * wall, they sit on the flanks for the whole battle, and one of the two spends it 98 m off
+   * the west end of the circuit. 50 men of the least-employed unit in the order of battle
+   * buy 48 men and the only machine in the game that can make a hole where the defence has
+   * not prepared one. Headcount 3,074 -> 3,072, so the tier's `fittedUnitScale` clamp lands
+   * in the same place it always did.
+   *
+   * The alternatives were weighed and are worse: a warband is 180 men and the host is the
+   * only reserve the storm has; an `escalade-party` is a bank of three ladders and a bay of
+   * frontage; an `onager` battery is twelve men but it is the artillery workstream's.
    */
   siegeJuthungi: {
     'tower-assault': 4,
     'escalade-party': 4,
     'ram-crew': 1,
+    'great-ram-crew': 1,
     onager: 3,
     'juthungi-warband': 6,
-    'juthungi-riders': 2,
+    'juthungi-riders': 1,
   },
   /**
    * Carthage on its own wall: six bays of citizen levy, four of freedmen behind them, two
@@ -627,25 +662,32 @@ export function baseStrength(c: BattleConfig, s: ScenarioId = c.scenario): numbe
 }
 
 /**
- * The largest unit-size scale whose battle still fits the quality tier's soldier pool.
+ * The largest unit-size scale whose battle still fits the soldier pool.
  *
  * This matters more than it looks. `spawnUnit` stops allocating when the pool is full, and
- * Rome deploys first — so at `low` (1,600 men) and `medium` (3,200) the default order of
- * battle exhausted the pool partway through the Roman line and **the entire Juthungi army
- * spawned with zero men**. The two sides then stood 130 m apart for the whole battle with
- * nobody in contact, which read as a broken AI rather than a broken pool.
+ * Rome deploys first — so when the pool was small the default order of battle exhausted it
+ * partway through the Roman line and **the entire Juthungi army spawned with zero men**. The
+ * two sides then stood 130 m apart for the whole battle with nobody in contact, which read as
+ * a broken AI rather than a broken pool.
  *
- * Scaling every unit down keeps all units present and the tactical picture intact at every
- * tier; losing an army does not. The 6% headroom absorbs the artillery crews, which
- * `spawnUnit` deliberately does not scale.
+ * Scaling every unit down keeps all units present and the tactical picture intact; losing an
+ * army does not. The 6% headroom absorbs the artillery crews, which `spawnUnit` deliberately
+ * does not scale.
+ *
+ * **It no longer takes the pool size as an argument, and that is the point rather than tidying.**
+ * The pool used to be `quality.maxSoldiers`, so this function fitted the army to the graphics
+ * tier and a shadow-quality dropdown decided how many men fought — measured as two entirely
+ * different outcomes of one seeded assault. `SOLDIER_POOL_CAPACITY` is one number at every
+ * tier on every machine, so the clamp is now a property of the engine rather than of the
+ * settings, and the mistake cannot come back through a call site: there is no parameter left to
+ * pass a setting into. See the constant's comment in `./types` for the measurement and for what
+ * a low tier gives up instead.
  */
-export function fittedUnitScale(
-  c: BattleConfig, maxSoldiers: number, s: ScenarioId = c.scenario
-): number {
+export function fittedUnitScale(c: BattleConfig, s: ScenarioId = c.scenario): number {
   const asked = scaleAppliesTo(s) ? unitSizePreset(c.unitSize).scale : 1;
   const base = baseStrength(c, s);
   if (base <= 0) return asked;
-  return Math.min(asked, (maxSoldiers * 0.94) / base);
+  return Math.min(asked, (SOLDIER_POOL_CAPACITY * 0.94) / base);
 }
 
 /**
@@ -667,11 +709,9 @@ export function fittedUnitScale(
 export const scaleAppliesTo = (s: ScenarioId): boolean => s !== 'assault';
 
 /** True when the pool forced a smaller battle than the menu asked for. */
-export const isScaleClamped = (
-  c: BattleConfig, maxSoldiers: number, s: ScenarioId = c.scenario
-): boolean =>
+export const isScaleClamped = (c: BattleConfig, s: ScenarioId = c.scenario): boolean =>
   scaleAppliesTo(s)
-  && fittedUnitScale(c, maxSoldiers, s) < unitSizePreset(c.unitSize).scale - 1e-6;
+  && fittedUnitScale(c, s) < unitSizePreset(c.unitSize).scale - 1e-6;
 
 /**
  * Headcount above which the 60 fps floor has been measured to fail.
@@ -697,10 +737,8 @@ export const isScaleClamped = (
 export const PERF_VALIDATED_MEN = 9000;
 
 /** Total men both sides field at the fitted scale. */
-export const totalMen = (
-  c: BattleConfig, maxSoldiers: number, s: ScenarioId = c.scenario
-): number =>
-  belligerents(c).reduce((n, f) => n + summarise(c, f, maxSoldiers, s).men, 0);
+export const totalMen = (c: BattleConfig, s: ScenarioId = c.scenario): number =>
+  belligerents(c).reduce((n, f) => n + summarise(c, f, s).men, 0);
 
 /**
  * The types that stand in the main battle line, for the line-width figure.
@@ -769,9 +807,9 @@ export interface SideSummary {
  * earlier draft estimated both and was out by 400 men at `small`.
  */
 export function summarise(
-  c: BattleConfig, f: Faction, maxSoldiers: number, sc: ScenarioId = c.scenario
+  c: BattleConfig, f: Faction, sc: ScenarioId = c.scenario
 ): SideSummary {
-  const scale = fittedUnitScale(c, maxSoldiers, sc);
+  const scale = fittedUnitScale(c, sc);
   const line = lineTypesFor(sc, f, c.map);
   let men = 0;
   let frontage = 0;

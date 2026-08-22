@@ -14,11 +14,10 @@
  *   node tools/probe-ground.mjs --port=5214 --out=screenshots/crit-world/ground
  */
 
-import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -74,21 +73,24 @@ async function waitForServer(url, timeoutMs) {
   return false;
 }
 
-let server = null;
-const base = `http://127.0.0.1:${PORT}`;
-if (!(await waitForServer(base, 1200))) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT,
-    stdio: 'ignore',
-    env: { ...process.env, TC_NO_HMR: '1' },
-  });
-  if (!(await waitForServer(base, 60000))) throw new Error('vite did not start');
-}
-
-await mkdir(OUT, { recursive: true });
-const browser = await chromium.launch({
+/*
+ * Server and browser via `tools/lib/browser-budget.mjs` — 22 Aug 2026.
+ *
+ * The browser slot is taken **first** and the server started second, so a run that has to
+ * queue queues holding nothing. `startVite` replaces `spawn('npx', ['vite', …])`, whose
+ * handle was the npx wrapper rather than Vite and so left the server on the port when it was
+ * killed; it also refuses to reuse a listener that is serving a different worktree, which
+ * this file used to do silently.
+ */
+const browser = await launchBrowser({
+  label: 'probe-ground', port: PORT, root: ROOT,
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
+const { base, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, label: 'probe-ground', slot: browser.budgetSlot,
+});
+await mkdir(OUT, { recursive: true });
+
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 page.on('pageerror', (e) => console.log('[pageerror]', e.message.slice(0, 300)));
 await page.goto(`${base}/?harness=1&quality=${QUALITY}&w=${W}&h=${H}${EXTRA}`, { waitUntil: 'domcontentloaded' });
@@ -154,12 +156,28 @@ const deploy = await page.evaluate(async () => {
   if (!topo.germanDeployMask) return null;
   const WATER = topo.WATER_LEVEL;
   const IMPASSABLE = 0.62; // ROUGH_SLOPE_IMPASSABLE, src/sim/Obstacles.ts
+  /*
+   * The window is read off the boxes, not written down beside them.
+   *
+   * It was a literal `x -800..800`, which was comfortably outside both boxes until §15 task 14
+   * widened the attacker's to x 848 — at which point this audit would have gone on reporting
+   * "0 under water, 0 over the impassable slope" over a box whose last 48 m it never looked at,
+   * and the count of cells would have been short by about 630 without saying so. A probe that
+   * silently stops at the edge of its own literal is the failure `DEPLOY_GROUND` was made data
+   * to prevent, one layer up.
+   */
+  const g0 = topo.DEPLOY_GROUND;
+  const pad = 8;
+  const X0 = Math.min(g0.north.cx - g0.north.hx, g0.south.cx - g0.south.hx) - pad;
+  const X1 = Math.max(g0.north.cx + g0.north.hx, g0.south.cx + g0.south.hx) + pad;
+  const Z0 = Math.min(g0.north.cz - g0.north.hz, g0.south.cz - g0.south.hz) - pad;
+  const Z1 = Math.max(g0.north.cz + g0.north.hz, g0.south.cz + g0.south.hz) + pad;
   const rows = [];
   for (const [name, mask] of [['attacker', topo.germanDeployMask], ['defender', topo.romanDeployMask]]) {
     let cells = 0, wet = 0, steep = 0, minH = Infinity, maxSlope = 0;
     let wettest = null, steepest = null;
-    for (let z = -420; z <= 420; z += 4) {
-      for (let x = -800; x <= 800; x += 4) {
+    for (let z = Z0; z <= Z1; z += 4) {
+      for (let x = X0; x <= X1; x += 4) {
         if (mask(x, z) < 0.02) continue;
         cells++;
         const h = t.heightAt(x, z);
@@ -459,4 +477,4 @@ for (const name of requested) {
 }
 
 await browser.close();
-if (server) server.kill('SIGTERM');
+await closeServer();

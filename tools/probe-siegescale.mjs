@@ -161,10 +161,11 @@ const setup = await page.evaluate((deep) => {
       live: proj && proj.liveCount !== undefined ? proj.liveCount : null };
   };
 
-  return { systems: names, tier: e.quality.tier, maxSoldiers: e.quality.maxSoldiers,
+  const boot = window.__game.battle.pool;
+  return { systems: names, tier: e.quality.tier, poolCap: boot.capacity, men: boot.count,
     dpr: e.renderer.getPixelRatio(), postfx: !!p.realRender };
 }, DEEP);
-console.log(`boot: tier=${setup.tier} maxSoldiers=${setup.maxSoldiers} dpr=${setup.dpr} postfx=${setup.postfx} systems=${setup.systems.length}`);
+console.log(`boot: tier=${setup.tier} men=${setup.men}/${setup.poolCap} dpr=${setup.dpr} postfx=${setup.postfx} systems=${setup.systems.length}`);
 
 const st = (a) => {
   if (!a.length) return null;

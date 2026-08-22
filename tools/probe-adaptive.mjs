@@ -54,7 +54,21 @@ const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=metal', '--ignore-gpu-blocklist'],
 });
 
-/** Everything the page needs to answer a question, installed once per load. */
+/**
+ * Everything the page needs to answer a question, installed once per load.
+ *
+ * `tc.army` is the reason this file changed. The tier-switch arm used to assert that
+ * `quality.maxSoldiers` did not move across a tier press, which was the right question asked of
+ * the wrong field: `maxSoldiers` was the graphics tier's soldier cap, `fittedUnitScale` fitted
+ * the whole order of battle to it, and the *army* was what the assertion was really about. That
+ * field no longer exists — the pool is `SOLDIER_POOL_CAPACITY` in `src/sim/types.ts`, one number
+ * at every tier — and an assertion on an absent field is an absent field comparing equal to
+ * itself on every row, which passes forever. So the arm reads `pool.count`, `pool.capacity` and
+ * `battle.unitSizeScale` instead, which is strictly stronger and cannot go vacuous.
+ *
+ * Note that this is a template string injected into the page: a backtick in a comment inside it
+ * terminates the literal. Keep the prose out here.
+ */
 const INSTALL = `
   const g = window.__game;
   const eng = g.engine;
@@ -106,6 +120,11 @@ const INSTALL = `
     calls: () => eng.renderer.info.render.calls,
     programs: () => eng.renderer.info.programs.length,
     q: () => ({ ...eng.quality }),
+    /* The simulation's own inputs. See the note above INSTALL for why this and not maxSoldiers. */
+    army: () => {
+      const b = window.__game.battle;
+      return { men: b.pool.count, cap: b.pool.capacity, scale: b.unitSizeScale };
+    },
   };
 `;
 
@@ -152,24 +171,33 @@ if (MODE === 'life') {
       const r = await page.evaluate(() => ({
         calls: window.tc.calls(), fb: window.tc.fb(), db: window.tc.db(),
         rt: window.tc.sceneRT(), q: window.tc.q(), progs: window.tc.programs(),
+        army: window.tc.army(),
       }));
       rows.push([tier, r]);
     }
     const ready = await page.evaluate(() => window.__game.ready === true);
     const greys = rows.filter(([, r]) => r.fb.std < 3 || r.calls < 40);
-    const soldierDrift = rows.some(([, r]) => r.q.maxSoldiers !== rows[0][1].q.maxSoldiers);
+    const army0 = rows[0][1].army;
+    const armyDrift = rows.filter(([, r]) => r.army.men !== army0.men
+      || r.army.cap !== army0.cap || r.army.scale !== army0.scale);
     console.log(`\n== ${map} ==  ready=${ready}  errors=${errors.length}`);
     for (const [t, r] of rows) {
       console.log(`  ${t.padEnd(7)} draws ${String(r.calls).padStart(4)}  fb mean ${String(r.fb.mean).padStart(6)} std ${String(r.fb.std).padStart(6)}` +
-        `  db ${r.db.w}x${r.db.h}  sceneRT ${r.rt[0]}x${r.rt[1]}  progs ${r.progs}  maxSoldiers ${r.q.maxSoldiers}  cascades ${r.q.shadowCascades}`);
+        `  db ${r.db.w}x${r.db.h}  sceneRT ${r.rt[0]}x${r.rt[1]}  progs ${r.progs}` +
+        `  men ${r.army.men}/${r.army.cap} x${r.army.scale.toFixed(4)}  cascades ${r.q.shadowCascades}`);
     }
     if (!ready) { console.log('  FAIL: not ready'); bad++; }
     if (errors.length) { console.log('  errors:'); for (const e of errors.slice(0, 6)) console.log(`    ${e}`); bad++; }
     if (greys.length) { console.log(`  FAIL: grey/empty world at ${greys.map(([t]) => t).join(',')}`); bad++; }
-    if (soldierDrift) { console.log('  FAIL: maxSoldiers moved across a tier switch'); bad++; }
+    if (armyDrift.length) {
+      console.log(`  FAIL: the army moved across a tier switch at ${armyDrift.map(([t]) => t).join(',')}`
+        + ` — ${army0.men} men / pool ${army0.cap} / scale ${army0.scale} at ${rows[0][0]}`);
+      bad++;
+    }
     await page.close();
   }
-  console.log(bad ? `\nFAIL (${bad})` : '\nPASS — three maps, five tier switches each, no grey world, maxSoldiers pinned');
+  console.log(bad ? `\nFAIL (${bad})`
+    : '\nPASS — three maps, five tier switches each, no grey world, army pinned (men, pool and scale)');
 }
 
 // ---------------------------------------------------------------------------

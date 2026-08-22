@@ -85,7 +85,16 @@ export interface CrewStatusView {
 export interface EscaladeOfferView {
   ok: boolean;
   refusal: string;
-  kind: 'tower' | 'ladder' | null;
+  /**
+   * `breach` is the third way up and it needs no sentence of its own here.
+   *
+   * The only hint this file draws for a *successful* offer is the tower's "it reaches bay N
+   * in …" wait, because a tower is the one way up that may not have arrived yet. A breach has
+   * arrived by definition — it does not exist until the wall is down — so the `offer.ready ||
+   * offer.kind !== 'tower'` test below already falls silent for it and lets the wall cursor's
+   * own "Storm the wall here" stand, which is the right label for going through a hole.
+   */
+  kind: 'tower' | 'ladder' | 'breach' | null;
   bay: number;
   /** False while the machine they would climb is still crossing the glacis. */
   ready: boolean;

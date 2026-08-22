@@ -54,7 +54,8 @@ import { makeCode, Room } from '../src/net/room.ts';
 // ---------------------------------------------------------------------------
 
 const FLAGS = ['port', 'pairs', 'unknown', 'fatal', 'delay', 'turn-ms', 'lag',
-  'max-lag-turns', 'quiet', 'fault', 'fault-slot', 'fault-from', 'fault-every', 'fault-phase'];
+  'max-lag-turns', 'quiet', 'fault', 'fault-slot', 'fault-from', 'fault-every', 'fault-phase',
+  'parent'];
 const args = new Map(process.argv.slice(2).map((a) => {
   const m = a.match(/^--([^=]+)(?:=(.*))?$/);
   return m ? [m[1], m[2] ?? 'true'] : [a, 'true'];
@@ -377,3 +378,37 @@ server.listen(PORT, '127.0.0.1', () => {
     + `${FAULT ? `  FAULT ${FAULT.kind} on slot ${FAULT.slot} from turn ${FAULT.fromTurn}` : ''}`);
 });
 server.on('error', (e) => { console.error(`relay: ${e.message}`); process.exit(1); });
+
+/*
+ * Die with the parent that started us.
+ *
+ * `tools/qa-net.mjs` starts a dozen of these over a full run and kills each one when its arm
+ * ends. That is correct and it is not enough: SIGTERM only helps when there is somebody alive
+ * to send it, and the event this repository has actually had is the machine going down under
+ * load with every harness on it SIGKILLed. `tools/lib/vite-runner.mjs` learned this for dev
+ * servers on 22 Aug; a relay is the same hazard at a smaller size — a listener on a port in the
+ * band the next run wants, owned by nobody.
+ *
+ * macOS has no `PR_SET_PDEATHSIG`, so this polls. `kill(pid, 0)` sends no signal and only asks
+ * whether the process exists: ESRCH is gone, EPERM is alive and someone else's. A parent of 1
+ * means we were reparented to launchd before we got going, which is the orphan state itself.
+ *
+ * Bounded orphan lifetime: two seconds. Run by hand without `--parent` and nothing watches,
+ * which is what you want when you are playing rather than testing.
+ */
+const PARENT = Number(args.get('parent') ?? 0);
+if (Number.isFinite(PARENT) && PARENT > 1) {
+  const watch = setInterval(() => {
+    try {
+      process.kill(PARENT, 0);
+    } catch (err) {
+      if (err?.code === 'ESRCH') {
+        log(`relay: parent ${PARENT} is gone; closing`);
+        clearInterval(watch);
+        try { server.close(); } catch { /* already closing */ }
+        process.exit(0);
+      }
+    }
+  }, 2000);
+  watch.unref();
+}

@@ -44,12 +44,16 @@ import type { EngineContext, QualityTier, RenderQualityPatch, Subsystem } from '
  *
  * ## What it must never touch
  *
- * `quality.maxSoldiers` is simulation state. `BattleSystem.init` sizes the soldier pool and
- * eight typed arrays from it, and `scenario.ts` scales unit size from it, so moving it under a
- * running battle changes the order of battle. It is not in `RenderQualityPatch`, so the mistake
- * does not typecheck, and `Engine.applyRenderQuality` re-pins it afterwards anyway.
+ * The tier itself: the loop works *within* the player's choice rather than overriding it.
  *
- * The tier itself is likewise excluded: the loop works *within* the player's choice.
+ * It used to be two things. `quality.maxSoldiers` was simulation state — `BattleSystem.init`
+ * sized the soldier pool and eight typed arrays from it and `scenario.ts` scaled unit size from
+ * it — so moving it under a running battle changed the order of battle, and it was kept out of
+ * `RenderQualityPatch` by the type and re-pinned by `Engine.applyRenderQuality` afterwards. The
+ * field is gone: the pool is `SOLDIER_POOL_CAPACITY` in `src/sim/types.ts`, one number at every
+ * tier, because the tier deciding the size of the armies meant a graphics setting decided the
+ * outcome of the battle. So this loop can no longer reach the simulation by any route, and the
+ * exclusion it needed most is now unwriteable rather than merely forbidden.
  */
 
 // ---------------------------------------------------------------------------
@@ -186,9 +190,12 @@ const RES_RUNGS = [1.0, 0.92, 0.85, 0.78, 0.71, 0.65, 0.59, 0.54, 0.5];
  *   threshold, not a cost knob — this project already shipped the bug where 89 % of visible men
  *   were billboards and the player reported their army was invisible under its own banners.
  * - **`bloom`.** Signature look, and cheap.
- * - **`maxSoldiers`.** Simulation state. Not expressible in `RenderQualityPatch`.
+ *
+ * `maxSoldiers` used to be the last entry, described as "simulation state, not expressible in
+ * `RenderQualityPatch`". It is absent because it no longer exists anywhere: nothing in
+ * `RenderQuality` reaches the simulation.
  */
-const EXCLUDED = ['shadowCascades', 'shadowMapSize', 'antialias', 'lodFarDistance', 'bloom', 'maxSoldiers'] as const;
+const EXCLUDED = ['shadowCascades', 'shadowMapSize', 'antialias', 'lodFarDistance', 'bloom'] as const;
 
 // ---------------------------------------------------------------------------
 // Controller constants. Every one of these is derived; none is a taste judgement.

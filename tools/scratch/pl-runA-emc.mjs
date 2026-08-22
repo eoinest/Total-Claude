@@ -1,19 +1,26 @@
-/** RUN A — storm Carthage as Rome. Menu to verdict, every order a real click. */
+/**
+ * RUN A — storm Carthage as Rome. Menu to verdict, every order a real click.
+ *
+ * Asserts, now, and the one thing it asserts hardest is that a battle finished: see
+ * `pl-lib-emc.mjs` on why nine invented selectors meant no run in this directory had ever
+ * reached a verdict. A narrative log is not a result.
+ */
 import { argsOf, boot, shot, dump, fast, hover, rightClick, rightDrag, leftClick, cam, proj, aim,
-  selectHard, wallPixel, installDiag, ROOT } from './pl-lib-emc.mjs';
+  selectHard, wallPixel, installDiag, ledger, mustEnd, ended, ROOT } from './pl-lib-emc.mjs';
 import path from 'node:path';
 const A = argsOf();
 const OUT = path.join(ROOT, 'screenshots/playability');
-const L = 'runA';
-const log = []; let page, browser, errs, cerrs;
-const say = (...a) => { const s = a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '); console.log(s); log.push(s); };
-const flush = () => dump(OUT, `${L}-log`, { log, errs, cerrs });
+const L_ = 'runA';
+const L = ledger('run A — the storm of Carthage');
+const log = L.log; let page, browser, errs, cerrs;
+const say = L.say;
+const flush = () => dump(OUT, `${L_}-log`, { log, errs, cerrs, rows: L.rows });
 const T = async () => page.evaluate(() => +window.__game.simTime().toFixed(1));
 const step = async (n, w) => { say(`\n=== ${n}  t+${await T()}s  ${w}`); await flush(); };
 const rep = () => page.evaluate(() => window.__reports());
 const brief = (r) => `R=${r.strength[0]} C=${r.strength[2]} gateHp=${r.engines.gateHp.toFixed(2)} blows=${r.engines.ramBlows} ladders=${r.engines.laddersCrossed} towers=${r.towers.map(t => `${t.state}:${t.crossed}`).join(',')}`;
 
-({ browser, page, errs, cerrs } = await boot({ port: Number(A.get('port') ?? 5431), map: 'carthage', out: OUT, label: L }));
+({ browser, page, errs, cerrs } = await boot({ port: Number(A.get('port') ?? 5431), map: 'carthage', out: OUT, label: L_ }));
 await installDiag(page);
 await page.mouse.move(800, 700); await page.waitForTimeout(300);
 let bays;
@@ -31,13 +38,13 @@ if (s.ok) {
   const b = bays.find(x => x.i === 27);
   const wp = await wallPixel(page, b, { side: 1, zoom: 0.62 });
   say(`bay 27: ${wp.hit}/${wp.tried} probed pixels give a wall order`, wp.p ? `-> clicking ${JSON.stringify(wp.p)}` : '-> NO WALL ORDER AVAILABLE');
-  await shot(page, OUT, `${L}-2a-bay27`);
+  await shot(page, OUT, `${L_}-2a-bay27`);
   if (wp.p) {
     const h = await hover(page, wp.p);
     say('cursor before I commit:', { cursor: h.cursor, hovered: h.hovered });
     const d = await rightClick(page, wp.p, { hold: 450 });
     say('hint while held:', JSON.stringify(d.hint), 'cursor', d.cursor);
-    await shot(page, OUT, `${L}-2b-held`);
+    await shot(page, OUT, `${L_}-2b-held`);
     await page.waitForTimeout(400);
     const r = await rep();
     say('tower 0 after the order:', { x: +r.towers[0].x.toFixed(1), z: +r.towers[0].z.toFixed(1), st: r.towers[0].state, walkY: r.towers[0].walkY });
@@ -72,7 +79,7 @@ if (s.ok) {
   if (wp.p) {
     const d = await rightClick(page, wp.p, { hold: 450 });
     say('hint:', JSON.stringify(d.hint), 'cursor', d.cursor);
-    await shot(page, OUT, `${L}-4a-storm`);
+    await shot(page, OUT, `${L_}-4a-storm`);
     await page.waitForTimeout(300);
     say('wall state of 29:', await page.evaluate(() => window.__wallState(29)));
   }
@@ -90,9 +97,10 @@ for (let k = 0; k < 20; k++) {
   const up = await page.evaluate(() => window.__units(0).filter(u => u.elevated > 3).map(u => ({ id: u.id, t: u.type, e: u.elevated, a: u.alive })));
   say(`t+${r.t}  ${brief(r)}  up=${JSON.stringify(up)}`);
   if (up.length && onWallId < 0) onWallId = up.sort((a, b) => b.e - a.e)[0].id;
-  if (k % 5 === 4) await shot(page, OUT, `${L}-5-${Math.round(r.t)}s`);
-  const done = await page.evaluate(() => !!document.querySelector('.endcard, .result, .verdict, .battle-result, .result-sheet'));
-  if (done) { say('a result screen appeared'); break; }
+  if (k % 5 === 4) await shot(page, OUT, `${L_}-5-${Math.round(r.t)}s`);
+  // `.rs-panel`, via `ended` — the only selector in this directory that matches anything.
+  const done = await ended(page);
+  if (done) { say(`a result screen appeared: ${done.verdict} — ${done.reason}`); break; }
   if (onWallId >= 0 && k >= 9) break;
 }
 await flush();
@@ -102,7 +110,7 @@ await step('6', `men on the wall: unit ${onWallId}`);
 if (onWallId >= 0) {
   s = await selectHard(page, onWallId, { zoom: 0.55 });
   say('select the men on the wall:', s.ok ? `OK (${s.easy ? 'first click' : `hunted ${s.answering}/${s.probes}`})` : `FAILED ${s.why}`);
-  await shot(page, OUT, `${L}-6a-onwall`);
+  await shot(page, OUT, `${L_}-6a-onwall`);
   if (s.ok) {
     const st = await page.evaluate((i) => window.__wallState(i), onWallId);
     say('wall state:', st);
@@ -114,7 +122,7 @@ if (onWallId >= 0) {
       say('hint:', JSON.stringify(d.hint), 'cursor', d.cursor);
       await fast(page, 40);
       say('after 40 s:', await page.evaluate((i) => window.__wallState(i), onWallId), await page.evaluate((i) => window.__u(i), onWallId));
-      await shot(page, OUT, `${L}-6b-traversed`);
+      await shot(page, OUT, `${L_}-6b-traversed`);
     }
     // fight for the wall
     await step('7', 'attack the men standing on the wall');
@@ -128,10 +136,10 @@ if (onWallId >= 0) {
         say('hovering the enemy on the parapet:', { cursor: h.cursor, hovered: h.hovered, want: f.id });
         const d = await rightClick(page, fp, { hold: 450 });
         say('hint:', JSON.stringify(d.hint), 'cursor', d.cursor);
-        await shot(page, OUT, `${L}-7a-attack`);
+        await shot(page, OUT, `${L_}-7a-attack`);
         await fast(page, 40);
         say('40 s later, foe:', await page.evaluate((i) => window.__u(i), f.id), 'mine:', await page.evaluate((i) => window.__u(i), onWallId));
-        await shot(page, OUT, `${L}-7b-fight`);
+        await shot(page, OUT, `${L_}-7b-fight`);
       }
     }
     // down into the city
@@ -145,7 +153,7 @@ if (onWallId >= 0) {
       say('hint over the street:', JSON.stringify(d.hint), 'cursor', d.cursor);
       await fast(page, 50);
       say('after 50 s:', await page.evaluate((i) => window.__u(i), onWallId), await page.evaluate((i) => window.__wallState(i), onWallId));
-      await shot(page, OUT, `${L}-8-descend`);
+      await shot(page, OUT, `${L_}-8-descend`);
     } else say('could not frame a street inside the city');
   }
 } else say('nobody of mine ever got onto the wall');
@@ -153,21 +161,22 @@ await flush();
 
 // --- 9. to the verdict
 await step('9', 'run to the verdict');
-for (let k = 0; k < 24; k++) {
-  await fast(page, 25);
-  r = await rep();
-  const done = await page.evaluate(() => { const e = document.querySelector('.endcard, .result, .verdict, .battle-result, .result-sheet, .outcome'); return e ? e.className : null; });
-  if (k % 4 === 0) say(`t+${r.t}  ${brief(r)}`);
-  if (done) { say(`result screen: .${done} at t+${r.t}`); break; }
-}
+/*
+ * `mustEnd` rather than a loop over invented class names.
+ *
+ * This loop used to poll `.endcard, .result, .verdict, .battle-result, .result-sheet,
+ * .outcome`, none of which the product renders, and then fell through to a class-name sweep
+ * that printed whatever it found. So it always finished, always logged, and had never once
+ * seen a battle end. The one selector is `.rs-panel` and it lives in `pl-lib` now.
+ */
+const fin = await mustEnd(page, L, { until: 1600, step: 25, label: 'the storm of Carthage' });
+r = await rep();
+say(`t+${r.t}  ${brief(r)}`);
 say('final HUD:', await page.evaluate(() => window.__hud()));
-await shot(page, OUT, `${L}-9-end`);
-const endHtml = await page.evaluate(() => {
-  const e = document.querySelector('.endcard, .result, .verdict, .battle-result, .result-sheet, .outcome');
-  return e ? e.textContent.replace(/\s+/g, ' ').slice(0, 900) : Array.from(document.body.querySelectorAll('div')).map(d => d.className).filter(c => /end|result|verd|outcome|defeat|victory/i.test(c)).join(',');
-});
-say('result text:', endHtml);
-} catch (e) { say('!! THREW', String(e).slice(0, 400)); try { await shot(page, OUT, `${L}-crash`); } catch {} }
+await shot(page, OUT, `${L_}-9-end`);
+if (fin.end) say('result text:', await page.evaluate(() => window.__hud().banner));
+} catch (e) { L.ck('the session ran without throwing', false, 'no throw', String(e).slice(0, 400)); try { await shot(page, OUT, `${L_}-crash`); } catch {} }
+L.ck('no page errors', errs.length === 0, 0, errs.length);
 await flush();
-say('pageerrors', errs.length, 'console errors', cerrs.length);
 await browser.close();
+process.exitCode = L.summary() > 0 ? 1 : 0;

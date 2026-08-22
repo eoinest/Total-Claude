@@ -10,9 +10,10 @@ this tree three ways: `index.html` byte-identical to a rebuild, all nine build o
 identical, and Vercel's own SHA-1 digest matching the rebuild for 86 of 86 files in both
 directions. All three maps boot against the live URL with the clock advancing.
 
-The full gate is green on this tree: tsc clean, lint 2/2, qa-deploy 33/33, seams PASS both maps,
-**`qa-replay` 27/27**, **`qa-net` 30/30**, and all three determinism arms UNCHANGED at all seven
-checkpoints (8,632 / 3,074 / 3,440).
+The full gate is green on this tree: tsc clean, **lint 3/3**, qa-deploy 33/33, seams PASS both
+maps, **`qa-replay` 27/27**, **`qa-net` 30/30**, and all three determinism arms UNCHANGED at all
+seven checkpoints (**8,632 / 3,072 / 3,440** — Rome's pin moved to 3,072 at `63be5cd`; anything
+still saying 3,074 predates that commit).
 
 > **`qa-replay` grew from 21 to 27 checks on 21 Aug**, and the six new ones are the ones that
 > mattered: it had only ever recorded `campus-martius / field`, so **no siege record had ever
@@ -24,18 +25,30 @@ checkpoints (8,632 / 3,074 / 3,440).
 > It boots two full-scale battles in two browser engines and times out on `page.goto` when the
 > machine is busy; a gate that goes red because the laptop is loaded teaches people to ignore
 > it. It passes on a quiet machine — see the session record at the bottom of this file.
+>
+> **`qa-net` takes two of the four budgeted browser slots** and holds them for the length of a
+> battle. It goes through `launchBrowser`/`startVite` like everything else, so a third agent's
+> probe queues behind it rather than oversubscribing the machine; the `xengine` arm needs two
+> slots of its own and is why it is opt-in. `node tools/browsers.mjs` says who holds what.
 
 **The gate, and how to re-run it.** All green at `5f9030e`:
 
 | check | command | expected |
 |---|---|---|
 | types | `npx tsc --noEmit` | clean |
-| lint | `npm run lint` | 2/2 |
+| lint | `npm run lint` | **3/3** — see the note below |
 | deploy | `node tools/qa-deploy.mjs` | 33/33 |
 | seams | `node tools/probe-seams.mjs` | PASS, both maps |
 | replay | `node tools/qa-replay.mjs` | **27/27** |
 | **multiplayer** | `node tools/qa-net.mjs` (starts its own relays and server) | **30/30** |
 | determinism | the three arms below, **spelled exactly** | 7 checkpoints each |
+
+> **`lint` is three checks now, not two — changed 22 Aug 2026.** `check-determinism` and
+> `check-tool-args` are joined by **`check-browser-budget`**, which fails when a file in
+> `tools/` opens a browser or spawns `npx vite` without going through
+> `tools/lib/browser-budget.mjs`. It carries an allowlist of the 91 files in `tools/` (254
+> including `scratch/`) that predate the budget; that list may shrink and must not grow. If you
+> were told "lint 2/2", this is why it says 3/3. See `docs/tech/BROWSER-BUDGET.md`.
 
 Determinism is pinned in `tools/determinism-baseline.json` at **t+0/30/90/150/200/250/400**, three
 hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (discrete state).
@@ -50,8 +63,14 @@ Quote the value or your shell backgrounds on the `&`. **`--battle=rome` is not a
 is `--battle=carthage`.** The flag's value is appended verbatim as query parameters *and* used as
 the baseline key, so a short name appends a meaningless parameter, loads the **field battle**, and
 looks up a key that does not exist — a run that measured the wrong battle against no pin at all. It
-does not go red. It asserts nothing. Those three spellings above are the only three keys the
-baseline holds.
+used not to go red and it asserted nothing. **It exits 2 now**: every segment of `--battle` must be
+`key=value` with a key `src/` actually reads, and the failure prints the three invocations above.
+Those three spellings are still the only three keys the baseline holds.
+
+Each of those three runs now carries a **cross-tier arm**: the same battle at `low`, `medium`,
+`high` and `ultra`, requiring the pool hash, `uf64`, `uctl`, headcount and unit count to be
+identical, because a graphics setting must not change the battle. `--tiers=off` skips it and says
+so out loud; `--tier-at=` moves where it compares (default: the first three of `--at`).
 
 Confirm every run by headcount, always: **field battle 8,632 / Rome 3,074 / Carthage 3,440.** A
 Carthage run reporting 8,632 measured something else.
@@ -60,6 +79,40 @@ Carthage run reporting 8,632 measured something else.
 > the passage explaining why that is wrong, and three agents were dispatched with it. **A summary
 > that contradicts its own document is worse than no summary**, because the summary is what gets
 > read. If you correct something here, correct it everywhere it is spelled out.
+
+### The autonomous run — 21 Aug 2026 onward, while the owner is away
+
+Two standing objectives, both given verbatim, both open-ended. **Neither stops at "the gate is green."**
+
+1. *"we want the city to literally be like as realistic as possible, so please have eval judge
+   agents and dont stop until theyre satisfied with the plans."*
+2. *"don't stop until multiplayer is completely functional and testing agents are absolutely wowed
+   by game play as well."*
+
+He has also said: **do not ask questions until he says he is back.** So every decision that would
+normally come back to him is made by the agent holding it, recorded with its reasoning and with what
+would change its mind. Decisions genuinely reserved — army composition and balance numbers — get
+made provisionally, flagged loudly, and are cheap to reverse.
+
+**The loop, which is the point.** Builders build; independent judges grade against something outside
+the build; findings go back to builders; repeat. Three judges are standing:
+
+| judge | lens |
+|---|---|
+| `e/judge/rome-plan` | plan fidelity from above — position, footprint, **bearing**, the river's curvature, against the georeferenced plates |
+| `e/judge/rome-ground` | how the city reads from a soldier's eye, with Carthage as the control |
+| `e/judge/gameplay` | plays the battle through the real menu and says whether commanding it is any good |
+
+**A judge that never passes anything is as useless as one that passes everything**, so each is asked
+to say what is already good. And no judge signs off on work that is merely better than before — the
+standard is the plate, or the experience, not the previous commit.
+
+**Multiplayer's fork.** `MULTIPLAYER.md` §2 recommends not building realtime yet; the owner has
+overridden that, having heard the argument. The cross-engine arm decides the road: if removing the
+26 `hypot` sites in `src/terrain`/`src/maps` closes Carthage's t+0 split and all three engines agree
+through every checkpoint, realtime lockstep over a relay is tractable. If not, §3 Stage 3
+(vendoring transcendentals) is the only road to cross-engine play and must be priced before a lobby
+exists. A relay, not peer-to-peer, either way — §4.1's total-order problem, not latency.
 
 ### Standing rules, all earned
 
@@ -75,17 +128,74 @@ Carthage run reporting 8,632 measured something else.
 - **A self-consistent instrument can never fail.** Compare against something outside the thing
   being checked.
 - Worktrees need an isolated vite `cacheDir`. **Port 5173 is the owner's.**
+- **At most four headless browsers on this machine at once, and the filesystem now enforces it.**
+  22 Aug 2026: load average 160 on 16 cores, 136 `vite` and `chrome-headless-shell` processes,
+  machine recovered by hand; and nineteen orphaned dev servers swept off it the same morning.
+  Use `launchBrowser`/`startVite` from `tools/lib/browser-budget.mjs` — one line each, and they
+  queue rather than pile on. `node tools/browsers.mjs` says what is running and who owns it.
+  **How many agents to run at once is below.** Full account: `docs/tech/BROWSER-BUDGET.md`.
 - Unattended agents carry: *where you would normally ask, make the call, write down what you chose
   and why, and name what would change your mind.*
 
+### How many agents to run at once — the rule, and where the number comes from
+
+This is the number that was got wrong on 22 Aug 2026. Roughly a dozen agents were running; the
+machine reached **load average 160 on 16 cores with 136 `vite` and `chrome-headless-shell`
+processes** and had to be recovered by hand.
+
+> **Run at most six agents at once, and never dispatch more than four that you expect to run a
+> gate, a probe or a film in the same window.** Before dispatching a wave, run
+> `node tools/browsers.mjs`. If the slots are full and there is a queue, the machine is already
+> at its limit — wait rather than adding to it.
+
+**The four is measured and it is now enforced.** `tools/scratch/bb-bench.mjs` ran the shape of a
+real gate job — own Vite, own Chromium, the field battle through the real menu, 8,632 men — at
+N = 1…8, in a CPU arm and a rendering arm. At N=4 the machine sits at **0.45–0.48× its cores**
+and keeps **92–98% of perfect linear scaling**: four browsers cost essentially nothing in
+throughput. At N=8 the CPU arm reaches **1.09× cores**, which is an oversubscribed machine, and
+the rendering arm loses a fifth of its scaling. `tools/lib/browser-budget.mjs` caps it at 4 and
+a fifth caller **queues** rather than piling on, so exceeding it is now slow rather than fatal.
+The whole table is in `docs/tech/BROWSER-BUDGET.md`.
+
+**The six is a different constraint and is *not* enforced — it is yours.** Agents are bursty:
+an agent spends most of its life reading and editing and only part of it holding a browser. At
+six, typical demand stays under four and nobody queues. At twelve — what was run on 22 August —
+demand is permanently over the cap and half the fleet sits in a queue burning wall clock and
+tokens even when the machine is healthy. The cap protects the *machine*; only you can protect
+the *fleet's throughput*, and the two numbers are not the same.
+
+There is a third limit and it is the one that actually bit: **an orchestrator who dispatches
+twelve cannot read twelve reports.** Nineteen orphaned dev servers sat on this box for more
+than a day before anyone looked.
+
+Scaling to another machine: **one browser slot per four cores**, agents at 1.5× the slot count.
+On anything smaller than 16 cores, set it — `node tools/browsers.mjs cap <n>` writes it once
+for every agent. It is deliberately *not* computed from `os.cpus()`: a cap that changes
+silently with the hardware is one nobody can reason about across two machines.
+
 ### Reserved for the owner — do not decide these
 
-- Whether battle lines should **fit** their deployment boxes rather than merely be dry. Rome's line
-  is 684 m across in a 500 m box; the host is 783 m in a 760 m one. Written into `ROME.md` §15
-  task 14 so it gets decided rather than rediscovered.
+- ~~Whether battle lines should **fit** their deployment boxes rather than merely be dry~~ —
+  **decided by the owner and discharged on `e/sim/deploy-boxes`.** *"Battle lines should fit their
+  deployment boxes. I would recommend widening boxes east."* Both boxes widened east with their
+  west edges pinned where task 1 measured them against the Tiber, `standOnDeploymentGround`
+  insetting by the box's own feather (shift 271.146 → 351.146 m), and `battleCoreMask` moved onto
+  the deployment axis. Men outside their own box **562 + 182 → 0 + 0**; frontages, strengths and
+  counts untouched. `ROME.md` §15 task 14 carries the numbers. One number left with no margin and
+  it is written down there: the defender's box is under-sized in **depth**, not width, and the
+  twelve-man scorpio battery at z 262.5 sits at mask 0.024 against a 0.02 threshold.
 - **The Rome balance shift** — defenders gained roughly a cohort as a side effect of walls that
   now work.
-- The host storm order, the great wall-breaking ram, and the trailer's `rome-arch` beat.
+- The host storm order, and the trailer's `rome-arch` beat. *(The great wall-breaking ram was
+  asked for explicitly on 21 Aug and is built — see the session note. The host storm order it
+  wants is still reserved: nothing in `src/ai/` sends a warband at a breach or through an open
+  gate.)*
+- **Rome's assault ends at t+56–59 for a reason that has nothing to do with the siege.**
+  `stormInside >= 60` is satisfied by men who walk over the unbuilt neck and by fifty horse
+  standing 98 m past the west end of the circuit, where `censusWall` clamps them onto bay 0's
+  midline and calls them inside the city. Measured, named and deliberately not touched — half of
+  it is a `BattleFlow` census bug and half is a decision about what the unbuilt neck is *for*.
+  Until it is settled, every ram and tower figure on this map is read out of a decided battle.
 
 ### Queued, unassigned
 
@@ -97,8 +207,13 @@ Carthage run reporting 8,632 measured something else.
 - **The docs-site analytics toggle.** One dashboard click at
   `vercel.com/ernest-4753/total-claude-docs` → Analytics → Enable. No API exposes it.
 - `Engine.dispose()` has no caller; the clipmap flattens the ditch beyond 768 m; `shoot.mjs` stamps
-  `srcTree` from `HEAD:src` so uncommitted edits mislabel frames; `battleCoreMask` is still centred
-  on x 0; ground outside a deployment box is never flattened or cleared of vegetation.
+  `srcTree` from `HEAD:src` so uncommitted edits mislabel frames. ~~`battleCoreMask` is still
+  centred on x 0~~ and ~~ground outside a deployment box is never flattened or cleared of
+  vegetation~~ — both closed on `e/sim/deploy-boxes`: the corridor is on the deployment axis at a
+  745 m half-width (**440 men were fighting outside it**, now 0) and the boxes now cover every man,
+  which is **+14.67 ha** of flattened and cleared ground and 61 scatter instances removed. Ground
+  outside a box is still unprepared — that has not changed and should not; there is just no longer
+  anybody standing on it.
 
 ## The player's outstanding list, with owners
 
@@ -174,11 +289,16 @@ Everything below came from the player. Items not listed here are done and commit
   or dead, so a carcass costs nothing.** `tools/probe-elefield.mjs`; frames in
   `screenshots/elephant-death/`.
 - soldiers use stairs, move laterally along the wall, descend into the city — siege
-- much larger wall-breaking ram — siege. **The machine is built** (`spawnGreatRam`,
-  `strikeCurtain`, 74 blows at 7 s, breach lanes) and **no scenario fields one**, so
-  `breachReport().lanes` is 0 on both maps and the route is unreachable in play. It is
-  orderable the moment one is deployed: `resolveMachineOrder` gives it the same right-click
-  the tower has, at a stretch of curtain rather than a gate.
+- ~~much larger wall-breaking ram~~ — **done, uncommitted on `e/sim/rams`.** The Juthungi
+  field one. `great-ram-crew` (48 men, the crew the shed can cover), `StormPlan.greatRam`
+  optional, `siegeJuthungi` at twenty units still by trading a squadron of horse for it,
+  `deployAssault` calling `spawnGreatRam` at the first `holdable` bay outward from the gate —
+  bay 5, the Muro Torto's west end, 134 m along the curtain — and `CitySystem.breachWall`
+  implemented at last. `WALL_BLOWS` 74 → **44**, timed rather than chosen: the breach lands at
+  **t+420** on six seeds against the gate's t+220. `breachReport().lanes` 0 → **5**, and men
+  ordered at it through `orderIssued` come out inside the city. **Still drawn standing over the
+  hole** — the geometry is a `curtainSpans` + chunk-re-bake job for the city workstream.
+  Carthage keeps no great ram on purpose, so its determinism arm stays a control.
 - ~~tower drawbridge backwards (ropes forward, door opens backwards)~~ — **does not
   reproduce**, and the measurement is signed: drawn reach **+1.940 m** off the InstancedMesh
   matrix (hinge 4.38, head 2.44). Do not "fix" it without a signed measurement saying it is
@@ -442,12 +562,16 @@ feeling.
   when a field actually moved.
 - **`LightingSystem.resize` early-returns unless the cascade count changed, so writing
   `shadowMapSize` at runtime is a silent no-op.** Another instance of the house failure mode.
-- **`quality.maxSoldiers` is sim-side and `setQuality` used to overwrite it.**
-  `BattleSystem.init` sizes the `SoldierPool` and eight typed arrays from it and
-  `scenario.ts:293/644` scale unit size through `fittedUnitScale`, so a runtime tier switch
-  took a deployed battle's cap to 1,600. It is pinned now. **`low` is not merely a render
-  tier** — it deploys 1,515 men against ultra's 8,632, which is why a low-tier frame
-  photographs a different battle.
+- ~~**`quality.maxSoldiers` is sim-side and `setQuality` used to overwrite it.**~~ **The field
+  is gone, `e/core/quality-sim-split`.** It sized the `SoldierPool` and eight typed arrays, and
+  `scenario.ts` scaled unit size through `fittedUnitScale`, so `low` was never merely a render
+  tier: it deployed 1,515 men against ultra's 8,632 and a low-tier frame photographed a
+  different battle. Pinning it at construction stopped a *runtime* tier switch resizing a
+  deployed army and did nothing about the tier choosing the army at boot, which was the actual
+  defect and which the owner ruled on. The pool is `SOLDIER_POOL_CAPACITY = 12000`
+  (`src/sim/types.ts`), one number at every tier; `SimQuality` is deleted and
+  `QualitySettings = RenderQuality`. **`low` is now merely a render tier**, which is what it
+  should always have been, and `tools/qa-determinism.mjs`'s cross-tier arm holds it there.
 - **MSAA `medium: 2` is gone.** 4x against none is 1.18 ms and 4x against 2x is 0.07 ms, so
   2x paid 94 % of full price for half the samples. `MSAA_SAMPLES` is now a binary 0-or-4
   lever worth 1.18 ms. `low` has always run 0 and grass sets `alphaToCoverage`
@@ -1577,9 +1701,13 @@ figures are inflated by family resemblance to an unknown degree.
 
 Two things were tried inside that set and rejected — do not retry them. Pydna at its 19:00 preset
 renders at a few percent luminance with a blown sun blob and nothing else legible, which a grader
-sorts as "the dark one". And the honest non-ultra frame must be `high`, not `low`: `maxSoldiers`
-is 1,600 at low and 3,200 at medium against an order of battle of 8,632, so a low-tier frame
-photographs a different battle and is sorted on headcount rather than filtering.
+sorts as "the dark one". And the honest non-ultra frame was `high` rather than `low` because
+`quality.maxSoldiers` was 1,600 at low and 3,200 at medium against an order of battle of 8,632, so
+a low-tier frame photographed a different battle and was sorted on headcount rather than
+filtering. **That reason has since been removed at the source** — the soldier pool is
+`SOLDIER_POOL_CAPACITY`, one number at every tier — so `low` is now a legitimate deck tier and the
+graded set has an unexplored axis in it. `high` is kept in `deck-rout` because the deck's numbers
+were measured there; moving it is a grading decision, not a side effect of this.
 
 `reference/museum/` holds 41 licence-verified photographs (PD/CC0/CC BY/CC BY-SA, provenance in
 `ASSETS.md`) for **accuracy only** — a grader separates photography from rendering on sensor noise
@@ -2050,36 +2178,54 @@ applies is the number the record carries. 4.27 cm against a 0.72 m rank pitch.
   at the shared checkout, so the default `node_modules/.vite` is one dependency cache written by
   as many vite processes as there are agents running a gate.
 
-### The graphics tier is a simulation input, and only through one field
+### The graphics tier was a simulation input, through one field, and is not any more
 
 The video pass measured it as an outcome rather than a headcount — Campus Martius assault,
 seed 4265438264, hard: **ultra 3,074 men, medium 3,009**; at ultra the ram crew dies 16 m short
 of the door and lands nothing by t+520, at medium it lands 26 blows and the Porta Flaminia opens
-by t+240. A record has to carry the tier or a replay watched at another one is a different
-battle that will read as a determinism bug.
+by t+240. The owner's ruling was verbatim: *"definitely graphics settings should not change
+outcome of battle lol."*
 
-So the scope was checked rather than assumed, and it is narrow and well-typed:
-`QualitySettings = SimQuality & RenderQuality`, **`SimQuality` has exactly one member**,
-`maxSoldiers`. `Engine` freezes it at construction and re-asserts
+The scope was checked rather than assumed, and it was narrow and well-typed:
+`QualitySettings = SimQuality & RenderQuality`, **`SimQuality` had exactly one member**,
+`maxSoldiers`. `Engine` froze it at construction and re-asserted
 `q.maxSoldiers = this.simQuality.maxSoldiers` after every patch, so a mid-battle tier press
-cannot resize the army. Every read of `ctx.quality.*` across `src/sim`, `src/ai` and
-`src/units` is either `maxSoldiers` — thirteen sites, all in `BattleSystem.init` and the two
+could not resize the army. Every read of `ctx.quality.*` across `src/sim`, `src/ai` and
+`src/units` was either `maxSoldiers` — thirteen sites, all in `BattleSystem.init` and the two
 `fittedUnitScale` calls in `scenario.ts` — or `lodFarDistance`, which is the impostor swap
-distance. **Nothing else on the settings path reaches the simulation.** Pause and speed are the
-other three UI writes to sim-adjacent state (`TopBar`, `HudSystem` hotkeys, `deployment`), and
-they change how many ticks happen per wall second rather than what a tick does — which the
-record is immune to by construction, because it is keyed to the tick index.
+distance and is render-only. **Nothing else on the settings path reaches the simulation.**
+Independently re-verified on `e/core/quality-sim-split`, and two near-misses are worth naming
+because both look like leaks and are not: `Ragdoll.claimSlot` reads the camera position inside a
+fixed step, which is player input in a tick and is safe only because the system is
+write-isolated from the pool (its own comment says so); and `roughDrag` is published by
+`ObstacleField` from the city's standing work, not by `grassDensity`, which is a render field
+read only by `GrassField`. Pause and speed are the other three UI writes to sim-adjacent state
+(`TopBar`, `HudSystem` hotkeys, `deployment`), and they change how many ticks happen per wall
+second rather than what a tick does.
 
-The record carries `quality`, the effective `unitScale` and `pool.count` at t+0; `?quality=` is
-applied *before* `?replay=` is decoded so the record's answer overwrites it; and a token whose
-army this run cannot field is refused by name. Two arms of the gate check exactly that.
+**The one field is deleted.** `SOLDIER_POOL_CAPACITY = 12000` in `src/sim/types.ts`, one number
+at every tier; `SimQuality` is gone and `QualitySettings = RenderQuality`, so a future
+simulation-side quality setting cannot be added by widening an intersection — it would have to
+arrive as a `BattleConfig` field, which is something a player chooses and which travels in the
+`?battle=` token and in a replay record. `fittedUnitScale` no longer takes a pool-size argument,
+so there is no parameter left through which a setting could be passed in. `low` and `medium` grew
+to the `high`/`ultra` battle; `high` and `ultra` did not move, and **all 21 pinned checkpoints of
+`tools/determinism-baseline.json` are bit-identical across the change** — `Math.min` was already
+binding on the asked unit size at `high`, and the new ceiling is the old `ultra` one.
+
+The record still carries `quality`, the effective `unitScale` and `pool.count` at t+0. The tier is
+provenance now; the `unitScale` refusal is kept because a *build* can still fit a different scale
+for the same config, and that is the case where a silent substitution would be worst.
 
 ### The other thing a gate must not be: pointable at nothing
 
-`node tools/qa-determinism.mjs --battle=rome` appends a meaningless `&rome`, loads the
-**default field battle**, looks up `baseline['rome']` which does not exist, compares nothing,
-and exits 0. The three real invocations are no flag, `--battle="map=campus-martius&scenario=assault"`
+`node tools/qa-determinism.mjs --battle=rome` appended a meaningless `&rome`, loaded the
+**default field battle**, looked up `baseline['rome']` which does not exist, compared nothing,
+and exited 0. The three real invocations are no flag, `--battle="map=campus-martius&scenario=assault"`
 and `--battle="map=carthage&scenario=assault"`; the headcount is the tell, 8,632 / 3,074 / 3,440.
+**`--battle` is validated now rather than documented** — every segment must be `key=value` with a
+key `src/` actually reads, or the run exits 2 with those three invocations printed. Documenting a
+trap for months did not close it.
 
 `qa-replay.mjs` was written not to inherit that. An unknown flag or `--only=` arm exits 2. The
 record arm asserts a headcount, a tick count and a checkpoint count before anything is compared,
@@ -2112,6 +2258,593 @@ holding those scripts open after their last line.
   smaller army. Right behaviour, bad outcome, and §7.5 of the design says so.
 - The checkpoint grid is 30 s, so a playback can be up to 30 s of battle behind the fault it is
   about to report. Cheap to tighten if it ever matters; nothing suggests it does.
+
+## Session — 21 Aug 2026: the deployment boxes widened east, on `e/sim/deploy-boxes`
+
+The owner's decision, verbatim: *"battle lines should fit their deployment boxes. I would
+recommend widening boxes east."* That discharges the half of `ROME.md` §15 task 14 that was
+reserved for the owner, and §15 task 14 now carries the whole thing with its numbers. **Not
+merged; branch reported and left for the orchestrator.**
+
+**What was wrong.** Task 1 moved the Tiber onto the survey and moved both deployment boxes east
+with it. Nothing sized either box against the army standing in it: the Roman line is 684 m across
+its own men in a 500 m box and the host 783 m in a 760 m one, so **562 Roman and 182 Juthungi men
+stood outside their own box**. Outside a box the heightfield never flattens and the scatter never
+clears, and `battleCoreMask` was still centred on x 0 with a 540 m half-width while the battle
+stood 271 m east of it — so **440 men were fighting outside the damped corridor entirely**.
+
+**What changed, and the numbers on each.**
+
+| | before | after |
+|---|---:|---:|
+| Roman / Juthungi men outside their own box | 562 / 182 | **0 / 0** |
+| worst slope under a man, Rome / host | 0.315 / 0.048 | **0.074 / 0.076** |
+| trees within 4 m of a man, Rome / host | 1 / 4 | **0 / 0** |
+| ground the boxes flatten and clear | 18,247 cells | **27,417, +14.67 ha** |
+| men outside `battleCoreMask` | 440 | **0** |
+| damped corridor | 44,740 cells | **62,312, +28.1 ha** |
+| `standOnDeploymentGround` shift, Rome / Carthage / Pydna | 271.146 / 0 / 0 | **351.146 / 0 / 0** |
+
+Attacker box half-width 380 → 515 about cx 205 → 340; defender 250 → 425 about 205 → 380.
+**Both west edges are unmoved** — they are the lines task 1 measured against standing water, and
+a symmetric widening would have put a quarter of the Roman parade ground in the Tiber. The 80 m
+eastward shift is one feather: `standOnDeploymentGround` anchors the line's west end to the box
+and was anchoring it to the rectangle's edge, which is the contour where the mask reaches
+**zero** — that was the four leftmost files of the left-wing equites, 14 men, standing on ground
+the box had done nothing to while the rule reported success. `DeployBox.feather` is published as
+data for the inset to read; Carthage's and Pydna's 980 m boxes were slack by ~148 m, so their
+field battles still report a shift of exactly 0.000 m.
+
+**Nothing about the order of battle moved.** `uctl` at t+0 is still `2b2ac282`, the value
+recorded at `88a4aa5`: order, target, formation, width, alive, kills, membership, flags and unit
+array order are byte-identical to the battle that shipped. This was a positioning change.
+
+**Determinism, re-recorded deliberately.** Both Rome arms moved and both were re-recorded in the
+same commit with the reason in `determinism-baseline.json`. `default` (8,632) moved because the
+men moved and because the ground beneath the ones that did not is now prepared — survivors at
+t+400 4,288 → 4,660. `map=campus-martius&scenario=assault` (3,074) moved from **t+90 only**, with
+`uf64`, `uctl` and all seven survivor counts unchanged: `deployAssault` never calls the placement
+rule, so that arm is men crossing ground that shifted east of the gate. **Carthage (3,440) is
+bit-identical at all seven checkpoints on all three marks** and is the control. The instruction
+for this pass named the field battle as a control; it is not one — `default` *is* the Campus
+Martius field battle, and Carthage is the only arm that can play that part here.
+
+**Two instruments were wrong and are fixed.** `probe-ground.mjs`'s box audit scanned a literal
+`x −800…800`, which the widened attacker box now overruns by 48 m — it would have gone on
+reporting "0 under water, 0 over the impassable slope" over ground it never looked at. The window
+is derived from `DEPLOY_GROUND`. Same fault, same fix, one layer down: `heightfield.ts`'s row skip
+over the boxes was a transcription of their z extent and is now derived (it changes no height —
+both masks are 0 out there).
+
+**Left on the floor, and it is a number with no margin.** The defender's box is under-sized in
+**depth**, not width. Its full-strength core is z 110…190 and the Roman line is 141 m deep, so the
+twelve-man scorpio battery at z 262.5 stands where the mask reads **0.024** against the 0.02 the
+acceptance tests — inside the box by the arithmetic, on ground 2 % flattened and never cleared of
+trees. The fix is `hz` 120 → about 150, and it was left because this decision was about width,
+because at 150 the south edge comes within 17 m of the quarry at (724, 328), and because z 270 is
+already within 5 m of the Pincian's toe at x 800. `riseToeZ`'s own comment still claims the box
+"reaches z 255", which it has not for two passes.
+
+## Session — the two rams, 21 Aug 2026
+
+Branch `e/sim/rams`. Six source files, two tools: `sim/scenario.ts`, `sim/battleConfig.ts`,
+`sim/Siege.ts`, `units/siegeUnits.ts`, `city/CitySystem.ts`, `ui/siege.ts` and one widened type
+in `ui/SiegeOrders.ts`; `tools/probe-siege.mjs` and `tools/determinism-baseline.json`.
+
+**Two trees appear in the numbers below and the distinction is load-bearing.** The diagnosis
+was taken at `5338249`; §15 task 14 then widened both deployment boxes and moved
+`battleCoreMask` onto the deployment axis, which moves the ground the storm crosses, so every
+headline number was re-taken after merging `15e209f`. Where a figure is quoted at `5338249` it
+is a *diagnosis* — what was wrong and why — and where it is quoted on the merged tree it is a
+*result*. They agree on every conclusion; only the third decimal of the incidental figures
+moved.
+
+### Part 1: the light ram's defect had inverted, and the new one is worse
+
+The brief was *"the ram lands 0 blows in 12 of 12 runs, and it is tier-dependent — dead at
+(68, 514) at `ultra`, 26 blows at `medium`"*. **Neither half reproduces at `5338249`.** Measured
+at the tier the game ships at (`DEFAULT_CONFIG` is `quality: 'ultra'`, `difficulty: 'hard'`),
+`tools/scratch/rm-tier-emc.mjs`:
+
+| | blows | gate opens | crew | damage to the crew |
+|---|---|---|---|---|
+| `5338249`, ultra, 8 seeds | 26/26 ×8 | t+220 ×8 | **32/32** | **0 points, from anybody** |
+| `5338249`, medium, 2 seeds | 26/26 | t+220 | 31/31 | 0 |
+
+**The tier is not a mechanism and never was.** `SimQuality` has one member and its only route
+into this battle is `fittedUnitScale`, which is 1.0000 at ultra/high and 0.9785 at medium — a
+2 % shave that takes a 108-man unit to 106. That is enough to land a *marginal* battle
+differently, and the distribution recorded at `cc72ea6` was 0, 3, 3, 9, 19, 20, 21, 22, 23, 23,
+25, 26. One draw each side of a spread that wide is a coin, not a chain.
+
+**What made the ram invincible is one integer, and §15 task 3 turned it into a defect.**
+`deployAssault` fanned the garrison out with `fanOut(total, 1, holdable)` — start one bay out —
+which was right for as long as a gate bay could not be garrisoned. The redesigned circuit made
+Rome's gate bay ordinary garrisonable curtain *on purpose* (`circuit.ts`: *"the curtain either
+side of a gatehouse is ordinary curtain a rank can stand on"*) and put the Porta Flaminia at
+bay 1, with bays 0, 2, 3 and 4 `footing`/`gap`/`footing` per §4.8. So `holdable` rejected
+offsets −1, +1, +2 and +3, offset **0** was never offered at all, and the first ballistarii unit
+landed on bay 5. **Nearest defender to the Porta Flaminia: 134 m. Defenders within 130 m of the
+gate the ram attacks: none.** `tools/scratch/rm-recon-emc.mjs`; `rm-bays-emc.mjs` prints the bay
+census it follows from — bay 1 carries 19 stations, bays 0, 2, 3 and 4 carry zero.
+
+Fixed by starting the fan at 0, and by making offset 0 one bay rather than two (`-1 * 0` and
+`1 * 0` name the same bay and pushing both would stack two units on the gate's own curtain).
+After it, at ultra over eight seeds:
+
+- `ballistarii#0` garrisons the gate bay's own 19-station run, **65 m** from the ram's start;
+- the crew takes **1,012–2,916** points and ends at 30, 11, 30, 31, 30, 30, 15, 16 of 32;
+- **26 of 26 blows and the gate open at t+220 on 8 of 8** — and `withdrawing` → `spent` intact,
+  17.4 m clear, which was the thing not to break;
+- and the same on the merged tree after §15 task 14 moved the ground: **26 of 26 and t+220 on
+  3 of 3**, with the crew now taking fire from four units instead of none
+  (`ballistarii#1` 2,341–2,608 the heaviest, because the great ram is parked under its bay).
+  Eleven seeds across two trees, no variance in either the blow count or the hour;
+- Carthage is byte-identical: `carthageWall.ts` sets `garrisonable: !bay.isGate`, so
+  `holdable(0)` is false there and the picked-bay list does not move.
+
+**`RAM_SHED_COVER` is now measuring something on Rome for the first time.** At 0.12 the gang
+absorbs 1,012–2,916 points of ballista fire; the same fire at 1.0 is 8,400–24,300 against
+thirty-two men, which is the original finding's *4,846 points in forty seconds* several times
+over. The shed was always the right fix and it has never before been under load on this map.
+
+### The thing that matters more than either ram, and it is nobody's
+
+**Rome's assault is decided at t+56–59 in every run** — before the ram reaches the gate, before
+a ladder is climbed, with `stormHolding` at **0** and `garrisonOnWall` at 779 of 810. It is not
+this pass's doing: the same verdict at the same second appears on an unmodified `5338249`.
+`BattleFlow` ends a storm at `stormInside >= 60`. `tools/scratch/rm-inside-emc.mjs` names them:
+
+```
+t+ 50  onWall 54 holding 0 garrison 801  INSIDE 26
+       juthungi-riders#31@(115,560) 29
+t+ 60  onWall 92 holding 0 garrison 779  INSIDE 86  1/objective@58
+       juthungi-warband#28@(181,549) 46   juthungi-warband#29@(181,547) 29
+       juthungi-riders#30@(-98,580) 50    juthungi-riders#31@(111,558) 21
+```
+
+Two mechanisms wanting two different answers:
+
+- **50 of the 86 are 98 m off the west end of the circuit**, where the Tiber is and there is no
+  masonry at all. `BattleFlow.censusWall` clamps a man's bay index to the ends of the bay list,
+  so a unit past the terminus is measured against bay 0's midline and reads as *inside Rome*.
+  That is a bug in the census and it is cheap to fix.
+- the rest walk over the `footing` and `gap` bays, which §4.8 built on purpose and which
+  `BattleFlow` is right to count.
+
+Left alone deliberately — the first is `BattleFlow`'s, the second is a scenario-design decision
+about what the unbuilt neck is *for*, and Rome's balance is reserved. **But every ram figure
+anybody has ever quoted for this map, including this pass's, is read out of a battle `finish()`
+has already ended.** They are properties of the machine, not of the battle, and nothing about
+the machines will feel right until this is settled.
+
+### Part 2: the great ram is fielded
+
+Four seams named in the record, all four shut, plus a fifth nobody had named.
+
+1. **`great-ram-crew`**, Faction.Germanic, **48 men** — the machine's own layout read back, as
+   `ram-crew`'s 32 is: `musterRams` puts a great ram's gang six abreast, and the last row still
+   inside `GREAT_RAM_HALF_D + SHED_COVER_REACH` = 10.40 m is row 7 at 9.60. Eight rows of six.
+   Every other stat is `ram-crew`'s unchanged, on purpose — a bigger machine worked by the same
+   gang, not better soldiers.
+2. **`StormPlan.greatRam`, optional**, and `siegeJuthungi` pays for it **out of the horse**:
+   `'juthungi-riders': 2 → 1`, `'great-ram-crew': 1`. Still exactly `MAX_UNITS_PER_SIDE`. The
+   horse is what `STORM_PLANS.horse`'s own comment calls *"nothing to do until a gate opens"*,
+   and on the shipped assault that is literal — no cavalry unit is ever ordered at the wall, and
+   one of the two squadrons spends the battle 98 m off the end of the circuit (above). Headcount
+   3,074 → **3,072**. Weighed and rejected: a warband is 180 men and the only reserve the storm
+   has; an `escalade-party` is three ladders and a bay of frontage; an `onager` battery is the
+   artillery workstream's. **Scipio's train is deliberately not given one**, which is what keeps
+   the Carthage assault a clean determinism control.
+3. **`deployAssault` calls `spawnGreatRam`** — its first caller in `src/` — at the first
+   `holdable` bay working outward from the gate, 62 m out on that bay's normal. On Rome that is
+   bay 5, the west end of the Muro Torto, 134 m along the curtain from the gate, because §4.8's
+   four unbuilt bays have no masonry to break and no stations to aim at.
+4. **`CitySystem.breachWall`** — records the hole, clears the occupancy raster across the curtain
+   on the bay's own outward normal, re-cuts the oriented boxes. `pushWallBox` now punches out
+   **every** hole crossing a run instead of the first one it finds, because a bay can carry a
+   gate *and* a breach and Rome's gate bay is one; with one gate and no breaches it emits the
+   same two boxes it always did.
+5. **The fifth seam: `stormBreach` was unreachable through the order path.** `wallTargetAt`
+   refuses a dead station and every station over a breach is dead, so a right-click on the
+   rubble read as *"not the parapet"* and `interceptOrders` dropped it in exactly the silence
+   that branch was written to end. `findEscalade` now answers `kind: 'breach'` within
+   `ESCALADE_REACH` of a breach station — **ahead of towers and ladders**, because eight metres
+   of storming front outranks one man at a time on a rung — `escalade` routes it to
+   `stormBreach` with a rally point 30 m inside the curtain, and `Siege.breachAt(x, z)` is the
+   published loose test the order path and the cursor both read.
+
+6. **The sixth seam, which the fifth exposed: a second breach destroyed the first one.**
+   `buildLinks` opens with `this.links = []` and a breach appends its lanes to that array, so
+   the second bay to fall wiped the first bay’s five lanes and left `breachLinks` naming stairs
+   and tower passes. `probe-siege` spawns a great ram alongside the one the scenario now
+   deploys, and with two breaches it reported *“-18 men climbed the rubble … across 10 lanes”*
+   and a waiting man **190 m** from a lane mouth. Lane construction is now
+   `cutBreachLanes(station)`, re-run for every entry in `breachStations` after each collapse,
+   with the crossings already made banked into `breachThroughBase` before `buildLinks` can
+   destroy the counters. Reachable only because a scenario finally fields one — which is the
+   argument for fielding things.
+
+### `WALL_BLOWS` 74 → 44, timed rather than chosen
+
+74 was picked before anything fielded one, so it could not be timed. It can now: the machine
+starts 62 m out, which is 97 s of rolling, so the breach lands at `97 + blows × 7`.
+
+| blows | breach at | what the battle looks like there |
+|---|---|---|
+| 74 | **t+620** ×2 seeds | the gate has been open 400 s; three units ordered through the hole the second it opened put **6 and 0** men inside before an 800 s window ran out |
+| 44 | **t+420** on 6 of 6 seeds, 3 before the box widening and 3 after | gate at t+220, wall 200 s later — two ways in, in one battle, far enough apart to be two events |
+
+A breach nobody can reach is the same as no breach, which is the defect this pass exists to
+close, so the number is sized against the machine finishing inside a battle. 44 is still
+5 min 08 s of battering against the gate ram's 1 min 54 s — the wall is plainly 2.7× the job the
+door is, which is the relationship worth having — and it leaves five minutes for a defender's
+fire or sally if one is ever built. **What would move it back up:** the host storm order.
+Nothing in `src/ai/` sends a warband at a breach or through an open gate, so the men who should
+be waiting at the hole are 132 m out on Hold. The day they are there, a late breach stops
+costing anything. Re-time it then; do not re-guess it.
+
+### What a breach looks like as a route
+
+`breachReport()` goes from `lanes: 0` on both maps to **5 lanes across one bay**, `sDead` set
+over ±4.5 m, the garrison on that stretch rehoused rather than killed, the occupancy raster
+open and the oriented boxes split either side of the hole. Men are ordered through it by
+`events.emit('orderIssued', …)` — the same event the player's right-click and `ai/Orders.ts`
+both fire, deliberately not `stormBreach` itself, because a probe that calls the verb it is
+asserting about can never fail.
+
+**The number is the whole argument for the machine.** The two nearest foot units on the field
+side, ordered at the hole the second it opened, put **412, 197 and 312 men** inside the curtain
+on three seeds of three on the merged tree at the shipped tier. For comparison `probe-siege`'s own gate assertion — four units ordered into the city through
+the carriageway the light ram opened, nearest 44 m away — measures *"2 at the moment of the
+breach, peak 3"*. A gate is 4.3 m of carriageway with a gatehouse round it and a killing ground
+behind it; a breach is 8 m of front with nothing behind it but the city. That is what "wider
+than a gate" buys, and it is a number now rather than a sentence. Before §15 task 14 widened
+the boxes the same order put 186 and 156 men through — the host now starts on prepared ground
+and closer in, so more of it arrives.
+
+**Not done, and visual only: the curtain is still drawn standing over the hole.** A bay's
+masonry is baked into one of five `wall-N` chunks at load and nothing can re-bake one. The seam
+is `rome/apertures.ts curtainSpans`, already the single place that decides where curtain is
+*not* laid: give it the breach list and re-bake the affected chunk. That is a city-workstream
+change and it is written down rather than half-done.
+
+### `probe-siege`: 42/48 on this tree against 41/48 on the control
+
+Two of its aiming rules were written when the Porta Flaminia was bay 19 of 33 and every
+neighbour was finished curtain. On the redesigned circuit the gate is bay **1** of 36 and both
+rules walk off the end of the wall:
+
+- the great-ram search ran `gi - 6` down to `0`, so it started at -5, never ran, and reported
+  *"no garrisonable bay clear of the gate"* — **six assertions were not failing, they were not
+  being taken**, since `0372fc2`;
+- the ascent test aimed at `bays[gi + 3]`, which is bay **4**, one of §4.8's bare `footing`
+  bays: no walkway, no stations, `wallTargetAt` correctly -1. That is why *"a click on the
+  parapet resolves to a wall station"* has been red for two passes — the probe was clicking on
+  a construction site — and the assertions downstream of it were measuring whatever
+  `stationNear` returned for a point with no masonry under it.
+
+Both now fan outward in both directions to a bay that can carry men, which is also the rule
+`deployAssault` uses. Measured like-for-like with the same probe against `15e209f` served
+alongside on another port:
+
+| | this tree | `15e209f` control |
+|---|---|---|
+| total | **42/48** | 41/48 |
+| a click on the parapet resolves to a wall station | PASS | PASS *(red on both before the aim fix)* |
+| a great ram can be sent against a curtain bay | PASS | PASS *(not taken at all before the aim fix)* |
+| nobody teleports or is flung while using a stair | PASS | FAIL |
+| a run that is already occupied is shared, not overwritten | PASS | FAIL |
+| men can actually get through the gate the ram opened | **FAIL** | PASS |
+| a breach is a way into the city | FAIL, closest man **7.09 m** from a lane mouth | FAIL, closest man **59.20 m** |
+
+**The gate assertion is red because the fix worked.** It orders the four nearest free attacking
+units at the carriageway and counts who walks in. On the control the nearest is **14 m** from
+the gate and strolls through, because nothing defends it. On this tree the nearest is **63 m**
+and the ground between is a fight: the Porta Flaminia has 108 ballistarii over it now. The
+gate's own mechanical assertions still pass — *"the ram breaks the gate open and the passage
+clears"* with `blocksMovement` false, *"no ram is left standing in the passage it opened"*,
+*"no crew is pinned to a machine it has broken from"*. What changed is that walking in
+unopposed is no longer a thing that happens, which is the point of the pass. The assertion is
+worth restating as "can a unit **fight** its way in", and that is a probe decision rather than
+this branch's to make silently.
+
+**The breach assertion is red on both, and much less red here.** Its men now queue **7.09 m**
+from a lane mouth against 59.20 on the control — they reach the hole instead of never
+approaching it — and admission is 2 m, so it is one shuffle short inside its own budget. The
+mechanic itself is demonstrated by the instrument that goes through the player's order path
+instead of calling `stormBreach` directly: **412, 197 and 312 men inside the curtain on three
+seeds of three.** `probe-siege` spends its budget on a battle already advanced through eleven
+other tests with two great rams and two breaches in it.
+
+### Determinism
+
+Three arms, all quoted so the `&` cannot background the shell, on the final merged tree.
+**§15 task 14 re-recorded `default` (all seven) and the Rome assault (t+90 onward; t+0 and t+30
+were unchanged at 3,074, because the box widening moves the ground and not the start line).
+This pass moves Rome again, from t+0, because the deployment itself changes.**
+
+- `node tools/qa-determinism.mjs` — **UNCHANGED** at all seven checkpoints, **8,632**.
+- `node tools/qa-determinism.mjs --battle="map=carthage&scenario=assault"` — **UNCHANGED** at
+  all seven, **3,440**.
+- `node tools/qa-determinism.mjs --battle="map=campus-martius&scenario=assault"` — **DRIFTED at
+  all seven, deliberately, and re-recorded in the same commit.** A and B were identical at every
+  checkpoint before the re-record, so the new battle is reproducible; only the pin moved.
+
+**The Rome headcount tell is now 3,072, not 3,074.** One squadron of horse (50) out, one great
+ram crew (48) in. Anyone checking they measured the right map should expect 8,632 / **3,072** /
+3,440 from here on. Two things moved this arm and both were meant to: the garrison now holds the
+gate bay, and the storm fields a nineteenth unit and a twentieth machine.
+
+### Traps this session paid for
+
+- **A dev server serves a stale module after a whole directory is replaced.** The measurement
+  arms here are `cp -R src` snapshots on their own ports; replacing `src` wholesale (`rm -rf`
+  then `cp`) loses Vite's watcher, and a 44-blow tree reported a breach at t+620 with `bayBlows`
+  74. Restart the server after a bulk copy and **verify through the wire** —
+  `curl .../src/sim/Siege.ts | grep 'WALL_BLOWS = 44'` — not off the file on disk.
+- **Do not edit `src/` while a measurement is running.** HMR is off but each page load still
+  gets fresh transforms, so seed 5 of an eight-seed sweep silently measures a different tree
+  than seed 4. An eight-seed baseline was lost to this mid-run. Snapshot, serve, then edit.
+- **A damage ledger that reports "nobody" needs a control outside itself.** `rm-tier-emc`
+  attributed zero points to the ram crew and that *was* the finding — but the same wrap counting
+  *every* victim reports 106,336 points in 5,291 events, which is what makes the zero a
+  measurement rather than a broken instrument.
+- **A damage ledger keyed on "the ram crews" silently gained a second machine.**
+  `rm-tier-emc` builds its victim set from `ramReport()`, so the moment the scenario fielded a
+  great ram the ledger began pooling two crews 134 m apart and the *gate* crew’s attribution
+  stopped being separable from the great ram’s. The clean measure of the shed is
+  `ramReport()[gate].crewAlive`, which is per-machine; the pooled points are still the right
+  number for “how much fire the roofs absorbed”, but they are not the number the gate ram’s
+  entry in the table describes. Labelled rather than re-run.
+- **"The three nearest free units" is not the population an order is about.** Ordering men
+  through the breach picked, on two seeds of three, units that were *already inside the city*
+  through the unbuilt bays — `interceptOrders` branches on `sideOf` first and gives them the
+  defenders' stairs — and on the third, two onager batteries, which `mayClimb` refuses by
+  `unitClass`. Both refusals are correct and both read as "the breach does not work".
+## Session — 21 Aug 2026: the game tells the truth about what it just did
+
+Branch `e/fix/game-tells-the-truth`, off `main` at `58bc584`. Seven items from the gameplay
+judge's round one (`docs/judge/GAMEPLAY-FINDINGS-R1.md` on `e/judge/gameplay`). Everything below
+was proved by playing — the judge's own rig, `tools/judge/*`, driven at `advanceTicks(n, 1000/60)`
+against a dev server on port 5901 in this worktree, with the `main` tree served on 5902 for the
+before arm. Every figure is a before **and** an after.
+
+### The rule the whole pass is an application of
+
+**A derived number must be derived once.** Every one of these defects is a panel deciding
+something the simulation had already decided:
+
+| the panel decided | the arbiter already knew | what it printed |
+|---|---|---|
+| which victory condition fired | `finish()` raised it | *"The wall was carried"* under `HELD ×5` |
+| whether a unit was lost | `unitsLost` counted it | **Held**, at 4 men of 160 |
+| what the army was committed at | the roster at BEGIN | `−0` for a whole battle |
+| whether an order would be obeyed | `Siege` refused it a tick later | nothing at all |
+
+So four of the six fixes are the same fix: publish the decision, render it, and make the
+compiler refuse a rendering that does not cover every case the arbiter can raise.
+`WallCondition`, `unitOutcome`, `WallRefusal`/`WallVerb` and `Dispatch` are all `Record<>`s for
+that reason — a new case does not compile until somebody writes what the screen should say
+about it.
+
+### What moved, measured
+
+- **A routing man no longer counts as holding ground.** `censusWall` tested faction, `elevated`
+  and alive; `UnitOrder.Rout` was not in it. `Siege.broken` — the predicate that already served
+  the ram crew, the tower gang and the escalade party — moved to `types.ts` as **`isBroken`**
+  rather than gaining a fourth private copy, and the census now excludes broken storm units from
+  the run bins behind `stormHolding` (condition A) **and** from the pool walk behind `stormInside`
+  (condition B). `stormOnWall` deliberately still counts them: it is a description of the parapet,
+  and a man running along it is on it.
+
+  > **This shipped half-wired at `85d6b7d` and the correction is `adec57a`.** The `Set` of broken
+  > unit ids was written and read nowhere: the exclusion was achieved by a `continue` that skipped
+  > the lodgement binning, so it reached condition A — where it changes nothing, because
+  > `stormHolding` has never been non-zero anywhere — and **not condition B, which is the
+  > condition that decides every siege in this game.** The first write-up asserted the behaviour
+  > intended rather than the behaviour shipped, which is worse than understating it, because the
+  > next reader stops looking. A set with one writer and no reader is the shape of a fix that was
+  > designed and not wired, and no compiler can see it: the write is legal on its own. The
+  > implementation was not a one-liner *at the site* — the break-in walk iterates the soldier pool
+  > and has no unit in hand — but it needed no new index either: `pool.unitId` is the canonical
+  > owner of a man, written by `BattleSystem` at spawn and read by `unitOfSoldier`, `Combat`,
+  > `Projectiles` and `Siege`, so the whole cost is one set lookup per living man of the storm.
+
+  **Rome does not move, and this survives the wiring.** 8 seeds, hands-off, `jg-seeds`:
+  `Defeat/objective` 8 of 8, decided 55/56/57/58 s, median 56, before, half-wired and wired — and
+  `peak stormInside` is identical seed for seed (92, 68, 65, 81, 64, 71, 80, 69), which says the
+  filter removed **zero** men at any point before the verdict. `jg-whoisinside` says why: at the
+  deciding census **0 of 102 men inside belong to a routing unit**. The judge measured 46 of 46
+  routing at t+200.9 on the integration tree, where the battle lasts long enough for the escalade
+  to break; on `main` it is over at t+56, before anybody has broken. *The defect was real in the
+  code and its Rome attribution does not hold on this tree.*
+
+  **Carthage moves a great deal, and in the direction the rubric asks for.** 8 seeds, hands-off,
+  same seeds, `main` against this branch:
+
+  | | before | after |
+  |---|---|---|
+  | outcomes | Victory/objective 7, Victory/rout 1 | Victory/objective 6, Victory/rout 1, **Defeat/repulsed 1** |
+  | decided at | 133-308, median **271** | 244-800, median **331** |
+  | **first man inside** | t+92.8-95.6 | **t+236-262** |
+  | gate opened | 7 of 8 | **8 of 8** |
+
+  Seven of eight seeds land later and one is unmoved; none lands earlier, so it is a translation
+  rather than a reshuffle. The line that matters is the third: the break-in used to happen at
+  t+93, **123 seconds before the gate ram finishes at t+216**, and now happens after it. That is
+  the judge's own "make the battle last long enough for its own machinery to arrive", arriving as
+  a side effect of an honesty fix rather than of a balance knob — and the outcome mix goes from two
+  values to three, with one seed now *losing* a siege that was won 8 of 8 before.
+  `stormHolding` was 0 in every sample before and is 0 after: condition A has still never fired,
+  and this makes it strictly harder, which is the honest direction.
+
+  **Withdrawn: "Carthage moves 3.3 s."** That was measured on the half-wired tree, where the
+  break-in count was untouched, so it cannot have been the census. The judge is isolating it at
+  commit granularity; the likeliest cause is the 69-line order-refusal change in `78c164e`, which
+  alters `interceptOrders` and can change what the AI does. Not re-derived here on purpose — two
+  agents measuring one thing is how a number gets averaged instead of explained.
+
+  **What would change my mind about the fix itself.** If `pool.unitId` were ever stale for a man
+  whose unit had been rebuilt mid-battle, this would exclude the wrong men; `unitOfSoldier`
+  guards against exactly that with an `id` check on its cache, and nothing else in the sim guards
+  it, so if a unit-rebuild path is ever added the census is a site to re-check. And if a future
+  pass makes `stormHolding` reachable, the condition-A half of this becomes load-bearing for the
+  first time and wants its own measurement rather than inheriting this one.
+- **The card no longer contradicts its own numbers.** `reason === 'objective'` covers two
+  conditions and `wallBlock` named the one that never fires. `BattleFlowSystem.result.condition`
+  now publishes which fired (`'parapet' | 'breakIn'`), and the sentence comes from a total map.
+  Before / after on the same battle, from `jg-whoisinside`:
+  > Rome, gate **never struck**, breaches **0**, 780 of mine holding the parapet, 71 inside:
+  > *"The wall was carried."* → *"The wall itself was never carried — 71 of them are inside it,
+  > and the fighting is in the streets."*
+  > Carthage, gate **held at 73 %**, 11 storming against 1,140 holding: the same correction, at 60.
+- **A refused wall order is refused out loud.** Two halves. `refreshWallOffer` turned exactly one
+  of `traverseOfferAt`'s four answers into a sentence, so the cursor drew `wall` over three
+  refusals it already knew about; it now covers all of them. And `interceptOrders` **discarded**
+  the boolean from `moveAlongWall`/`sendToGround`/`sendToWall` and set the unit back to `Garrison`
+  either way — the silence the judge measured as *0 m closed on four of four orders, `goal` never
+  leaving `none`*. `Siege.refuse` now emits **`orderRefused`** and `EventFeed` prints it.
+  Measured, one right-click with the army selected at Rome's west end: hint *"No way along the
+  wall to bay 1 — the walk is broken in between"* **before** the button came up, then eleven
+  `orderRefused` events (8 `traverse/noRoute`, 3 `ascend/noStair`) and plates reading *"Legionary
+  Cohort I cannot — No steps reach bay 1 from the ground — there is no way up here"*. 6/6.
+- **The casualty counter after ADD UNITS.** `initialStrength` latched on the first frame that had
+  any views, which is the shipped twelve units, so a reinforced garrison read **`−0` for the whole
+  battle** while men died. It now re-counts until `simTime > 0` — the deployment phase runs no
+  fixed step, so the first tick is the first instant the order of battle is settled, and
+  re-counting also gets *removals* right where a high-water mark would not. `jg-tryhard`, 20 units
+  / 1,894 men: `−3`, `−12`, `−58` against the judge's thirteen samples of `−0`.
+- **The field-battle note was dead text.** `else if (this.lastSiege)` can never be true in a
+  battle with no wall, so `PHASE_UI[phase].note` had never been shown to anybody and the plaque
+  read *"The lines are dressing"* from t+25 to t+1140. The guard now compares the **note** rather
+  than remembering which source last spoke. `jg-pydna`: *"Ground is being closed"* → *"Arrows and
+  pila in the air"* → *"Shield against shield"* → *"A line has broken"*, in step with the heading.
+- **The dispatch cannot name an army that was not there.** Pydna's card said *"Macedon put her
+  whole levy into one line"* and *"the pikes are still coming on in step"* in a game whose three
+  armies are Rome, the Juthungi and Carthage. The cause is that **a field battle's opponent is
+  chosen in the menu** — `opponentBlocked` greys that row only for a storm — so Campus Martius
+  carried the same defect (*"nothing between the Juthungi and the Tiber bridges"* over a Punic
+  host). Every dispatch line is now a function handed the enemy that was actually fought, and no
+  line contains a faction literal. Rendered: *"The field belongs to the tribes"* → *"The field
+  belongs to the Juthungi"*. `src/maps/pydna.ts` keeps its historical account of the *place*,
+  which is a different claim and a true one.
+- **The roll of honour agrees with its own headline.** `unitsLost` counted a unit under a quarter
+  strength as lost; the roll had no word for that and printed **Held**. One function,
+  `unitOutcome`, now answers both, and the missing word is **Mauled**. Rendered: *"Naked Fanatics
+  I … 4/160 Mauled"* beside *"Units lost 3 of 19"*.
+- **The playability rig can fail.** `tools/scratch/pl-*` polled nine class names for the end of a
+  battle and the panel is `.rs-panel`, so **no playability run in this project's history had ever
+  seen a battle finish**; and `fast()` advanced at 166 ms, which `Engine.advance`'s own comment
+  says is a different battle. `pl-lib-emc.mjs` now carries `ledger`/`ck`, `ended()` on the real
+  class, and **`mustEnd()`**, which fails a run that never reaches a verdict; `fast()` drives
+  `advanceTicks(n, 1000/60)`. First run of `pl-runB` after the fix: *"result screen at t+145.6:
+  Defeat — By objective"*, 2/2 checks. Deliberately the same design and the same names as
+  `tools/judge/jg-lib.mjs` — **when `tools/judge/` lands, delete this rig rather than keeping two
+  drivers for one menu.**
+
+### The gate, and the one pin that moved
+
+Green on this branch: `tsc` clean, `lint` 2/2, **`qa-deploy` 33/33**, **`probe-seams` PASS both
+maps**, **`qa-replay` 21/21**, and all three determinism arms deterministic and green — headcounts
+8,632 / 3,074 / 3,440, ports 5903-5907 in this worktree.
+
+**One arm was re-recorded, in the commit that moved it: `map=carthage&scenario=assault`, t+400
+only.** Pool `286731a8` -> `0c561598`, alive 2193 -> 2201, `uctl` `820eb4ff` -> `1ee7fd48`. A
+`uctl` move is a real change in what the battle decided, not a portability drift. t+0 through
+t+250 are unchanged to the bit on all three hashes, which locates the cause precisely: the storm
+does not reach `BREAK_IN` until somewhere between t+250 and t+400, so nothing before that
+checkpoint can depend on the count. Both loads of the recording run were bit-identical at all
+seven checkpoints and the plain gate was re-run against the new pin afterwards — four independent
+loads agreeing. The reason is written into the baseline's own `note`, as the standing rule
+requires.
+
+The other two arms are **UNCHANGED at all seven checkpoints** and were not re-recorded: the field
+battle has no wall at all, and Rome's assault is decided at t+56 by men who are not routing.
+
+**What these arms are worth as detectors, stated because their silence was nearly quoted as
+evidence.** Only the Carthage arm can see a change to the break-in condition at all, and it can
+only see it at **t+400** — the pinned Carthage battle is not the one the menu plays; it is still
+being fought at t+400 with 2,201 of 3,440 alive, where a hands-off menu run of the same map ends
+between t+244 and t+800. So "the pins did not move" was true of the half-wired commit for two
+quite different reasons and would have been read as one. A pin is evidence about the battle it
+pins and about nothing else.
+
+### The replay's t+0 divergence, handed over rather than fixed
+
+`e/net/session` owns this record. Not touched here; measured hard and written down.
+
+`jg-replay --map=carthage` reports, identically on `main` and on this branch:
+
+```
+[replay] this record was made by a different build: the armies differ before a tick has run
+(pool; recorded 8ca295e0/b835cac3/0b2dc55e, here fa60a0ea/b835cac3/0b2dc55e)
+```
+
+- **The record is right and the playback is wrong.** `8ca295e0` is also the pinned t+0 value in
+  `tools/determinism-baseline.json` for `map=carthage&scenario=assault`. The playback's `fa60a0ea`
+  agrees with nothing.
+- Both unit hashes, `count` and `alive` are **identical**, so the two runs agree about every
+  unit's anchor, facing, target, order, formation, width, alive count, membership and array order,
+  and disagree only about where some men are standing inside those units — the four arrays
+  `poolHash` reads.
+- **Nine ordinary boots all give `8ca295e0`**: through the menu, `menu=0`, `deploy=0`, `deploy=1`,
+  `autoplay=0`, `autoplay=1`, and BEGIN pressed at 0 / 60 / 200 / 900 / 2000 / 6000 ms. Only
+  `?replay=` differs, and it differs stably. It is **not** dwell in the paused deployment phase,
+  which was the obvious theory.
+- The `BattleConfig` **round-trips through the codec byte-identical** — all 24 fields diffed,
+  including the six order-of-battle tables and the seed. The record carries `deployPhase: true`,
+  `quality ultra`, `unitScale 1`, `count0 3440`, and one `deploy` event; the playback is given a
+  deployment phase.
+- **`qa-replay.mjs` records only `campus-martius / field / high / small`** (l.246-252). No siege
+  record has ever been through the gate, which is how it stays 21/21 while every shipped siege
+  replay shows `DIVERGED` from the first frame. A Carthage-assault arm would have caught this.
+- Consequence worth its own line: `divergedAt = 0` makes `.rp-badge` read **DIVERGED** for the
+  whole playback, *including after TAKE COMMAND works perfectly* — a player who takes over a
+  battle is told the entire time that it is broken.
+- Probes used, all local and uncommitted: `x-poolt0`, `x-dwell`, `x-depflag`, `x-boot3` under
+  `tools/judge/`. Rebuild them from this section if they are wanted.
+
+### Rules earned
+
+- **A finding measured past its own verdict is a finding about a different tree.** The judge's
+  "both cities fall to men who are running away" was sampled at t+200.9 in a battle `main` ends
+  at t+56. The defect in the code was real; the attribution was not, on this tree. Read the
+  decided-at before quoting a census.
+- **A collection with one writer and no reader is a fix that was designed and not wired.** The
+  rout exclusion shipped reaching condition A, which has never fired anywhere, and not condition
+  B, which decides every siege in the game — and the give-away was a `Set` written once and read
+  nowhere, which no compiler flags because the write is legal on its own. **Grep your own diff for
+  every name you introduced and count the reads.** The same test would have caught it in ten
+  seconds and it took a second reader of the file instead.
+- **Assert the behaviour you shipped, not the behaviour you intended.** The first write-up of that
+  fix said it covered both conditions. A commit message that overstates a fix is worse than one
+  that understates it: the next reader stops looking.
+- **A refusal the compiler cannot see is a refusal that will not be written.** Three of
+  `traverseOfferAt`'s four answers had no sentence for months because the call site tested
+  `refusal !== 'noRoute'` instead of exhausting a union.
+- **One reason, two verbs, two sentences.** The first cut of `orderRefused` printed *"no steps
+  join bay 1 to the ground"* over three cohorts trying to climb onto it. The payload carries the
+  verb now.
+- `selectHard` picks a garrison off its own parapet on about half of attempts — five of eight
+  units read "no pixel answers" in one run, and a marquee over the wall selected nothing at all.
+  **`F` (select army) is the reliable real-input handle for a wall probe.**
+
+### Left on the floor, with numbers
+
+- **Rome is decided at t+56 on 8 of 8 seeds** (median 56, spread 3 s), by condition B, with the
+  gate never struck and `stormHolding` at 0 in every sample. That is the owner's balance call and
+  it is untouched here; the census is now honest about *who* does it, which is all this pass
+  claims.
+- **Carthage is now losable, and that is a balance consequence of an honesty fix.** One of eight
+  seeds turns from `Victory/objective` at t+221 into `Defeat/repulsed` at t+800 — the storm gets
+  45 men inside and cannot hold 60 there in order. **Reserved for the owner**: whether a siege the
+  player attacks should be winnable on every seed. Nothing here was tuned to produce it; it falls
+  out of requiring the sixty men to still be fighting, and the same change is what finally makes
+  the gate ram matter (break-in t+93 -> t+245, against a gate that opens at t+216).
+- Condition A has still never been non-zero anywhere. This change makes it harder, not easier.
+- `jg-pydna` still reports `brief: null` on a field battle and first contact announced nowhere —
+  both the judge's, both unowned.
 
 ---
 

@@ -22,16 +22,21 @@ const PORT = Number(args.get('port') ?? 5473);
  */
 const MAP = args.get('map') ?? 'campus-martius';
 /*
- * The tier is a scenario, not a slider, and this file used to hardcode one without saying so.
+ * The tier used to be a scenario rather than a slider, and this file used to hardcode one
+ * without saying so. **It is a slider now**, and this note is kept as the record of why.
  *
- * `fittedUnitScale` caps the order of battle at `QUALITY_PRESETS[tier].maxSoldiers`, so `low`
- * fights this battle with a third of the garrison. Measured on Rome's assault: `high` and
- * `ultra` are the *same* battle — 3,074 in the pool, 933 of Rome — because 3,074 is under
- * both caps, and the timeline is identical arm for arm. `medium` and `low` are not. So a
- * figure quoted off this instrument means nothing without its tier, and the pinned schedule
- * in `docs/tech/SIEGE.md` 5.1 carries a `quality=low` column and a `64dfb88` ultra column for
- * exactly that reason. `high` stays the default so every number this file has ever printed
- * remains comparable.
+ * `fittedUnitScale` capped the order of battle at `QUALITY_PRESETS[tier].maxSoldiers`, so `low`
+ * fought this battle with a third of the garrison. Measured on Rome's assault: `high` and
+ * `ultra` were the *same* battle — 3,074 in the pool, 933 of Rome — because 3,074 is under both
+ * caps, and the timeline was identical arm for arm. `medium` and `low` were not. So a figure
+ * quoted off this instrument meant nothing without its tier, and the pinned schedule in
+ * `docs/tech/SIEGE.md` 5.1 carries a `quality=low` column and a `64dfb88` ultra column for
+ * exactly that reason.
+ *
+ * The soldier pool is `SOLDIER_POOL_CAPACITY` now — one number at every tier — so all four
+ * tiers fight the 3,074-man storm and the `quality=low` column in SIEGE.md 5.1 describes a
+ * battle this build no longer produces at `low`. `high` stays the default so every number this
+ * file has ever printed remains comparable.
  */
 const QUALITY = args.get('quality') ?? 'high';
 const base = `http://127.0.0.1:${PORT}`;

@@ -12,6 +12,7 @@ import { el, html, icon } from './dom';
 import { ICON } from './icons';
 import type { HudModel } from './model';
 import { FACTION_UI } from './theme';
+import { WALL_REFUSAL } from './siege';
 
 /** Remembered per-unit condition, so the feed can notice changes without events. */
 interface UnitMemory {
@@ -117,6 +118,31 @@ export class EventFeed {
           `${title(e.unitId)} has rallied`,
           'Standards raised, ranks re-formed',
           e.faction === Faction.Rome ? 'good' : 'bad',
+          ctx.time.elapsed
+        );
+      })
+    );
+    /**
+     * An order the wall would not take, said out loud.
+     *
+     * The one notice here that is not a report of something that happened to an army — it is
+     * an answer to the player. It is in the feed rather than in the drag hint because the
+     * simulation decides a wall verb a tick *after* the button comes up, by which time the
+     * hint is gone: the cursor refuses what it can see coming (`refreshWallOffer`) and this
+     * catches the rest. Before it, a refused wall order was a unit that stood still and said
+     * nothing — four orders, 0 m of four, including one to the bay next door.
+     *
+     * Keyed on the unit so a player leaning on the button gets one plate with a count rather
+     * than three, and toned `bad` because it is a thing that did not happen.
+     */
+    this.offs.push(
+      ctx.events.on('orderRefused', (e) => {
+        this.push(
+          `refuse${e.unitId}`,
+          ICON.rout,
+          `${title(e.unitId)} cannot`,
+          WALL_REFUSAL[e.refusal](e.bay, e.verb),
+          'bad',
           ctx.time.elapsed
         );
       })

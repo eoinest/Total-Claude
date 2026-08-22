@@ -418,13 +418,94 @@ export interface UnitGroupState {
   concealed: boolean;
 }
 
+/**
+ * Has this unit stopped being able to work a machine, hold a place in its file, or hold
+ * ground?
+ *
+ * The one predicate behind every "we are still driving men who have broken": the ram crew
+ * that fled while the ram went on rolling, the tower gang, the escalade party that stood at
+ * the foot of its own ladders playing a run cycle — and, since a routing man is not holding
+ * ground either, the break-in census that decided both sieges. Each of those was written out
+ * longhand at its own call site and the copies did not agree.
+ *
+ * It lived as `Siege.broken` while all three of its readers were inside `Siege`. It moved
+ * here rather than gaining a fourth private copy in `BattleFlow`, which is what the last
+ * three bugs of this shape in this project were.
+ *
+ * Deliberately **not** the negation of a type predicate like `Siege.mayBoard`. A false branch
+ * that narrows `u` to `undefined` is exactly wrong here, because a live unit that is merely
+ * routing is the case this exists for.
+ */
+export const isBroken = (u: UnitGroupState | undefined): boolean =>
+  !u || u.destroyed || u.alive === 0 || u.order === UnitOrder.Rout;
+
 // ---------------------------------------------------------------------------
 // Soldier pool
 // ---------------------------------------------------------------------------
 
 /**
+ * How many men a battle can hold. **One number, at every quality tier, on every machine.**
+ *
+ * This used to be `QUALITY_PRESETS[tier].maxSoldiers` — 1,600 at `low`, 3,200 at `medium`,
+ * 10,000 at `high`, 12,000 at `ultra` — and that was a graphics setting reaching into the
+ * simulation. `fittedUnitScale` fits the whole order of battle to the pool, so the tier fixed
+ * the pool, the pool fixed `unitSizeScale`, and `unitSizeScale` is a simulation input. The
+ * measured consequence, on one map, one scenario, one seed (Campus Martius assault, seed
+ * 4265438264, hard):
+ *
+ *     quality   men     ram crew                     gate blows    gate opens
+ *     ultra    3,074    dead at (68,514) by t+100    0 by t+520    never
+ *     medium   3,009    reaches the gate             26 by t+240   t+180..240
+ *
+ * Different headcount, different battle, different result, from a shadow-quality dropdown. The
+ * owner's ruling was that graphics settings must not change the outcome of a battle, and this
+ * constant is the whole of the fix: nothing on the settings path can size an army any more.
+ *
+ * **12,000, because that is what `ultra` gave and `ultra` is the tier the game ships on.**
+ * `main.ts` opens on ultra for players as well as for the harness, and `high` and `ultra` were
+ * already bit-identical on all three pinned battles — `Math.min` in `fittedUnitScale` binds on
+ * the *asked* unit size long before the pool cap does. So making every tier the ultra tier
+ * leaves the shipped battle untouched to the bit, moves the recorded baseline not at all, and
+ * changes only `low` and `medium`, which were the tiers quietly fielding a different war. Every
+ * one of the 21 pinned checkpoints was re-measured across this change and none of them moved.
+ *
+ * **What a low tier gives up instead.** Resolution (`renderScale`, `maxPixelRatio`), shadow
+ * cascades and map size, SSAO, motion blur, volumetric light, depth of field, grass density and
+ * the LOD/impostor switch distance — the whole of `RenderQuality`, which is what a graphics
+ * setting is allowed to spend. Fewer men is not a graphics concession; it is a smaller battle
+ * wearing a graphics setting's clothes. A machine that genuinely cannot run 8,632 men has an
+ * explicit lever for that: the menu's **battle size** row, which is a `BattleConfig` field, is
+ * greyed with a reason where it does not apply, travels in the `?battle=` token and is carried
+ * by every replay record. `small` fields about 2,150 men on the field battle. That is a choice
+ * the player makes and can see, which is the difference that matters.
+ *
+ * **The cost of holding it at every tier is memory, once, and not frame time.** At 12,000 the
+ * simulation-side typed arrays are about 3.5 MB and the soldier instance buffers about 12.5 MB
+ * (9 tiers × 12,000 × 116 B — the figure `docs/tech/RENDERING.md` §2 already quotes for ultra),
+ * plus about 2 MB of per-man render state. A `low` machine used to allocate those at 1,600, so
+ * this asks it for roughly **16 MB more, allocated once at boot**. That is a real cost and it is
+ * a small one in absolute terms; more to the point it is the *right* cost, because
+ * `geometry.instanceCount` is set to the men actually drawn on every frame, so an unfilled
+ * buffer is never traversed and never uploaded. What used to scale with the tier was the
+ * *battle*, and that is precisely the thing that must not.
+ *
+ * `fittedUnitScale` still exists and still clamps, against `* 0.94` of this number — 11,280 men,
+ * with the 6% headroom absorbing the unscaled artillery crews. It is now a bound on how large a
+ * battle the engine will hold, identical everywhere, rather than a bound on how large a battle
+ * your graphics card is deemed worthy of.
+ *
+ * What would change my mind: a measurement showing the allocation itself — not the simulation
+ * of the men, not the drawing of them — is what fails on real weak hardware. Then the pool
+ * becomes a pure function of the `BattleConfig` (`spawnList` already computes the exact figure)
+ * and is sized to the battle rather than to a ceiling, which is still tier-independent and
+ * still satisfies the ruling. It would cost `BattleSystem` a constructor argument and
+ * `UnitRenderSystem` an init-order dependency, which is why it is not the first answer.
+ */
+export const SOLDIER_POOL_CAPACITY = 12000;
+
+/**
  * Every per-soldier field the sim and renderer need, laid out as parallel typed
- * arrays. Allocate once at battle start with the quality tier's soldier cap.
+ * arrays. Allocate once at battle start with `SOLDIER_POOL_CAPACITY`.
  */
 export class SoldierPool {
   readonly capacity: number;

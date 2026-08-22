@@ -22,6 +22,7 @@
  */
 
 import type { EngineContext } from '../core/Engine';
+import type { WallRefusal } from '../core/events';
 import { Faction, UnitOrder } from '../sim/types';
 import { el } from './dom';
 import type { HudModel, UnitView } from './model';
@@ -34,6 +35,7 @@ import type { PointerTracker } from './pointer';
 import { abilityUI, PLAYER_FACTION } from './theme';
 import type { PlayerOrder } from '../sim/replay';
 import type { GhostSpec, WorldOverlay } from './WorldOverlay';
+import { WALL_REFUSAL } from './siege';
 
 export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select' | 'wall' | 'refuse';
 
@@ -357,7 +359,7 @@ export class SelectionController {
      * three metres of stone they started on with no plan open and nothing said.
      */
     traverseOfferAt?(unitId: number, x: number, z: number): {
-      ok: boolean; refusal: string; bay: number;
+      ok: boolean; refusal: WallRefusal | 'none'; bay: number;
     };
   } | null = null;
 
@@ -909,9 +911,20 @@ export class SelectionController {
     // city still has one and would be answered about a walk it is not on.
     if (!this.selectionOnWall() || !probe.traverseOfferAt) return;
     const o = probe.traverseOfferAt(lead.id, this.wallX, this.wallZ);
-    if (o.ok || o.refusal !== 'noRoute') return;
-    const where = o.bay >= 0 ? `bay ${o.bay}` : 'that stretch';
-    this.traverseRefusal = `No way along the wall to ${where} — the walk is broken in between`;
+    /*
+     * **Every** refusal, not only `noRoute`.
+     *
+     * This read `if (o.ok || o.refusal !== 'noRoute') return;`, so three of the four answers
+     * left `traverseRefusal` empty — and an empty refusal is not "no objection", it is the
+     * cursor going on to draw `wall` over an order the simulation will not take. The judge's
+     * matrix is what that looks like from the mouse: fifteen bays offered to one cohort, four
+     * of them taken, **0 m closed on all four**, including to the bay 37 m away.
+     *
+     * `WALL_REFUSAL` is shared with the feed, so the sentence the cursor shows before the
+     * click and the one the field sends back after it are the same sentence.
+     */
+    if (o.ok || o.refusal === 'none') return;
+    this.traverseRefusal = WALL_REFUSAL[o.refusal](o.bay, 'traverse');
   }
 
   /**

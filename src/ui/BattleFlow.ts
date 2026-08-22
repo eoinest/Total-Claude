@@ -13,6 +13,7 @@ import { activeMap } from '../maps';
 import type { MapId } from '../maps';
 import { ICON, standardGlyph } from './icons';
 import type { HudModel } from './model';
+import { unitOutcome, type UnitOutcome, type WallCondition } from '../sim/BattleFlow';
 import { readSiege, type SiegeRead } from './siege';
 import { FACTION_UI, HARNESS, PLAYER_FACTION } from './theme';
 
@@ -35,25 +36,59 @@ import { FACTION_UI, HARNESS, PLAYER_FACTION } from './theme';
  * the clock exactly as before.
  *
  * `victory`/`defeat` are always written from the player's side (`PLAYER_FACTION`, Rome).
+ *
+ * ## Why a line is a function and not a string
+ *
+ * Pydna's victory card read *"The field under Olocrus is Rome's. **Macedon** put her whole
+ * levy into one line"* and its defeat card said *"the **pikes** are still coming on in step"*.
+ * There is no Macedonian roster in this game and no pike in it: the three armies are Rome,
+ * the Juthungi and Carthage, so the card named an enemy that cannot be on the field. It is
+ * the same defect as "JUTHUNGI advantage 25 %" printed over a Carthaginian army, which was
+ * fixed once already, and Campus Martius' field battle carried it too — *"the eagles are
+ * down… nothing between the Juthungi and the Tiber bridges"* over a Punic host.
+ *
+ * The cause is that **a field battle's opponent is chosen in the menu.** `opponentBlocked`
+ * greys that row only for a storm, because a wall names both sides; on open ground either of
+ * the other two armies can be picked, on any map. So a dispatch line is handed the enemy that
+ * was actually fought and no line contains a faction literal. A line cannot name the wrong
+ * army if it cannot reach one.
  */
-interface Dispatch {
-  victory: readonly string[];
-  defeat: readonly string[];
-  draw: readonly string[];
+interface DispatchWho {
+  /** The enemy as prose names them: "the Juthungi", "the Carthaginians". */
+  foe: string;
 }
+type DispatchLine = (w: DispatchWho) => string;
+
+interface Dispatch {
+  victory: readonly DispatchLine[];
+  defeat: readonly DispatchLine[];
+  draw: readonly DispatchLine[];
+}
+
+/**
+ * The enemy in the middle of a sentence, which is neither `FACTION_UI.short` ("JUTHUNGI",
+ * a plaque heading) nor `.long` ("Juthungi Confederation", a formal style).
+ *
+ * A `Record<Faction, …>`, so a fourth army cannot be added without prose for it.
+ */
+const FOE_PROSE: Record<Faction, string> = {
+  [Faction.Rome]: 'the legions',
+  [Faction.Germanic]: 'the Juthungi',
+  [Faction.Carthage]: 'the Carthaginians',
+};
 
 const DISPATCH: Record<MapId, Dispatch> = {
   'campus-martius': {
     victory: [
-      'The Juthungi host is broken. What is left of it runs north up the Via Flaminia, and Rome keeps her walls unfinished a little longer.',
-      'The line held. Aurelian will hear that the city stood without him, and the masons will go back to the wall in the morning.',
+      (w) => `The host is broken. What is left of ${w.foe} runs north up the Via Flaminia, and Rome keeps her walls unfinished a little longer.`,
+      () => 'The line held. Aurelian will hear that the city stood without him, and the masons will go back to the wall in the morning.',
     ],
     defeat: [
-      'The eagles are down on the Campus Martius. Behind the broken line there is nothing between the Juthungi and the Tiber bridges.',
-      'The field belongs to the tribes. Rome will remember this day every time she looks at the height of her new walls.',
+      (w) => `The eagles are down on the Campus Martius. Behind the broken line there is nothing between ${w.foe} and the Tiber bridges.`,
+      (w) => `The field belongs to ${w.foe}. Rome will remember this day every time she looks at the height of her new walls.`,
     ],
     draw: [
-      'Both hosts have bled themselves white. The dead lie in windrows where the lines met, and nobody holds the ground.',
+      () => 'Both hosts have bled themselves white. The dead lie in windrows where the lines met, and nobody holds the ground.',
     ],
   },
   /**
@@ -65,35 +100,77 @@ const DISPATCH: Record<MapId, Dispatch> = {
    */
   carthage: {
     victory: [
-      'The Byrsa is taken. The three streets are choked from the forum to the citadel gate, and the Senate&rsquo;s instruction was that nothing should be left standing.',
-      'Carthage is Rome&rsquo;s. The temple on the summit is burning with the last of them inside it, and the ploughs are ordered up for the spring.',
+      () => 'The Byrsa is taken. The three streets are choked from the forum to the citadel gate, and the Senate&rsquo;s instruction was that nothing should be left standing.',
+      () => 'Carthage is Rome&rsquo;s. The temple on the summit is burning with the last of them inside it, and the ploughs are ordered up for the spring.',
     ],
     defeat: [
-      'The storm is thrown back off the wall. The triple line holds as it held Manilius, and the legions will winter on the isthmus again.',
-      'The ditch is full of Roman dead and the ladders are burning where they fell. Whatever is written to the Senate, this is where the assault stopped.',
+      () => 'The storm is thrown back off the wall. The triple line holds as it held Manilius, and the legions will winter on the isthmus again.',
+      () => 'The ditch is full of Roman dead and the ladders are burning where they fell. Whatever is written to the Senate, this is where the assault stopped.',
     ],
     draw: [
-      'Both hosts are spent. The killing ground between the middle wall and the main one is full of men from both armies, and neither can be pushed out of it.',
+      () => 'Both hosts are spent. The killing ground between the middle wall and the main one is full of men from both armies, and neither can be pushed out of it.',
     ],
   },
   /**
-   * 168 BC, and the map carries no city — so this is always the field battle, Rome against
-   * the phalanx on the Pierian plain. Plutarch has the line broken within the hour and the
-   * pursuit run until dark.
+   * 168 BC, and the map carries no city — so this is always a field battle on the Pierian
+   * plain, and *whose* field battle is the player's choice in the menu.
+   *
+   * The historical Pydna was fought against a Macedonian phalanx, and this copy said so:
+   * "Macedon put her whole levy into one line", "the pikes are still coming on in step". The
+   * ground is Pydna's and the light is Pydna's, but the army opposite is one of the game's
+   * three, so the prose names the swells, the stream bed and the legion — the things that are
+   * there — and takes the enemy from the field. `src/maps/pydna.ts` keeps its historical
+   * account of the *place*, which is a different claim and a true one.
    */
   pydna: {
     victory: [
-      'The phalanx is broken. Once the sarissas came apart on the swells there was nothing in front of the legion but men who could not turn, and the pursuit will run until dark.',
-      'The field under Olocrus is Rome&rsquo;s. Macedon put her whole levy into one line, and one line is what she has lost.',
+      () => 'The enemy line is broken. Once it came apart on the swells there was nothing in front of the legion but men who could not turn, and the pursuit will run until dark.',
+      (w) => `The field under Olocrus is Rome&rsquo;s: ${w.foe} put their whole strength into one line, and one line is what they have lost.`,
+      () => 'The swells did it, as they have done before. What is left of the enemy is streaming back toward the shore, and the light will hold long enough.',
     ],
     defeat: [
-      'The legion could not get inside the points. The line is back across the stream bed and the pikes are still coming on in step.',
-      'The maniples are shattered on the Pierian plain. Whatever Rome does next, she will not do it with this army.',
+      (w) => `The legion could not close. The line is back across the stream bed and ${w.foe} are still coming on in step.`,
+      () => 'The maniples are shattered on the Pierian plain. Whatever Rome does next, she will not do it with this army.',
     ],
     draw: [
-      'Both armies have come apart on the broken ground and neither will close again. The dead lie along the swells that did it.',
+      () => 'Both armies have come apart on the broken ground and neither will close again. The dead lie along the swells that did it.',
     ],
   },
+};
+
+/**
+ * The roll of honour's last column, one word per outcome the arbiter recognises.
+ *
+ * The *outcome* is `BattleFlowSystem`'s to decide and this only spells it, which is the whole
+ * point: the card's own "Units lost N of M" is counted from the same function, so the headline
+ * and the rows under it cannot disagree. They did — a unit reduced to a fifth of its strength
+ * counted as lost in the total and read **HELD** in its row.
+ */
+const OUTCOME_WORD: Record<UnitOutcome, string> = {
+  destroyed: 'Destroyed',
+  routed: 'Routed',
+  mauled: 'Mauled',
+  held: 'Held',
+};
+
+/**
+ * One sentence per way of taking a wall, and the compiler holds the list complete.
+ *
+ * Written as a `Record<WallCondition, …>` on purpose: this is the device that stops the card
+ * and the arbiter drifting apart a fifth time. Add a condition to `WallCondition` and this
+ * object fails to typecheck until it has a sentence, which is a stronger guarantee than any
+ * amount of care at the one call site below.
+ *
+ * `breakIn` is deliberately *not* "the wall was carried". Sixty men through a gate or down an
+ * inside stair while the parapet above them is still held by the garrison is the case that
+ * happens, and the card has to be able to say so without contradicting the four numbers
+ * printed immediately above it.
+ */
+const WALL_SENTENCE: Record<WallCondition, (s: SiegeRead) => string> = {
+  parapet: () => 'The wall was carried.',
+  breakIn: (s) =>
+    `The wall itself was never carried &mdash; ${fmtCount(s.inside)} of them are inside it, `
+    + 'and the fighting is in the streets.',
 };
 
 /**
@@ -112,17 +189,26 @@ const DISPATCH: Record<MapId, Dispatch> = {
  * looked like when it was decided rather than a high-water mark. That is the honest number
  * to print under a verdict: "18 of 60 inside" beside "Defeat" says exactly how close it was.
  */
-function wallBlock(s: SiegeRead | null, reason: string): string {
+function wallBlock(s: SiegeRead | null, reason: string, condition: WallCondition | null): string {
   if (!s) return '';
   /*
-   * The verdict is read off *how* the battle ended, not off who won it. A storm that kills
-   * the last man of the garrison in the open has taken the city and never carried the wall,
-   * and `BattleFlowSystem` already distinguishes the two: `objective` is the wall going, and
-   * `repulsed` is the assault stalling in front of it. Everything else is the army breaking,
-   * and then the honest sentence names the gate and stops.
+   * The verdict is read off *which condition fired*, not off `reason` alone.
+   *
+   * `reason === 'objective'` covers two quite different events and this sentence used to name
+   * only one of them — the one that has never fired in a completed battle. So a card reading
+   * DEFEAT, gate held at 85%, breaches 0, 869 of my men on the parapet against 2 of theirs and
+   * a roll of honour of HELD HELD HELD HELD HELD also said *"The wall was carried."*, forty
+   * pixels below its own numbers. Fourth time this project has shipped that class of defect.
+   *
+   * `WALL_SENTENCE` is a total map over `WallCondition`, so a third way to take a wall does
+   * not compile until somebody writes what the card should say about it. That is the part
+   * that stops this recurring; the string is only the symptom.
+   *
+   * Everything below it is unchanged and still keyed on `reason`, because `repulsed` and "the
+   * army broke" genuinely are properties of how the battle ended rather than of a condition.
    */
-  const verdict = reason === 'objective'
-    ? 'The wall was carried.'
+  const verdict = condition !== null
+    ? WALL_SENTENCE[condition](s)
     : reason === 'repulsed'
       ? 'The storm was thrown off the wall.'
       : s.gate.breached
@@ -324,6 +410,8 @@ export class BattleFlow {
       result?: {
         victor: number;
         reason: string;
+        /** Which objective condition fired. Absent on a HUD built over a bare `BattleSystem`. */
+        condition?: WallCondition | null;
         casualties: Record<number, number>;
         survivors: Record<number, number>;
         /** Units destroyed, broken, or reduced below a quarter strength. */
@@ -336,10 +424,6 @@ export class BattleFlow {
 
     const player = victor === PLAYER_FACTION;
     const verdict = victor < 0 ? 'Stalemate' : player ? 'Victory' : 'Defeat';
-    const dispatch = DISPATCH[activeMap().id];
-    const lines = victor < 0 ? dispatch.draw : player ? dispatch.victory : dispatch.defeat;
-    const flavour = lines[Math.floor(ctx.time.simTime) % lines.length];
-
     /**
      * The two columns are the two armies that were actually on the field.
      *
@@ -348,8 +432,15 @@ export class BattleFlow {
      * publishes who Rome is fighting through `setOpposingFaction`, and that is the same value
      * `enemyOf` gives the AI and the combat code, so reading it here adds no second source of
      * truth to drift from.
+     *
+     * Read *before* the dispatch now, because the dispatch is handed it: see `Dispatch`. The
+     * columns and the closing sentence therefore name the same army by construction.
      */
     const foe = getOpposingFaction();
+
+    const dispatch = DISPATCH[activeMap().id];
+    const lines = victor < 0 ? dispatch.draw : player ? dispatch.victory : dispatch.defeat;
+    const flavour = lines[Math.floor(ctx.time.simTime) % lines.length]({ foe: FOE_PROSE[foe] });
 
     /**
      * The reason, from the player's own side of the field.
@@ -447,7 +538,7 @@ export class BattleFlow {
             <td class="h-name">${v.title}<span>${v.def.nativeName}</span></td>
             <td class="h-kills">${v.kills}</td>
             <td class="h-left">${v.alive}/${v.initial}<i style="width:${pct}%"></i></td>
-            <td class="h-state">${v.destroyed ? 'Destroyed' : v.routing ? 'Routed' : 'Held'}</td>
+            <td class="h-state">${OUTCOME_WORD[unitOutcome(v.destroyed, v.routing, v.alive, v.initial)]}</td>
           </tr>`;
       })
       .join('');
@@ -486,7 +577,7 @@ export class BattleFlow {
          </div>
          <div class="rs-body">
            <div class="rs-cols">${column(PLAYER_FACTION)}<div class="rs-vs">${icon(ICON.swords, 'rs-vs-ic')}</div>${column(foe)}</div>
-           ${wallBlock(readSiege(ctx), reason)}
+           ${wallBlock(readSiege(ctx), reason, tally?.condition ?? null)}
            <div class="rs-honours">
              <div class="sec-head">Roll of honour</div>
              <table><tbody>${honours}</tbody></table>

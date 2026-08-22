@@ -9,7 +9,8 @@
  *
  * ## What actually counts as a win, from `src/sim/BattleFlow.ts`
  *
- *   A.  `stormOnWall >= 24` **and** `garrisonOnWall === 0`, held 20 s.
+ *   A.  `stormHolding >= 24`, held 20 s — men on a maximal block of runs that carries no
+ *       defender and that the garrison did hold at some point in the battle.
  *   B.  `stormInside >= 60` — men on the ground more than 14 m past the curtain.
  *
  * and two ways to lose:
@@ -17,10 +18,26 @@
  *   C.  180 s with no new all-time low in `garrisonOnWall` -> `repulsed`.
  *   D.  t+2400 -> `repulsed`.
  *
- * So the four numbers that decide it are `stormOnWall`, `garrisonOnWall`, `stormInside` and
- * the low-water mark, and this samples all four every 20 s of sim time for the whole battle.
+ * **Condition A used to read `stormOnWall >= 24` *and* `garrisonOnWall === 0`, and this
+ * header said so for as long as it did.** That pair asked the storm to clear 1.78 km of
+ * parapet — 810 men, best of twelve runs 542 — and could not fire; it was rescoped onto the
+ * ground the storm actually holds at `fb98fd4`/`9b6f8c1`. `garrisonOnWall` is still sampled
+ * and still worth reading, because it is what condition **C** grades, but it is no longer a
+ * gate on a win and the "needs 0" column that used to be printed here graded nothing.
+ *
+ * So the numbers that decide it are `stormHolding`, `stormInside`, `garrisonOnWall` and the
+ * low-water mark, and this samples all of them every 20 s of sim time for the whole battle.
  * A campaign that only reported the verdict would say "repulsed, repulsed, repulsed" and
- * leave the *reason* — which of the four gates bound — unmeasured.
+ * leave the *reason* — which of the gates bound — unmeasured.
+ *
+ * ## And by what road
+ *
+ * A storm that wins by walking through the building site is a different event from one that
+ * wins over the parapet, and both are "Juthungi / objective" in the verdict. Rome's surveyed
+ * circuit carries `footing` and `gap` bays that `blocksMovement` leaves open by design, so
+ * every man counted `stormInside` is binned by the **stage of the bay he crossed**, and the
+ * ladder and ramp crossings are reported beside it. That column is the acceptance test for
+ * `ROME.md` §15 task 14 — *the storm's route is not exclusively the footings*.
  *
  * ## The machines
  *
@@ -175,10 +192,35 @@ async function runOne(seed) {
       for (const k of Object.keys(byRole)) {
         byRole[k].dist = +(byRole[k].dist / byRole[k].units).toFixed(0);
       }
+      /**
+       * **By what road.** Every man counted `stormInside`, binned by the construction stage
+       * of the bay he is behind — the same arithmetic `censusWall` uses to count him, so the
+       * two cannot disagree about who is inside, only about how he got there.
+       */
+      const insideByStage = {};
+      if (city && storm !== undefined) {
+        const bays = city.getGarrisonBays();
+        const nb = bays.length;
+        const mx = bays.map((b2) => (b2.x0 + b2.x1) * 0.5);
+        const mz = bays.map((b2) => (b2.z0 + b2.z1) * 0.5);
+        const pitch = (mx[nb - 1] - mx[0]) / (nb - 1);
+        const p = b.pool;
+        for (let i = 0; i < p.count; i++) {
+          if (p.faction[i] !== storm || b.elevated[i] !== 0 || !p.aliveAt(i)) continue;
+          const k = Math.max(0, Math.min(nb - 1, Math.round((p.x[i] - mx[0]) / pitch)));
+          const depth = (p.x[i] - mx[k]) * bays[k].nx + (p.z[i] - mz[k]) * bays[k].nz;
+          if (depth >= -(o.insideMargin ?? 14)) continue;
+          const stage = bays[k].isGate ? 'gate' : bays[k].stage;
+          insideByStage[stage] = (insideByStage[stage] ?? 0) + 1;
+        }
+      }
       return {
         stormByRole: byRole,
+        insideByStage,
         t: +ctx.time.simTime.toFixed(0),
         stormOnWall: o.stormOnWall ?? 0,
+        stormHolding: o.stormHolding ?? 0,
+        holdingRuns: (o.holdingRuns ?? []).length,
         garrisonOnWall: o.garrisonOnWall ?? 0,
         stormInside: o.stormInside ?? 0,
         heldFor: +(o.heldFor ?? 0).toFixed(1),
@@ -244,7 +286,8 @@ for (let i = 0; i < RUNS; i++) {
     ? `${FACTION[r.result.victor] ?? r.result.victor} by ${r.result.reason} at ${r.result.at.toFixed(0)}s`
     : `undecided at ${last.t}s`;
   console.log(
-    ` ${verdict}  [maxOnWall ${Math.max(0, ...r.series.map((s) => s.stormOnWall))}` +
+    ` ${verdict}  [maxHolding ${Math.max(0, ...r.series.map((s) => s.stormHolding))}` +
+      `, maxOnWall ${Math.max(0, ...r.series.map((s) => s.stormOnWall))}` +
       `, minGarrison ${Math.min(...r.series.map((s) => s.garrisonOnWall))}` +
       `, maxInside ${Math.max(0, ...r.series.map((s) => s.stormInside))}]` +
       ` (${(r.wallMs / 1000).toFixed(0)}s wall)`,
@@ -276,18 +319,46 @@ for (const [k, v] of [...outcomes].sort((a, b) => b[1] - a[1])) {
 
 console.log('\nhow close the assault came, per run');
 console.log(
-  '  seed        ended            at    maxOnWall  needs24  garrisonLow  needs0  maxInside  needs60',
+  '  seed        ended            at   A: maxHolding  needs24  maxHeld/20s   B: maxInside  needs60' +
+    '     onWall  garrisonLow',
 );
 for (const r of runs) {
   const maxOn = Math.max(0, ...r.series.map((s) => s.stormOnWall));
+  const maxHold = Math.max(0, ...r.series.map((s) => s.stormHolding));
+  const maxHeld = Math.max(0, ...r.series.map((s) => s.heldFor));
   const minG = Math.min(...r.series.map((s) => s.garrisonOnWall));
   const maxIn = Math.max(0, ...r.series.map((s) => s.stormInside));
   console.log(
     `  ${String(r.seed).padStart(10)}  ${(r.result?.reason ?? 'undecided').padEnd(12)} ` +
-      `${String(r.result ? r.result.at.toFixed(0) : '-').padStart(6)}  ` +
-      `${String(maxOn).padStart(9)}  ${maxOn >= 24 ? '  MET' : '  no '}  ` +
-      `${String(minG).padStart(11)}  ${minG === 0 ? '  MET' : '  no '}  ` +
-      `${String(maxIn).padStart(9)}  ${maxIn >= 60 ? '  MET' : '  no '}`,
+      `${String(r.result ? r.result.at.toFixed(0) : '-').padStart(5)}  ` +
+      `${String(maxHold).padStart(12)}  ${maxHold >= 24 ? '  MET' : '  no '}  ` +
+      `${String(maxHeld.toFixed(0)).padStart(11)}  ` +
+      `${String(maxIn).padStart(12)}  ${maxIn >= 60 ? '  MET' : '  no '}  ` +
+      `${String(maxOn).padStart(9)}  ${String(minG).padStart(11)}`,
+  );
+}
+
+/*
+ * The acceptance test of `ROME.md` §15 task 14: by what road did the storm get in?
+ *
+ * `footing` and `gap` are the building site, which `blocksMovement` leaves open by design;
+ * everything else is a bay with a curtain on it, so a man behind one came over the top. A
+ * run whose whole `stormInside` is building site is a siege that was walked around.
+ */
+console.log('\nby what road — men counted inside at the last sample, by the bay they crossed');
+console.log('  seed        ladders crossed  ramps crossed   inside: site      wall     gate');
+for (const r of runs) {
+  const last = r.series[r.series.length - 1] ?? {};
+  const by = last.insideByStage ?? {};
+  const site = (by.footing ?? 0) + (by.gap ?? 0);
+  const gate = by.gate ?? 0;
+  const wall = Object.entries(by).reduce(
+    (a, [k, v]) => a + (k === 'footing' || k === 'gap' || k === 'gate' ? 0 : v), 0,
+  );
+  console.log(
+    `  ${String(r.seed).padStart(10)}  ${String(last.laddersCrossed ?? 0).padStart(15)}  ` +
+      `${String(last.towersCrossed ?? 0).padStart(13)}   ${String(site).padStart(11)}  ` +
+      `${String(wall).padStart(8)}  ${String(gate).padStart(7)}`,
   );
 }
 
@@ -343,12 +414,15 @@ for (const r of runs.slice(0, 3)) {
 
 // Where the wall census went over time, for the first run, so the shape is visible.
 const r0 = runs[0];
-console.log(`\ntime series, seed ${r0.seed} (every ${SAMPLE * 3}s)`);
-console.log('     t   stormOnWall  garrisonOnWall  stormInside  heldFor  Juthungi  Rome');
-for (let i = 0; i < r0.series.length; i += 3) {
+console.log(`\ntime series, seed ${r0.seed} (every ${SAMPLE}s)`);
+console.log(
+  '     t   stormOnWall  stormHolding  runs  garrisonOnWall  stormInside  heldFor  Juthungi  Rome',
+);
+for (let i = 0; i < r0.series.length; i++) {
   const s = r0.series[i];
   console.log(
     `  ${String(s.t).padStart(4)}  ${String(s.stormOnWall).padStart(11)}  ` +
+      `${String(s.stormHolding).padStart(12)}  ${String(s.holdingRuns).padStart(4)}  ` +
       `${String(s.garrisonOnWall).padStart(14)}  ${String(s.stormInside).padStart(11)}  ` +
       `${String(s.heldFor).padStart(7)}  ${String(s.strength[1] ?? 0).padStart(8)}  ${String(s.strength[0] ?? 0).padStart(4)}`,
   );

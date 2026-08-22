@@ -38,7 +38,7 @@ if (HUD === 'off') await page.addStyleTag({ content: '#hud-root, #loading { disp
 const boot = await page.evaluate(() => {
   const b = window.__game.battle, e = window.__game.engine;
   return { units: b.units.length, men: b.units.reduce((a, u) => a + u.alive, 0), scale: b.unitSizeScale,
-    tier: e.quality.tier, maxSoldiers: e.quality.maxSoldiers, adaptive: e.adaptiveQuality.enabled,
+    tier: e.quality.tier, poolCap: window.__game.battle.pool.capacity, adaptive: e.adaptiveQuality.enabled,
     drawing: [e.renderer.domElement.width, e.renderer.domElement.height] };
 });
 console.log('boot:', JSON.stringify(boot));

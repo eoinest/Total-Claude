@@ -3,6 +3,7 @@ import { blurField, hydraulicErode } from './erosion';
 import { fbm, ridged, sstep, warpedFbm, gnoise } from './noise';
 import {
   AGGER_HALF_WIDTH,
+  DEPLOY_GROUND,
   DITCH_OFFSET,
   HALF_EXTENT,
   PLAIN_LEVEL,
@@ -269,10 +270,24 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
     }
   }
 
-  // -- 4b. Deployment zones onto the regional plane.
+  /*
+   * -- 4b. Deployment zones onto the regional plane.
+   *
+   * The row skip is **derived from the boxes**, not transcribed from them. It used to read
+   * `wz < -340 || wz > 320`, which was a copy of `DEPLOY_GROUND`'s z extent with slack on it,
+   * and a copy is the thing §15 task 14 exists to stop: a later `hz` would have silently left
+   * the last rows of a box unflattened while every printed number went on saying the box was
+   * there. Outside these bounds both masks are exactly 0 and the `m < 0.002` test below would
+   * skip the row anyway, so this changes no height — it is a bound on the loop, not on the
+   * ground.
+   */
+  const deployZ0 = Math.min(DEPLOY_GROUND.north.cz - DEPLOY_GROUND.north.hz,
+    DEPLOY_GROUND.south.cz - DEPLOY_GROUND.south.hz);
+  const deployZ1 = Math.max(DEPLOY_GROUND.north.cz + DEPLOY_GROUND.north.hz,
+    DEPLOY_GROUND.south.cz + DEPLOY_GROUND.south.hz);
   for (let j = 0; j < res; j++) {
     const wz = -HALF_EXTENT + j * spacing;
-    if (wz < -340 || wz > 320) continue;
+    if (wz < deployZ0 || wz > deployZ1) continue;
     const row = j * res;
     const cx = rowRiverX[j];
     const cs = rowRiverS[j];
@@ -597,10 +612,13 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
         0.34 +
         0.44 * (0.5 + 0.5 * gnoise(wx * 0.009, wz * 0.009, seed + 92)) +
         0.3 * (0.5 + 0.5 * gnoise(wx * 0.038, wz * 0.038, seed + 93));
-      // 0.34 rather than 0.72: the deployment boxes now reach ±490 m to cover the widened
-      // frontage, and at the old strength that turned the whole battlefield into a sheet
-      // of bare trodden earth — measured at eye level in the Roman line it was chocolate
-      // mud from foreground to horizon. Real Rome II frames keep a sward growing between
+      // 0.34 rather than 0.72: the deployment boxes are 850 and 1,030 m wide to cover the
+      // frontages that stand in them (§15 task 14; they were ±490 when this was measured, and
+      // the widening only strengthens the argument), and at the old strength that turned the
+      // whole battlefield into a sheet of bare trodden earth — measured at eye level in the
+      // Roman line it was chocolate mud from foreground to horizon. The frames shot over the
+      // widened box on `e/sim/deploy-boxes` still read as sward broken by trodden scrapes, so
+      // 0.34 survives 70 % more box. Real Rome II frames keep a sward growing between
       // the ranks and break it with trodden scrapes, not the reverse. Combat wear on top
       // of this is `vfx/GroundDamage`'s job, and it accumulates where men actually fight
       // rather than everywhere they might stand.

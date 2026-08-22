@@ -50,7 +50,7 @@
  * behaviour changes and no pinned determinism hash moves.
  */
 
-import { chromium } from 'playwright';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -328,36 +328,35 @@ const waitForServer = async (url, ms) => {
   return false;
 };
 
-const base = `http://127.0.0.1:${PORT}`;
-let server = null;
-if (await waitForServer(base, 1200)) {
-  console.log(`• reusing the dev server already on ${PORT}`);
-} else {
-  /*
-   * An isolated Vite cache, and this is a worktree trap rather than a nicety.
-   *
-   * Every agent worktree in this repository symlinks `node_modules` back to the main checkout,
-   * and Vite's default `cacheDir` is `<pkgDir>/node_modules/.vite` — a *path*, resolved through
-   * that symlink. So six agents on six branches share one dependency-optimiser cache and one
-   * transform cache, and the failure that produces is the worst kind: a page that loads
-   * perfectly while serving another branch's modules. `TC_VITE_CACHE_DIR` is read by
-   * `vite.config.ts`; the directory is named for the port so two runs cannot collide either.
-   */
-  const cacheDir = path.join(WORK_ROOT, '.vite-cache', `p${PORT}`);
-  await mkdir(cacheDir, { recursive: true });
-  console.log(`• starting vite on ${PORT} (cache ${cacheDir})`);
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT,
-    stdio: 'ignore',
-    env: { ...process.env, TC_NO_HMR: '1', TC_VITE_CACHE_DIR: cacheDir, FORCE_COLOR: '0' },
-  });
-  if (!(await waitForServer(base, 90000))) {
-    console.error(`vite did not start on ${PORT}`);
-    server.kill('SIGTERM');
-    process.exit(1);
-  }
-}
-const shutdown = () => { if (server && !args.has('keep')) server.kill('SIGTERM'); };
+/*
+ * The browser slot first, then the server — `tools/lib/browser-budget.mjs`, 22 Aug 2026.
+ *
+ * A film is the longest-running job in this directory and therefore the one most worth
+ * queueing rather than piling on: it holds a browser for minutes. Taking the slot before
+ * starting Vite means a film that has to wait is not sitting on a port while it waits.
+ *
+ * `startVite` replaces `spawn('npx', ['vite', …])`. The isolated cache directory below is
+ * unchanged and the reason for it is unchanged — worktrees symlink `node_modules` back to the
+ * main checkout and Vite's default `cacheDir` resolves *through* that symlink, so several
+ * agents share one optimiser cache and a page can load perfectly while serving another
+ * branch's modules. What is new is that `startVite` also *asks* a listener it is about to
+ * reuse which tree it is serving, and refuses if the answer is not this one.
+ */
+const cacheDir = path.join(WORK_ROOT, '.vite-cache', `p${PORT}`);
+await mkdir(cacheDir, { recursive: true });
+const browser = await launchBrowser({
+  label: 'film', port: PORT, root: ROOT,
+  args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
+    '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--disable-dev-shm-usage',
+    '--hide-scrollbars'],
+});
+const { base, started: startedServer, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, cacheDir, label: 'film', slot: browser.budgetSlot,
+});
+console.log(startedServer
+  ? `• started vite on ${PORT} (cache ${cacheDir})`
+  : `• reusing the dev server already on ${PORT}`);
+const shutdown = () => { if (startedServer && !args.has('keep')) void closeServer(); };
 
 // ---------------------------------------------------------------------------
 // Capture
@@ -377,11 +376,6 @@ if (!PROV.clean) {
   console.log(`  srcHash ${PROV.srcHash}, which is what Vite is actually serving — not with ${PROV.commit}.`);
 }
 
-const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
-    '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--disable-dev-shm-usage',
-    '--hide-scrollbars'],
-});
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: DPR });
 const errs = [];
 page.on('pageerror', (e) => errs.push(`pageerror: ${e.message}`));
@@ -499,8 +493,18 @@ function overlayFor(sh, i, n, isFirstInCut) {
    * measured editorial rule that survived every recut — unless the script says otherwise, and
    * the act boundaries dip through it, which is what tells a viewer that the map has changed
    * rather than the camera.
+   *
+   * **`?? ` and not `!sh.fadeIn`, because a fade of zero is a thing a script needs to be able
+   * to say.** The default only applies when the first shot is *silent* about its head fade;
+   * `fadeIn: 0` is an instruction, not an absence. Under the old falsy test the two were the
+   * same value, so `war-machine`'s deliberate `fadeIn: 0` — a trailer that opens on a shield
+   * wall rather than spending its first second on black — was overridden by the 0.8 s default
+   * and the film shipped with a 24-frame fade up that its own script had switched off. Nothing
+   * warned: the picture was correct in every other respect, and the only tell was that frame 0
+   * of the first shot was a 13 kB JPEG where every other shot's was 700 kB.
    */
-  const inF = Math.round((isFirstInCut && !sh.fadeIn ? 0.8 : sh.fadeIn) * FPS);
+  const fadeInS = isFirstInCut ? (sh.fadeIn ?? 0.8) : sh.fadeIn;
+  const inF = Math.round(fadeInS * FPS);
   const outF = Math.round(sh.fadeOut * FPS);
   if (inF > 1 && i < inF) o.fade = Math.max(o.fade, 1 - EASINGS.easeOut(i / (inF - 1)));
   if (outF > 1 && i >= n - outF) o.fade = Math.max(o.fade, EASINGS.easeOut((i - (n - outF)) / (outF - 1)));
@@ -617,6 +621,31 @@ for (const [sceneId, shots] of byScene) {
       interventions, motion: sh.motion, interp: sh.interp,
       track: { ...sh.track.spec, mode: sh.track.mode, lag: sh.track.lag },
     };
+
+    /*
+     * Prime the renderer's motion-blur history at this shot's opening camera, and throw the
+     * frame away.
+     *
+     * `PostFX` reprojects the depth buffer through `prevViewProj` to get camera motion blur,
+     * and its own comment says the quiet part out loud: "a first frame blurred against it
+     * smears the whole screen". It clears the matrix on a resize and nowhere else — because in
+     * a game the camera never teleports. In a film it teleports at every cut: `runTo` fast-
+     * forwards with `{ render: false }`, so the last matrix the post chain saw is the *previous
+     * shot's last frame*, tens or hundreds of metres away. Measured on the first pass of
+     * `war-machine`, frame 0 of every one of twelve shots came back as a full-screen radial
+     * smear — one unusable frame at each of eleven cuts, which in a 0.93 s shot is 3.6 % of it.
+     *
+     * The fix is one render with no tick: exactly the `speed: 0` mechanism, `Time.paused`, so
+     * `beginFrame` returns zero steps, every visual system gets a `scaledDt` of 0 and the
+     * accumulator is untouched. The simulation cannot tell this happened — which is the whole
+     * reason it is safe to do, and the reason it is done here rather than by shooting a
+     * throwaway first frame and trimming it out of the cut afterwards.
+     */
+    {
+      const p0 = railAt(sh, s.schedule[0].u);
+      const st0 = frameState(sh, p0, anchor0);
+      await page.evaluate((cam) => { window.__tc.apply(cam); window.__tc.step(0); }, st0);
+    }
 
     const stillIdx = new Set([0, Math.floor(n / 2), n - 1]);
     /** Critically-damped smoothing on a following anchor. Deterministic: a pure function of

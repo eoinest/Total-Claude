@@ -46,9 +46,28 @@
  * rest of it, and one of them took a port between two runs of the same arm — which is why
  * `startRelay` reads the response body rather than trusting a 200, and why the tree-identity
  * check below reads a string literal out of the bundle before anything is measured.
+ *
+ * ## The browser budget: two clients are two slots
+ *
+ * Added 22 Aug 2026, when the cap in `tools/lib/browser-budget.mjs` landed on `main` after this
+ * file was written. The first version booted **both** clients as two pages of one Chromium, and
+ * that would have passed the cap while costing the machine two of everything that matters —
+ * two renderer processes, two WebGL contexts, two 8,632-man battles. `check-browser-budget`
+ * says so itself under "not covered": *a tool that takes one slot and then opens ten contexts
+ * inside it.* Counting one there would have been the budget lying on this file's behalf.
+ *
+ * So the host and the challenger each get their own `launchBrowser`, and this gate holds **two
+ * of the four slots** for as long as it runs. `--only=xengine` swaps the challenger's Chromium
+ * for a Firefox and peaks at three. Anything else on this machine queues behind it, which is
+ * the intended behaviour and not a fault: `node tools/browsers.mjs` says who is holding what.
+ *
+ * The exit handlers below are installed **before** the first slot is taken, on purpose. The
+ * budget installs its own `uncaughtException` hook when it takes a slot, and node runs those
+ * listeners in registration order — register second and its `process.exit(1)` fires first and
+ * this file's relays are never killed.
  */
 
-import { chromium, firefox } from 'playwright';
+import { launchBrowser } from './lib/browser-budget.mjs';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -153,8 +172,12 @@ async function startRelay(port, extra = [], attempt = 0) {
    * stopped answering. A gate that cannot say *why* a server did not start is a gate somebody
    * reruns until it works.
    */
-  const p = spawn('node', [path.join(ROOT, 'tools', 'relay.mjs'), `--port=${port}`, ...extra],
-    { cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'] });
+  // `--parent`: the relay closes itself within two seconds of losing us. `stop()` below is the
+  // normal path; this is the one for the run that is SIGKILLed or the machine that falls over,
+  // which would otherwise leave a listener in the band the next run wants, owned by nobody.
+  const p = spawn('node', [path.join(ROOT, 'tools', 'relay.mjs'), `--port=${port}`,
+    `--parent=${process.pid}`, ...extra],
+  { cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = '';
   p.stderr?.on('data', (d) => { stderr += String(d); });
   relays.push(p);
@@ -208,11 +231,41 @@ async function startRelay(port, extra = [], attempt = 0) {
 }
 const stopRelays = () => { for (const p of relays.splice(0)) { try { p.kill('SIGTERM'); } catch { /* gone */ } } };
 
-const { base, server } = await ensureServer({
+/*
+ * Cleanup first, resources second — and that ordering is the whole point.
+ *
+ * `ensureServer` takes the first budget-managed resource in this file, and taking one installs
+ * `browser-budget.mjs`'s own `uncaughtException` handler. Node runs those listeners in the
+ * order they were registered and the budget's ends in `process.exit(1)`, so anything
+ * registered after it never runs. This block used to sit below the first `chromium.launch`;
+ * there it was dead code on exactly the paths it existed for.
+ */
+const browsers = [];
+let server = null;
+function cleanup() {
+  stopRelays();
+  for (const b of browsers.splice(0)) { void b.close().catch(() => { /* already gone */ }); }
+  if (server && !KEEP) server.kill('SIGTERM');
+}
+/*
+ * Both handlers, and the second one is the one that was missing.
+ *
+ * A `throw` inside this file's top-level `await` is an **unhandled rejection**, not an uncaught
+ * exception — so when Firefox timed out on `page.goto`, `cleanup()` never ran and two browsers
+ * and a relay were left holding CPU on a machine that already had six other agents on it. An
+ * agent that starts a server owns killing it, and that has to include the paths where it fails.
+ */
+const die = (e) => { console.error(e); cleanup(); process.exit(1); };
+process.on('uncaughtException', die);
+process.on('unhandledRejection', die);
+
+const startedServer = await ensureServer({
   port: PORT,
   root: ROOT,
   cacheDir: path.join(ROOT, '.vite-cache', `qa-net-${PORT}`),
 });
+const base = startedServer.base;
+server = startedServer.server;
 console.log(`server ${base}${server ? ' (started here)' : ' (already up)'}`);
 /*
  * Tree identity, before anything is measured.
@@ -238,28 +291,22 @@ console.log(`server ${base}${server ? ' (started here)' : ' (already up)'}`);
 }
 if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
 
-const browsers = [];
-const launchArgs = ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
-  '--ignore-gpu-blocklist', '--hide-scrollbars'];
-const chrome = await chromium.launch({ args: launchArgs });
-browsers.push(chrome);
-
-function cleanup() {
-  stopRelays();
-  for (const b of browsers.splice(0)) { void b.close().catch(() => { /* already gone */ }); }
-  if (server && !KEEP) server.kill('SIGTERM');
-}
 /*
- * Both handlers, and the second one is the one that was missing.
+ * One browser per client, two slots, and the GPU flags come from the budget.
  *
- * A `throw` inside this file's top-level `await` is an **unhandled rejection**, not an uncaught
- * exception — so when Firefox timed out on `page.goto`, `cleanup()` never ran and two browsers
- * and a relay were left holding CPU on a machine that already had six other agents on it. An
- * agent that starts a server owns killing it, and that has to include the paths where it fails.
+ * `launchBrowser` defaults `--use-gl=angle --use-angle=metal --enable-unsafe-swiftshader
+ * --ignore-gpu-blocklist` and merges `args` on top, so the four that used to be spelled out
+ * here are gone and cannot drift from the rest of the repository. Without `--use-angle=metal`
+ * Chromium rasterises this scene in SwiftShader — minutes per boot, silently.
  */
-const die = (e) => { console.error(e); cleanup(); process.exit(1); };
-process.on('uncaughtException', die);
-process.on('unhandledRejection', die);
+const chrome = await launchBrowser({
+  label: 'qa-net/host', engine: 'chromium', args: ['--hide-scrollbars'], port: PORT, root: ROOT,
+});
+browsers.push(chrome);
+const chromeGuest = await launchBrowser({
+  label: 'qa-net/guest', engine: 'chromium', args: ['--hide-scrollbars'], port: PORT, root: ROOT,
+});
+browsers.push(chromeGuest);
 
 // ---------------------------------------------------------------------------
 // Page-side readers. Read-only: every order below goes through page.mouse.
@@ -360,7 +407,7 @@ const nextRoom = () => `QA${String(++roomSeq).padStart(3, '0')}`.slice(0, 5)
  * either client has an army.
  */
 async function bootMatch(relay, {
-  room = nextRoom(), deploy = true, guestBrowser = chrome, shots = null, size = 'small',
+  room = nextRoom(), deploy = true, guestBrowser = chromeGuest, shots = null, size = 'small',
   autoplay = 0,
 } = {}) {
   const q = `net=${encodeURIComponent(relay.base)}&room=${room}`
@@ -1167,7 +1214,9 @@ if (wanted('xengine')) {
    */
   let ff = null;
   try {
-    ff = await firefox.launch();
+    // A third slot, on top of the two the host and challenger already hold. Cap is 4, so this
+    // peaks at three and leaves one for whatever else is on the machine.
+    ff = await launchBrowser({ label: 'qa-net/xengine-firefox', engine: 'firefox', port: PORT, root: ROOT });
     browsers.push(ff);
   } catch (e) {
     record('xengine', false, 'Firefox is needed for the cross-engine arm and did not launch',

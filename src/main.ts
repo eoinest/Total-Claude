@@ -64,10 +64,15 @@ const loadText = document.getElementById('load-text') as HTMLElement | null;
  * Pre-battle menu, before anything is built.
  *
  * Two of the things it configures cannot be changed afterwards: the quality tier fixes the
- * soldier pool and the shadow cascade count at `init`, and the AI's `commanded` set is bound
- * when `installAI` runs. So the menu resolves first and the engine is constructed from its
- * answer — the same order Total War uses, configure then load then fight, which also means a
- * player who wants a small battle never waits for a big one's assets.
+ * shadow cascade count at `init`, and the AI's `commanded` set is bound when `installAI` runs.
+ * So the menu resolves first and the engine is constructed from its answer — the same order
+ * Total War uses, configure then load then fight, which also means a player who wants a small
+ * battle never waits for a big one's assets.
+ *
+ * The quality tier used to fix the soldier pool too, and through it the size of both armies.
+ * It does not: the pool is `SOLDIER_POOL_CAPACITY`, one number at every tier, because a
+ * graphics setting must not change the outcome of a battle. **How large the battle is** is the
+ * menu's own battle-size row, which is a `BattleConfig` field.
  *
  * Two screens, not one: it opens on the front door — battle, documentation, model viewer —
  * and Battle leads into the setup flow this comment describes. `?menu=battle` opens straight
@@ -77,8 +82,11 @@ const loadText = document.getElementById('load-text') as HTMLElement | null;
  * battle and there is nothing left to choose. Ultra is the default tier for players as
  * well as the harness: the 16-shot pass measures every graded camera at ultra and the
  * slowest is 61-64 fps, so the tier the game is tuned and judged at is the one it opens on.
- * `?quality=` and `?difficulty=` still override, which is what the harness uses and the
- * escape hatch for weaker hardware.
+ * `?quality=` and `?difficulty=` still override, which is what the harness uses. `?quality=`
+ * is no longer an escape hatch for weaker hardware in the sense of a smaller battle — it buys
+ * resolution, shadows, post-effects and LOD distance and nothing else. The escape hatch for a
+ * machine that cannot run eight thousand men is the battle-size row, which is a deliberate,
+ * visible choice that travels in the `?battle=` token.
  */
 /*
  * `?replay=` carries the battle inside it — config, seed, tier and the order log — so there is
@@ -153,8 +161,9 @@ let replayRecord: ReplayRecord | null = null;
 if (replayToken !== null) {
   replayRecord = await decodeReplay(replayToken);
   if (replayRecord) {
-    // The record's own config wins outright, including the tier: the army size is fitted to
-    // the tier and a record played at another one is a different battle, not a smaller one.
+    // The record's own config wins outright, including the tier. The tier is now provenance
+    // rather than a simulation input — the army no longer depends on it — but the config it
+    // travels with is the whole battle, and a record is watched as it was recorded.
     config = sanitiseConfig({ ...replayRecord.cfg, quality: replayRecord.quality });
   } else {
     console.error('[replay] ?replay= did not decode; falling back to the ordinary battle');

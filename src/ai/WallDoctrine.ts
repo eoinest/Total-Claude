@@ -39,6 +39,26 @@ import type { EngineContext } from '../core/Engine';
  * and fighting is.
  */
 
+/**
+ * Utility bid for "go up the thing your own army put against the wall".
+ *
+ * The other half of the same hole. This module was written for an army *on* a wall; nothing
+ * was written for an army standing in front of one, and the consequence was measurable:
+ * `Siege.escalade` — the verb a besieger climbs by — had exactly one caller in the whole
+ * project, `interceptOrders`, i.e. a right-click. So the Juthungi host at the Aurelian Wall,
+ * **six warbands and 1,080 men, 63 % of the storming army**, was never given a storm order
+ * in its life. It stood in the open at 132 m, or wandered at whatever the general's station
+ * happened to be, and the whole assault was four escalade parties.
+ *
+ * 56 is chosen against the scale the other behaviours already use, not by feel:
+ *
+ *   - above `march`'s ceiling (30 + 22 = 52) and `hold-line`'s 34, so a reserve that has
+ *     nothing else to do goes at the ladders instead of dressing on a station;
+ *   - **below `engage`'s in-contact 62**, so a warband that is being fought does not turn its
+ *     back on a melee to walk to a machine;
+ *   - below `parapet`'s 74, which is the same unit's next decision once it is over.
+ */
+export const STORM_BID = 56;
 /** A descent aimed further than this is a march, not an exploitation of a lodgement. */
 export const DESCEND_R = 260;
 /** An enemy on the parapet this close is a melee; nobody walks anywhere. */
@@ -116,6 +136,18 @@ export interface WallView {
   unitWallState(unitId: number): { onWall: number; onGround: number; onLink: number; goal: string };
   /** The station a click at this point means, or -1 if the point is not the parapet. */
   wallTargetAt(x: number, z: number): number;
+  /**
+   * Every way up the storm has put against the wall. See `Siege.escaladePoints` — the array
+   * is reused between calls and must be consumed before the next one.
+   */
+  escaladePoints(): readonly {
+    x: number; z: number; station: number; kind: 'tower' | 'ladder'; ready: boolean; free: number;
+  }[];
+  /**
+   * Whether a storm order at this point would be obeyed, so the AI cannot issue one the
+   * simulation drops in silence — the same predicate the cursor draws itself from.
+   */
+  escaladeOfferAt(unitId: number, x: number, z: number): { ok: boolean; ready: boolean };
 }
 
 /** The two published city accessors this needs. Duck-typed: a field battle has no city. */
