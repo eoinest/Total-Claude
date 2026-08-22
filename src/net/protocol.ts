@@ -107,9 +107,11 @@ export const turnTick = (turn: number): number => turn * TICKS_PER_TURN;
  *   As of 21 August 2026 the `Math.hypot` sweep closed every cross-engine t+0 split on all
  *   three battles, so this comparison now *succeeds* across Chromium, Firefox and WebKit and
  *   is therefore a real check on the build rather than a proxy that always fails.
- * - `libm` — a hash of ~2,000 implementation-approximated `Math` results over
- *   integer-generated inputs. This is the one field that measures the risk directly instead
- *   of by proxy. §1.5: Chrome 149 → 151 changed eleven of twelve tested functions, and the
+ * - `libm` — a hash of **6,144** implementation-approximated `Math` results over
+ *   integer-generated inputs: `libmPrint`'s default of 512 samples over twelve approximated
+ *   functions, plus 1,024 results from the two correctly-rounded controls. (This line read
+ *   "~2,000" until 22 Aug 2026, which matched no reading of the function below.) It is the one
+ *   field that measures the risk directly instead of by proxy. §1.5: Chrome 149 → 151 changed eleven of twelve tested functions, and the
  *   field battle ended 42% apart on that change alone. A user-agent string is a guess about
  *   libm; this is libm.
  * - `tick0` — the tick each client was on when it announced. Must be 0 on both; see below.

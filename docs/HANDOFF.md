@@ -2966,3 +2966,83 @@ exported codec), `src/sim/deployment.ts` (relay hook, peer, settable name),
 `src/ui/DeploymentPanel.ts` (one guard), `src/ui/Minimap.ts` and `src/ui/SelectionController.ts`
 (two static fields become getters), `src/ui/MainMenu.ts` (one plaque), `.gitignore`
 (`.vite-cache/`).
+
+---
+
+## 22 August 2026 — the multiplayer session, integrated and pointed at a siege (`e/net/session-integration`)
+
+`e/net/session` was finished on 21 Aug and a machine crash landed before it was integrated. It
+was **never pushed**; the first thing this session did was push it, unchanged, as
+`origin/e/net/session`. Everything below is on top of it, on
+`e/net/session-integration`. **Not merged to `main`.**
+
+### What the merge had to decide
+
+- **`docs/HANDOFF.md`, both conflicts: keep both sides.** `main`'s correction is real — Rome's
+  pin moved to **3,072** at `63be5cd` and the branch's `3,074` predates it — and so are the
+  branch's `qa-replay` 27/27 and `qa-net`. Neither is a preference.
+- **`tools/determinism-baseline.json` did not conflict** and is byte-identical to `main`.
+  **No pin moved, and all three arms re-measured UNCHANGED at all seven checkpoints** on the
+  merged tree: 8,632 / 3,072 / 3,440.
+
+### What the browser cap forced
+
+`npm run lint` is 3/3 now and `tools/qa-net.mjs` had two direct launches.
+
+- **Two clients are two slots.** The cheap conversion — one `launchBrowser`, both clients as two
+  pages inside it — passes the cap and is a lie: two pages are two renderer processes, two WebGL
+  contexts and two battles. `check-browser-budget` names that gap itself under *not covered*.
+  The gate holds **2 of 4** slots, 3 under `--only=xengine`.
+- **An exit handler that was dead code on the paths it existed for.** `browser-budget.mjs`
+  installs its own `uncaughtException` hook when it takes a slot and that hook ends in
+  `process.exit(1)`; node runs listeners in registration order, and `qa-net.mjs` registered its
+  relay-killing `cleanup()` *after* the first launch. Registered before the first resource now.
+- **`tools/relay.mjs` learned `--parent=<pid>`**, polled every 2 s — what `vite-runner.mjs`
+  learned the same week. SIGTERM only helps when something is alive to send it.
+
+### The blind spot, and the three things closing it found
+
+**Every arm in `qa-net.mjs` booted `campus-martius / field`** — the same hole that let
+`qa-replay` report 21/21 for weeks with no siege record ever in it, written into the new gate on
+the day the old one was fixed. There is now a `siege` arm, and it is green:
+
+```
+campus-martius / assault, two clients, real menu, real mouse
+tick 1365 (t+45.5 s), 3,180 men, 3,072 alive on both
+pool caa88bc8 · uf64 d62dcbaa · uctl 50c56120 — identical on both clients
+17 order events, byte-identical;  last agreed checkpoint 1350
+```
+
+1. **A disabled button and a thirty-second hang.** `deployWith` clicked the first deployment
+   row's `+`; on the assault the establishment is fixed and `tower-assault` ships that button
+   disabled, so Playwright waited 30 s and threw a locator name. `tools/lib/menu-boot.mjs`
+   carries a long comment about exactly this stopping `qa-replay`'s matrix arm dead. **The
+   identical unguarded line was still in `tools/qa-replay.mjs:293`** — latent only because the
+   matrix arm passes `deploy=0`. Both take the first *enabled* row now and record the skip.
+2. **`same-battle` was comparing a wall clock.** It required `a.simTime === b.simTime`, and
+   `Time.beginFrame` does `simTime += steps * fixedDt` — so the value depends on how the frame
+   loop *grouped* its ticks, and float addition is not associative. Two clients that ran the
+   identical 1,365 ticks, agreeing bit-for-bit on pool, `uf64`, `uctl`, count and alive, were
+   reported **red on 3.6e-14 of an accumulator the simulation never reads**. It passed in
+   isolation and failed in the full run, which is the shape of a flake, not a fork. The
+   cross-client comparison is gone; each client's clock is now checked against *its own* tick
+   with a tolerance, which is the question that is well posed. `markDisagreement` also names
+   which of the six terms failed — the old message printed four of them and not the one that did.
+3. **`net-coverage`**, so this cannot come back quietly. It reads what the **challenger** built
+   (not what this file asked for — that proves nothing; the challenger's config proves it crossed
+   the relay) and demands both a `field` and an `assault`. Made to fail on purpose:
+   `--only=battle,siege --siege-scenario=field` → `FAIL net-coverage`, 14/15, **exit 1**.
+
+Also: `BootPrint.libm`'s comment claimed "~2,000" `Math` results. `libmPrint`'s default is 512
+samples over 14 functions — **6,144** approximated results. Corrected in `src/net/protocol.ts`.
+
+### Still open, and unchanged by this session
+
+- **§7.1, two machines, is still the premise the product rests on.** Every number here is two
+  browsers on one laptop.
+- **The Cloudflare Worker has never run.** No account; `wrangler` is not a dependency.
+- **Reconnection into a live battle is still refused** (§4.5). What exists is a legible failure
+  at a stated tick.
+- **The desync fixture needs replacing once the quantisation firewall merges** from
+  `e/tools/xengine-arm` — Chromium against Firefox stops diverging and the natural fixture
+  disappears. The successor is named in `docs/MULTIPLAYER.md` §9.8.

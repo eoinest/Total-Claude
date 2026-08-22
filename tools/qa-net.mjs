@@ -75,7 +75,8 @@ import process from 'node:process';
 import { bootThroughMenu, ensureServer, waitForServer } from './lib/menu-boot.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const ARMS = ['proto', 'battle', 'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 'lag', 'xengine'];
+const ARMS = ['proto', 'battle', 'siege', 'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 'lag',
+  'xengine'];
 /**
  * `xengine` is opt-in, and that is a judgement rather than an omission.
  *
@@ -92,7 +93,7 @@ const ARMS = ['proto', 'battle', 'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 
  */
 const DEFAULT_ARMS = ARMS.filter((a) => a !== 'xengine');
 const FLAGS = ['port', 'relay', 'json', 'shots', 'only', 'seconds', 'keep', 'xsize', 'xticks',
-  'all'];
+  'all', 'siege-map', 'siege-scenario', 'siege-seconds'];
 
 const args = new Map(process.argv.slice(2).map((a) => {
   const m = a.match(/^--([^=]+)(?:=(.*))?$/);
@@ -130,8 +131,33 @@ const KEEP = args.has('keep');
  */
 const XSIZE = args.get('xsize') ?? 'ultra';
 const XTICKS = Number(args.get('xticks') ?? 1500);
+/*
+ * The siege arm's map, and why it is `campus-martius` rather than `carthage`.
+ *
+ * Both ship an `assault`, and either would exercise the wall systems. Rome is the one whose
+ * `(map, scenario)` pair is *also* pinned in `tools/determinism-baseline.json`, so when this
+ * arm and `qa-determinism.mjs --battle="map=campus-martius&scenario=assault"` disagree about
+ * the same battle there is a second instrument to ask. Carthage has no such counterpart here.
+ * `--siege-map=carthage` runs the other one.
+ */
+const SIEGE_MAP = args.get('siege-map') ?? 'campus-martius';
+/*
+ * `--siege-scenario` exists so that `net-coverage` can be made to go red.
+ *
+ * It is a real knob — it points this arm at any `(map, scenario)` the product ships — but the
+ * reason it is spelled out rather than hard-coded to `assault` is the standing rule that a
+ * check nobody can make fail has not been tested. Run
+ * `--only=battle,siege --siege-scenario=field` and both matches are field battles, so the
+ * coverage claim is false and the check that guards it says so by name.
+ */
+const SIEGE_SCENARIO = args.get('siege-scenario') ?? 'assault';
+const SIEGE_SECONDS = Number(args.get('siege-seconds') ?? 45);
 if (!Number.isFinite(SECONDS) || SECONDS < 20) {
   console.error(`--seconds must be at least 20; got '${args.get('seconds')}'`);
+  process.exit(2);
+}
+if (!Number.isFinite(SIEGE_SECONDS) || SIEGE_SECONDS < 15) {
+  console.error(`--siege-seconds must be at least 15; got '${args.get('siege-seconds')}'`);
   process.exit(2);
 }
 const W = 1280;
@@ -397,6 +423,9 @@ let roomSeq = 0;
 const nextRoom = () => `QA${String(++roomSeq).padStart(3, '0')}`.slice(0, 5)
   .replace(/0/g, 'Q').replace(/1/g, 'R');
 
+/** Every `(map, scenario)` a match in this run actually stood in. See `net-coverage`. */
+const covered = [];
+
 /**
  * Two clients in one room, both booted the way a player boots.
  *
@@ -408,15 +437,15 @@ const nextRoom = () => `QA${String(++roomSeq).padStart(3, '0')}`.slice(0, 5)
  */
 async function bootMatch(relay, {
   room = nextRoom(), deploy = true, guestBrowser = chromeGuest, shots = null, size = 'small',
-  autoplay = 0,
+  autoplay = 0, map = 'campus-martius', scenario = 'field',
 } = {}) {
   const q = `net=${encodeURIComponent(relay.base)}&room=${room}`
     + `&autoplay=${autoplay}&deploy=${deploy ? 1 : 0}`;
   const host = await newPage(chrome);
   await bootThroughMenu(host, {
     base,
-    map: 'campus-martius',
-    scenario: 'field',
+    map,
+    scenario,
     tier: 'high',
     size,
     query: q,
@@ -435,7 +464,21 @@ async function bootMatch(relay, {
       { timeout: 90000 }
     );
   }
-  return { host, guest, room };
+  /*
+   * Coverage is read off the **challenger**, and that is the whole point of reading it.
+   *
+   * What this run asked for is `map`/`scenario` above; what the guest is standing in arrived
+   * over the wire in `MsgSetup.cfg`, because the challenger never sees a menu. Recording the
+   * argument would prove nothing — recording what the second client actually built proves the
+   * config crossed the relay intact, which is the claim, and it is the reading `net-coverage`
+   * below is allowed to be satisfied by.
+   */
+  const got = await guest.evaluate(() => {
+    const c = window.__rec()?.cfg;
+    return c ? { map: c.map, scenario: c.scenario } : null;
+  });
+  covered.push(got ?? { map: '(unreadable)', scenario: '(unreadable)' });
+  return { host, guest, room, cfg: got };
 }
 
 /** Lay out an army with the plaque and the mouse, then press BEGIN BATTLE. */
@@ -466,12 +509,33 @@ async function deployWith(page, tag) {
   }
   await page.click('.dep-add');
   await sleep(220);
-  const rows = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('.dep-row')).map((r) => r.dataset.unit));
-  if (rows.length) {
-    await page.click(`.dep-row[data-unit="${rows[0]}"] [data-d="1"]`);
-    done.push(`palette +1 ${rows[0]}`);
+  /*
+   * The first row whose `+` is *enabled*, not simply the first row.
+   *
+   * This cost the siege arm its first run and it is the second time this repository has paid
+   * for it. `tools/lib/menu-boot.mjs` says it at length: a bare `page.click` on a disabled
+   * button waits thirty seconds and then throws, and it stopped `qa-replay`'s matrix arm dead
+   * on its second battle. The identical hazard was sitting here, invisible, because every arm
+   * in this file booted `campus-martius / field` — where every row can be added to. On the
+   * assault the establishment is fixed and `tower-assault`'s `+` ships disabled, so the driver
+   * hung on the challenger and took the arm out with a `TimeoutError` naming a locator.
+   *
+   * Skipped rather than fatal: "this battle does not let you buy another one of those" is a
+   * fact about the product. But it is *recorded* — a driver that quietly declines to do what
+   * it was asked is how six playability scripts spent two days unable to reach a setup sheet.
+   */
+  const rows = await page.evaluate(() => Array.from(document.querySelectorAll('.dep-row'))
+    .map((r) => ({
+      unit: r.dataset.unit,
+      addable: !r.querySelector('[data-d="1"]')?.disabled,
+    })));
+  const addable = rows.find((r) => r.addable);
+  if (addable) {
+    await page.click(`.dep-row[data-unit="${addable.unit}"] [data-d="1"]`);
+    done.push(`palette +1 ${addable.unit}`);
     await sleep(320);
+  } else if (rows.length) {
+    done.push(`palette +1 skipped (all ${rows.length} rows at their establishment)`);
   }
   const cards = await page.$$('.cardbar .card:not(.foe)');
   if (cards.length) {
@@ -488,6 +552,22 @@ async function deployWith(page, tag) {
     await page.mouse.up({ button: 'right' });
     await sleep(420);
     done.push('right-drag place');
+  }
+  /*
+   * BEGIN, and a legible error rather than another thirty-second locator timeout.
+   *
+   * Same lesson as the palette row above: if this button is ever disabled — an army below its
+   * minimum, a phase that has already ended under us — a bare click reports a selector and
+   * nothing about which client, which battle or why. Ask first, and say all three.
+   */
+  const beginState = await page.evaluate(() => {
+    const b = document.querySelector('.dep-begin');
+    return b ? { present: true, disabled: !!b.disabled } : { present: false, disabled: false };
+  });
+  if (!beginState.present || beginState.disabled) {
+    const why = await page.evaluate(() => ({ dep: window.__dep(), net: window.__net() }));
+    throw new Error(`${tag}: BEGIN BATTLE is ${beginState.present ? 'disabled' : 'absent'}`
+      + ` after ${done.length} gesture(s) — ${JSON.stringify(why)}`);
   }
   await page.click('.dep-begin');
   done.push('BEGIN BATTLE');
@@ -638,6 +718,49 @@ async function readBoth(host, guest) {
 }
 
 /** First event that differs between two merged order logs, spelled out. */
+/**
+ * Are these two clients at the same tick of the same battle?
+ *
+ * Returns `null` when they are, and the term that failed when they are not — because a
+ * comparison of six things that prints only four of them costs an hour the first time it goes
+ * red, and it did.
+ *
+ * **`simTime` is deliberately *not* compared across the two clients.** It used to be, with the
+ * reasoning that "equal hashes at unequal sim times would mean the comparison had been taken at
+ * two moments". That reasoning is sound and the implementation did not follow from it.
+ * `Time.beginFrame` accumulates `simTime += steps * fixedDt`, so the value depends on how the
+ * frame loop *grouped* its ticks — five in one frame or one in five — and float addition is not
+ * associative. Two clients that ran the identical 1,365 ticks therefore hold sim times
+ * 3.6e-14 apart whenever the machine paced their frames differently, which is whenever the
+ * machine is busy. Measured on the siege arm: tick, pool, `uf64`, `uctl`, count and alive all
+ * identical, and this check red on 4 parts in 1e15 of an accumulator the simulation never
+ * reads. It is a property of the wall clock, not of the battle.
+ *
+ * What the original intent actually needs is that each client's *own* mark is self-consistent —
+ * that the tick and the state in it came from the same moment — and `window.__mark()` already
+ * guarantees that by reading both in one `evaluate`. The tolerance check below is the belt to
+ * that brace: it catches a clock that has been re-baselined out from under its tick counter,
+ * which is a real bug this codebase has the machinery for (`Time.resync`, `tickCeiling`), and
+ * it does so per client, where the question is well posed.
+ */
+const TICK_HZ = 30;
+function markDisagreement(a, b) {
+  if (a.tick !== b.tick) return `they stopped at different ticks: ${a.tick} and ${b.tick}`;
+  for (const [tag, m] of [['host', a], ['guest', b]]) {
+    const want = m.tick / TICK_HZ;
+    if (Math.abs(m.hashes.sim - want) > 1e-6) {
+      return `${tag}'s own clock disagrees with its own tick: sim ${m.hashes.sim} at tick `
+        + `${m.tick} (expected ${want})`;
+    }
+  }
+  for (const layer of ['hash', 'uf64', 'uctl', 'alive', 'count']) {
+    if (a.hashes[layer] !== b.hashes[layer]) {
+      return `${layer} differs at tick ${a.tick}: ${a.hashes[layer]} against ${b.hashes[layer]}`;
+    }
+  }
+  return null;
+}
+
 function logDiff(a, b) {
   const n = Math.max(a.length, b.length);
   for (let i = 0; i < n; i++) {
@@ -913,19 +1036,15 @@ if (wanted('battle')) {
     hashes: { host: a.hashes, guest: b.hashes },
   };
 
-  const sameHash = a.tick === b.tick && a.simTime === b.simTime
-    && a.hashes.hash === b.hashes.hash
-    && a.hashes.uf64 === b.hashes.uf64 && a.hashes.uctl === b.hashes.uctl
-    && a.hashes.alive === b.hashes.alive;
-  record('same-battle', sameHash,
+  const disagreement = markDisagreement(a, b);
+  record('same-battle', disagreement === null,
     'both clients are at the same tick with the same state, bit for bit',
-    a.tick === b.tick
-      ? `tick ${a.tick}: pool ${a.hashes.hash}/${b.hashes.hash}, uf64 ${a.hashes.uf64}/${b.hashes.uf64}, `
-        + `uctl ${a.hashes.uctl}/${b.hashes.uctl}, alive ${a.hashes.alive}/${b.hashes.alive}`
-      : `they stopped at different ticks: ${a.tick} (sim ${a.simTime}) and ${b.tick} `
-        + `(sim ${b.simTime})`,
-    `${a.hashes.count} men; simTime compared as well as hashed, because equal hashes at `
-      + 'unequal sim times would mean the comparison had been taken at two moments');
+    disagreement
+      ?? `tick ${a.tick}: pool ${a.hashes.hash}/${b.hashes.hash}, uf64 ${a.hashes.uf64}/${b.hashes.uf64}, `
+        + `uctl ${a.hashes.uctl}/${b.hashes.uctl}, alive ${a.hashes.alive}/${b.hashes.alive}`,
+    `${a.hashes.count} men. Five layers plus the tick; each client's sim clock is checked `
+      + 'against its own tick rather than against the other\'s, because that accumulator is '
+      + 'frame-grouped and the simulation never reads it — see markDisagreement');
 
   const agreed = rs?.rooms?.[0]?.lastAgreedTick ?? -1;
   record('checkpoints-agreed', agreed >= Math.min(a.tick, b.tick) - 60 && agreed > 0
@@ -1093,6 +1212,91 @@ if (wanted('ulp')) {
       `${d.units.length} unit(s): ${d.units.join(', ')} — ${d.note}`,
       'per-unit digests are hashed from a fresh state each, so a one-unit fault names one unit');
   }
+}
+
+// ---------------------------------------------------------------------------
+// The blind spot this gate inherited
+// ---------------------------------------------------------------------------
+
+/*
+ * A siege, relayed, because a gate that only ever plays one battle has only ever tested one.
+ *
+ * `tools/qa-replay.mjs` shipped for weeks reporting 21/21 while **no siege record had ever been
+ * through it**: it only ever recorded `campus-martius / field`, and every siege replay in the
+ * project was meanwhile being refused by its own t+0 checkpoint. That was found on 21 Aug and
+ * fixed in `bb2eb84`, which added the `matrix` arm — and this file was written the same day
+ * with exactly the same hole in it. Every arm above boots `campus-martius / field`.
+ *
+ * The hole matters more here than it did there, and the reason is specific rather than
+ * decorative. A siege is where this design's stated hazards are densest: `Siege.ts` mutates
+ * private maps outside the tick, the wall and gate systems add control flow that `uctl` is the
+ * only layer watching, and the challenger never sees a menu — its whole battle, siege included,
+ * arrives as `MsgSetup.cfg` over the relay. If a siege config does not cross the wire and build
+ * identically on both clients, nothing above would ever have said so.
+ *
+ * This arm is deliberately shorter than `battle`: what is new here is the map, not the length.
+ */
+if (wanted('siege')) {
+  console.log('\n=== the same two clients, but a siege ===');
+  // 5998: 5995 is the `ulp` fault arm's, and two arms on one port is how `late` and `leave`
+  // were broken by the four arms between them. Free in the band: 5988 and 5998.
+  const relay = await startRelay(5998);
+  const m = await bootMatch(relay, {
+    map: SIEGE_MAP, scenario: SIEGE_SCENARIO, shots: 'siege',
+  });
+  record('siege-config-crossed', m.cfg?.map === SIEGE_MAP && m.cfg?.scenario === SIEGE_SCENARIO,
+    'the challenger built the host\'s siege from the config that came over the wire',
+    `the guest is standing in ${m.cfg?.map} / ${m.cfg?.scenario}`,
+    'the challenger has no menu — MsgSetup.cfg is the only way it can know what battle this is');
+
+  const g = { host: await deployWith(m.host, 'siege-host'), guest: await deployWith(m.guest, 'siege-guest') };
+  await sleep(1200);
+  for (let i = 0; i < 3; i++) {
+    g.host.push(...await burst(m.host, i));
+    g.guest.push(...await burst(m.guest, i + 1));
+    await sleep(1600);
+  }
+  const target = Math.round(SIEGE_SECONDS * 30);
+  const t0 = Date.now();
+  while (Date.now() - t0 < SIEGE_SECONDS * 1400) {
+    const t = await m.host.evaluate(() => window.__tick());
+    if (t >= target) break;
+    await sleep(700);
+  }
+  const settled = await settleTogether(m.host, m.guest, 40000, relay);
+  const { a, b } = await readBoth(m.host, m.guest);
+  const rs = await relayStatus(relay);
+  measured.siege = {
+    cfg: m.cfg, ticks: settled.tick, hostTick: a.tick, guestTick: b.tick,
+    gestures: g, hashes: { host: a.hashes, guest: b.hashes },
+    relay: rs?.rooms?.[0] ?? null,
+  };
+
+  const siegeDisagreement = markDisagreement(a, b);
+  record('siege-same-battle', siegeDisagreement === null,
+    'both clients are at the same tick of the same siege, bit for bit',
+    siegeDisagreement
+      ?? `tick ${a.tick}: pool ${a.hashes.hash}/${b.hashes.hash}, uf64 ${a.hashes.uf64}/${b.hashes.uf64}, `
+        + `uctl ${a.hashes.uctl}/${b.hashes.uctl}, alive ${a.hashes.alive}/${b.hashes.alive}`,
+    `${a.hashes.count} men. uctl is the layer that earns its keep here: a wall, a gate and a `
+      + 'ladder queue are control flow, and control flow is the one thing rounding cannot excuse');
+
+  const agreed = rs?.rooms?.[0]?.lastAgreedTick ?? -1;
+  record('siege-checkpoints-agreed',
+    agreed >= Math.min(a.tick, b.tick) - 60 && agreed > 0 && !a.net.desync && !b.net.desync,
+    'every checkpoint the two exchanged during the siege agreed',
+    `the relay's last agreed tick is ${agreed} against a final tick of ${a.tick}`);
+
+  const ld = logDiff(a.rec.events, b.rec.events);
+  record('siege-one-order-log', ld === null && a.rec.events.length > 2,
+    'and both hold the identical merged order log',
+    ld ?? `${a.rec.events.length} events, byte-identical on both clients`);
+
+  record('siege-console', a.errs.length === 0 && b.errs.length === 0,
+    'neither page raised a console error during the siege',
+    [...a.errs, ...b.errs].slice(0, 3).join(' ; ') || 'clean');
+
+  await m.host.close(); await m.guest.close(); relay.stop();
 }
 
 // ---------------------------------------------------------------------------
@@ -1342,6 +1546,38 @@ if (wanted('xengine')) {
 }
 
 // ---------------------------------------------------------------------------
+// What this run actually covered — asserted, not assumed
+// ---------------------------------------------------------------------------
+
+/*
+ * The check that makes the blind spot impossible to reintroduce quietly.
+ *
+ * `covered` is filled from the **challenger's** own config on every `bootMatch`, so it records
+ * the battles two clients really stood in rather than the arguments this file passed. A full
+ * run must contain at least one `field` and at least one `assault`; if somebody deletes the
+ * siege arm, narrows it, or breaks the path by which a siege config crosses the wire, the
+ * count of green checks does not quietly stay the same — this one goes red and says which
+ * scenario is missing.
+ *
+ * It runs whenever the run contains **both** the `battle` and the `siege` arm — which every
+ * default run does, and which `--only=battle,siege` does deliberately and cheaply. A run
+ * narrowed to one of them is not making a coverage claim, and a gate that punishes you for
+ * debugging a single arm is a gate people stop running.
+ */
+if (wanted('battle') && wanted('siege')) {
+  const kinds = new Set(covered.map((c) => c.scenario));
+  const want = ['field', 'assault'];
+  const missing = want.filter((k) => !kinds.has(k));
+  measured.coverage = { covered, kinds: [...kinds], missing };
+  record('net-coverage', missing.length === 0 && covered.length >= 2,
+    'this run relayed both a field battle and a siege, and read that off the challenger',
+    missing.length
+      ? `no relayed ${missing.join(' or ')} in this run — covered: `
+        + `${covered.map((c) => `${c.map}/${c.scenario}`).join(', ') || '(nothing)'}`
+      : `${covered.length} match(es): ${[...new Set(covered.map((c) => `${c.map}/${c.scenario}`))].join(', ')}`,
+    'qa-replay reported 21/21 for weeks while never once recording a siege — §9.9, and the '
+      + 'reason this check exists at all');
+}
 
 cleanup();
 

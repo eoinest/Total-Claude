@@ -1268,12 +1268,20 @@ different values and still run the identical simulation.
 
 ### 9.7 The gate, and every failure it can produce on purpose
 
-`tools/qa-net.mjs` drives two browser contexts through the real menu with real mouse events. Six
-of its ten arms exist to go red, and each of those fails if the session does *not* notice.
+`tools/qa-net.mjs` drives two browsers through the real menu with real mouse events. Six of its
+eleven arms exist to go red, and each of those fails if the session does *not* notice.
+
+> **Two browsers, not two contexts of one — changed 22 Aug 2026.** The first version booted both
+> clients as two pages of a single Chromium, which would have satisfied the cap in
+> `tools/lib/browser-budget.mjs` while costing the machine two renderer processes, two WebGL
+> contexts and two full battles. `check-browser-budget` names that gap itself under *not
+> covered*: "a tool that takes one slot and then opens ten contexts inside it." This gate holds
+> **two of the four slots**, and three under `--only=xengine`.
 
 | arm | what is broken | what happened |
 |---|---|---|
 | `battle` | nothing | same tick, same four hashes, byte-identical merged order log, same result, delay inside 3–6 ticks, no console error |
+| `siege` | nothing — **a relayed assault** | §9.11 |
 | `proto` | nothing | the room state machine over a real socket, headless, in two seconds |
 | `drop` | one order removed from one client's turn packet | caught at tick 90 on `uf64`, 2 of 37 units named |
 | `dup` | one **deployment** operation delivered twice | caught at **tick 0** — before a tick of battle — 2 of 38 units named |
@@ -1283,8 +1291,9 @@ of its ten arms exist to go red, and each of those fails if the session does *no
 | `leave` | one client's socket closes | survivor told `peerLeft` at a stated tick, and stops |
 | `lag` | 0 / 50 / 120 ms round trip | the table in §9.3 |
 | `xengine` *(opt-in)* | nothing — **Chromium against Firefox** | §9.8 |
+| `net-coverage` | *(not an arm — a check on the run)* | red unless the run relayed both a field battle and a siege |
 
-**Nine arms run by default; `xengine` is opt-in** (`--only=xengine` or `--all`). It runs two
+**Ten arms run by default; `xengine` is opt-in** (`--only=xengine` or `--all`). It runs two
 full-scale battles in two browser engines at once, and Firefox software-rendering 8,632 soldiers
 is the most expensive thing in this repository — on a shared machine, with six other agents'
 Playwright runs putting the load average at 144, it times out on `page.goto`. **A gate that goes
@@ -1396,6 +1405,12 @@ Named rather than forgotten. Each was considered and refused with a reason.
    number in this section is two browsers on one laptop. A relay makes closing it easy: two
    machines, one `node tools/relay.mjs`, and the boot-print handshake will either agree or name
    the field that does not.
+8. **The lobby form itself is not clicked by the gate** *(stated 22 Aug 2026)*. The host goes
+   through the real front door and the real setup sheet; the challenger opens the invite URL —
+   `?net=<relay>&room=<CODE>&host=0`, which is exactly and only what `NetLobby.ts:132-139`
+   builds and puts on the clipboard. So the *join path* is the product's, but nobody has typed a
+   room code into the form under test. Everything downstream of that URL is covered; the text
+   input, the Create/Join buttons and the clipboard write are not.
 
 ### 9.10 Where the code is
 
@@ -1408,7 +1423,7 @@ Named rather than forgotten. Each was considered and refused with a reason.
 | `src/ui/NetLobby.ts` | make a room or join one; `?mp=1`, and a plaque on the front door |
 | `src/ui/NetPanel.ts` | who you are, what the link is doing, and what went wrong |
 | `tools/relay.mjs` | the Node relay, dependency-free, with the fault injector |
-| `tools/qa-net.mjs` | the gate: two clients, ten arms, six of them negative |
+| `tools/qa-net.mjs` | the gate: two clients in two browsers, eleven arms, six of them negative |
 | `net/worker.ts`, `net/wrangler.toml` | the Cloudflare target, written, never run |
 
 Changes outside `src/net`: `src/sim/replay.ts` gains a `net` mode and exports its codec;
@@ -1426,3 +1441,91 @@ open http://127.0.0.1:<port>/?mp=1         # create a room, copy the invite, ope
                                            # second window
 node tools/qa-net.mjs                      # the gate
 ```
+
+
+### 9.11 The blind spot the gate inherited, and what closing it found — 22 August 2026
+
+`e/net/session` was written on 21 August and interrupted by a machine crash before it was
+integrated. This section is what happened when it was picked up: it was merged onto a `main` that
+had moved under it, and then pointed at the one battle it had never played.
+
+**The merge.** Two things on `main` were newer than the session branch and both had to win.
+Rome's determinism pin moved to **3,072** at `63be5cd`, so the branch's `3,074` was simply out of
+date — `tools/determinism-baseline.json` did not conflict and no pin moved. And `npm run lint` is
+**3/3** now: `check-browser-budget` fails any file in `tools/` that opens a browser without going
+through `tools/lib/browser-budget.mjs`, and `tools/qa-net.mjs` had two direct launches.
+
+**Two clients are two slots.** The obvious conversion — one `launchBrowser`, both clients as two
+pages inside it — passes the cap and is a lie. Two pages are two renderer processes and two WebGL
+contexts running two battles; the budget's own lint says so under *not covered*: "a tool that
+takes one slot and then opens ten contexts inside it." The host and the challenger now take a
+slot each, so the gate holds two of four and anything else on the machine queues behind it rather
+than oversubscribing it. A third slot is taken by `--only=xengine`'s Firefox.
+
+While moving them, one ordering bug fell out that had nothing to do with the cap.
+`browser-budget.mjs` installs its own `uncaughtException` handler when it takes a slot, and node
+runs those listeners in registration order. `qa-net.mjs`'s `cleanup()` — the function that kills
+the relays — was registered *after* the first launch, behind a handler ending in
+`process.exit(1)`. It was dead code on precisely the paths it existed for. It is registered
+before the first resource now. `tools/relay.mjs` also learned `--parent=<pid>`, polled every two
+seconds, the lesson `tools/lib/vite-runner.mjs` learned the same week: SIGTERM only helps when
+something is alive to send it, and the event this machine has actually had is everything on it
+being SIGKILLed at once.
+
+#### The blind spot
+
+**Every arm in this file booted `campus-martius / field`.** That is the same hole that let
+`tools/qa-replay.mjs` report 21/21 for weeks while no siege record had ever been through it, and
+it was written into this file on the same day that hole was found in the other one.
+
+It matters more here. A siege is where this design's hazards are densest — `Siege.ts` mutates
+private maps outside the tick, a wall and a gate and a ladder queue are control flow that `uctl`
+is the only layer watching — and the challenger *never sees a menu*. Its entire battle, siege
+included, arrives as `MsgSetup.cfg` over the relay. Nothing above would ever have said whether a
+siege config crosses the wire and builds identically on both clients.
+
+**It does.** `campus-martius / assault`, two clients, real menu, real mouse, both armies deployed
+and fighting:
+
+```
+tick 1365 (t+45.5 s), 3,180 men, 3,072 alive on both
+pool  caa88bc8 / caa88bc8
+uf64  d62dcbaa / d62dcbaa
+uctl  50c56120 / 50c56120
+last agreed checkpoint 1350;  17 order events, byte-identical on both clients
+```
+
+#### What closing it found
+
+**A disabled button, and a thirty-second hang.** `deployWith` clicked the first deployment row's
+`+`. On the assault the establishment is fixed and `tower-assault` ships that button *disabled*,
+so Playwright waited thirty seconds and threw a locator name — on the challenger, taking the arm
+with it. This is the second time this repository has paid for it: `tools/lib/menu-boot.mjs`
+carries a long comment about a bare click on a disabled button stopping `qa-replay`'s matrix arm
+dead on its second battle. The driver now takes the first row whose `+` is *enabled* and records
+the skip when there is none, and `.dep-begin` is asked rather than clicked blind.
+
+The identical unguarded line was still sitting in `tools/qa-replay.mjs:293`. It has never fired
+because the `matrix` arm passes `deploy=0` — so it is a latent hang waiting for the first person
+who gives that arm a deployment phase. Fixed in the same style; behaviour on a field battle is
+unchanged, because there row 0 is always addable.
+
+**`net-coverage`, and it goes red.** A siege arm that somebody later narrows or deletes would take
+the coverage with it and the green count would not move. So the run now asserts what it covered:
+`covered` is filled from the **challenger's** own config on every match — not from the arguments
+this file passed, because recording the argument would prove nothing and recording what the second
+client built proves the config crossed the relay. A run containing both the `battle` and the
+`siege` arm must contain at least one `field` and at least one `assault`.
+
+Made to fail on purpose, which is the only reason to believe it:
+
+```
+$ node tools/qa-net.mjs --only=battle,siege --siege-scenario=field
+  FAIL  net-coverage   no relayed assault in this run —
+                       covered: campus-martius/field, campus-martius/field
+  ✗ 14/15 checks passed        exit 1
+```
+
+`--siege-scenario` is a real knob rather than a test hook — it points the arm at any `(map,
+scenario)` the product ships — but it is spelled out rather than hard-coded to `assault`
+specifically so that the check guarding the coverage claim can be shown to work.

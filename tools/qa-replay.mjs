@@ -287,12 +287,26 @@ async function recordBattle(opts = {}) {
     // streams. The record asserts the id that came back.
     await page.click('.dep-add');
     await settle(page, 200);
-    const rows = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('.dep-row')).map((r) => r.dataset.unit));
-    if (rows.length) {
-      await page.click(`.dep-row[data-unit="${rows[0]}"] [data-d="1"]`);
-      gestures.push(`palette +1 ${rows[0]}`);
+    /*
+     * The first row whose `+` is *enabled*, not simply the first row.
+     *
+     * Identical on a field battle, where row 0 can always be added to — which is the only
+     * kind of battle that reaches this line today, because the `matrix` arm passes
+     * `deploy=0`. On an assault the establishment is fixed and `tower-assault` ships its `+`
+     * disabled, and a bare `page.click` on a disabled button waits thirty seconds and throws
+     * a locator name. `tools/qa-net.mjs`'s siege arm hit exactly that on 22 Aug; this is the
+     * same latent hang, in the file that will meet it the moment anyone gives the matrix arm
+     * a deployment phase.
+     */
+    const rows = await page.evaluate(() => Array.from(document.querySelectorAll('.dep-row'))
+      .map((r) => ({ unit: r.dataset.unit, addable: !r.querySelector('[data-d="1"]')?.disabled })));
+    const addable = rows.find((r) => r.addable);
+    if (addable) {
+      await page.click(`.dep-row[data-unit="${addable.unit}"] [data-d="1"]`);
+      gestures.push(`palette +1 ${addable.unit}`);
       await settle(page, 260);
+    } else if (rows.length) {
+      gestures.push(`palette +1 skipped (all ${rows.length} rows at their establishment)`);
     }
     await page.click('.dep-add');
     await settle(page, 200);
