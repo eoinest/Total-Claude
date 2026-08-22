@@ -1,0 +1,1964 @@
+{
+ "tag": "before",
+ "head": "428bb028dde62d0517416adf70460eaa15f639ff",
+ "srcHash": "0e659d472a58c8f2",
+ "map": "campus-martius",
+ "scen": "assault",
+ "seeds": [
+  4265438264,
+  1,
+  7,
+  99,
+  12345,
+  777777,
+  2718281828,
+  31415926,
+  8675309,
+  424242,
+  1000003,
+  4000000000
+ ],
+ "step": 10,
+ "marks": [
+  900,
+  2700,
+  4500,
+  6000,
+  12000
+ ],
+ "rows": [
+  {
+   "seed": 4265438264,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 124.47,
+   "contactAt": 31.87,
+   "firstBreakUs": null,
+   "firstBreakThem": 42.2,
+   "contestWindow": 92.6,
+   "flips": 0,
+   "maxLead": 0.248,
+   "minGapAfterContact": 0.228,
+   "n0": 3072,
+   "curve": [
+    {
+     "t": 11.3,
+     "me": 1154,
+     "them": 1915,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 21.57,
+     "me": 1154,
+     "them": 1884,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 31.87,
+     "me": 1153,
+     "them": 1861,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 42.2,
+     "me": 1149,
+     "them": 1836,
+     "myRouting": 0,
+     "theirRouting": 1,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 52.47,
+     "me": 1123,
+     "them": 1794,
+     "myRouting": 0,
+     "theirRouting": 2,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "24 of 60 inside — hold"
+    },
+    {
+     "t": 62.77,
+     "me": 1100,
+     "them": 1755,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "23 of 60 inside — hold"
+    },
+    {
+     "t": 73.03,
+     "me": 1078,
+     "them": 1713,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "14 of 60 inside — hold"
+    },
+    {
+     "t": 83.33,
+     "me": 1052,
+     "them": 1682,
+     "myRouting": 0,
+     "theirRouting": 5,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "11 of 60 inside — hold"
+    },
+    {
+     "t": 93.6,
+     "me": 1035,
+     "them": 1659,
+     "myRouting": 0,
+     "theirRouting": 5,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "1 of 60 inside — hold"
+    },
+    {
+     "t": 103.9,
+     "me": 1019,
+     "them": 1626,
+     "myRouting": 0,
+     "theirRouting": 5,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "23 of 60 inside — hold"
+    },
+    {
+     "t": 114.2,
+     "me": 1008,
+     "them": 1610,
+     "myRouting": 0,
+     "theirRouting": 5,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "In the Streets",
+     "adv": "46 of 60 inside — hold"
+    },
+    {
+     "t": 124.47,
+     "me": 1003,
+     "them": 1600,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "Aftermath",
+     "adv": "JUTHUNGI advantage 23%"
+    }
+   ],
+   "hashes": {
+    "900": {
+     "hash": "4d10d110",
+     "count": 3072,
+     "alive": 3014,
+     "uf64": "169c807c",
+     "uctl": "79ca8e7a",
+     "units": 32
+    },
+    "2700": {
+     "hash": "dfb2f350",
+     "count": 3072,
+     "alive": 2694,
+     "uf64": "76c8d422",
+     "uctl": "c555bf0f",
+     "units": 32
+    }
+   }
+  },
+  {
+   "seed": 1,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 114.2,
+   "contactAt": 21.57,
+   "firstBreakUs": 93.63,
+   "firstBreakThem": 42.17,
+   "contestWindow": 92.6,
+   "flips": 0,
+   "maxLead": 0.247,
+   "minGapAfterContact": 0.225,
+   "n0": 3072,
+   "curve": [
+    {
+     "t": 11.3,
+     "me": 1154,
+     "them": 1911,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 21.57,
+     "me": 1154,
+     "them": 1877,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 31.83,
+     "me": 1154,
+     "them": 1855,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 42.17,
+     "me": 1151,
+     "them": 1833,
+     "myRouting": 0,
+     "theirRouting": 1,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "1 of 60 inside — hold"
+    },
+    {
+     "t": 52.47,
+     "me": 1117,
+     "them": 1785,
+     "myRouting": 0,
+     "theirRouting": 2,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "40 of 60 inside — hold"
+    },
+    {
+     "t": 62.73,
+     "me": 1099,
+     "them": 1738,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "41 of 60 inside — hold"
+    },
+    {
+     "t": 73.03,
+     "me": 1060,
+     "them": 1697,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 1,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "41 of 60 inside — hold"
+    },
+    {
+     "t": 83.3,
+     "me": 1033,
+     "them": 1664,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 1,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "36 of 60 inside — hold"
+    },
+    {
+     "t": 93.63,
+     "me": 1006,
+     "them": 1634,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 1,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "32 of 60 inside — hold"
+    },
+    {
+     "t": 103.9,
+     "me": 987,
+     "them": 1604,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 1,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "48 of 60 inside — hold"
+    },
+    {
+     "t": 114.2,
+     "me": 979,
+     "them": 1583,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 1,
+     "theirDead": 1,
+     "phase": "Aftermath",
+     "adv": "JUTHUNGI advantage 24%"
+    }
+   ],
+   "hashes": {
+    "900": {
+     "hash": "730d4188",
+     "count": 3072,
+     "alive": 3009,
+     "uf64": "e747d585",
+     "uctl": "fed6546e",
+     "units": 32
+    },
+    "2700": {
+     "hash": "b4dbc676",
+     "count": 3072,
+     "alive": 2640,
+     "uf64": "33bc0e98",
+     "uctl": "23d81c9a",
+     "units": 32
+    }
+   }
+  },
+  {
+   "seed": 7,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 114.3,
+   "contactAt": 21.73,
+   "firstBreakUs": 114.3,
+   "firstBreakThem": 42.27,
+   "contestWindow": 92.6,
+   "flips": 0,
+   "maxLead": 0.247,
+   "minGapAfterContact": 0.223,
+   "n0": 3072,
+   "curve": [
+    {
+     "t": 11.43,
+     "me": 1154,
+     "them": 1910,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 21.73,
+     "me": 1154,
+     "them": 1875,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 32,
+     "me": 1152,
+     "them": 1851,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 42.27,
+     "me": 1150,
+     "them": 1825,
+     "myRouting": 0,
+     "theirRouting": 1,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "4 of 60 inside — hold"
+    },
+    {
+     "t": 52.57,
+     "me": 1121,
+     "them": 1779,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "27 of 60 inside — hold"
+    },
+    {
+     "t": 62.87,
+     "me": 1102,
+     "them": 1734,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "2 of 60 inside — hold"
+    },
+    {
+     "t": 73.17,
+     "me": 1077,
+     "them": 1703,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 83.43,
+     "me": 1050,
+     "them": 1668,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 93.73,
+     "me": 1026,
+     "them": 1638,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "9 of 60 inside — hold"
+    },
+    {
+     "t": 104,
+     "me": 1007,
+     "them": 1619,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "54 of 60 inside — hold"
+    },
+    {
+     "t": 114.3,
+     "me": 997,
+     "them": 1597,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "Aftermath",
+     "adv": "JUTHUNGI advantage 23%"
+    }
+   ],
+   "hashes": {
+    "900": {
+     "hash": "3247af08",
+     "count": 3072,
+     "alive": 3003,
+     "uf64": "a3a86eed",
+     "uctl": "a50aa2f9",
+     "units": 32
+    },
+    "2700": {
+     "hash": "04348ca0",
+     "count": 3072,
+     "alive": 2664,
+     "uf64": "9b4a7b33",
+     "uctl": "e873d540",
+     "units": 32
+    }
+   }
+  },
+  {
+   "seed": 99,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 114.33,
+   "contactAt": 31.97,
+   "firstBreakUs": 73.2,
+   "firstBreakThem": 42.27,
+   "contestWindow": 82.4,
+   "flips": 0,
+   "maxLead": 0.247,
+   "minGapAfterContact": 0.224,
+   "n0": 3072,
+   "curve": [
+    {
+     "t": 11.43,
+     "me": 1154,
+     "them": 1912,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 21.7,
+     "me": 1154,
+     "them": 1881,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 31.97,
+     "me": 1154,
+     "them": 1854,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 42.27,
+     "me": 1149,
+     "them": 1828,
+     "myRouting": 0,
+     "theirRouting": 1,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "4 of 60 inside — hold"
+    },
+    {
+     "t": 52.57,
+     "me": 1128,
+     "them": 1779,
+     "myRouting": 0,
+     "theirRouting": 3,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "38 of 60 inside — hold"
+    },
+    {
+     "t": 62.87,
+     "me": 1097,
+     "them": 1737,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "42 of 60 inside — hold"
+    },
+    {
+     "t": 73.2,
+     "me": 1062,
+     "them": 1696,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "35 of 60 inside — hold"
+    },
+    {
+     "t": 83.47,
+     "me": 1026,
+     "them": 1660,
+     "myRouting": 2,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "27 of 60 inside — hold"
+    },
+    {
+     "t": 93.77,
+     "me": 1006,
+     "them": 1637,
+     "myRouting": 2,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "26 of 60 inside — hold"
+    },
+    {
+     "t": 104.07,
+     "me": 997,
+     "them": 1600,
+     "myRouting": 2,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "44 of 60 inside — hold"
+    },
+    {
+     "t": 114.33,
+     "me": 990,
+     "them": 1578,
+     "myRouting": 2,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "Aftermath",
+     "adv": "JUTHUNGI advantage 23%"
+    }
+   ],
+   "hashes": {
+    "900": {
+     "hash": "4b720462",
+     "count": 3072,
+     "alive": 3008,
+     "uf64": "55ca1436",
+     "uctl": "69a7257c",
+     "units": 32
+    },
+    "2700": {
+     "hash": "2cf90710",
+     "count": 3072,
+     "alive": 2643,
+     "uf64": "5c8f9c20",
+     "uctl": "25c8cfaf",
+     "units": 32
+    }
+   }
+  },
+  {
+   "seed": 12345,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 124.57,
+   "contactAt": 31.97,
+   "firstBreakUs": null,
+   "firstBreakThem": 42.23,
+   "contestWindow": 92.6,
+   "flips": 0,
+   "maxLead": 0.248,
+   "minGapAfterContact": 0.226,
+   "n0": 3072,
+   "curve": [
+    {
+     "t": 11.4,
+     "me": 1154,
+     "them": 1917,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 21.7,
+     "me": 1154,
+     "them": 1883,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 31.97,
+     "me": 1153,
+     "them": 1859,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 42.23,
+     "me": 1151,
+     "them": 1841,
+     "myRouting": 0,
+     "theirRouting": 1,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 52.5,
+     "me": 1127,
+     "them": 1797,
+     "myRouting": 0,
+     "theirRouting": 3,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "13 of 60 inside — hold"
+    },
+    {
+     "t": 62.77,
+     "me": 1104,
+     "them": 1748,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "44 of 60 inside — hold"
+    },
+    {
+     "t": 73.07,
+     "me": 1074,
+     "them": 1716,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "29 of 60 inside — hold"
+    },
+    {
+     "t": 83.37,
+     "me": 1031,
+     "them": 1680,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "7 of 60 inside — hold"
+    },
+    {
+     "t": 93.67,
+     "me": 1004,
+     "them": 1653,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "3 of 60 inside — hold"
+    },
+    {
+     "t": 103.97,
+     "me": 990,
+     "them": 1624,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "21 of 60 inside — hold"
+    },
+    {
+     "t": 114.27,
+     "me": 985,
+     "them": 1605,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "In the Streets",
+     "adv": "45 of 60 inside — hold"
+    },
+    {
+     "t": 124.57,
+     "me": 980,
+     "them": 1597,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "Aftermath",
+     "adv": "JUTHUNGI advantage 24%"
+    }
+   ],
+   "hashes": {
+    "900": {
+     "hash": "c995e9c0",
+     "count": 3072,
+     "alive": 3012,
+     "uf64": "a30a4bb7",
+     "uctl": "c4537b3c",
+     "units": 32
+    },
+    "2700": {
+     "hash": "7af55592",
+     "count": 3072,
+     "alive": 2657,
+     "uf64": "90f3ff70",
+     "uctl": "f10e30af",
+     "units": 32
+    }
+   }
+  },
+  {
+   "seed": 777777,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 114.13,
+   "contactAt": 21.67,
+   "firstBreakUs": null,
+   "firstBreakThem": 42.23,
+   "contestWindow": 92.5,
+   "flips": 0,
+   "maxLead": 0.247,
+   "minGapAfterContact": 0.213,
+   "n0": 3072,
+   "curve": [
+    {
+     "t": 11.37,
+     "me": 1154,
+     "them": 1913,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 21.67,
+     "me": 1154,
+     "them": 1873,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 31.97,
+     "me": 1152,
+     "them": 1844,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 42.23,
+     "me": 1151,
+     "them": 1823,
+     "myRouting": 0,
+     "theirRouting": 1,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 52.5,
+     "me": 1129,
+     "them": 1774,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "41 of 60 inside — hold"
+    },
+    {
+     "t": 62.8,
+     "me": 1111,
+     "them": 1719,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "2 of 60 inside — hold"
+    },
+    {
+     "t": 73.07,
+     "me": 1089,
+     "them": 1688,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 83.33,
+     "me": 1068,
+     "them": 1663,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 93.6,
+     "me": 1046,
+     "them": 1636,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "43 of 60 inside — hold"
+    },
+    {
+     "t": 103.87,
+     "me": 1035,
+     "them": 1609,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "55 of 60 inside — hold"
+    },
+    {
+     "t": 114.13,
+     "me": 1029,
+     "them": 1585,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "Aftermath",
+     "adv": "JUTHUNGI advantage 21%"
+    }
+   ],
+   "hashes": {
+    "900": {
+     "hash": "ffa09bc0",
+     "count": 3072,
+     "alive": 2996,
+     "uf64": "cc111f1e",
+     "uctl": "f0aa439e",
+     "units": 32
+    },
+    "2700": {
+     "hash": "38bf2e3e",
+     "count": 3072,
+     "alive": 2682,
+     "uf64": "50c586b9",
+     "uctl": "6fa5b2bb",
+     "units": 32
+    }
+   }
+  },
+  {
+   "seed": 2718281828,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 124.67,
+   "contactAt": 32.13,
+   "firstBreakUs": null,
+   "firstBreakThem": 42.43,
+   "contestWindow": 92.5,
+   "flips": 0,
+   "maxLead": 0.248,
+   "minGapAfterContact": 0.221,
+   "n0": 3072,
+   "curve": [
+    {
+     "t": 11.57,
+     "me": 1154,
+     "them": 1917,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 21.87,
+     "me": 1154,
+     "them": 1892,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 32.13,
+     "me": 1153,
+     "them": 1863,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 42.43,
+     "me": 1149,
+     "them": 1841,
+     "myRouting": 0,
+     "theirRouting": 1,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 52.7,
+     "me": 1126,
+     "them": 1803,
+     "myRouting": 0,
+     "theirRouting": 2,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "25 of 60 inside — hold"
+    },
+    {
+     "t": 63,
+     "me": 1096,
+     "them": 1745,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "3 of 60 inside — hold"
+    },
+    {
+     "t": 73.27,
+     "me": 1074,
+     "them": 1712,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 83.53,
+     "me": 1046,
+     "them": 1679,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 93.83,
+     "me": 1028,
+     "them": 1646,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "1 of 60 inside — hold"
+    },
+    {
+     "t": 104.1,
+     "me": 1018,
+     "them": 1617,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "30 of 60 inside — hold"
+    },
+    {
+     "t": 114.37,
+     "me": 1013,
+     "them": 1599,
+     "myRouting": 0,
+     "theirRouting": 5,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "In the Streets",
+     "adv": "56 of 60 inside — hold"
+    },
+    {
+     "t": 124.67,
+     "me": 1011,
+     "them": 1585,
+     "myRouting": 0,
+     "theirRouting": 5,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "Aftermath",
+     "adv": "JUTHUNGI advantage 22%"
+    }
+   ],
+   "hashes": {
+    "900": {
+     "hash": "52b5f1e8",
+     "count": 3072,
+     "alive": 3016,
+     "uf64": "50b58c14",
+     "uctl": "18d24bc1",
+     "units": 32
+    },
+    "2700": {
+     "hash": "e3de7a62",
+     "count": 3072,
+     "alive": 2674,
+     "uf64": "188a145c",
+     "uctl": "8ec8d1cc",
+     "units": 32
+    }
+   }
+  },
+  {
+   "seed": 31415926,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 124.53,
+   "contactAt": 31.97,
+   "firstBreakUs": 114.27,
+   "firstBreakThem": 42.27,
+   "contestWindow": 92.6,
+   "flips": 0,
+   "maxLead": 0.247,
+   "minGapAfterContact": 0.22,
+   "n0": 3072,
+   "curve": [
+    {
+     "t": 11.43,
+     "me": 1154,
+     "them": 1913,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 21.7,
+     "me": 1154,
+     "them": 1880,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 31.97,
+     "me": 1153,
+     "them": 1854,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 42.27,
+     "me": 1149,
+     "them": 1831,
+     "myRouting": 0,
+     "theirRouting": 1,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "2 of 60 inside — hold"
+    },
+    {
+     "t": 52.53,
+     "me": 1124,
+     "them": 1784,
+     "myRouting": 0,
+     "theirRouting": 3,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "29 of 60 inside — hold"
+    },
+    {
+     "t": 62.8,
+     "me": 1107,
+     "them": 1730,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "19 of 60 inside — hold"
+    },
+    {
+     "t": 73.1,
+     "me": 1074,
+     "them": 1693,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "34 of 60 inside — hold"
+    },
+    {
+     "t": 83.37,
+     "me": 1037,
+     "them": 1652,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "29 of 60 inside — hold"
+    },
+    {
+     "t": 93.63,
+     "me": 1013,
+     "them": 1626,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "29 of 60 inside — hold"
+    },
+    {
+     "t": 103.97,
+     "me": 1000,
+     "them": 1602,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "28 of 60 inside — hold"
+    },
+    {
+     "t": 114.27,
+     "me": 993,
+     "them": 1590,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "In the Streets",
+     "adv": "48 of 60 inside — hold"
+    },
+    {
+     "t": 124.53,
+     "me": 987,
+     "them": 1583,
+     "myRouting": 2,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "Aftermath",
+     "adv": "JUTHUNGI advantage 23%"
+    }
+   ],
+   "hashes": {
+    "900": {
+     "hash": "72c4cf98",
+     "count": 3072,
+     "alive": 3007,
+     "uf64": "9250f433",
+     "uctl": "36cad3d2",
+     "units": 32
+    },
+    "2700": {
+     "hash": "75b9b73c",
+     "count": 3072,
+     "alive": 2639,
+     "uf64": "bad9ea38",
+     "uctl": "b2a20d1b",
+     "units": 32
+    }
+   }
+  },
+  {
+   "seed": 8675309,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 114.27,
+   "contactAt": 32.03,
+   "firstBreakUs": 73.17,
+   "firstBreakThem": 42.33,
+   "contestWindow": 82.2,
+   "flips": 0,
+   "maxLead": 0.247,
+   "minGapAfterContact": 0.226,
+   "n0": 3072,
+   "curve": [
+    {
+     "t": 11.47,
+     "me": 1154,
+     "them": 1911,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 21.73,
+     "me": 1154,
+     "them": 1882,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 32.03,
+     "me": 1153,
+     "them": 1860,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 42.33,
+     "me": 1153,
+     "them": 1836,
+     "myRouting": 0,
+     "theirRouting": 1,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "5 of 60 inside — hold"
+    },
+    {
+     "t": 52.6,
+     "me": 1133,
+     "them": 1795,
+     "myRouting": 0,
+     "theirRouting": 3,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "34 of 60 inside — hold"
+    },
+    {
+     "t": 62.87,
+     "me": 1096,
+     "them": 1744,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "45 of 60 inside — hold"
+    },
+    {
+     "t": 73.17,
+     "me": 1062,
+     "them": 1703,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "36 of 60 inside — hold"
+    },
+    {
+     "t": 83.43,
+     "me": 1028,
+     "them": 1675,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "36 of 60 inside — hold"
+    },
+    {
+     "t": 93.73,
+     "me": 999,
+     "them": 1652,
+     "myRouting": 2,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "38 of 60 inside — hold"
+    },
+    {
+     "t": 104,
+     "me": 987,
+     "them": 1613,
+     "myRouting": 2,
+     "theirRouting": 4,
+     "myDead": 1,
+     "theirDead": 1,
+     "phase": "In the Streets",
+     "adv": "58 of 60 inside — hold"
+    },
+    {
+     "t": 114.27,
+     "me": 979,
+     "them": 1597,
+     "myRouting": 2,
+     "theirRouting": 4,
+     "myDead": 1,
+     "theirDead": 1,
+     "phase": "Aftermath",
+     "adv": "JUTHUNGI advantage 24%"
+    }
+   ],
+   "hashes": {
+    "900": {
+     "hash": "09518398",
+     "count": 3072,
+     "alive": 3013,
+     "uf64": "5e70f7d9",
+     "uctl": "c4f70ec1",
+     "units": 32
+    },
+    "2700": {
+     "hash": "bdcbc50e",
+     "count": 3072,
+     "alive": 2651,
+     "uf64": "20f12701",
+     "uctl": "8a947464",
+     "units": 32
+    }
+   }
+  },
+  {
+   "seed": 424242,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 114.17,
+   "contactAt": 31.97,
+   "firstBreakUs": 83.33,
+   "firstBreakThem": 42.23,
+   "contestWindow": 82.2,
+   "flips": 0,
+   "maxLead": 0.248,
+   "minGapAfterContact": 0.22,
+   "n0": 3072,
+   "curve": [
+    {
+     "t": 11.43,
+     "me": 1154,
+     "them": 1915,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 21.7,
+     "me": 1154,
+     "them": 1881,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 31.97,
+     "me": 1152,
+     "them": 1855,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 42.23,
+     "me": 1151,
+     "them": 1834,
+     "myRouting": 0,
+     "theirRouting": 1,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 52.53,
+     "me": 1122,
+     "them": 1787,
+     "myRouting": 0,
+     "theirRouting": 3,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "26 of 60 inside — hold"
+    },
+    {
+     "t": 62.8,
+     "me": 1105,
+     "them": 1727,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "10 of 60 inside — hold"
+    },
+    {
+     "t": 73.07,
+     "me": 1073,
+     "them": 1695,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "37 of 60 inside — hold"
+    },
+    {
+     "t": 83.33,
+     "me": 1033,
+     "them": 1667,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "24 of 60 inside — hold"
+    },
+    {
+     "t": 93.6,
+     "me": 1006,
+     "them": 1644,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "33 of 60 inside — hold"
+    },
+    {
+     "t": 103.9,
+     "me": 989,
+     "them": 1618,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "53 of 60 inside — hold"
+    },
+    {
+     "t": 114.17,
+     "me": 972,
+     "them": 1594,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "Aftermath",
+     "adv": "JUTHUNGI advantage 24%"
+    }
+   ],
+   "hashes": {
+    "900": {
+     "hash": "6a77ee62",
+     "count": 3072,
+     "alive": 3007,
+     "uf64": "4defb784",
+     "uctl": "b0c6d3a1",
+     "units": 32
+    },
+    "2700": {
+     "hash": "45ceb338",
+     "count": 3072,
+     "alive": 2650,
+     "uf64": "d9eb7982",
+     "uctl": "fab4775f",
+     "units": 32
+    }
+   }
+  },
+  {
+   "seed": 1000003,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 114.33,
+   "contactAt": 32.13,
+   "firstBreakUs": 93.8,
+   "firstBreakThem": 42.4,
+   "contestWindow": 82.2,
+   "flips": 0,
+   "maxLead": 0.273,
+   "minGapAfterContact": 0.226,
+   "n0": 3072,
+   "curve": [
+    {
+     "t": 11.6,
+     "me": 1154,
+     "them": 1914,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 21.87,
+     "me": 1154,
+     "them": 1884,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 32.13,
+     "me": 1153,
+     "them": 1861,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 42.4,
+     "me": 1149,
+     "them": 1836,
+     "myRouting": 0,
+     "theirRouting": 1,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 52.67,
+     "me": 1119,
+     "them": 1794,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "34 of 60 inside — hold"
+    },
+    {
+     "t": 62.93,
+     "me": 1101,
+     "them": 1744,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "19 of 60 inside — hold"
+    },
+    {
+     "t": 73.23,
+     "me": 1075,
+     "them": 1711,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "38 of 60 inside — hold"
+    },
+    {
+     "t": 83.5,
+     "me": 1039,
+     "them": 1684,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "38 of 60 inside — hold"
+    },
+    {
+     "t": 93.8,
+     "me": 962,
+     "them": 1655,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "39 of 60 inside — hold"
+    },
+    {
+     "t": 104.07,
+     "me": 929,
+     "them": 1627,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "55 of 60 inside — hold"
+    },
+    {
+     "t": 114.33,
+     "me": 915,
+     "them": 1598,
+     "myRouting": 2,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 1,
+     "phase": "Aftermath",
+     "adv": "JUTHUNGI advantage 27%"
+    }
+   ],
+   "hashes": {
+    "900": {
+     "hash": "53425352",
+     "count": 3072,
+     "alive": 3014,
+     "uf64": "1132e732",
+     "uctl": "454d4cd5",
+     "units": 32
+    },
+    "2700": {
+     "hash": "3f5d187e",
+     "count": 3072,
+     "alive": 2616,
+     "uf64": "18d9ef33",
+     "uctl": "abfed4f3",
+     "units": 32
+    }
+   }
+  },
+  {
+   "seed": 4000000000,
+   "verdict": "Defeat",
+   "reason": "objective",
+   "victor": 1,
+   "at": 104.1,
+   "contactAt": 32.13,
+   "firstBreakUs": 73.27,
+   "firstBreakThem": 42.4,
+   "contestWindow": 72,
+   "flips": 0,
+   "maxLead": 0.248,
+   "minGapAfterContact": 0.224,
+   "n0": 3072,
+   "curve": [
+    {
+     "t": 11.57,
+     "me": 1154,
+     "them": 1914,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 21.87,
+     "me": 1154,
+     "them": 1887,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 32.13,
+     "me": 1153,
+     "them": 1865,
+     "myRouting": 0,
+     "theirRouting": 0,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 42.4,
+     "me": 1150,
+     "them": 1836,
+     "myRouting": 0,
+     "theirRouting": 1,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "The Wall Reached",
+     "adv": "0 of 60 inside — hold"
+    },
+    {
+     "t": 52.73,
+     "me": 1123,
+     "them": 1788,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "34 of 60 inside — hold"
+    },
+    {
+     "t": 63,
+     "me": 1100,
+     "them": 1734,
+     "myRouting": 0,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "14 of 60 inside — hold"
+    },
+    {
+     "t": 73.27,
+     "me": 1067,
+     "them": 1698,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "35 of 60 inside — hold"
+    },
+    {
+     "t": 83.53,
+     "me": 1038,
+     "them": 1662,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 0,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "35 of 60 inside — hold"
+    },
+    {
+     "t": 93.83,
+     "me": 1003,
+     "them": 1637,
+     "myRouting": 1,
+     "theirRouting": 4,
+     "myDead": 1,
+     "theirDead": 0,
+     "phase": "In the Streets",
+     "adv": "43 of 60 inside — hold"
+    },
+    {
+     "t": 104.1,
+     "me": 989,
+     "them": 1614,
+     "myRouting": 2,
+     "theirRouting": 4,
+     "myDead": 1,
+     "theirDead": 0,
+     "phase": "Aftermath",
+     "adv": "JUTHUNGI advantage 24%"
+    }
+   ],
+   "hashes": {
+    "900": {
+     "hash": "da9e4456",
+     "count": 3072,
+     "alive": 3018,
+     "uf64": "89111a3c",
+     "uctl": "fb0089e9",
+     "units": 32
+    },
+    "2700": {
+     "hash": "dd2212c0",
+     "count": 3072,
+     "alive": 2640,
+     "uf64": "aa8f0866",
+     "uctl": "95f7cab3",
+     "units": 32
+    }
+   }
+  }
+ ],
+ "log": [
+  "tree: HEAD 428bb028dde62d0517416adf70460eaa15f639ff srcHash 0e659d472a58c8f2",
+  "campus-martius/assault, 12 seeds, sampling every 10 s to t+900",
+  "seed 4265438264  Defeat   objective  at t+124.47 | contact t+31.87 firstBreak me t+    - them t+ 42.2 | contested   92.6 s flips 0 maxLead 0.248 minGap 0.228 | alive@200 1003+1600=2603 alive@400 1003+1600=2603",
+  "seed          1  Defeat   objective  at t+ 114.2 | contact t+21.57 firstBreak me t+93.63 them t+42.17 | contested   92.6 s flips 0 maxLead 0.247 minGap 0.225 | alive@200 979+1583=2562 alive@400 979+1583=2562",
+  "seed          7  Defeat   objective  at t+ 114.3 | contact t+21.73 firstBreak me t+114.3 them t+42.27 | contested   92.6 s flips 0 maxLead 0.247 minGap 0.223 | alive@200 997+1597=2594 alive@400 997+1597=2594",
+  "seed         99  Defeat   objective  at t+114.33 | contact t+31.97 firstBreak me t+ 73.2 them t+42.27 | contested   82.4 s flips 0 maxLead 0.247 minGap 0.224 | alive@200 990+1578=2568 alive@400 990+1578=2568",
+  "seed      12345  Defeat   objective  at t+124.57 | contact t+31.97 firstBreak me t+    - them t+42.23 | contested   92.6 s flips 0 maxLead 0.248 minGap 0.226 | alive@200 980+1597=2577 alive@400 980+1597=2577",
+  "seed     777777  Defeat   objective  at t+114.13 | contact t+21.67 firstBreak me t+    - them t+42.23 | contested   92.5 s flips 0 maxLead 0.247 minGap 0.213 | alive@200 1029+1585=2614 alive@400 1029+1585=2614",
+  "seed 2718281828  Defeat   objective  at t+124.67 | contact t+32.13 firstBreak me t+    - them t+42.43 | contested   92.5 s flips 0 maxLead 0.248 minGap 0.221 | alive@200 1011+1585=2596 alive@400 1011+1585=2596",
+  "seed   31415926  Defeat   objective  at t+124.53 | contact t+31.97 firstBreak me t+114.27 them t+42.27 | contested   92.6 s flips 0 maxLead 0.247 minGap 0.22 | alive@200 987+1583=2570 alive@400 987+1583=2570",
+  "seed    8675309  Defeat   objective  at t+114.27 | contact t+32.03 firstBreak me t+73.17 them t+42.33 | contested   82.2 s flips 0 maxLead 0.247 minGap 0.226 | alive@200 979+1597=2576 alive@400 979+1597=2576",
+  "seed     424242  Defeat   objective  at t+114.17 | contact t+31.97 firstBreak me t+83.33 them t+42.23 | contested   82.2 s flips 0 maxLead 0.248 minGap 0.22 | alive@200 972+1594=2566 alive@400 972+1594=2566",
+  "seed    1000003  Defeat   objective  at t+114.33 | contact t+32.13 firstBreak me t+ 93.8 them t+ 42.4 | contested   82.2 s flips 0 maxLead 0.273 minGap 0.226 | alive@200 915+1598=2513 alive@400 915+1598=2513",
+  "seed 4000000000  Defeat   objective  at t+ 104.1 | contact t+32.13 firstBreak me t+73.27 them t+ 42.4 | contested     72 s flips 0 maxLead 0.248 minGap 0.224 | alive@200 989+1614=2603 alive@400 989+1614=2603",
+  "\n--- before @ 428bb028 / src 0e659d472a58c8f2 ---",
+  "survivors at t+200: []  mean null",
+  "survivors at t+400: []  mean null",
+  "contact:            [31.87,21.57,21.73,31.97,31.97,21.67,32.13,31.97,32.03,31.97,32.13,32.13]  mean 29.4",
+  "my first break:     [93.63,114.3,73.2,114.27,73.17,83.33,93.8,73.27]  mean 89.9",
+  "their first break:  [42.2,42.17,42.27,42.27,42.23,42.23,42.43,42.27,42.33,42.23,42.4,42.4]  mean 42.3",
+  "decided at:         [124.47,114.2,114.3,114.33,124.57,114.13,124.67,124.53,114.27,114.17,114.33,104.1]  mean 116.8",
+  "contested window:   [92.6,92.6,92.6,82.4,92.6,92.5,92.5,92.6,82.2,82.2,82.2,72]  mean 87.4",
+  "advantage flips:    [0,0,0,0,0,0,0,0,0,0,0,0]",
+  "closest it ever got:[0.228,0.225,0.223,0.224,0.226,0.213,0.221,0.22,0.226,0.22,0.226,0.224]",
+  "outcomes:           {\"Defeat/objective\":12}",
+  "hash marks:         [{\"seed\":4265438264,\"h\":{\"900\":\"4d10d110/3072/3014/169c807c/79ca8e7a/32\",\"2700\":\"dfb2f350/3072/2694/76c8d422/c555bf0f/32\"}},{\"seed\":1,\"h\":{\"900\":\"730d4188/3072/3009/e747d585/fed6546e/32\",\"2700\":\"b4dbc676/3072/2640/33bc0e98/23d81c9a/32\"}},{\"seed\":7,\"h\":{\"900\":\"3247af08/3072/3003/a3a86eed/a50aa2f9/32\",\"2700\":\"04348ca0/3072/2664/9b4a7b33/e873d540/32\"}},{\"seed\":99,\"h\":{\"900\":\"4b720462/3072/3008/55ca1436/69a7257c/32\",\"2700\":\"2cf90710/3072/2643/5c8f9c20/25c8cfaf/32\"}},{\"seed\":12345,\"h\":{\"900\":\"c995e9c0/3072/3012/a30a4bb7/c4537b3c/32\",\"2700\":\"7af55592/3072/2657/90f3ff70/f10e30af/32\"}},{\"seed\":777777,\"h\":{\"900\":\"ffa09bc0/3072/2996/cc111f1e/f0aa439e/32\",\"2700\":\"38bf2e3e/3072/2682/50c586b9/6fa5b2bb/32\"}},{\"seed\":2718281828,\"h\":{\"900\":\"52b5f1e8/3072/3016/50b58c14/18d24bc1/32\",\"2700\":\"e3de7a62/3072/2674/188a145c/8ec8d1cc/32\"}},{\"seed\":31415926,\"h\":{\"900\":\"72c4cf98/3072/3007/9250f433/36cad3d2/32\",\"2700\":\"75b9b73c/3072/2639/bad9ea38/b2a20d1b/32\"}},{\"seed\":8675309,\"h\":{\"900\":\"09518398/3072/3013/5e70f7d9/c4f70ec1/32\",\"2700\":\"bdcbc50e/3072/2651/20f12701/8a947464/32\"}},{\"seed\":424242,\"h\":{\"900\":\"6a77ee62/3072/3007/4defb784/b0c6d3a1/32\",\"2700\":\"45ceb338/3072/2650/d9eb7982/fab4775f/32\"}},{\"seed\":1000003,\"h\":{\"900\":\"53425352/3072/3014/1132e732/454d4cd5/32\",\"2700\":\"3f5d187e/3072/2616/18d9ef33/abfed4f3/32\"}},{\"seed\":4000000000,\"h\":{\"900\":\"da9e4456/3072/3018/89111a3c/fb0089e9/32\",\"2700\":\"dd2212c0/3072/2640/aa8f0866/95f7cab3/32\"}}]"
+ ]
+}
