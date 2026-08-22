@@ -2535,3 +2535,246 @@ gate bay, and the storm fields a nineteenth unit and a twentieth machine.
   through the unbuilt bays — `interceptOrders` branches on `sideOf` first and gives them the
   defenders' stairs — and on the third, two onager batteries, which `mayClimb` refuses by
   `unitClass`. Both refusals are correct and both read as "the breach does not work".
+## Session — 21 Aug 2026: the game tells the truth about what it just did
+
+Branch `e/fix/game-tells-the-truth`, off `main` at `58bc584`. Seven items from the gameplay
+judge's round one (`docs/judge/GAMEPLAY-FINDINGS-R1.md` on `e/judge/gameplay`). Everything below
+was proved by playing — the judge's own rig, `tools/judge/*`, driven at `advanceTicks(n, 1000/60)`
+against a dev server on port 5901 in this worktree, with the `main` tree served on 5902 for the
+before arm. Every figure is a before **and** an after.
+
+### The rule the whole pass is an application of
+
+**A derived number must be derived once.** Every one of these defects is a panel deciding
+something the simulation had already decided:
+
+| the panel decided | the arbiter already knew | what it printed |
+|---|---|---|
+| which victory condition fired | `finish()` raised it | *"The wall was carried"* under `HELD ×5` |
+| whether a unit was lost | `unitsLost` counted it | **Held**, at 4 men of 160 |
+| what the army was committed at | the roster at BEGIN | `−0` for a whole battle |
+| whether an order would be obeyed | `Siege` refused it a tick later | nothing at all |
+
+So four of the six fixes are the same fix: publish the decision, render it, and make the
+compiler refuse a rendering that does not cover every case the arbiter can raise.
+`WallCondition`, `unitOutcome`, `WallRefusal`/`WallVerb` and `Dispatch` are all `Record<>`s for
+that reason — a new case does not compile until somebody writes what the screen should say
+about it.
+
+### What moved, measured
+
+- **A routing man no longer counts as holding ground.** `censusWall` tested faction, `elevated`
+  and alive; `UnitOrder.Rout` was not in it. `Siege.broken` — the predicate that already served
+  the ram crew, the tower gang and the escalade party — moved to `types.ts` as **`isBroken`**
+  rather than gaining a fourth private copy, and the census now excludes broken storm units from
+  the run bins behind `stormHolding` (condition A) **and** from the pool walk behind `stormInside`
+  (condition B). `stormOnWall` deliberately still counts them: it is a description of the parapet,
+  and a man running along it is on it.
+
+  > **This shipped half-wired at `85d6b7d` and the correction is `adec57a`.** The `Set` of broken
+  > unit ids was written and read nowhere: the exclusion was achieved by a `continue` that skipped
+  > the lodgement binning, so it reached condition A — where it changes nothing, because
+  > `stormHolding` has never been non-zero anywhere — and **not condition B, which is the
+  > condition that decides every siege in this game.** The first write-up asserted the behaviour
+  > intended rather than the behaviour shipped, which is worse than understating it, because the
+  > next reader stops looking. A set with one writer and no reader is the shape of a fix that was
+  > designed and not wired, and no compiler can see it: the write is legal on its own. The
+  > implementation was not a one-liner *at the site* — the break-in walk iterates the soldier pool
+  > and has no unit in hand — but it needed no new index either: `pool.unitId` is the canonical
+  > owner of a man, written by `BattleSystem` at spawn and read by `unitOfSoldier`, `Combat`,
+  > `Projectiles` and `Siege`, so the whole cost is one set lookup per living man of the storm.
+
+  **Rome does not move, and this survives the wiring.** 8 seeds, hands-off, `jg-seeds`:
+  `Defeat/objective` 8 of 8, decided 55/56/57/58 s, median 56, before, half-wired and wired — and
+  `peak stormInside` is identical seed for seed (92, 68, 65, 81, 64, 71, 80, 69), which says the
+  filter removed **zero** men at any point before the verdict. `jg-whoisinside` says why: at the
+  deciding census **0 of 102 men inside belong to a routing unit**. The judge measured 46 of 46
+  routing at t+200.9 on the integration tree, where the battle lasts long enough for the escalade
+  to break; on `main` it is over at t+56, before anybody has broken. *The defect was real in the
+  code and its Rome attribution does not hold on this tree.*
+
+  **Carthage moves a great deal, and in the direction the rubric asks for.** 8 seeds, hands-off,
+  same seeds, `main` against this branch:
+
+  | | before | after |
+  |---|---|---|
+  | outcomes | Victory/objective 7, Victory/rout 1 | Victory/objective 6, Victory/rout 1, **Defeat/repulsed 1** |
+  | decided at | 133-308, median **271** | 244-800, median **331** |
+  | **first man inside** | t+92.8-95.6 | **t+236-262** |
+  | gate opened | 7 of 8 | **8 of 8** |
+
+  Seven of eight seeds land later and one is unmoved; none lands earlier, so it is a translation
+  rather than a reshuffle. The line that matters is the third: the break-in used to happen at
+  t+93, **123 seconds before the gate ram finishes at t+216**, and now happens after it. That is
+  the judge's own "make the battle last long enough for its own machinery to arrive", arriving as
+  a side effect of an honesty fix rather than of a balance knob — and the outcome mix goes from two
+  values to three, with one seed now *losing* a siege that was won 8 of 8 before.
+  `stormHolding` was 0 in every sample before and is 0 after: condition A has still never fired,
+  and this makes it strictly harder, which is the honest direction.
+
+  **Withdrawn: "Carthage moves 3.3 s."** That was measured on the half-wired tree, where the
+  break-in count was untouched, so it cannot have been the census. The judge is isolating it at
+  commit granularity; the likeliest cause is the 69-line order-refusal change in `78c164e`, which
+  alters `interceptOrders` and can change what the AI does. Not re-derived here on purpose — two
+  agents measuring one thing is how a number gets averaged instead of explained.
+
+  **What would change my mind about the fix itself.** If `pool.unitId` were ever stale for a man
+  whose unit had been rebuilt mid-battle, this would exclude the wrong men; `unitOfSoldier`
+  guards against exactly that with an `id` check on its cache, and nothing else in the sim guards
+  it, so if a unit-rebuild path is ever added the census is a site to re-check. And if a future
+  pass makes `stormHolding` reachable, the condition-A half of this becomes load-bearing for the
+  first time and wants its own measurement rather than inheriting this one.
+- **The card no longer contradicts its own numbers.** `reason === 'objective'` covers two
+  conditions and `wallBlock` named the one that never fires. `BattleFlowSystem.result.condition`
+  now publishes which fired (`'parapet' | 'breakIn'`), and the sentence comes from a total map.
+  Before / after on the same battle, from `jg-whoisinside`:
+  > Rome, gate **never struck**, breaches **0**, 780 of mine holding the parapet, 71 inside:
+  > *"The wall was carried."* → *"The wall itself was never carried — 71 of them are inside it,
+  > and the fighting is in the streets."*
+  > Carthage, gate **held at 73 %**, 11 storming against 1,140 holding: the same correction, at 60.
+- **A refused wall order is refused out loud.** Two halves. `refreshWallOffer` turned exactly one
+  of `traverseOfferAt`'s four answers into a sentence, so the cursor drew `wall` over three
+  refusals it already knew about; it now covers all of them. And `interceptOrders` **discarded**
+  the boolean from `moveAlongWall`/`sendToGround`/`sendToWall` and set the unit back to `Garrison`
+  either way — the silence the judge measured as *0 m closed on four of four orders, `goal` never
+  leaving `none`*. `Siege.refuse` now emits **`orderRefused`** and `EventFeed` prints it.
+  Measured, one right-click with the army selected at Rome's west end: hint *"No way along the
+  wall to bay 1 — the walk is broken in between"* **before** the button came up, then eleven
+  `orderRefused` events (8 `traverse/noRoute`, 3 `ascend/noStair`) and plates reading *"Legionary
+  Cohort I cannot — No steps reach bay 1 from the ground — there is no way up here"*. 6/6.
+- **The casualty counter after ADD UNITS.** `initialStrength` latched on the first frame that had
+  any views, which is the shipped twelve units, so a reinforced garrison read **`−0` for the whole
+  battle** while men died. It now re-counts until `simTime > 0` — the deployment phase runs no
+  fixed step, so the first tick is the first instant the order of battle is settled, and
+  re-counting also gets *removals* right where a high-water mark would not. `jg-tryhard`, 20 units
+  / 1,894 men: `−3`, `−12`, `−58` against the judge's thirteen samples of `−0`.
+- **The field-battle note was dead text.** `else if (this.lastSiege)` can never be true in a
+  battle with no wall, so `PHASE_UI[phase].note` had never been shown to anybody and the plaque
+  read *"The lines are dressing"* from t+25 to t+1140. The guard now compares the **note** rather
+  than remembering which source last spoke. `jg-pydna`: *"Ground is being closed"* → *"Arrows and
+  pila in the air"* → *"Shield against shield"* → *"A line has broken"*, in step with the heading.
+- **The dispatch cannot name an army that was not there.** Pydna's card said *"Macedon put her
+  whole levy into one line"* and *"the pikes are still coming on in step"* in a game whose three
+  armies are Rome, the Juthungi and Carthage. The cause is that **a field battle's opponent is
+  chosen in the menu** — `opponentBlocked` greys that row only for a storm — so Campus Martius
+  carried the same defect (*"nothing between the Juthungi and the Tiber bridges"* over a Punic
+  host). Every dispatch line is now a function handed the enemy that was actually fought, and no
+  line contains a faction literal. Rendered: *"The field belongs to the tribes"* → *"The field
+  belongs to the Juthungi"*. `src/maps/pydna.ts` keeps its historical account of the *place*,
+  which is a different claim and a true one.
+- **The roll of honour agrees with its own headline.** `unitsLost` counted a unit under a quarter
+  strength as lost; the roll had no word for that and printed **Held**. One function,
+  `unitOutcome`, now answers both, and the missing word is **Mauled**. Rendered: *"Naked Fanatics
+  I … 4/160 Mauled"* beside *"Units lost 3 of 19"*.
+- **The playability rig can fail.** `tools/scratch/pl-*` polled nine class names for the end of a
+  battle and the panel is `.rs-panel`, so **no playability run in this project's history had ever
+  seen a battle finish**; and `fast()` advanced at 166 ms, which `Engine.advance`'s own comment
+  says is a different battle. `pl-lib-emc.mjs` now carries `ledger`/`ck`, `ended()` on the real
+  class, and **`mustEnd()`**, which fails a run that never reaches a verdict; `fast()` drives
+  `advanceTicks(n, 1000/60)`. First run of `pl-runB` after the fix: *"result screen at t+145.6:
+  Defeat — By objective"*, 2/2 checks. Deliberately the same design and the same names as
+  `tools/judge/jg-lib.mjs` — **when `tools/judge/` lands, delete this rig rather than keeping two
+  drivers for one menu.**
+
+### The gate, and the one pin that moved
+
+Green on this branch: `tsc` clean, `lint` 2/2, **`qa-deploy` 33/33**, **`probe-seams` PASS both
+maps**, **`qa-replay` 21/21**, and all three determinism arms deterministic and green — headcounts
+8,632 / 3,074 / 3,440, ports 5903-5907 in this worktree.
+
+**One arm was re-recorded, in the commit that moved it: `map=carthage&scenario=assault`, t+400
+only.** Pool `286731a8` -> `0c561598`, alive 2193 -> 2201, `uctl` `820eb4ff` -> `1ee7fd48`. A
+`uctl` move is a real change in what the battle decided, not a portability drift. t+0 through
+t+250 are unchanged to the bit on all three hashes, which locates the cause precisely: the storm
+does not reach `BREAK_IN` until somewhere between t+250 and t+400, so nothing before that
+checkpoint can depend on the count. Both loads of the recording run were bit-identical at all
+seven checkpoints and the plain gate was re-run against the new pin afterwards — four independent
+loads agreeing. The reason is written into the baseline's own `note`, as the standing rule
+requires.
+
+The other two arms are **UNCHANGED at all seven checkpoints** and were not re-recorded: the field
+battle has no wall at all, and Rome's assault is decided at t+56 by men who are not routing.
+
+**What these arms are worth as detectors, stated because their silence was nearly quoted as
+evidence.** Only the Carthage arm can see a change to the break-in condition at all, and it can
+only see it at **t+400** — the pinned Carthage battle is not the one the menu plays; it is still
+being fought at t+400 with 2,201 of 3,440 alive, where a hands-off menu run of the same map ends
+between t+244 and t+800. So "the pins did not move" was true of the half-wired commit for two
+quite different reasons and would have been read as one. A pin is evidence about the battle it
+pins and about nothing else.
+
+### The replay's t+0 divergence, handed over rather than fixed
+
+`e/net/session` owns this record. Not touched here; measured hard and written down.
+
+`jg-replay --map=carthage` reports, identically on `main` and on this branch:
+
+```
+[replay] this record was made by a different build: the armies differ before a tick has run
+(pool; recorded 8ca295e0/b835cac3/0b2dc55e, here fa60a0ea/b835cac3/0b2dc55e)
+```
+
+- **The record is right and the playback is wrong.** `8ca295e0` is also the pinned t+0 value in
+  `tools/determinism-baseline.json` for `map=carthage&scenario=assault`. The playback's `fa60a0ea`
+  agrees with nothing.
+- Both unit hashes, `count` and `alive` are **identical**, so the two runs agree about every
+  unit's anchor, facing, target, order, formation, width, alive count, membership and array order,
+  and disagree only about where some men are standing inside those units — the four arrays
+  `poolHash` reads.
+- **Nine ordinary boots all give `8ca295e0`**: through the menu, `menu=0`, `deploy=0`, `deploy=1`,
+  `autoplay=0`, `autoplay=1`, and BEGIN pressed at 0 / 60 / 200 / 900 / 2000 / 6000 ms. Only
+  `?replay=` differs, and it differs stably. It is **not** dwell in the paused deployment phase,
+  which was the obvious theory.
+- The `BattleConfig` **round-trips through the codec byte-identical** — all 24 fields diffed,
+  including the six order-of-battle tables and the seed. The record carries `deployPhase: true`,
+  `quality ultra`, `unitScale 1`, `count0 3440`, and one `deploy` event; the playback is given a
+  deployment phase.
+- **`qa-replay.mjs` records only `campus-martius / field / high / small`** (l.246-252). No siege
+  record has ever been through the gate, which is how it stays 21/21 while every shipped siege
+  replay shows `DIVERGED` from the first frame. A Carthage-assault arm would have caught this.
+- Consequence worth its own line: `divergedAt = 0` makes `.rp-badge` read **DIVERGED** for the
+  whole playback, *including after TAKE COMMAND works perfectly* — a player who takes over a
+  battle is told the entire time that it is broken.
+- Probes used, all local and uncommitted: `x-poolt0`, `x-dwell`, `x-depflag`, `x-boot3` under
+  `tools/judge/`. Rebuild them from this section if they are wanted.
+
+### Rules earned
+
+- **A finding measured past its own verdict is a finding about a different tree.** The judge's
+  "both cities fall to men who are running away" was sampled at t+200.9 in a battle `main` ends
+  at t+56. The defect in the code was real; the attribution was not, on this tree. Read the
+  decided-at before quoting a census.
+- **A collection with one writer and no reader is a fix that was designed and not wired.** The
+  rout exclusion shipped reaching condition A, which has never fired anywhere, and not condition
+  B, which decides every siege in the game — and the give-away was a `Set` written once and read
+  nowhere, which no compiler flags because the write is legal on its own. **Grep your own diff for
+  every name you introduced and count the reads.** The same test would have caught it in ten
+  seconds and it took a second reader of the file instead.
+- **Assert the behaviour you shipped, not the behaviour you intended.** The first write-up of that
+  fix said it covered both conditions. A commit message that overstates a fix is worse than one
+  that understates it: the next reader stops looking.
+- **A refusal the compiler cannot see is a refusal that will not be written.** Three of
+  `traverseOfferAt`'s four answers had no sentence for months because the call site tested
+  `refusal !== 'noRoute'` instead of exhausting a union.
+- **One reason, two verbs, two sentences.** The first cut of `orderRefused` printed *"no steps
+  join bay 1 to the ground"* over three cohorts trying to climb onto it. The payload carries the
+  verb now.
+- `selectHard` picks a garrison off its own parapet on about half of attempts — five of eight
+  units read "no pixel answers" in one run, and a marquee over the wall selected nothing at all.
+  **`F` (select army) is the reliable real-input handle for a wall probe.**
+
+### Left on the floor, with numbers
+
+- **Rome is decided at t+56 on 8 of 8 seeds** (median 56, spread 3 s), by condition B, with the
+  gate never struck and `stormHolding` at 0 in every sample. That is the owner's balance call and
+  it is untouched here; the census is now honest about *who* does it, which is all this pass
+  claims.
+- **Carthage is now losable, and that is a balance consequence of an honesty fix.** One of eight
+  seeds turns from `Victory/objective` at t+221 into `Defeat/repulsed` at t+800 — the storm gets
+  45 men inside and cannot hold 60 there in order. **Reserved for the owner**: whether a siege the
+  player attacks should be winnable on every seed. Nothing here was tuned to produce it; it falls
+  out of requiring the sixty men to still be fighting, and the same change is what finally makes
+  the gate ram matter (break-in t+93 -> t+245, against a gate that opens at t+216).
+- Condition A has still never been non-zero anywhere. This change makes it harder, not easier.
+- `jg-pydna` still reports `brief: null` on a field battle and first contact announced nowhere —
+  both the judge's, both unowned.

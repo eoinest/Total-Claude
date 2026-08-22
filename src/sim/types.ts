@@ -418,6 +418,27 @@ export interface UnitGroupState {
   concealed: boolean;
 }
 
+/**
+ * Has this unit stopped being able to work a machine, hold a place in its file, or hold
+ * ground?
+ *
+ * The one predicate behind every "we are still driving men who have broken": the ram crew
+ * that fled while the ram went on rolling, the tower gang, the escalade party that stood at
+ * the foot of its own ladders playing a run cycle — and, since a routing man is not holding
+ * ground either, the break-in census that decided both sieges. Each of those was written out
+ * longhand at its own call site and the copies did not agree.
+ *
+ * It lived as `Siege.broken` while all three of its readers were inside `Siege`. It moved
+ * here rather than gaining a fourth private copy in `BattleFlow`, which is what the last
+ * three bugs of this shape in this project were.
+ *
+ * Deliberately **not** the negation of a type predicate like `Siege.mayBoard`. A false branch
+ * that narrows `u` to `undefined` is exactly wrong here, because a live unit that is merely
+ * routing is the case this exists for.
+ */
+export const isBroken = (u: UnitGroupState | undefined): boolean =>
+  !u || u.destroyed || u.alive === 0 || u.order === UnitOrder.Rout;
+
 // ---------------------------------------------------------------------------
 // Soldier pool
 // ---------------------------------------------------------------------------

@@ -46,11 +46,24 @@ export class TopBar {
   private speedBtns = new Map<string, HTMLElement>();
   private lastPhase = '';
   /**
-   * The siege phase currently on the plaque, kept beside `lastPhase` rather than folded into
-   * it: the two come from different places and a siege phase can change while `model.phase`
-   * does not, which is exactly the case that left "MISSILE EXCHANGE" over a broken gate.
+   * The note currently on the plaque, whoever wrote it — a storm's live count or the field
+   * phase's own line.
+   *
+   * This was `lastSiege`, holding only the *siege* note, and the field half of the branch
+   * that read it could never run. In a field battle `siege` is null on every tick and
+   * `lastSiege` therefore never leaves `''`, so `else if (this.lastSiege)` was false forever
+   * and the note kept whatever `attach` had written into the markup. Measured: about 120
+   * samples across three nineteen-minute battles of Pydna, every one of them reading
+   * **"The lines are dressing"** — at t+25 and still at t+1140 — while the phase heading above
+   * it cycled correctly through The Advance, Missile Exchange, The Clash, The Rout and
+   * Aftermath. `PHASE_UI` has a note authored for every one of those and none had ever been
+   * shown to anybody.
+   *
+   * Comparing the *text* rather than remembering which of the two sources last spoke is what
+   * closes it: the guard still exists to avoid touching the DOM every tick, and now it guards
+   * the thing it is actually about.
    */
-  private lastSiege = '';
+  private lastNote = '';
   /**
    * The opponent this plaque is currently *showing*, which is not the same as the opponent.
    *
@@ -205,16 +218,12 @@ export class TopBar {
       const sharp = siege ? siege.phase === 'breach' || siege.phase === 'streets' : false;
       this.phase.style.color = sharp ? '#f0c07a' : '';
     }
-    // The note carries live counts in a storm, so it is rewritten every tick rather than
-    // only when the phase changes.
-    if (siege) {
-      if (siege.note !== this.lastSiege) {
-        this.lastSiege = siege.note;
-        setText(this.note, siege.note);
-      }
-    } else if (this.lastSiege) {
-      this.lastSiege = '';
-      setText(this.note, PHASE_UI[m.phase].note);
+    // The note carries live counts in a storm, so it is decided every tick rather than only
+    // when the phase changes — and written only when the words themselves change.
+    const note = siege ? siege.note : PHASE_UI[m.phase].note;
+    if (note !== this.lastNote) {
+      this.lastNote = note;
+      setText(this.note, note);
     }
 
     const foe = getOpposingFaction();

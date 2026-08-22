@@ -1,6 +1,6 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
 import type { BattleSystem } from './BattleSystem';
-import { ALL_FACTIONS, Faction, UnitOrder, type UnitGroupState } from './types';
+import { ALL_FACTIONS, Faction, isBroken, UnitOrder, type UnitGroupState } from './types';
 
 /**
  * Battle flow: decides when the engagement is over and who won.
@@ -104,6 +104,59 @@ export const WALL_HOLD_SECONDS = 20;
 export const BREAK_IN = 60;
 /** Metres past the curtain's own line a man must be to be "in the city" rather than on it. */
 export const INSIDE_MARGIN = 14;
+
+/**
+ * Which of the objective's two conditions ended the battle.
+ *
+ * There are two ways to win a storm and they are not the same event — `parapet` is a
+ * lodgement held on the walkway for `WALL_HOLD_SECONDS`, `breakIn` is `BREAK_IN` men loose
+ * behind the curtain — and both used to leave the same footprint: `reason === 'objective'`.
+ * So the card had to guess which had fired, and guessed the one that never does. It printed
+ * *"The wall was carried"* under a gate held at 85 %, zero breaches, 869 of the garrison
+ * still on the parapet and a roll of honour reading HELD five times.
+ *
+ * That is the **fourth** card this project has shipped naming a condition that did not decide
+ * the battle, so the fix is not the string. The arbiter knows which one fired; it publishes
+ * it, and `src/ui/BattleFlow.ts` keys its sentence off a total map, so a third condition
+ * cannot be added without a sentence and the two cannot drift apart again.
+ */
+export type WallCondition = 'parapet' | 'breakIn';
+
+/**
+ * Fraction of its establishment below which a unit has stopped being one.
+ *
+ * A cohort of 320 down to 79 men is not a cohort; it is a knot of survivors. It has not
+ * broken and it has not been destroyed, and calling it either would be false, so it gets its
+ * own word.
+ */
+export const UNIT_SPENT_FRACTION = 0.25;
+
+/** How a unit ended the battle. Ordered worst first, which is also the order it is decided. */
+export type UnitOutcome = 'destroyed' | 'routed' | 'mauled' | 'held';
+
+/**
+ * How this unit ended the battle — the *one* definition of it.
+ *
+ * Why it is a function and not two pieces of arithmetic in two files: the card prints a
+ * headline count of "Units lost" from the arbiter, and beside it a roll of honour labelling
+ * each unit HELD / ROUTED / DESTROYED from the HUD's own view of the same army. Those were
+ * two rules. The arbiter's counted a unit under a quarter strength as lost — correctly; the
+ * roll had no word for it and printed **HELD**. So a card could read "Units lost 3 of 12"
+ * over twelve rows none of which said anything had happened, which is the same defect as the
+ * verdict sentence one panel up, one size smaller. `mauled` is the missing word.
+ *
+ * Takes primitives rather than a `UnitGroupState` so the HUD can ask it about a `UnitView`
+ * without `src/ui` reaching into simulation state.
+ */
+export const unitOutcome = (
+  destroyed: boolean,
+  routing: boolean,
+  alive: number,
+  establishment: number
+): UnitOutcome => (destroyed ? 'destroyed'
+  : routing ? 'routed'
+    : alive < establishment * UNIT_SPENT_FRACTION ? 'mauled' : 'held');
+
 /**
  * Seconds an assault may go without reducing the garrison's hold on the parapet before it is
  * judged to have been thrown back.
@@ -220,6 +273,13 @@ export class BattleFlowSystem implements Subsystem {
   result: {
     victor: Faction | -1;
     reason: 'annihilation' | 'rout' | 'timeout' | 'objective' | 'stalemate' | 'repulsed';
+    /**
+     * Which objective condition fired, or null when the battle did not end on one.
+     *
+     * Non-null exactly when `reason === 'objective'`. Published so the card does not have to
+     * infer it — see `WallCondition`.
+     */
+    condition: WallCondition | null;
     casualties: Record<number, number>;
     survivors: Record<number, number>;
     /** Units destroyed, broken, or reduced below a quarter strength. */
@@ -295,8 +355,11 @@ export class BattleFlowSystem implements Subsystem {
        */
       const taken = c.stormHolding >= WALL_FOOTHOLD;
       this.parapetHeldFor = taken ? this.parapetHeldFor + dt : 0;
-      if (this.parapetHeldFor >= WALL_HOLD_SECONDS || c.stormInside >= BREAK_IN) {
-        this.finish(ctx, this.wall.storm, 'objective');
+      // Named separately, and the name is published. See `WallCondition`.
+      const carried = this.parapetHeldFor >= WALL_HOLD_SECONDS;
+      const brokeIn = c.stormInside >= BREAK_IN;
+      if (carried || brokeIn) {
+        this.finish(ctx, this.wall.storm, 'objective', carried ? 'parapet' : 'breakIn');
         return;
       }
       /*
@@ -631,10 +694,32 @@ export class BattleFlowSystem implements Subsystem {
     };
     const stormRun = new Map<number, number>();
     const garrisonRun = new Map<number, number>();
+    /**
+     * Storm units that have broken, by id — read by **both** halves of this function.
+     *
+     * Collected in the walk that bins the parapet rather than tested inside the pool loop
+     * below, because that loop runs over every slot in the pool and `unitById` is a search.
+     * Thirty-five entries against nine thousand lookups.
+     *
+     * It was written here and read nowhere for one commit, so the exclusion reached condition
+     * A — where it changes nothing, because `stormHolding` has never been non-zero — and not
+     * condition B, which is the condition that decides every siege in this game. A set with
+     * one writer and no reader is the exact shape of a fix that was designed and not wired,
+     * and the compiler cannot see it because the write is legal on its own.
+     */
+    const routed = new Set<number>();
     for (const u of b.units) {
       if (u.destroyed || u.alive === 0) continue;
       if (u.faction !== w.garrison && u.faction !== w.storm) continue;
       const st = b.siege.unitWallState(u.id);
+      if (u.faction === w.storm && isBroken(u)) {
+        routed.add(u.id);
+        // Still counted where he stands — `stormOnWall` is a description of the parapet and
+        // a man running along it is on it — but he takes no part in a lodgement, and the
+        // pool walk below will not count him as having got inside either.
+        out.stormOnWall += st.onWall;
+        continue;
+      }
       if (st.onWall === 0) continue;
       const held = u.faction === w.garrison;
       if (held) out.garrisonOnWall += st.onWall;
@@ -667,6 +752,16 @@ export class BattleFlowSystem implements Subsystem {
     const last = w.mx.length - 1;
     for (let i = 0; i < p.count; i++) {
       if (p.faction[i] !== w.storm || b.elevated[i] !== 0 || !p.aliveAt(i)) continue;
+      /*
+       * The rout test, on the condition that actually decides both sieges.
+       *
+       * `pool.unitId` is the canonical owner of a man — `BattleSystem` writes it at spawn and
+       * `unitOfSoldier`, `Combat`, `Projectiles` and `Siege` all read it — so this needs no
+       * new index and costs one set lookup per living man of the storm. That is the whole
+       * price of asking the question at all, which is worth stating because the first cut of
+       * this walked units instead and could not, having no unit in hand.
+       */
+      if (routed.has(p.unitId[i])) continue;
       const k = Math.max(0, Math.min(last, Math.round((p.x[i] - w.x0) / w.pitch)));
       const dx = p.x[i] - w.mx[k];
       const dz = p.z[i] - w.mz[k];
@@ -730,7 +825,8 @@ export class BattleFlowSystem implements Subsystem {
   private finish(
     ctx: EngineContext,
     victor: Faction | -1,
-    reason: 'annihilation' | 'rout' | 'timeout' | 'objective' | 'stalemate' | 'repulsed'
+    reason: 'annihilation' | 'rout' | 'timeout' | 'objective' | 'stalemate' | 'repulsed',
+    condition: WallCondition | null = null
   ): void {
     this.ended = true;
     const b = this.battle;
@@ -749,12 +845,16 @@ export class BattleFlowSystem implements Subsystem {
       // of victory reported "0 of 21 lost" on a battle whose roll of honour listed cohorts
       // at 18 of 320 men and flagged ROUTED — units are flagged destroyed later, as they
       // leave the field, long after the result is called.
+      //
+      // Through `unitOutcome`, which is the same function the roll of honour labels its rows
+      // with. It used to be this expression here and a different one in the card.
       unitsLost[side.faction] = own.filter(
-        (u) => u.destroyed || u.order === UnitOrder.Rout || u.alive < u.initialStrength * 0.25
+        (u) => unitOutcome(u.destroyed, u.order === UnitOrder.Rout, u.alive, u.initialStrength)
+          !== 'held'
       ).length;
     }
     this.result = {
-      victor, reason, casualties, survivors, unitsLost, unitsTotal, at: this.elapsed,
+      victor, reason, condition, casualties, survivors, unitsLost, unitsTotal, at: this.elapsed,
     };
 
     ctx.events.emit('battleEnded', { victor: victor as number, reason });

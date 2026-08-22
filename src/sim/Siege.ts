@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import type { EngineContext } from '../core/Engine';
+import type { WallRefusal, WallVerb } from '../core/events';
 import type { BattleSystem, ElevationOwner } from './BattleSystem';
 import { NO_SUPPORT } from './BattleSystem';
 import type { ProjectileSystem } from './Projectiles';
-import { SoldierState, UnitOrder, type UnitGroupState } from './types';
+import { isBroken, SoldierState, UnitOrder, type UnitGroupState } from './types';
 import { modsOf } from './combatShared';
 import { clamp, lerp } from '../util/math';
 import { hash01, Rng } from '../util/rand';
@@ -3006,10 +3007,10 @@ export class Siege implements ElevationOwner {
   /**
    * Has this unit stopped being able to work a machine or hold a place in its file?
    *
-   * The one predicate behind all three of "the siege is still driving men who have broken":
-   * the ram crew that fled while the ram went on rolling, the tower gang, and the escalade
-   * party that stood at the foot of its own ladders playing a run cycle. Each of those was
-   * written out longhand at its own call site, and the three copies did not agree.
+   * The predicate itself is `isBroken` in `sim/types.ts`; it moved there when `BattleFlow`
+   * became its fourth reader, and the argument for one copy is written out beside it. This
+   * wrapper is kept so the three call sites in this file still read as a question about a
+   * crew.
    *
    * Deliberately **not** `!mayBoard(u)`. That is a type predicate, so its false branch
    * narrows `u` to `undefined` — which is exactly wrong here, because a live unit that is
@@ -3018,7 +3019,7 @@ export class Siege implements ElevationOwner {
    * a squadron of horse is not broken merely because it cannot go up a ladder.
    */
   private broken(u: UnitGroupState | undefined): boolean {
-    return !u || u.destroyed || u.alive === 0 || u.order === UnitOrder.Rout;
+    return isBroken(u);
   }
 
   /**
@@ -3782,10 +3783,22 @@ export class Siege implements ElevationOwner {
       // Where his men are, not which map he is in. See `standingOnWall`.
       const onWall = this.garrisons.has(id) && this.standingOnWall(id);
       if (onWall) {
-        // On the stone already: either along it, or off it. `wallTargetAt` is the same query
-        // the UI uses to decide a click landed on the parapet.
-        if (this.wallTargetAt(dest.x, dest.z) >= 0) this.moveAlongWall(u, dest.x, dest.z);
-        else this.sendToGround(u, dest.x, dest.z);
+        /*
+         * On the stone already: either along it, or off it. `wallTargetAt` is the same query
+         * the UI uses to decide a click landed on the parapet.
+         *
+         * **The boolean is read.** It used to be discarded, and both verbs can refuse —
+         * `moveAlongWall` when the walk between the two runs is broken, `sendToGround` when
+         * no flight of steps reaches this stretch — so a refused order became a unit set back
+         * to `Garrison` with no plan, standing exactly where it was, and nothing said. That
+         * is the silence this whole pass is about; see `orderRefused`.
+         */
+        const onTheWall = this.wallTargetAt(dest.x, dest.z) >= 0;
+        if (onTheWall) {
+          if (!this.moveAlongWall(u, dest.x, dest.z)) this.refuse(id, 'traverse', 'noRoute', dest);
+        } else if (!this.sendToGround(u, dest.x, dest.z)) {
+          this.refuse(id, 'descend', 'noStair', dest);
+        }
         // Reclaim the order: this unit's men are placed by the stonework, and leaving it on
         // `MoveTo` would have `steerToSlots` and the formation path fighting over the same
         // men on alternate ticks.
@@ -3812,7 +3825,15 @@ export class Siege implements ElevationOwner {
          * instruments"*, which are one missing verb.
          */
         if (this.sideOf(u.x, u.z) === -1) {
-          if (!this.owned.has(id)) this.sendToWall(u, dest.x, dest.z);
+          /*
+           * `owned` and not standing on the wall is a unit this system is already moving —
+           * halfway up a flight, or laid out on a run its men have not reached yet. Taking a
+           * second wall order for it would drop the plan it is executing, so the order is
+           * refused rather than obeyed. It was previously refused *silently*, which is the
+           * same outcome minus the sentence.
+           */
+          if (this.owned.has(id)) this.refuse(id, 'ascend', 'busy', dest);
+          else if (!this.sendToWall(u, dest.x, dest.z)) this.refuse(id, 'ascend', 'noStair', dest);
         } else if (this.crewsAMachine(id) && this.towerOf(id)) {
           /*
            * A tower's own gang told to go at a different stretch of wall moves the tower —
@@ -3960,7 +3981,7 @@ export class Siege implements ElevationOwner {
    * Pure.
    */
   traverseOfferAt(unitId: number, x: number, z: number): {
-    ok: boolean; refusal: 'none' | 'notOnWall' | 'noWall' | 'noRoute'; bay: number;
+    ok: boolean; refusal: 'none' | WallRefusal; bay: number;
   } {
     const u = this.battle.unitById(unitId);
     if (!u || !this.garrisons.has(unitId)) {
@@ -3975,6 +3996,30 @@ export class Siege implements ElevationOwner {
       return { ok: false, refusal: 'noRoute', bay };
     }
     return { ok: true, refusal: 'none', bay };
+  }
+
+  /**
+   * Say out loud that a wall order will not be carried out.
+   *
+   * One emit site, so every refused verb reaches the player by the same road and none can be
+   * added without going through here. The sentence is not written: `orderRefused` carries a
+   * code and `src/ui/siege.ts` holds the words, because the wall verbs' words belong to the
+   * interface and one owner per sentence is the rule that stopped two files fighting over the
+   * cursor in the first place.
+   *
+   * The bay is looked up rather than passed in, so a refusal cannot name a different piece of
+   * stone from the one the order pointed at.
+   */
+  private refuse(
+    unitId: number,
+    verb: WallVerb,
+    refusal: WallRefusal,
+    dest: { x: number; z: number }
+  ): void {
+    const st = this.wallTargetAt(dest.x, dest.z);
+    this.ctx.events.emit('orderRefused', {
+      unitId, verb, refusal, bay: st >= 0 ? this.sBay[st] : -1,
+    });
   }
 
   private nextHop(cur: number, target: number): { link: number; dir: 0 | 1 } {

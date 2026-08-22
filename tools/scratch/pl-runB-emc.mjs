@@ -1,19 +1,25 @@
-/** RUN B — hold the Aurelian Wall as Rome. Menu to verdict, every order a real click. */
+/**
+ * RUN B — hold the Aurelian Wall as Rome. Menu to verdict, every order a real click.
+ *
+ * Asserts, now. See `pl-lib-emc.mjs`: the five selectors this used to poll for the end of a
+ * battle match nothing the product renders, so it could not have found one.
+ */
 import { argsOf, boot, shot, dump, fast, hover, rightClick, rightDrag, leftClick, cam, proj, aim,
-  selectHard, wallPixel, installDiag, ROOT } from './pl-lib-emc.mjs';
+  selectHard, wallPixel, installDiag, ledger, mustEnd, ended, ROOT } from './pl-lib-emc.mjs';
 import path from 'node:path';
 const A = argsOf();
 const OUT = path.join(ROOT, 'screenshots/playability');
-const L = 'runB';
-const log = []; let page, browser, errs, cerrs;
-const say = (...a) => { const s = a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '); console.log(s); log.push(s); };
-const flush = () => dump(OUT, `${L}-log`, { log, errs, cerrs });
+const L_ = 'runB';
+const L = ledger('run B — the Aurelian Wall held');
+const log = L.log; let page, browser, errs, cerrs;
+const say = L.say;
+const flush = () => dump(OUT, `${L_}-log`, { log, errs, cerrs, rows: L.rows });
 const T = async () => page.evaluate(() => +window.__game.simTime().toFixed(1));
 const step = async (n, w) => { say(`\n=== ${n}  t+${await T()}s  ${w}`); await flush(); };
 const rep = () => page.evaluate(() => window.__reports());
 const brief = (r) => `R=${r.strength[0]} G=${r.strength[1]} gateHp=${r.engines?.gateHp?.toFixed?.(2)} blows=${r.engines?.ramBlows} ladders=${r.engines?.laddersCrossed} towers=${(r.towers ?? []).map(t => `${t.state}:${t.crossed}`).join(',')}`;
 
-({ browser, page, errs, cerrs } = await boot({ port: Number(A.get('port') ?? 5431), map: 'campus-martius', out: OUT, label: L }));
+({ browser, page, errs, cerrs } = await boot({ port: Number(A.get('port') ?? 5431), map: 'campus-martius', out: OUT, label: L_ }));
 await installDiag(page);
 await page.mouse.move(800, 700); await page.waitForTimeout(300);
 let bays;
@@ -23,10 +29,10 @@ await step('1', 'deployment on the defending side');
 const dep = await page.evaluate(() => { const d = window.__game.deployment; return { active: d.active, zone: JSON.parse(JSON.stringify(d.zone)), budget: d.budget(), roster: d.roster() }; });
 say('zone', dep.zone); say('budget', dep.budget); say('roster', dep.roster);
 say('camera', await page.evaluate(() => { const r = window.__game.engine.rig; return { x: +r.focus.x.toFixed(0), z: +r.focus.z.toFixed(0), zoom: +r.zoom.toFixed(2), yaw: +r.yaw.toFixed(2) }; }));
-await shot(page, OUT, `${L}-1a-open`);
+await shot(page, OUT, `${L_}-1a-open`);
 await page.click('.dep-add'); await page.waitForTimeout(350);
 say('palette', await page.evaluate(() => Array.from(document.querySelectorAll('.dep-row')).map(r => `${r.dataset.unit}=${r.querySelector('.dep-count').textContent}${r.querySelector('[data-d="1"]').disabled ? '[+off]' : '[+on]'}`)));
-await shot(page, OUT, `${L}-1b-palette`);
+await shot(page, OUT, `${L_}-1b-palette`);
 await page.click('.dep-add'); await page.waitForTimeout(250);
 
 // --- 2. put a unit on the parapet by hand
@@ -43,7 +49,7 @@ say('aiming at bay', bTarget);
 if (s.ok) {
   const wp = await wallPixel(page, bTarget, { side: -1, zoom: 0.62 });
   say(`bay ${bTarget.i}: ${wp.hit}/${wp.tried} probed pixels offer a wall order`);
-  await shot(page, OUT, `${L}-2a-aim`);
+  await shot(page, OUT, `${L_}-2a-aim`);
   if (wp.p) {
     const h = await hover(page, wp.p);
     say('cursor before I commit:', { cursor: h.cursor });
@@ -53,7 +59,7 @@ if (s.ok) {
     const u = await page.evaluate((i) => window.__u(i), mover.id);
     say('after the drop:', u);
     say(`bay walkY ${bTarget.walkY}  men mean ${u.meanY}  error ${(u.meanY - bTarget.walkY).toFixed(3)} m  spread ${(u.hiY - u.loY).toFixed(3)} m`);
-    await shot(page, OUT, `${L}-2b-onparapet`);
+    await shot(page, OUT, `${L_}-2b-onparapet`);
     // can I still click them, up there, during deployment?
     const p2 = await aim(page, u.x, u.meanY + 0.9, u.z, { zoom: 0.6, yaw: Math.PI });
     if (p2) { const h2 = await hover(page, p2); say('hovering my own men on the parapet during deployment:', { cursor: h2.cursor, hovered: h2.hovered, want: mover.id }); }
@@ -65,7 +71,7 @@ await page.click('.dep-begin'); await page.waitForTimeout(900);
 await step('3', 'battle begins');
 await fast(page, 3);
 say('my units and where they stand:', (await page.evaluate(() => window.__units(0))).map(u => `${u.id}:${u.type}:${u.alive}:y${u.meanY}:elev${u.elevated}`));
-await shot(page, OUT, `${L}-3-begin`);
+await shot(page, OUT, `${L_}-3-begin`);
 
 // --- 4. traverse along the wall
 await step('4', 'take a stretch of my own wall — traverse');
@@ -82,13 +88,13 @@ if (s.ok) {
   if (wp.p) {
     const d = await rightClick(page, wp.p, { hold: 450 });
     say('hint:', JSON.stringify(d.hint), 'cursor', d.cursor);
-    await shot(page, OUT, `${L}-4a-traverseorder`);
+    await shot(page, OUT, `${L_}-4a-traverseorder`);
     const before = await page.evaluate((i) => window.__u(i), w0.id);
     await fast(page, 45);
     const after = await page.evaluate((i) => window.__u(i), w0.id);
     say('before x', before.x, '-> after x', after.x, ' target', far.cx, ' elevated', after.elevated, '/', after.alive);
     say('wall state', await page.evaluate((i) => window.__wallState(i), w0.id));
-    await shot(page, OUT, `${L}-4b-traversed`);
+    await shot(page, OUT, `${L_}-4b-traversed`);
   }
 }
 await flush();
@@ -107,7 +113,7 @@ if (s.ok) {
     await fast(page, 60);
     const after = await page.evaluate((i) => window.__u(i), w0.id);
     say('after 60 s:', after, 'wall state', await page.evaluate((i) => window.__wallState(i), w0.id));
-    await shot(page, OUT, `${L}-5-descended`);
+    await shot(page, OUT, `${L_}-5-descended`);
   } else say('could not frame a street');
 }
 await flush();
@@ -124,7 +130,7 @@ if (s.ok) {
     await fast(page, 70);
     const after = await page.evaluate((i) => window.__u(i), w0.id);
     say('after 70 s:', after, 'wall state', await page.evaluate((i) => window.__wallState(i), w0.id));
-    await shot(page, OUT, `${L}-6-ascended`);
+    await shot(page, OUT, `${L_}-6-ascended`);
   }
 }
 await flush();
@@ -137,14 +143,21 @@ for (let k = 0; k < 26; k++) {
   r = await rep();
   const foeUp = await page.evaluate(() => window.__units(1).filter(u => u.elevated > 3).map(u => `${u.id}:${u.type}:${u.elevated}`));
   if (k % 2 === 0) say(`t+${r.t}  ${brief(r)}  enemyOnWall=${JSON.stringify(foeUp)}`);
-  if (k === 6 || k === 14) await shot(page, OUT, `${L}-7-${Math.round(r.t)}s`);
-  const done = await page.evaluate(() => { const e = document.querySelector('.endcard, .verdict, .battle-result, .result-sheet, .outcome'); return e && !e.hidden ? e.className : null; });
-  if (done) { say(`result screen .${done} at t+${r.t}`); break; }
+  if (k === 6 || k === 14) await shot(page, OUT, `${L_}-7-${Math.round(r.t)}s`);
+  const done = await ended(page);
+  if (done) { say(`result screen at t+${r.t}: ${done.verdict} — ${done.reason}`); break; }
 }
-await shot(page, OUT, `${L}-7-end`);
+/*
+ * And if the loop above ran out without one, say so as a failure rather than as a log line.
+ * The sweep for "any element whose class looks resultish" that used to sit here was the
+ * shape of the bug: an instrument that reports what it found instead of whether it found
+ * what it was looking for.
+ */
+await mustEnd(page, L, { until: 1600, step: 25, label: 'the defence of Rome' });
+await shot(page, OUT, `${L_}-7-end`);
 say('HUD at the end:', await page.evaluate(() => window.__hud()));
-say('any results element:', await page.evaluate(() => Array.from(document.querySelectorAll('*')).filter(e => /result|verdict|endcard|outcome/i.test(e.className || '')).map(e => `${e.className}${e.hidden ? '[hidden]' : ''}:${(e.textContent || '').replace(/\s+/g, ' ').slice(0, 200)}`)));
-} catch (e) { say('!! THREW', String(e).slice(0, 400)); try { await shot(page, OUT, `${L}-crash`); } catch {} }
+} catch (e) { L.ck('the session ran without throwing', false, 'no throw', String(e).slice(0, 400)); try { await shot(page, OUT, `${L_}-crash`); } catch {} }
+L.ck('no page errors', errs.length === 0, 0, errs.length);
 await flush();
-say('pageerrors', errs.length, 'console errors', cerrs.length);
 await browser.close();
+process.exitCode = L.summary() > 0 ? 1 : 0;
