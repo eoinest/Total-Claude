@@ -81,6 +81,57 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    house standing in a terrace of houses. Derive the reserved rectangle *from* the geometry builder's
    own extents rather than typing it into a survey table, and gate it.
 
+12. **Before trusting a statistic, check that its sample and its spread have not collapsed. A
+   degenerate statistic does not report an error — it reports a confident number.** This is rule 6's
+   companion and it catches the case rule 6 cannot: the instrument *is* comparing against something
+   outside itself, and is still lying, because the arithmetic has quietly lost the thing that made
+   it meaningful. Every instance found so far had the same shape — a denominator, a sample size or a
+   range went to zero, and the formula carried on and returned a number with no error and no
+   warning attached.
+
+   Measured, in one afternoon, inside the instruments built to enforce the other eleven rules:
+
+   - A watch on `src/` compared a hash of **199 unfiltered files from the git tree** against a
+     baseline hash of **192 filtered files from the worktree**. Two different functions over two
+     different file sets, so the disagreement was *constant*, and it reported both branches as
+     changed while both sat on the commit they had started on. It fired on its first pass and
+     looked exactly like a real event.
+   - A before/after comparator flagged a column as `** beyond its own spread **` because the spread
+     was **`sd = 0.0`**. With a zero denominator every difference is infinitely many sigma, so the
+     column that had moved by a **rounding step** was the loudest signal in the table. On Rome's
+     assault, where twelve seeds break within a sixth of a second, most of the table has an `sd`
+     under 0.2 — so this was not a corner case, it was the normal case.
+   - The same comparator printed **"TRANSLATION (every seed moved the same way; p=1.0000)"** off a
+     sample of **one seed**, and `Infinity sd` beside it. It had computed p correctly, printed it
+     correctly, and named the opposite conclusion anyway.
+
+   It is the same failure as `--battle=rome` silently loading the field battle and asserting
+   nothing, as six playability scripts polling a selector the product does not render, and as every
+   shipped feature here that never worked: **nothing threw.** A test that cannot fail and a
+   statistic that cannot be undefined are the same object, and both feel like a passing check.
+
+   **The remedy is a floor and a refusal, chosen in advance and written into the instrument:**
+
+   - *Floor every spread-based threshold.* A move must clear the measured spread **and** be worth
+     more than 1 % of the column's own value, so a column with no spread cannot make a rounding
+     step significant.
+   - *Set a minimum sample and decline below it, rather than hedging.* A sign test declines under
+     **n = 5** (`2/2^5 = 0.06` is the first n at which unanimity is worth saying aloud); a
+     range test declines under **n = 3**, because two points are not a range.
+   - *Refuse outright when the comparison is vacuous.* If the product's own state hashes say the
+     tree did not move, exit non-zero and grade nothing. Reporting "no significant change" from an
+     identical tree is the same sentence as reporting it from a real one, and only one of them is
+     an answer.
+   - *Print the sample size and the spread next to every figure derived from them,* so the next
+     reader can see the collapse without re-deriving it.
+
+   And the generalisation that reaches past instruments into the product: **a derived number must
+   be derived once.** `src/ui/siege.ts` exists because three panels each deciding for itself what
+   "the breach" meant came to disagree; the result card prints *"The wall was carried"* over a
+   defeat because it re-derives which victory condition fired instead of being told by the arbiter
+   that fired it. Same rule, same cost, on the other side of the interface.
+
+
 ---
 
 ## 2. The priors going in
