@@ -1,0 +1,2229 @@
+{
+ "pos": [
+  {
+   "id": "mausoleum-augustus",
+   "name": "Mausoleum of Augustus",
+   "how": "plate",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 0,
+   "surveyErrE": 0,
+   "surveyErrN": 0,
+   "ctlErr": 20,
+   "resolverWorld": 55.07896837581525,
+   "resolverReal": 151.90567130445993,
+   "builtE": -428.0251387653428,
+   "builtN": 1642.369227895734,
+   "builtErr": 151.90567130445993,
+   "builtWorldErr": 55.07896837581525,
+   "refIsEvidence": true
+  },
+  {
+   "id": "ara-pacis",
+   "name": "Ara Pacis Augustae",
+   "how": "survey",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 148.45002659174804,
+   "resolverReal": 336.20941587733205,
+   "builtE": 18.25344283572004,
+   "builtN": 1322.4849880602017
+  },
+  {
+   "id": "horologium",
+   "name": "Horologium Augusti",
+   "how": "survey",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 173.2390082807016,
+   "resolverReal": 407.71170361413374,
+   "builtE": 38.70692785219402,
+   "builtN": 1199.1407228849378
+  },
+  {
+   "id": "stadium-domitian",
+   "name": "Stadium of Domitian",
+   "how": "plate",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 0,
+   "surveyErrE": 0,
+   "surveyErrN": 0,
+   "ctlErr": 20,
+   "resolverWorld": 358.69610767657315,
+   "resolverReal": 887.2630119402085,
+   "builtE": -100.95852870533108,
+   "builtN": 1336.8275302702552,
+   "builtErr": 887.2630119402085,
+   "builtWorldErr": 358.69610767657315,
+   "refIsEvidence": true
+  },
+  {
+   "id": "baths-nero",
+   "name": "Baths of Nero",
+   "how": "gazetteer",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 104.03818233186291,
+   "surveyErrE": -20.678099999930396,
+   "surveyErrN": -101.96254000029046,
+   "ctlErr": 60,
+   "resolverWorld": 276.0096679067774,
+   "resolverReal": 637.6491346568256,
+   "builtE": 38.00383273915082,
+   "builtN": 841.3319564768816,
+   "builtErr": 589.5371568212132,
+   "builtWorldErr": 259.145292895768,
+   "refIsEvidence": true
+  },
+  {
+   "id": "pantheon",
+   "name": "Pantheon",
+   "how": "plate",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 23,
+   "surveyErrE": 0,
+   "surveyErrN": 23,
+   "ctlErr": 25,
+   "resolverWorld": 276.03268320589024,
+   "resolverReal": 627.6699683757823,
+   "builtE": 168.43035817734548,
+   "builtN": 554.6506447744463,
+   "builtErr": 623.5579514852491,
+   "builtWorldErr": 274.88865215055233,
+   "refIsEvidence": true
+  },
+  {
+   "id": "baths-agrippa",
+   "name": "Baths of Agrippa",
+   "how": "plate",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 29.017236257093817,
+   "surveyErrE": 1,
+   "surveyErrN": 29,
+   "ctlErr": 30,
+   "resolverWorld": 330.2502507623538,
+   "resolverReal": 752.2117703893786,
+   "builtE": 311.17778362664166,
+   "builtN": 719.7239430913982,
+   "builtErr": 760.0190075115739,
+   "builtWorldErr": 332.59565361709076,
+   "refIsEvidence": true
+  },
+  {
+   "id": "temple-isis",
+   "name": "Iseum Campense",
+   "how": "survey",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 322.2013240408273,
+   "resolverReal": 755.2448239315702,
+   "builtE": 378.3908905550717,
+   "builtN": 891.9345472940788
+  },
+  {
+   "id": "largo-argentina",
+   "name": "Temples of the Area Sacra",
+   "how": "plate",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 12.165525060596437,
+   "surveyErrE": -12,
+   "surveyErrN": 2,
+   "ctlErr": 25,
+   "resolverWorld": 104.39990120476786,
+   "resolverReal": 238.10027919271153,
+   "builtE": -232.43481768633353,
+   "builtN": 388.40134738149965,
+   "builtErr": 226.94445127749918,
+   "builtWorldErr": 99.3205388459468,
+   "refIsEvidence": true
+  },
+  {
+   "id": "theatre-pompey",
+   "name": "Theatre of Pompey",
+   "how": "plate",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 138.4629914453678,
+   "surveyErrE": -136,
+   "surveyErrN": -26,
+   "ctlErr": 45,
+   "resolverWorld": 398.86459536454856,
+   "resolverReal": 1097.5952113492267,
+   "builtE": -440.85139117171786,
+   "builtN": 1267.9984496657341,
+   "builtErr": 1031.0959737060575,
+   "builtWorldErr": 367.6816579000403,
+   "refIsEvidence": true
+  },
+  {
+   "id": "porticus-octaviae",
+   "name": "Porticus Octaviae",
+   "how": "survey",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 65.2740827015766,
+   "resolverReal": 147.9042274548362,
+   "builtE": -153.5871220754212,
+   "builtN": -39.04935139776561
+  },
+  {
+   "id": "theatre-marcellus",
+   "name": "Theatre of Marcellus",
+   "how": "plate",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 39.21734310225516,
+   "surveyErrE": 37,
+   "surveyErrN": 13,
+   "ctlErr": 30,
+   "resolverWorld": 113.9379072924604,
+   "resolverReal": 260.30923621535817,
+   "builtE": 36.94027085678535,
+   "builtN": -143.4751737655792,
+   "builtErr": 293.6666885850695,
+   "builtWorldErr": 129.31148290341255,
+   "refIsEvidence": true
+  },
+  {
+   "id": "temple-jupiter",
+   "name": "Temple of Jupiter Optimus Maximus",
+   "how": "restated",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 88.17616834286292,
+   "resolverReal": 201.15584416769624,
+   "builtE": 195.48374959658136,
+   "builtN": 47.43181723779474,
+   "builtErr": 201.15584416769624,
+   "builtWorldErr": 88.17616834286292,
+   "refIsEvidence": false
+  },
+  {
+   "id": "tabularium",
+   "name": "Tabularium",
+   "how": "survey",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 68.36281002014401,
+   "resolverReal": 181.09487011025834,
+   "builtE": 154.31660147489364,
+   "builtN": 194.59537724808408
+  },
+  {
+   "id": "forum-romanum",
+   "name": "Forum Romanum",
+   "how": "restated",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 77.79260033345462,
+   "resolverReal": 199.0212581333667,
+   "builtE": 376.53442531700307,
+   "builtN": -152.78884628155927,
+   "builtErr": 199.07394255740223,
+   "builtWorldErr": 77.81905087205688,
+   "refIsEvidence": false
+  },
+  {
+   "id": "basilica-ulpia",
+   "name": "Basilica Ulpia",
+   "how": "survey",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 65.18870101303742,
+   "resolverReal": 155.05114437640793,
+   "builtE": 324.00079779836017,
+   "builtN": 412.6972092198555
+  },
+  {
+   "id": "trajan-column",
+   "name": "Trajan's Column",
+   "how": "restated",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 150.8738951744348,
+   "resolverReal": 384.2288675623704,
+   "builtE": 417.8567631681512,
+   "builtN": 668.1723513960684,
+   "builtErr": 384.53524322179635,
+   "builtWorldErr": 150.97622560220776,
+   "refIsEvidence": false
+  },
+  {
+   "id": "trajan-market",
+   "name": "Trajan's Market",
+   "how": "survey",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 114.19785990313868,
+   "resolverReal": 268.6749819944506,
+   "builtE": 500.5945573129833,
+   "builtN": 523.5268520214933
+  },
+  {
+   "id": "imperial-fora",
+   "name": "Fora of Caesar, Augustus and Nerva",
+   "how": "survey",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 68.76274309196442,
+   "resolverReal": 164.4176914048804,
+   "builtE": 438.60172597665326,
+   "builtN": 91.55375189866326
+  },
+  {
+   "id": "palatine",
+   "name": "Palatine Palaces",
+   "how": "restated",
+   "graded": false,
+   "placed": false
+  },
+  {
+   "id": "circus-maximus",
+   "name": "Circus Maximus",
+   "how": "restated",
+   "graded": false,
+   "placed": false
+  },
+  {
+   "id": "colosseum",
+   "name": "Flavian Amphitheatre",
+   "how": "plate",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 20.248456731316587,
+   "surveyErrE": -19,
+   "surveyErrN": -7,
+   "ctlErr": 20,
+   "resolverWorld": 42.18964025852332,
+   "resolverReal": 111.27733155760909,
+   "builtE": 760.2723288712181,
+   "builtN": -162.11043817274395,
+   "builtErr": 117.25119255638381,
+   "builtWorldErr": 46.2732144269367,
+   "refIsEvidence": true
+  },
+  {
+   "id": "ludus-magnus",
+   "name": "Ludus Magnus",
+   "how": "survey",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 124.11008601169216,
+   "resolverReal": 280.17093574478804,
+   "builtE": 1270.1370646406976,
+   "builtN": -219.35640340231853
+  },
+  {
+   "id": "baths-titus",
+   "name": "Baths of Titus",
+   "how": "plate-weak",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 65.06919393998976,
+   "surveyErrE": -45,
+   "surveyErrN": -47,
+   "ctlErr": 70,
+   "resolverWorld": 33.926348135908704,
+   "resolverReal": 88.45384440676129,
+   "builtE": 1029.0963982762908,
+   "builtN": -172.20277469409473,
+   "builtErr": 119.35856721121561,
+   "builtWorldErr": 41.80829149298304,
+   "refIsEvidence": true
+  },
+  {
+   "id": "baths-trajan",
+   "name": "Baths of Trajan",
+   "how": "plate-weak",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 109.22453936730518,
+   "surveyErrE": -109,
+   "surveyErrN": 7,
+   "ctlErr": 60,
+   "resolverWorld": 25.83412580788623,
+   "resolverReal": 73.72075897318024,
+   "builtE": 1089.723064756618,
+   "builtN": 133.5693072067865,
+   "builtErr": 131.77667656886035,
+   "builtWorldErr": 54.12159272227163,
+   "refIsEvidence": true
+  },
+  {
+   "id": "temple-serapis",
+   "name": "Temple of Serapis",
+   "how": "survey",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 89.48266930528676,
+   "resolverReal": 221.19063161332,
+   "builtE": 546.2456501838557,
+   "builtN": 792.0345898379502
+  },
+  {
+   "id": "castra-praetoria",
+   "name": "Castra Praetoria",
+   "how": "plate",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 113.46365056704283,
+   "surveyErrE": -93,
+   "surveyErrN": -65,
+   "ctlErr": 35,
+   "resolverWorld": 118.32402168026704,
+   "resolverReal": 338.0686333721917,
+   "builtE": 1938.9999999999998,
+   "builtN": 1128.9313666278083,
+   "builtErr": 413.65846202939736,
+   "builtWorldErr": 146.9667894255177,
+   "refIsEvidence": true
+  },
+  {
+   "id": "gardens-sallust",
+   "name": "Horti Sallustiani",
+   "how": "survey",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 0,
+   "resolverReal": 2.2737367544323206e-13,
+   "builtE": 887.0000000000002,
+   "builtN": 1612
+  },
+  {
+   "id": "aventine-temples",
+   "name": "The Aventine",
+   "how": "survey",
+   "graded": false,
+   "placed": false
+  },
+  {
+   "id": "baths-caracalla",
+   "name": "Baths of Caracalla",
+   "how": "restated",
+   "graded": false,
+   "placed": false
+  },
+  {
+   "id": "caelian-villas",
+   "name": "The Caelian",
+   "how": "survey",
+   "graded": false,
+   "placed": false
+  },
+  {
+   "id": "tiber-island",
+   "name": "Insula Tiberina",
+   "how": "plate",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 42.95346318982906,
+   "surveyErrE": 39,
+   "surveyErrN": 18,
+   "ctlErr": 25,
+   "resolverWorld": 12.214682899420339,
+   "resolverReal": 27.572647628488312,
+   "builtE": -392.5726476284883,
+   "builtN": -189.00000000000028,
+   "builtErr": 21.32098455096958,
+   "builtWorldErr": 8.081896709734716,
+   "refIsEvidence": true
+  },
+  {
+   "id": "mausoleum-hadrian",
+   "name": "Mausoleum of Hadrian",
+   "how": "plate",
+   "graded": true,
+   "placed": true,
+   "surveyErr": 8.06225774829855,
+   "surveyErrE": -8,
+   "surveyErrN": -1,
+   "ctlErr": 15,
+   "resolverWorld": 71.2109299117796,
+   "resolverReal": 160.74702011688373,
+   "builtE": -1486.7470201168837,
+   "builtN": 1178,
+   "builtErr": 168.7499831061561,
+   "builtWorldErr": 74.7557492512454,
+   "refIsEvidence": true
+  },
+  {
+   "id": "janiculum",
+   "name": "Janiculum Ridge",
+   "how": "survey",
+   "graded": false,
+   "placed": true,
+   "resolverWorld": 395.63972074378347,
+   "resolverReal": 1046.3942236509924,
+   "builtE": -2150.1262507219412,
+   "builtN": 500.4946470076922
+  }
+ ],
+ "bear": [
+  {
+   "id": "basilica-ulpia",
+   "bearing": 41,
+   "axis": "x",
+   "builtRotDeg": 38.43,
+   "wantRotDeg": 42.27,
+   "err": 3.84
+  },
+  {
+   "id": "trajan-market",
+   "bearing": 139,
+   "axis": "x",
+   "builtRotDeg": -38.43,
+   "wantRotDeg": -42.27,
+   "err": 3.84
+  },
+  {
+   "id": "temple-serapis",
+   "bearing": 45,
+   "axis": "z",
+   "builtRotDeg": 124.59,
+   "wantRotDeg": 128.31,
+   "err": 3.72
+  },
+  {
+   "id": "temple-jupiter",
+   "bearing": 333,
+   "axis": "z",
+   "builtRotDeg": -143.54,
+   "wantRotDeg": -147.18,
+   "err": 3.64
+  },
+  {
+   "id": "porticus-octaviae",
+   "bearing": 26.5,
+   "axis": "x",
+   "builtRotDeg": 54.14,
+   "wantRotDeg": 57.75,
+   "err": 3.61
+  },
+  {
+   "id": "tabularium",
+   "bearing": 50,
+   "axis": "x",
+   "builtRotDeg": 30.06,
+   "wantRotDeg": 33.54,
+   "err": 3.48
+  },
+  {
+   "id": "theatre-marcellus",
+   "bearing": 204,
+   "axis": "z",
+   "builtRotDeg": -32.85,
+   "wantRotDeg": -29.4,
+   "err": 3.44
+  },
+  {
+   "id": "imperial-fora",
+   "bearing": 126,
+   "axis": "x",
+   "builtRotDeg": -26.61,
+   "wantRotDeg": -29.86,
+   "err": 3.24
+  },
+  {
+   "id": "ludus-magnus",
+   "bearing": 55,
+   "axis": "x",
+   "builtRotDeg": 25.78,
+   "wantRotDeg": 28.95,
+   "err": 3.18
+  },
+  {
+   "id": "baths-trajan",
+   "bearing": 125,
+   "axis": "x",
+   "builtRotDeg": -25.78,
+   "wantRotDeg": -28.95,
+   "err": 3.18
+  },
+  {
+   "id": "castra-praetoria",
+   "bearing": 340,
+   "axis": "x",
+   "builtRotDeg": 117.82,
+   "wantRotDeg": 114.73,
+   "err": 3.09
+  },
+  {
+   "id": "tiber-island",
+   "bearing": 121,
+   "axis": "x",
+   "builtRotDeg": -22.51,
+   "wantRotDeg": -25.39,
+   "err": 2.89
+  },
+  {
+   "id": "gardens-sallust",
+   "bearing": 60,
+   "axis": "x",
+   "builtRotDeg": 21.71,
+   "wantRotDeg": 24.52,
+   "err": 2.81
+  },
+  {
+   "id": "forum-romanum",
+   "bearing": 117,
+   "axis": "x",
+   "builtRotDeg": -19.36,
+   "wantRotDeg": -21.93,
+   "err": 2.57
+  },
+  {
+   "id": "colosseum",
+   "bearing": 115,
+   "axis": "x",
+   "builtRotDeg": -17.83,
+   "wantRotDeg": -20.22,
+   "err": 2.4
+  },
+  {
+   "id": "baths-titus",
+   "bearing": 115,
+   "axis": "x",
+   "builtRotDeg": -17.83,
+   "wantRotDeg": -20.22,
+   "err": 2.4
+  },
+  {
+   "id": "janiculum",
+   "bearing": 12,
+   "axis": "x",
+   "builtRotDeg": 72.87,
+   "wantRotDeg": 74.94,
+   "err": 2.07
+  },
+  {
+   "id": "baths-nero",
+   "bearing": 8,
+   "axis": "x",
+   "builtRotDeg": 78.48,
+   "wantRotDeg": 79.91,
+   "err": 1.43
+  },
+  {
+   "id": "largo-argentina",
+   "bearing": 8,
+   "axis": "x",
+   "builtRotDeg": 78.48,
+   "wantRotDeg": 79.91,
+   "err": 1.43
+  },
+  {
+   "id": "pantheon",
+   "bearing": 176,
+   "axis": "z",
+   "builtRotDeg": 5.79,
+   "wantRotDeg": 5.06,
+   "err": 0.73
+  },
+  {
+   "id": "stadium-domitian",
+   "bearing": 177,
+   "axis": "x",
+   "builtRotDeg": -85.65,
+   "wantRotDeg": -86.2,
+   "err": 0.55
+  },
+  {
+   "id": "baths-agrippa",
+   "bearing": 3,
+   "axis": "x",
+   "builtRotDeg": 85.65,
+   "wantRotDeg": 86.2,
+   "err": 0.55
+  },
+  {
+   "id": "mausoleum-hadrian",
+   "bearing": 177,
+   "axis": "x",
+   "builtRotDeg": -85.65,
+   "wantRotDeg": -86.2,
+   "err": 0.55
+  },
+  {
+   "id": "ara-pacis",
+   "bearing": 88,
+   "axis": "x",
+   "builtRotDeg": 1.38,
+   "wantRotDeg": 1.58,
+   "err": 0.2
+  },
+  {
+   "id": "theatre-pompey",
+   "bearing": 89,
+   "axis": "z",
+   "builtRotDeg": 90.69,
+   "wantRotDeg": 90.79,
+   "err": 0.1
+  },
+  {
+   "id": "mausoleum-augustus",
+   "bearing": 0,
+   "axis": "x",
+   "builtRotDeg": 90,
+   "wantRotDeg": 90,
+   "err": 0
+  },
+  {
+   "id": "horologium",
+   "bearing": 0,
+   "axis": "x",
+   "builtRotDeg": 90,
+   "wantRotDeg": 90,
+   "err": 0
+  },
+  {
+   "id": "temple-isis",
+   "bearing": 270,
+   "axis": "z",
+   "builtRotDeg": -90,
+   "wantRotDeg": -90,
+   "err": 0
+  },
+  {
+   "id": "trajan-column",
+   "bearing": 0,
+   "axis": "x",
+   "builtRotDeg": 90,
+   "wantRotDeg": 90,
+   "err": 0
+  }
+ ],
+ "foot": [
+  {
+   "id": "colosseum",
+   "published": [
+    189,
+    156
+   ],
+   "modelled": [
+    131.4,
+    108.5
+   ],
+   "ratio": 0.696,
+   "aspectPub": 1.212,
+   "aspectMod": 1.212,
+   "surveyLen": 189,
+   "surveyWid": 156,
+   "src": "Platner-Ashby s.v. Amphitheatrum Flavium; 188 x 156 also given"
+  },
+  {
+   "id": "pantheon",
+   "published": [
+    84,
+    58
+   ],
+   "modelled": [
+    58.4,
+    40.3
+   ],
+   "ratio": 0.696,
+   "aspectPub": 1.448,
+   "aspectMod": 1.448,
+   "surveyLen": 84,
+   "surveyWid": 58,
+   "src": "rotunda 58 m external diameter; 84 x 58 overall with the forecourt"
+  },
+  {
+   "id": "stadium-domitian",
+   "published": [
+    275,
+    106
+   ],
+   "modelled": [
+    191.3,
+    73.7
+   ],
+   "ratio": 0.696,
+   "aspectPub": 2.594,
+   "aspectMod": 2.594,
+   "surveyLen": 275,
+   "surveyWid": 106,
+   "src": "Platner-Ashby s.v. Stadium Domitiani"
+  },
+  {
+   "id": "mausoleum-augustus",
+   "published": [
+    87,
+    87
+   ],
+   "modelled": [
+    60.5,
+    60.5
+   ],
+   "ratio": 0.696,
+   "aspectPub": 1,
+   "aspectMod": 1,
+   "surveyLen": 87,
+   "surveyWid": 87,
+   "src": "300 pedes diameter; Platner-Ashby"
+  },
+  {
+   "id": "castra-praetoria",
+   "published": [
+    437,
+    380
+   ],
+   "modelled": [
+    278.2,
+    262.2
+   ],
+   "ratio": 0.637,
+   "aspectPub": 1.15,
+   "aspectMod": 1.061,
+   "surveyLen": 400,
+   "surveyWid": 377,
+   "src": "Platner-Ashby s.v. Castra Praetoria; measured 434 m on the east side off the plate this pass"
+  },
+  {
+   "id": "theatre-marcellus",
+   "published": [
+    129.8,
+    115
+   ],
+   "modelled": [
+    90.4,
+    80
+   ],
+   "ratio": 0.697,
+   "aspectPub": 1.129,
+   "aspectMod": 1.13,
+   "surveyLen": 130,
+   "surveyWid": 115,
+   "src": "external diameter 129.8 m"
+  },
+  {
+   "id": "circus-maximus",
+   "note": "not placed",
+   "src": "Humphrey, Roman Circuses (1986) 56-131 — TRACK 621 x 118; 621 x 190 is the outer envelope"
+  },
+  {
+   "id": "baths-caracalla",
+   "note": "not placed",
+   "src": "bathing block; the precinct is 337 x 328"
+  },
+  {
+   "id": "porticus-octaviae",
+   "published": [
+    132,
+    119
+   ],
+   "modelled": [
+    91.8,
+    82.8
+   ],
+   "ratio": 0.696,
+   "aspectPub": 1.109,
+   "aspectMod": 1.109,
+   "surveyLen": 132,
+   "surveyWid": 119,
+   "src": "Severan Marble Plan"
+  },
+  {
+   "id": "temple-jupiter",
+   "published": [
+    63,
+    53
+   ],
+   "modelled": [
+    43.8,
+    36.9
+   ],
+   "ratio": 0.696,
+   "aspectPub": 1.189,
+   "aspectMod": 1.189,
+   "surveyLen": 63,
+   "surveyWid": 53,
+   "src": "podium; Platner-Ashby"
+  },
+  {
+   "id": "temple-isis",
+   "published": [
+    200,
+    50
+   ],
+   "modelled": [
+    48.7,
+    23.6
+   ],
+   "ratio": 0.243,
+   "aspectPub": 4,
+   "aspectMod": 2.059,
+   "surveyLen": 70,
+   "surveyWid": 34,
+   "src": "Digital Augustan Rome; 240 x 60 also given. survey.ts models 70 x 34"
+  },
+  {
+   "id": "ara-pacis",
+   "published": [
+    11.625,
+    10.55
+   ],
+   "modelled": [
+    8.1,
+    7.4
+   ],
+   "ratio": 0.694,
+   "aspectPub": 1.102,
+   "aspectMod": 1.094,
+   "surveyLen": 11.6,
+   "surveyWid": 10.6,
+   "src": "enclosure"
+  },
+  {
+   "id": "tiber-island",
+   "published": [
+    270,
+    67
+   ],
+   "modelled": [
+    288.9,
+    71.7
+   ],
+   "ratio": 1.07,
+   "aspectPub": 4.03,
+   "aspectMod": 4.03,
+   "surveyLen": 270,
+   "surveyWid": 67,
+   "src": "the ancient island, not the 446 x 116 modern outline"
+  },
+  {
+   "id": "basilica-ulpia",
+   "published": [
+    130,
+    55
+   ],
+   "modelled": [
+    90.4,
+    38.3
+   ],
+   "ratio": 0.696,
+   "aspectPub": 2.364,
+   "aspectMod": 2.364,
+   "surveyLen": 130,
+   "surveyWid": 55,
+   "src": "Platner-Ashby"
+  }
+ ],
+ "river": {
+  "samples": [
+   {
+    "n": -400,
+    "eng": -381,
+    "ctl": -310,
+    "dev": -71,
+    "devWorld": -31,
+    "c1": null,
+    "c2": -28.75,
+    "flip": true
+   },
+   {
+    "n": -350,
+    "eng": -377,
+    "ctl": -292,
+    "dev": -85,
+    "devWorld": -38,
+    "c1": null,
+    "c2": -61.17,
+    "flip": true
+   },
+   {
+    "n": -300,
+    "eng": -374,
+    "ctl": -303,
+    "dev": -71,
+    "devWorld": -32,
+    "c1": -14.5,
+    "c2": -36.11,
+    "flip": false
+   },
+   {
+    "n": -250,
+    "eng": -373,
+    "ctl": -318,
+    "dev": -55,
+    "devWorld": -24,
+    "c1": -89.05,
+    "c2": -3.68,
+    "flip": false
+   },
+   {
+    "n": -200,
+    "eng": -382,
+    "ctl": -333,
+    "dev": -50,
+    "devWorld": -22,
+    "c1": -196.16,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": -150,
+    "eng": -458,
+    "ctl": -347,
+    "dev": -111,
+    "devWorld": -49,
+    "c1": -197.49,
+    "c2": -322.21,
+    "flip": false
+   },
+   {
+    "n": -100,
+    "eng": -587,
+    "ctl": -362,
+    "dev": -225,
+    "devWorld": -100,
+    "c1": -99.89,
+    "c2": -460.11,
+    "flip": false
+   },
+   {
+    "n": -50,
+    "eng": -741,
+    "ctl": -699,
+    "dev": -42,
+    "devWorld": -19,
+    "c1": 14.56,
+    "c2": 46.4,
+    "flip": false
+   },
+   {
+    "n": 0,
+    "eng": -891,
+    "ctl": -851,
+    "dev": -40,
+    "devWorld": -18,
+    "c1": 97.82,
+    "c2": 238,
+    "flip": false
+   },
+   {
+    "n": 50,
+    "eng": -1008,
+    "ctl": -1004,
+    "dev": -5,
+    "devWorld": -2,
+    "c1": 90.67,
+    "c2": 114.08,
+    "flip": false
+   },
+   {
+    "n": 100,
+    "eng": -1097,
+    "ctl": -1102,
+    "dev": 6,
+    "devWorld": 2,
+    "c1": 31.45,
+    "c2": 67.07,
+    "flip": false
+   },
+   {
+    "n": 150,
+    "eng": -1186,
+    "ctl": -1195,
+    "dev": 9,
+    "devWorld": 4,
+    "c1": 11.98,
+    "c2": 49.56,
+    "flip": false
+   },
+   {
+    "n": 200,
+    "eng": -1272,
+    "ctl": -1287,
+    "dev": 15,
+    "devWorld": 7,
+    "c1": 27.32,
+    "c2": 119.84,
+    "flip": false
+   },
+   {
+    "n": 250,
+    "eng": -1351,
+    "ctl": -1336,
+    "dev": -15,
+    "devWorld": -7,
+    "c1": 44.09,
+    "c2": 111.04,
+    "flip": false
+   },
+   {
+    "n": 300,
+    "eng": -1419,
+    "ctl": -1351,
+    "dev": -68,
+    "devWorld": -30,
+    "c1": 60.89,
+    "c2": 34.08,
+    "flip": false
+   },
+   {
+    "n": 350,
+    "eng": -1472,
+    "ctl": -1366,
+    "dev": -106,
+    "devWorld": -47,
+    "c1": 77.05,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 400,
+    "eng": -1506,
+    "ctl": -1382,
+    "dev": -124,
+    "devWorld": -55,
+    "c1": 78.68,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 450,
+    "eng": -1516,
+    "ctl": -1397,
+    "dev": -119,
+    "devWorld": -53,
+    "c1": 53.21,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 500,
+    "eng": -1514,
+    "ctl": -1412,
+    "dev": -102,
+    "devWorld": -45,
+    "c1": 25,
+    "c2": 13.09,
+    "flip": false
+   },
+   {
+    "n": 550,
+    "eng": -1507,
+    "ctl": -1427,
+    "dev": -80,
+    "devWorld": -35,
+    "c1": 15.59,
+    "c2": 42.27,
+    "flip": false
+   },
+   {
+    "n": 600,
+    "eng": -1497,
+    "ctl": -1429,
+    "dev": -67,
+    "devWorld": -30,
+    "c1": 14.86,
+    "c2": 45.27,
+    "flip": false
+   },
+   {
+    "n": 650,
+    "eng": -1482,
+    "ctl": -1415,
+    "dev": -67,
+    "devWorld": -30,
+    "c1": 14.2,
+    "c2": 16.09,
+    "flip": false
+   },
+   {
+    "n": 700,
+    "eng": -1465,
+    "ctl": -1401,
+    "dev": -63,
+    "devWorld": -28,
+    "c1": 13.52,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 750,
+    "eng": -1443,
+    "ctl": -1387,
+    "dev": -56,
+    "devWorld": -25,
+    "c1": 12.8,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 800,
+    "eng": -1419,
+    "ctl": -1373,
+    "dev": -46,
+    "devWorld": -20,
+    "c1": 12.1,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 850,
+    "eng": -1392,
+    "ctl": -1359,
+    "dev": -33,
+    "devWorld": -14,
+    "c1": 11.41,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 900,
+    "eng": -1362,
+    "ctl": -1345,
+    "dev": -16,
+    "devWorld": -7,
+    "c1": 12.68,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 950,
+    "eng": -1329,
+    "ctl": -1331,
+    "dev": 2,
+    "devWorld": 1,
+    "c1": 27.54,
+    "c2": 342.54,
+    "flip": false
+   },
+   {
+    "n": 1000,
+    "eng": -1291,
+    "ctl": -1317,
+    "dev": 26,
+    "devWorld": 11,
+    "c1": 49.54,
+    "c2": 414.74,
+    "flip": false
+   },
+   {
+    "n": 1050,
+    "eng": -1238,
+    "ctl": -961,
+    "dev": -277,
+    "devWorld": -123,
+    "c1": 49.71,
+    "c2": -260.06,
+    "flip": true
+   },
+   {
+    "n": 1100,
+    "eng": -1171,
+    "ctl": -874,
+    "dev": -297,
+    "devWorld": -132,
+    "c1": 29.19,
+    "c2": -394.19,
+    "flip": true
+   },
+   {
+    "n": 1150,
+    "eng": -1098,
+    "ctl": -850,
+    "dev": -248,
+    "devWorld": -110,
+    "c1": 5.03,
+    "c2": -61.93,
+    "flip": true
+   },
+   {
+    "n": 1200,
+    "eng": -1022,
+    "ctl": -826,
+    "dev": -197,
+    "devWorld": -87,
+    "c1": -19.03,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1250,
+    "eng": -952,
+    "ctl": -802,
+    "dev": -151,
+    "devWorld": -67,
+    "c1": -43.02,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1300,
+    "eng": -893,
+    "ctl": -777,
+    "dev": -115,
+    "devWorld": -51,
+    "c1": -67.02,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1350,
+    "eng": -850,
+    "ctl": -753,
+    "dev": -97,
+    "devWorld": -43,
+    "c1": -81.29,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1400,
+    "eng": -830,
+    "ctl": -729,
+    "dev": -101,
+    "devWorld": -45,
+    "c1": -62.7,
+    "c2": -0.26,
+    "flip": false
+   },
+   {
+    "n": 1450,
+    "eng": -829,
+    "ctl": -704,
+    "dev": -124,
+    "devWorld": -55,
+    "c1": -22.74,
+    "c2": -24.54,
+    "flip": false
+   },
+   {
+    "n": 1500,
+    "eng": -829,
+    "ctl": -680,
+    "dev": -149,
+    "devWorld": -66,
+    "c1": -2.73,
+    "c2": -48.29,
+    "flip": false
+   },
+   {
+    "n": 1550,
+    "eng": -830,
+    "ctl": -680,
+    "dev": -150,
+    "devWorld": -66,
+    "c1": -1.59,
+    "c2": -24.02,
+    "flip": false
+   },
+   {
+    "n": 1600,
+    "eng": -832,
+    "ctl": -680,
+    "dev": -151,
+    "devWorld": -67,
+    "c1": -1.42,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1650,
+    "eng": -834,
+    "ctl": -680,
+    "dev": -153,
+    "devWorld": -68,
+    "c1": -1.26,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1700,
+    "eng": -836,
+    "ctl": -680,
+    "dev": -155,
+    "devWorld": -69,
+    "c1": -1.1,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1750,
+    "eng": -838,
+    "ctl": -680,
+    "dev": -158,
+    "devWorld": -70,
+    "c1": -0.94,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1800,
+    "eng": -841,
+    "ctl": -680,
+    "dev": -160,
+    "devWorld": -71,
+    "c1": -0.78,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1850,
+    "eng": -844,
+    "ctl": -680,
+    "dev": -163,
+    "devWorld": -72,
+    "c1": -0.62,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1900,
+    "eng": -847,
+    "ctl": -680,
+    "dev": -166,
+    "devWorld": -74,
+    "c1": -0.46,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1950,
+    "eng": -850,
+    "ctl": -680,
+    "dev": -169,
+    "devWorld": -75,
+    "c1": -0.3,
+    "c2": -1.91,
+    "flip": false
+   },
+   {
+    "n": 2000,
+    "eng": -853,
+    "ctl": -680,
+    "dev": -172,
+    "devWorld": -76,
+    "c1": -0.14,
+    "c2": -17.05,
+    "flip": false
+   },
+   {
+    "n": 2050,
+    "eng": -856,
+    "ctl": -682,
+    "dev": -174,
+    "devWorld": -77,
+    "c1": 0.02,
+    "c2": -28.38,
+    "flip": false
+   },
+   {
+    "n": 2100,
+    "eng": -859,
+    "ctl": -697,
+    "dev": -162,
+    "devWorld": -72,
+    "c1": 0.18,
+    "c2": -13.24,
+    "flip": true
+   },
+   {
+    "n": 2150,
+    "eng": -862,
+    "ctl": -713,
+    "dev": -150,
+    "devWorld": -66,
+    "c1": 0.34,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 2200,
+    "eng": -865,
+    "ctl": -728,
+    "dev": -138,
+    "devWorld": -61,
+    "c1": 0.49,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 2250,
+    "eng": -868,
+    "ctl": -743,
+    "dev": -126,
+    "devWorld": -56,
+    "c1": 0.53,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 2300,
+    "eng": -871,
+    "ctl": -758,
+    "dev": -113,
+    "devWorld": -50,
+    "c1": 0.4,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 2350,
+    "eng": -874,
+    "ctl": -773,
+    "dev": -101,
+    "devWorld": -45,
+    "c1": 0.23,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 2400,
+    "eng": -877,
+    "ctl": -788,
+    "dev": -88,
+    "devWorld": -39,
+    "c1": 0.1,
+    "c2": 2.44,
+    "flip": false
+   },
+   {
+    "n": 2450,
+    "eng": -879,
+    "ctl": -803,
+    "dev": -76,
+    "devWorld": -34,
+    "c1": -0.01,
+    "c2": 5.13,
+    "flip": false
+   },
+   {
+    "n": 2500,
+    "eng": -882,
+    "ctl": -816,
+    "dev": -66,
+    "devWorld": -29,
+    "c1": -0.13,
+    "c2": 2.94,
+    "flip": true
+   },
+   {
+    "n": 2550,
+    "eng": -884,
+    "ctl": -829,
+    "dev": -56,
+    "devWorld": -25,
+    "c1": -0.25,
+    "c2": 0.25,
+    "flip": true
+   },
+   {
+    "n": 2600,
+    "eng": -887,
+    "ctl": -841,
+    "dev": -46,
+    "devWorld": -20,
+    "c1": -0.36,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 2650,
+    "eng": -890,
+    "ctl": -853,
+    "dev": -36,
+    "devWorld": -16,
+    "c1": -0.48,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 2700,
+    "eng": -893,
+    "ctl": -866,
+    "dev": -27,
+    "devWorld": -12,
+    "c1": -0.6,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 2750,
+    "eng": -896,
+    "ctl": -878,
+    "dev": -18,
+    "devWorld": -8,
+    "c1": -0.71,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 2800,
+    "eng": -899,
+    "ctl": -891,
+    "dev": -8,
+    "devWorld": -4,
+    "c1": -0.83,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 2850,
+    "eng": -903,
+    "ctl": -903,
+    "dev": 1,
+    "devWorld": 0,
+    "c1": -0.94,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 2900,
+    "eng": -906,
+    "ctl": -916,
+    "dev": 9,
+    "devWorld": 4,
+    "c1": -1.06,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 2950,
+    "eng": -910,
+    "ctl": -928,
+    "dev": 18,
+    "devWorld": 8,
+    "c1": -1.18,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3000,
+    "eng": -915,
+    "ctl": -941,
+    "dev": 26,
+    "devWorld": 12,
+    "c1": -1.12,
+    "c2": 1.47,
+    "flip": true
+   },
+   {
+    "n": 3050,
+    "eng": -919,
+    "ctl": -953,
+    "dev": 34,
+    "devWorld": 15,
+    "c1": -0.65,
+    "c2": 7.5,
+    "flip": true
+   },
+   {
+    "n": 3100,
+    "eng": -924,
+    "ctl": -964,
+    "dev": 40,
+    "devWorld": 18,
+    "c1": -0.13,
+    "c2": 10.58,
+    "flip": true
+   },
+   {
+    "n": 3150,
+    "eng": -929,
+    "ctl": -970,
+    "dev": 42,
+    "devWorld": 19,
+    "c1": -0.07,
+    "c2": 4.55,
+    "flip": true
+   },
+   {
+    "n": 3200,
+    "eng": -933,
+    "ctl": -977,
+    "dev": 44,
+    "devWorld": 19,
+    "c1": -0.29,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3250,
+    "eng": -938,
+    "ctl": -983,
+    "dev": 45,
+    "devWorld": 20,
+    "c1": -0.52,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3300,
+    "eng": -943,
+    "ctl": -990,
+    "dev": 47,
+    "devWorld": 21,
+    "c1": -0.75,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3350,
+    "eng": -948,
+    "ctl": -996,
+    "dev": 48,
+    "devWorld": 21,
+    "c1": -0.98,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3400,
+    "eng": -954,
+    "ctl": -1003,
+    "dev": 49,
+    "devWorld": 22,
+    "c1": -1.21,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3450,
+    "eng": -959,
+    "ctl": -1009,
+    "dev": 50,
+    "devWorld": 22,
+    "c1": -1.44,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3500,
+    "eng": -965,
+    "ctl": -1015,
+    "dev": 50,
+    "devWorld": 22,
+    "c1": -1.67,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3550,
+    "eng": -972,
+    "ctl": -1022,
+    "dev": 50,
+    "devWorld": 22,
+    "c1": -1.9,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3600,
+    "eng": -979,
+    "ctl": -1028,
+    "dev": 50,
+    "devWorld": 22,
+    "c1": -2.13,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3650,
+    "eng": -986,
+    "ctl": -1035,
+    "dev": 49,
+    "devWorld": 22,
+    "c1": -2.35,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3700,
+    "eng": -994,
+    "ctl": -1041,
+    "dev": 47,
+    "devWorld": 21,
+    "c1": -2.58,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3750,
+    "eng": -1003,
+    "ctl": -1048,
+    "dev": 45,
+    "devWorld": 20,
+    "c1": -2.76,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3800,
+    "eng": -1012,
+    "ctl": -1054,
+    "dev": 42,
+    "devWorld": 18,
+    "c1": -2.31,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3850,
+    "eng": -1022,
+    "ctl": -1060,
+    "dev": 38,
+    "devWorld": 17,
+    "c1": -1.12,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3900,
+    "eng": -1033,
+    "ctl": -1067,
+    "dev": 34,
+    "devWorld": 15,
+    "c1": -0.39,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 3950,
+    "eng": -1043,
+    "ctl": -1073,
+    "dev": 30,
+    "devWorld": 13,
+    "c1": -0.45,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 4000,
+    "eng": -1054,
+    "ctl": -1080,
+    "dev": 26,
+    "devWorld": 12,
+    "c1": -0.72,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 4050,
+    "eng": -1064,
+    "ctl": -1086,
+    "dev": 22,
+    "devWorld": 10,
+    "c1": -0.99,
+    "c2": -5.78,
+    "flip": false
+   },
+   {
+    "n": 4100,
+    "eng": -1075,
+    "ctl": -1093,
+    "dev": 18,
+    "devWorld": 8,
+    "c1": -1.26,
+    "c2": -15.65,
+    "flip": false
+   },
+   {
+    "n": 4150,
+    "eng": -1086,
+    "ctl": -1105,
+    "dev": 19,
+    "devWorld": 8,
+    "c1": -1.53,
+    "c2": -13.97,
+    "flip": false
+   },
+   {
+    "n": 4200,
+    "eng": -1098,
+    "ctl": -1121,
+    "dev": 23,
+    "devWorld": 10,
+    "c1": -1.8,
+    "c2": -4.1,
+    "flip": false
+   },
+   {
+    "n": 4250,
+    "eng": -1110,
+    "ctl": -1137,
+    "dev": 28,
+    "devWorld": 12,
+    "c1": -2.07,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 4300,
+    "eng": -1122,
+    "ctl": -1154,
+    "dev": 31,
+    "devWorld": 14,
+    "c1": -2.35,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 4350,
+    "eng": -1135,
+    "ctl": -1170,
+    "dev": 34,
+    "devWorld": 15,
+    "c1": -2.61,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 4400,
+    "eng": -1149,
+    "ctl": -1186,
+    "dev": 37,
+    "devWorld": 16,
+    "c1": -2.88,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 4450,
+    "eng": -1164,
+    "ctl": -1203,
+    "dev": 39,
+    "devWorld": 17,
+    "c1": -3.15,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 4500,
+    "eng": -1179,
+    "ctl": -1219,
+    "dev": 40,
+    "devWorld": 18,
+    "c1": -3.42,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 4550,
+    "eng": -1195,
+    "ctl": -1235,
+    "dev": 40,
+    "devWorld": 18,
+    "c1": -3.69,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 4600,
+    "eng": -1212,
+    "ctl": -1251,
+    "dev": 39,
+    "devWorld": 17,
+    "c1": -3.96,
+    "c2": 0,
+    "flip": false
+   }
+  ],
+  "worst": {
+   "n": 1100,
+   "eng": -1171,
+   "ctl": -874,
+   "dev": -297,
+   "devWorld": -132,
+   "c1": 29.19,
+   "c2": -394.19,
+   "flip": true
+  },
+  "signFlips": 12,
+  "spanN": [
+   -1965.9595319997588,
+   4731.631416000022
+  ],
+  "fought": [
+   {
+    "n": 900,
+    "eng": -1362,
+    "ctl": -1345,
+    "dev": -16,
+    "devWorld": -7,
+    "c1": 12.68,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 950,
+    "eng": -1329,
+    "ctl": -1331,
+    "dev": 2,
+    "devWorld": 1,
+    "c1": 27.54,
+    "c2": 342.54,
+    "flip": false
+   },
+   {
+    "n": 1000,
+    "eng": -1291,
+    "ctl": -1317,
+    "dev": 26,
+    "devWorld": 11,
+    "c1": 49.54,
+    "c2": 414.74,
+    "flip": false
+   },
+   {
+    "n": 1050,
+    "eng": -1238,
+    "ctl": -961,
+    "dev": -277,
+    "devWorld": -123,
+    "c1": 49.71,
+    "c2": -260.06,
+    "flip": true
+   },
+   {
+    "n": 1100,
+    "eng": -1171,
+    "ctl": -874,
+    "dev": -297,
+    "devWorld": -132,
+    "c1": 29.19,
+    "c2": -394.19,
+    "flip": true
+   },
+   {
+    "n": 1150,
+    "eng": -1098,
+    "ctl": -850,
+    "dev": -248,
+    "devWorld": -110,
+    "c1": 5.03,
+    "c2": -61.93,
+    "flip": true
+   },
+   {
+    "n": 1200,
+    "eng": -1022,
+    "ctl": -826,
+    "dev": -197,
+    "devWorld": -87,
+    "c1": -19.03,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1250,
+    "eng": -952,
+    "ctl": -802,
+    "dev": -151,
+    "devWorld": -67,
+    "c1": -43.02,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1300,
+    "eng": -893,
+    "ctl": -777,
+    "dev": -115,
+    "devWorld": -51,
+    "c1": -67.02,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1350,
+    "eng": -850,
+    "ctl": -753,
+    "dev": -97,
+    "devWorld": -43,
+    "c1": -81.29,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1400,
+    "eng": -830,
+    "ctl": -729,
+    "dev": -101,
+    "devWorld": -45,
+    "c1": -62.7,
+    "c2": -0.26,
+    "flip": false
+   },
+   {
+    "n": 1450,
+    "eng": -829,
+    "ctl": -704,
+    "dev": -124,
+    "devWorld": -55,
+    "c1": -22.74,
+    "c2": -24.54,
+    "flip": false
+   },
+   {
+    "n": 1500,
+    "eng": -829,
+    "ctl": -680,
+    "dev": -149,
+    "devWorld": -66,
+    "c1": -2.73,
+    "c2": -48.29,
+    "flip": false
+   },
+   {
+    "n": 1550,
+    "eng": -830,
+    "ctl": -680,
+    "dev": -150,
+    "devWorld": -66,
+    "c1": -1.59,
+    "c2": -24.02,
+    "flip": false
+   },
+   {
+    "n": 1600,
+    "eng": -832,
+    "ctl": -680,
+    "dev": -151,
+    "devWorld": -67,
+    "c1": -1.42,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1650,
+    "eng": -834,
+    "ctl": -680,
+    "dev": -153,
+    "devWorld": -68,
+    "c1": -1.26,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1700,
+    "eng": -836,
+    "ctl": -680,
+    "dev": -155,
+    "devWorld": -69,
+    "c1": -1.1,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1750,
+    "eng": -838,
+    "ctl": -680,
+    "dev": -158,
+    "devWorld": -70,
+    "c1": -0.94,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1800,
+    "eng": -841,
+    "ctl": -680,
+    "dev": -160,
+    "devWorld": -71,
+    "c1": -0.78,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1850,
+    "eng": -844,
+    "ctl": -680,
+    "dev": -163,
+    "devWorld": -72,
+    "c1": -0.62,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1900,
+    "eng": -847,
+    "ctl": -680,
+    "dev": -166,
+    "devWorld": -74,
+    "c1": -0.46,
+    "c2": 0,
+    "flip": false
+   },
+   {
+    "n": 1950,
+    "eng": -850,
+    "ctl": -680,
+    "dev": -169,
+    "devWorld": -75,
+    "c1": -0.3,
+    "c2": -1.91,
+    "flip": false
+   },
+   {
+    "n": 2000,
+    "eng": -853,
+    "ctl": -680,
+    "dev": -172,
+    "devWorld": -76,
+    "c1": -0.14,
+    "c2": -17.05,
+    "flip": false
+   },
+   {
+    "n": 2050,
+    "eng": -856,
+    "ctl": -682,
+    "dev": -174,
+    "devWorld": -77,
+    "c1": 0.02,
+    "c2": -28.38,
+    "flip": false
+   },
+   {
+    "n": 2100,
+    "eng": -859,
+    "ctl": -697,
+    "dev": -162,
+    "devWorld": -72,
+    "c1": 0.18,
+    "c2": -13.24,
+    "flip": true
+   }
+  ],
+  "foughtWorst": {
+   "n": 1100,
+   "eng": -1171,
+   "ctl": -874,
+   "dev": -297,
+   "devWorld": -132,
+   "c1": 29.19,
+   "c2": -394.19,
+   "flip": true
+  }
+ },
+ "wetInsulae": 74,
+ "wetInsulaeFull": 56,
+ "wetLandmarks": [
+  "tiber-island"
+ ],
+ "roadAreaLm": 62563.9316437456,
+ "roadAreaIns": 0,
+ "roadInsCount": 0,
+ "northOfWall": [
+  {
+   "id": "gardens-sallust",
+   "m": 75.8
+  }
+ ],
+ "insNorth": 1,
+ "claimed": 3855576.2531999997,
+ "overlapPairs": 79,
+ "doubleClaimed": 4554504.6453661695,
+ "grain": {
+  "n": 1064,
+  "p50": 21.26974594354582,
+  "p90": 39.8467549056709
+ }
+}

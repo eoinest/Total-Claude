@@ -1,0 +1,222 @@
+
+=== JUDGE: Rome plan fidelity ===  KZ 0.35  KX 0.443  landmarks 29  insulae 1160
+frame: GATE_X/GATE_Z re-derived independently and agree.
+
+-- C1/C2 position, real metres. surveyErr = the table vs the plate. builtErr = what the player gets vs the plate.
+id                       how        surveyErr  resolver  builtErr  builtWorld
+janiculum                survey             —      1046         —         —
+theatre-pompey           plate            138      1098      1031       368
+stadium-domitian         plate              0       887       887       359
+baths-agrippa            plate             29       752       760       333
+temple-isis              survey             —       755         —         —
+pantheon                 plate             23       628       624       275
+baths-nero               gazetteer        104       638       590       259
+castra-praetoria         plate            113       338       414       147
+horologium               survey             —       408         —         —
+trajan-column            restated           —       384       385       151
+ara-pacis                survey             —       336         —         —
+theatre-marcellus        plate             39       260       294       129
+ludus-magnus             survey             —       280         —         —
+trajan-market            survey             —       269         —         —
+largo-argentina          plate             12       238       227        99
+temple-serapis           survey             —       221         —         —
+temple-jupiter           restated           —       201       201        88
+forum-romanum            restated           —       199       199        78
+tabularium               survey             —       181         —         —
+mausoleum-hadrian        plate              8       161       169        75
+imperial-fora            survey             —       164         —         —
+basilica-ulpia           survey             —       155         —         —
+mausoleum-augustus       plate              0       152       152        55
+porticus-octaviae        survey             —       148         —         —
+baths-trajan             plate-weak       109        74       132        54
+baths-titus              plate-weak        65        88       119        42
+colosseum                plate             20       111       117        46
+tiber-island             plate             43        28        21         8
+gardens-sallust          survey             —         0         —         —
+palatine                 restated OFFMAP       —         —         —         —
+circus-maximus           restated OFFMAP       —         —         —         —
+aventine-temples         survey OFFMAP       —         —         —         —
+baths-caracalla          restated OFFMAP       —         —         —         —
+caelian-villas           survey OFFMAP       —         —         —         —
+
+graded rows 14/29 placed.  survey-vs-plate: median 39 m, worst 138 m
+built-vs-plate (evidence rows only, n=14): median 294 m, worst 1031 m
+built-vs-reference (incl. restated survey cites, n=17): median 227 m, worst 1031 m
+resolver displacement, all 29 placed: mean 352 m, median 238 m, worst 1098 m real  (399 m world)
+
+-- C3 bearing: drawn plan rotation vs the survey bearing projected at the frame's own KX/KZ
+  basilica-ulpia         bearing     41 axis x  drawn     38.4  want     42.3  err    3.8 deg
+  trajan-market          bearing    139 axis x  drawn    -38.4  want    -42.3  err    3.8 deg
+  temple-serapis         bearing     45 axis z  drawn    124.6  want    128.3  err    3.7 deg
+  temple-jupiter         bearing    333 axis z  drawn   -143.5  want   -147.2  err    3.6 deg
+  porticus-octaviae      bearing   26.5 axis x  drawn     54.1  want     57.8  err    3.6 deg
+  tabularium             bearing     50 axis x  drawn     30.1  want     33.5  err    3.5 deg
+  theatre-marcellus      bearing    204 axis z  drawn    -32.9  want    -29.4  err    3.4 deg
+  imperial-fora          bearing    126 axis x  drawn    -26.6  want    -29.9  err    3.2 deg
+  ludus-magnus           bearing     55 axis x  drawn     25.8  want     28.9  err    3.2 deg
+  baths-trajan           bearing    125 axis x  drawn    -25.8  want    -28.9  err    3.2 deg
+  castra-praetoria       bearing    340 axis x  drawn    117.8  want    114.7  err    3.1 deg
+  tiber-island           bearing    121 axis x  drawn    -22.5  want    -25.4  err    2.9 deg
+  bearing error: median 2.4 deg, worst 3.8 deg over 29 monuments
+
+-- C4 footprint against published plan
+id                       published      modelled     mod/pub  aspect pub/mod
+colosseum                  189x156     131.4x108.5     0.696    1.21 /  1.21
+pantheon                    84x58       58.4x40.3      0.696    1.45 /  1.45
+stadium-domitian           275x106     191.3x73.7      0.696    2.59 /  2.59
+mausoleum-augustus          87x87       60.5x60.5      0.696    1.00 /  1.00
+castra-praetoria           437x380     278.2x262.2     0.637    1.15 /  1.06
+theatre-marcellus        129.8x115      90.4x80        0.697    1.13 /  1.13
+circus-maximus           not placed
+baths-caracalla          not placed
+porticus-octaviae          132x119      91.8x82.8      0.696    1.11 /  1.11
+temple-jupiter              63x53       43.8x36.9      0.696    1.19 /  1.19
+temple-isis                200x50       48.7x23.6      0.243    4.00 /  2.06
+ara-pacis                11.625x10.55     8.1x7.4       0.694    1.10 /  1.09
+tiber-island               270x67      288.9x71.7      1.070    4.03 /  4.03
+basilica-ulpia             130x55       90.4x38.3      0.696    2.36 /  2.36
+
+-- C5 the Tiber against sixteen bridge midpoints
+  span graded: survey n -1966 .. 4732  (101 samples at 50 m)
+  worst departure overall : -297 real m (-132 world m) at n 1100
+  worst in the fought reach (n 900..2100): -297 real m (-132 world m) at n 1100
+  curvature-sign disagreements: 12 of 101 samples
+    n  -400  eng   -381  ctl   -310  dev   -71 real /  -31 world   d2e/dn2 eng        — ctl   -28.75 << SIGN INVERTED
+    n  -350  eng   -377  ctl   -292  dev   -85 real /  -38 world   d2e/dn2 eng        — ctl   -61.17 << SIGN INVERTED
+    n  -150  eng   -458  ctl   -347  dev  -111 real /  -49 world   d2e/dn2 eng  -197.49 ctl  -322.21 
+    n  -100  eng   -587  ctl   -362  dev  -225 real / -100 world   d2e/dn2 eng   -99.89 ctl  -460.11 
+    n   350  eng  -1472  ctl  -1366  dev  -106 real /  -47 world   d2e/dn2 eng    77.05 ctl     0.00 
+    n   400  eng  -1506  ctl  -1382  dev  -124 real /  -55 world   d2e/dn2 eng    78.68 ctl     0.00 
+    n   450  eng  -1516  ctl  -1397  dev  -119 real /  -53 world   d2e/dn2 eng    53.21 ctl     0.00 
+    n   500  eng  -1514  ctl  -1412  dev  -102 real /  -45 world   d2e/dn2 eng    25.00 ctl    13.09 
+    n  1050  eng  -1238  ctl   -961  dev  -277 real / -123 world   d2e/dn2 eng    49.71 ctl  -260.06 << SIGN INVERTED
+    n  1100  eng  -1171  ctl   -874  dev  -297 real / -132 world   d2e/dn2 eng    29.19 ctl  -394.19 << SIGN INVERTED
+    n  1150  eng  -1098  ctl   -850  dev  -248 real / -110 world   d2e/dn2 eng     5.03 ctl   -61.93 << SIGN INVERTED
+    n  1200  eng  -1022  ctl   -826  dev  -197 real /  -87 world   d2e/dn2 eng   -19.03 ctl     0.00 
+    n  1250  eng   -952  ctl   -802  dev  -151 real /  -67 world   d2e/dn2 eng   -43.02 ctl     0.00 
+    n  1300  eng   -893  ctl   -777  dev  -115 real /  -51 world   d2e/dn2 eng   -67.02 ctl     0.00 
+    n  1350  eng   -850  ctl   -753  dev   -97 real /  -43 world   d2e/dn2 eng   -81.29 ctl     0.00 
+    n  1400  eng   -830  ctl   -729  dev  -101 real /  -45 world   d2e/dn2 eng   -62.70 ctl    -0.26 
+    n  1450  eng   -829  ctl   -704  dev  -124 real /  -55 world   d2e/dn2 eng   -22.74 ctl   -24.54 
+    n  1500  eng   -829  ctl   -680  dev  -149 real /  -66 world   d2e/dn2 eng    -2.73 ctl   -48.29 
+    n  1550  eng   -830  ctl   -680  dev  -150 real /  -66 world   d2e/dn2 eng    -1.59 ctl   -24.02 
+    n  1600  eng   -832  ctl   -680  dev  -151 real /  -67 world   d2e/dn2 eng    -1.42 ctl     0.00 
+    n  1650  eng   -834  ctl   -680  dev  -153 real /  -68 world   d2e/dn2 eng    -1.26 ctl     0.00 
+    n  1700  eng   -836  ctl   -680  dev  -155 real /  -69 world   d2e/dn2 eng    -1.10 ctl     0.00 
+    n  1750  eng   -838  ctl   -680  dev  -158 real /  -70 world   d2e/dn2 eng    -0.94 ctl     0.00 
+    n  1800  eng   -841  ctl   -680  dev  -160 real /  -71 world   d2e/dn2 eng    -0.78 ctl     0.00 
+    n  1850  eng   -844  ctl   -680  dev  -163 real /  -72 world   d2e/dn2 eng    -0.62 ctl     0.00 
+    n  1900  eng   -847  ctl   -680  dev  -166 real /  -74 world   d2e/dn2 eng    -0.46 ctl     0.00 
+    n  1950  eng   -850  ctl   -680  dev  -169 real /  -75 world   d2e/dn2 eng    -0.30 ctl    -1.91 
+    n  2000  eng   -853  ctl   -680  dev  -172 real /  -76 world   d2e/dn2 eng    -0.14 ctl   -17.05 
+    n  2050  eng   -856  ctl   -682  dev  -174 real /  -77 world   d2e/dn2 eng     0.02 ctl   -28.38 
+    n  2100  eng   -859  ctl   -697  dev  -162 real /  -72 world   d2e/dn2 eng     0.18 ctl   -13.24 << SIGN INVERTED
+    n  2150  eng   -862  ctl   -713  dev  -150 real /  -66 world   d2e/dn2 eng     0.34 ctl     0.00 
+    n  2200  eng   -865  ctl   -728  dev  -138 real /  -61 world   d2e/dn2 eng     0.49 ctl     0.00 
+    n  2250  eng   -868  ctl   -743  dev  -126 real /  -56 world   d2e/dn2 eng     0.53 ctl     0.00 
+    n  2300  eng   -871  ctl   -758  dev  -113 real /  -50 world   d2e/dn2 eng     0.40 ctl     0.00 
+    n  2350  eng   -874  ctl   -773  dev  -101 real /  -45 world   d2e/dn2 eng     0.23 ctl     0.00 
+    n  2500  eng   -882  ctl   -816  dev   -66 real /  -29 world   d2e/dn2 eng    -0.13 ctl     2.94 << SIGN INVERTED
+    n  2550  eng   -884  ctl   -829  dev   -56 real /  -25 world   d2e/dn2 eng    -0.25 ctl     0.25 << SIGN INVERTED
+    n  3000  eng   -915  ctl   -941  dev    26 real /   12 world   d2e/dn2 eng    -1.12 ctl     1.47 << SIGN INVERTED
+    n  3050  eng   -919  ctl   -953  dev    34 real /   15 world   d2e/dn2 eng    -0.65 ctl     7.50 << SIGN INVERTED
+    n  3100  eng   -924  ctl   -964  dev    40 real /   18 world   d2e/dn2 eng    -0.13 ctl    10.58 << SIGN INVERTED
+    n  3150  eng   -929  ctl   -970  dev    42 real /   19 world   d2e/dn2 eng    -0.07 ctl     4.55 << SIGN INVERTED
+
+-- C5b the Tiber against the plate itself (supersedes the bridge control where they disagree)
+  n  2256  plate e   -841 +-25   engine e   -869   dev   -28 real /  -12 world      (bridge control   -745, off the plate by   96)
+  n  2001  plate e   -805 +-25   engine e   -853   dev   -48 real /  -21 world      (bridge control   -680, off the plate by  125)
+  n  1747  plate e   -754 +-25   engine e   -838   dev   -84 real /  -37 world      (bridge control   -680, off the plate by   74)
+  n  1499  plate e   -676 +-25   engine e   -829   dev  -153 real /  -68 world      (bridge control   -681, off the plate by   -5)
+  n  1414  plate e   -652 +-25   engine e   -829   dev  -177 real /  -78 world      (bridge control   -722, off the plate by  -70)
+  over n 2256 -> 1414 (842 real m of northing) the PLATE's channel swings 189 m east; the ENGINE's swings 40 m.
+  the engine reproduces 21% of the real bend on the reach the assault is fought beside.
+
+-- C6b the circuit gates against the plate own inked, labelled wall
+  porta-flaminia       survey ( -497, 2045)  plate ( -497, 2131) +-20   err    86 real m  (dE     0, dN   -86)  =   30 world m
+  posterula-pinciana   survey (  530, 1789)  plate (  501, 1886) +-20   err   101 real m  (dE    29, dN   -97)  =   36 world m
+  porta-salaria        survey ( 1036, 1784)  plate ( 1305, 2024) +-25   err   361 real m  (dE  -269, dN  -240)  =  146 world m
+  porta-nomentana      survey ( 1831, 1784)  plate ( 1633, 1788) +-25   err   198 real m  (dE   198, dN    -4)  =   88 world m
+  castra-nw            survey ( 1931, 1711)  plate ( 1767, 1698) +-35   err   165 real m  (dE   164, dN    13)  =   73 world m
+  tiber-angle          survey ( -655, 2006)  plate ( -731, 1955) +-60   err    92 real m  (dE    76, dN    51)  =   38 world m
+
+-- C6 the circuit
+  west end (tiber-angle)  x 2.01  z 543.40
+  Porta Flaminia          x 72.00  z 529.75
+  east end (castra-ne)    x 1334.55  z 693.20   front 1332.5 world m
+  modelled river centre at the west end's z: x -85.7; east bank x -38.7; wall angle x 2.0 -> 40.7 world m of dry ground
+  control river at n 2006: e -680; circuit's tiber-angle e -655 -> 25 real m east of the real channel centre (11 world m)
+
+-- C6c topology against the plate: relations that the build inverts
+  20 of 242 plate relations inverted (8 east/west, 12 north/south) over 17 graded monuments
+     mausoleum-augustus is no longer east of stadium-domitian
+     stadium-domitian is no longer west of largo-argentina
+     stadium-domitian is no longer south of castra-praetoria
+     stadium-domitian is no longer west of tiber-island
+     stadium-domitian is no longer south of mausoleum-hadrian
+     baths-nero is no longer north of theatre-pompey
+     baths-nero is no longer west of theatre-marcellus
+     baths-nero is no longer west of tiber-island
+     pantheon is no longer north of baths-agrippa
+     pantheon is no longer north of theatre-pompey
+     pantheon is no longer west of theatre-marcellus
+     pantheon is no longer north of trajan-column
+     baths-agrippa is no longer north of theatre-pompey
+     baths-agrippa is no longer west of theatre-marcellus
+     baths-agrippa is no longer west of temple-jupiter
+     theatre-pompey is no longer south of trajan-column
+     theatre-pompey is no longer south of castra-praetoria
+     theatre-pompey is no longer south of mausoleum-hadrian
+     colosseum is no longer south of baths-titus
+     castra-praetoria is no longer north of mausoleum-hadrian
+
+-- C7 nothing stands in water
+  insulae with their centre inside the channel: 74 of 1160 (6.4%)
+  insulae wholly inside the channel:           56
+  insulae with ANY corner inside the channel:  87 (7.5%)
+  landmarks with their centre in the channel:  1 [tiber-island]
+
+-- C8 nothing stands in a carriageway
+  monument footprint area inside a ranked carriageway: 62564 m^2 over 24 of 29 monuments
+     gardens-sallust        11090 m^2
+     castra-praetoria       7773 m^2
+     janiculum              7294 m^2
+     forum-romanum          7026 m^2
+     theatre-pompey         6563 m^2
+     tiber-island           5206 m^2
+     imperial-fora          4356 m^2
+     temple-jupiter         2367 m^2
+  insula footprint area inside a ranked carriageway:   0 m^2 over 0 of 1160 insulae
+  road population: 43 ways, 340 segments, 37.0 ha of carriageway  (16.92% of it covered by a solid)
+  NOTE: the game's keep-out (WAYS + WAY_FRONTAGE) builds 1160 insulae; the plan-view diagnostic's (STREETS at width/2+2.5) builds 1344. The review screenshots show the second.
+
+-- C9 nothing stands inside the curtain
+  monuments with stone north of the wall line: 1 [{"id":"gardens-sallust","m":75.8}]
+  insulae with a corner north of the wall line: 1
+
+-- C10 the regions must partition
+  17 districts claim 3.86 km^2; 79 overlapping pairs; 4.55 km^2 claimed twice or more
+  claimed / walled world ground (1781x814 = 1.45 km^2) = 2.66x   (a partition is 1.00)
+
+-- C12 insulae attributed to each district (nearest centre) and its claimed area
+  campus-flaminia       59 insulae  claim 23.3 ha  39 m2/insula
+  campus-augusti        17 insulae  claim 20.8 ha  122 m2/insula
+  campus-medius         54 insulae  claim 25.0 ha  46 m2/insula
+  campus-flaminius      94 insulae  claim 23.3 ha  25 m2/insula
+  via-lata              75 insulae  claim 30.8 ha  41 m2/insula
+  quirinal              72 insulae  claim 27.1 ha  38 m2/insula
+  viminal              105 insulae  claim 27.9 ha  27 m2/insula
+  subura                66 insulae  claim 15.5 ha  24 m2/insula
+  esquiline            134 insulae  claim 31.7 ha  24 m2/insula
+  velabrum              34 insulae  claim 14.1 ha  42 m2/insula
+  caelian               73 insulae  claim 22.6 ha  31 m2/insula
+  aventine              18 insulae  claim 18.2 ha  101 m2/insula
+  emporium               8 insulae  claim 14.7 ha  183 m2/insula
+  ripa-campi           142 insulae  claim 26.1 ha  18 m2/insula
+  forum-boarium         34 insulae  claim 14.1 ha  42 m2/insula
+  trastevere            79 insulae  claim 28.5 ha  36 m2/insula
+  vaticanus             96 insulae  claim 22.0 ha  23 m2/insula
+
+-- C11 grain: block orientation vs its nearest ranked way
+  1064 blocks within 200 m of a ranked way: median 21.27 deg, p90 39.85 deg, max 44.99 deg
+  blocks more than 5 deg off their nearest way: 945 of 1064
