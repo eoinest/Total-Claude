@@ -351,16 +351,41 @@ export function resolveConfig(params: URLSearchParams, useStored = true): Battle
         : null;
     if (f !== null && f !== cfg.opponent) cfg = sanitiseConfig({ ...cfg, opponent: f });
   }
-  // Publish the choice to `src/maps` here, and again in `commit`.
-  //
-  // `main.ts` constructs every subsystem with no arguments and `EngineContext` carries no
-  // configuration field, so a module singleton is the only channel by which a map choice can
-  // reach the terrain — and this function is the one point every non-interactive path goes
-  // through (the harness, `?menu=0`, and a shared `?battle=` link). It runs before the engine
-  // exists, let alone `TerrainSystem.init`. See `setActiveMap` for the full ordering argument.
+  publishConfig(cfg);
+  return cfg;
+}
+
+/**
+ * Publish a settled config to the two module singletons the engine reads before it is built.
+ *
+ * `main.ts` constructs every subsystem with no arguments and `EngineContext` carries no
+ * configuration field, so a singleton is the only channel by which a map choice can reach the
+ * terrain, and `setActiveMap` explains the ordering argument in full.
+ *
+ * **Exported, and `main.ts` calls it again once the config is final — which is the bug this
+ * closes.** `resolveConfig` used to be the only non-interactive writer, on the assumption that
+ * it was the last word for every path that does not go through the menu. Three paths falsify
+ * that, because each *replaces* the config afterwards: `?replay=` takes the battle out of the
+ * record, `?net=…&host=0` takes it off the relay, and the `?quality=`/`?scenario=` overlay
+ * rewrites it in place. On any of those, `activeMap()` kept whatever `resolveConfig` had
+ * inferred from a URL that did not name a map — the default — while `config.map` said
+ * something else.
+ *
+ * Measured: a `?replay=` boot of `map=carthage&scenario=assault` built the Punic circuit on the
+ * **Campus Martius heightfield**, and 1,340 men — the whole Punic garrison, units 0 to 9, whole
+ * units at a time — stood about 3.96 m along the curtain from where an ordinary boot puts them.
+ * `uf64`, `uctl`, `count` and `alive` were all bit-identical, so every `UnitGroupState` and
+ * every discrete decision agreed and only the men were in the wrong place; the record's t+0
+ * pool hash matched `determinism-baseline.json` and the playback's did not. Every siege replay
+ * this project has ever made was refused by its own checkpoint, and
+ * `tools/qa-replay.mjs` could not see it because it only ever recorded a *field* battle.
+ *
+ * `publishBelligerents` moved in here with it, and for the same reason: a replayed Punic battle
+ * had `opponent: Carthage` in its config and `setOpposingFaction(Germanic)` in the HUD.
+ */
+export function publishConfig(cfg: BattleConfig): void {
   setActiveMap(cfg.map);
   publishBelligerents(cfg);
-  return cfg;
 }
 
 /**
@@ -1065,10 +1090,9 @@ export class MainMenu {
   private commit(): void {
     const cfg = sanitiseConfig(this.cfg);
     storeConfig(cfg);
-    // The interactive counterpart of the calls in `resolveConfig`: this is the only path on
+    // The interactive counterpart of the call in `resolveConfig`: this is the only path on
     // which the player can have changed the map or the enemy since that ran.
-    setActiveMap(cfg.map);
-    publishBelligerents(cfg);
+    publishConfig(cfg);
     this.root.classList.remove('in');
     this.root.classList.add('out');
     // Let the fade finish before the DOM node goes, but resolve immediately so asset

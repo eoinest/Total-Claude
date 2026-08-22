@@ -75,8 +75,9 @@ const args = new Map(
  * go green is the defect this file exists to catch, so it must not have it: every flag and
  * every `--only=` value below is checked against this list and an unknown one is fatal.
  */
-const ARMS = ['record', 'replay', 'coarse', 'tier', 'drop', 'late', 'bus', 'write', 'command'];
-const FLAGS = ['port', 'json', 'shots', 'only', 'seconds'];
+const ARMS = ['record', 'replay', 'coarse', 'tier', 'drop', 'late', 'bus', 'write', 'command',
+  'matrix'];
+const FLAGS = ['port', 'json', 'shots', 'only', 'seconds', 'matrix-seconds'];
 
 const bad = [...args.keys()].filter((k) => !FLAGS.includes(k));
 if (bad.length) {
@@ -103,6 +104,8 @@ if (!Number.isFinite(SECONDS) || SECONDS < 10) {
   console.error(`--seconds must be a number of at least 10; got '${args.get('seconds')}'`);
   process.exit(2);
 }
+/** Simulated seconds per battle in the `matrix` arm. Five battles, so this is the long pole. */
+const MATRIX_SECONDS = Number(args.get('matrix-seconds') ?? 70);
 const W = 1600;
 const H = 900;
 
@@ -237,7 +240,11 @@ const INSTALL = () => {
  * fade, and this arm is supposed to be the player's boot. `window.__game` is published
  * unconditionally, so the readers above work either way.
  */
-async function recordBattle() {
+async function recordBattle(opts = {}) {
+  const map = opts.map ?? 'campus-martius';
+  const scenario = opts.scenario ?? 'field';
+  const seconds = opts.seconds ?? SECONDS;
+  const tag = opts.tag ?? 'rp';
   const page = await newPage();
   // `bootThroughMenu` is the playability rig's own sequence, moved into `tools/lib/` so this
   // gate and `tools/scratch/pl-*-emc.mjs` drive the menu one way rather than two. The rig's
@@ -245,21 +252,25 @@ async function recordBattle() {
   // a shared driver is for.
   await bootThroughMenu(page, {
     base,
-    map: 'campus-martius',
-    scenario: 'field',
+    map,
+    scenario,
     tier: 'high',
     size: 'small',
-    onSetup: (p) => shot(p, 'rp-01-setup'),
+    query: opts.query ?? 'autoplay=0',
+    onSetup: (p) => shot(p, `${tag}-01-setup`),
   });
   await settle(page, 2200);
   await page.evaluate(INSTALL);
 
   const gestures = [];
+  // Options the menu refused, so the caller can print what battle it actually got rather than
+  // the one it asked for.
+  const skipped = page.__menuSkipped ?? [];
 
   // ---- the deployment phase, driven by the plaque and the mouse ----
   const dep0 = await page.evaluate(() => window.__dep());
   if (dep0?.active) {
-    await shot(page, 'rp-02-deploy');
+    await shot(page, `${tag}-02-deploy`);
     // Add a unit off the palette. This is the operation with the sharpest hazard in it:
     // `add` -> `spawnUnit` does `nextUnitId++` *before* `rng.fork('unit' + id)`, so a
     // different sequence of deployment operations mints different ids and forks different
@@ -303,7 +314,7 @@ async function recordBattle() {
   }
 
   // ---- the battle ----
-  const ticksTotal = Math.round(SECONDS * 30);
+  const ticksTotal = Math.round(seconds * 30);
   /*
    * A burst of orders every fifteen simulated seconds, with the battle jumped forward
    * between them. Each burst is a selection, a right-click move and an R, plus a formation
@@ -311,7 +322,7 @@ async function recordBattle() {
    * a plausible rate for somebody actually playing and is what the size figure below is
    * measuring. A player who micromanages harder produces a bigger record, linearly.
    */
-  const bursts = Math.max(4, Math.round(SECONDS / 15));
+  const bursts = Math.max(4, Math.round(seconds / 15));
   const chunk = Math.floor(ticksTotal / bursts);
   for (let b = 0; b < bursts; b++) {
     // Two evaluates: the first parks the camera, and the projection is only meaningful once
@@ -358,7 +369,7 @@ async function recordBattle() {
     // not predictable and does not need to be — the record carries whatever it reaches.
     await page.evaluate((n) => window.__game.advanceTicks(n, 1000 / 60), chunk);
     await settle(page, 120);
-    if (b === bursts - 1) await shot(page, 'rp-03-battle');
+    if (b === bursts - 1) await shot(page, `${tag}-03-battle`);
   }
 
   // Stop the loop before reading, so the tick count in the record is the tick count the
@@ -371,7 +382,7 @@ async function recordBattle() {
   const bus = await page.evaluate(() => window.__bus);
   const errs = page.__errs.slice();
   await page.close();
-  return { rec, token, flow, gestures, bus, errs };
+  return { rec, token, flow, gestures, bus, errs, map, scenario, skipped };
 }
 
 // ---------------------------------------------------------------------------
@@ -827,6 +838,93 @@ if (wanted('command')) {
   record('take-command-record', out.rec.events.length > 0 && out.rec.ticks === rec.ticks,
     'and the taken-over battle is itself a record',
     `${out.rec.events.length} events over ${out.rec.ticks} ticks`);
+}
+
+// ---------------------------------------------------------------------------
+// Arm: every battle the product ships, not just the one this file was written against
+// ---------------------------------------------------------------------------
+
+if (wanted('matrix')) {
+  console.log('\n=== every shipped map and scenario, recorded and replayed ===');
+  /*
+   * The defect this arm exists for is the arm list, not the code.
+   *
+   * Everything above records `campus-martius` / `field`, and did so from the day this file
+   * landed — so **no siege record had ever been through this gate**, and every siege replay in
+   * the project was being refused by its own t+0 checkpoint while this reported 21/21. The
+   * cause was a stale `activeMap()` singleton: `resolveConfig` publishes the map it infers from
+   * the URL, `?replay=` then replaces the whole config out of the record, and nothing published
+   * again — so a Punic circuit was built on the Campus Martius heightfield and 1,340 men stood
+   * about 4 m along the curtain from where they belong, with `uf64` and `uctl` bit-identical.
+   * `src/ui/MainMenu.ts`'s `publishConfig` is the fix; this is the coverage.
+   *
+   * It is the same defect class as `--battle=rome` and the playability rig's dead selector: a
+   * gate that passes because it never looks at the case that fails. So the list is not a list —
+   * it is read out of the product, by importing the map registry and `sanitiseConfig` in the
+   * page and asking which `(map, scenario)` pairs survive. A new map cannot be added without
+   * appearing here, and `matrix-coverage` fails if the set this arm ran does not equal the set
+   * the product ships.
+   */
+  const probe = await newPage();
+  await probe.goto(`${base}/?menu=battle`, { waitUntil: 'domcontentloaded' });
+  await probe.waitForSelector('.menu .begin', { timeout: 60000 });
+  const shipped = await probe.evaluate(async () => {
+    const maps = await import('/src/maps/index.ts');
+    const bc = await import('/src/sim/battleConfig.ts');
+    const out = [];
+    for (const m of maps.MAPS) {
+      for (const scenario of ['field', 'assault']) {
+        // `sanitiseConfig` has the last word and refuses an assault on a map with no city, so
+        // what comes back out of it *is* the shipped set rather than a guess at it.
+        const c = bc.sanitiseConfig({ ...bc.DEFAULT_CONFIG, map: m.id, scenario });
+        if (c.map === m.id && c.scenario === scenario) out.push({ map: m.id, scenario });
+      }
+    }
+    return out;
+  });
+  await probe.close();
+  console.log(`  the product ships ${shipped.length} battles: `
+    + shipped.map((b) => `${b.map}/${b.scenario}`).join(', '));
+
+  const ran = [];
+  for (const b of shipped) {
+    const tag = `mx-${b.map}-${b.scenario}`;
+    const R2 = await recordBattle({
+      map: b.map, scenario: b.scenario, seconds: MATRIX_SECONDS, tag,
+      // No deployment phase here: the phase is exercised at length by the arms above, and five
+      // battles is already the long pole of this file.
+      query: 'autoplay=0&deploy=0',
+    });
+    const back = await playback(R2.token, { stepMs: 1000 / 60, ticks: R2.rec.ticks });
+    const d = markDiff(R2.rec.marks, back.rec.marks);
+    ran.push({ map: b.map, scenario: b.scenario, men: R2.rec.count0, ticks: R2.rec.ticks,
+      skipped: R2.skipped,
+      marks: R2.rec.marks.length, t0: R2.rec.marks[0]?.hash, orders: R2.rec.events.length,
+      diff: d, refusal: back.rp.refusal, diverged: back.rp.divergedAt });
+    console.log(`  ${`${b.map}/${b.scenario}`.padEnd(28)} ${R2.rec.count0} men, `
+      + `${R2.rec.ticks} ticks, t+0 ${R2.rec.marks[0]?.hash}  `
+      + `${d ? `DIVERGED at ${d.at}: ${d.why}` : 'identical'}`
+      + `${R2.skipped.length ? `  [menu refused ${R2.skipped.join(', ')}]` : ''}`
+      + `${back.rp.refusal ? `  refusal: ${back.rp.refusal.slice(0, 70)}` : ''}`);
+    record(`matrix-${b.map}-${b.scenario}`,
+      d === null && back.rp.refusal === '' && back.rp.divergedAt === -1 && R2.rec.marks.length >= 3,
+      `${b.map} / ${b.scenario} records and replays`,
+      d === null
+        ? `${R2.rec.marks.length} checkpoints identical over ${R2.rec.ticks} ticks at `
+          + `${R2.rec.count0} men`
+        : `first difference at tick ${d.at}: ${d.why}`,
+      back.rp.refusal || 'no refusal');
+  }
+  measured.matrix = { shipped, ran, seconds: MATRIX_SECONDS };
+  const key = (b) => `${b.map}/${b.scenario}`;
+  const want = shipped.map(key).sort().join(',');
+  const got = ran.map(key).sort().join(',');
+  record('matrix-coverage', want === got && shipped.length >= 4,
+    'every (map, scenario) the product ships was recorded and replayed by this run',
+    want === got ? `${shipped.length} battles: ${want}`
+      : `the product ships ${want} and this ran ${got}`,
+    'read out of the map registry in the page, not written down here — a new map cannot be '
+      + 'added without appearing');
 }
 
 // ---------------------------------------------------------------------------

@@ -29,7 +29,7 @@ import { DeploymentSystem } from './sim/deployment';
 import { getMap } from './maps';
 import { deployBattle } from './sim/scenario';
 import { garrisonOf, type Difficulty, type ScenarioId, sanitiseConfig } from './sim/battleConfig';
-import { MainMenu, resolveConfig } from './ui/MainMenu';
+import { MainMenu, publishConfig, resolveConfig } from './ui/MainMenu';
 import { ALL_FACTIONS, Faction } from './sim/types';
 import { installSeamCheck } from './core/seams';
 import { decodeReplay, type ReplayRecord, ReplaySystem } from './sim/replay';
@@ -213,6 +213,26 @@ if (link) {
     netDeployPhase = cm.deployPhase;
   }
 }
+/*
+ * The config is final here, and only here — so this is where it gets published.
+ *
+ * `resolveConfig` writes `setActiveMap` and `setOpposingFaction` on the way past, on the
+ * assumption that it is the last word for every path that does not go through the menu. Three
+ * paths falsify that, because each *replaces* `config` afterwards: `?replay=` takes the battle
+ * out of the record, `?net=…&host=0` takes it off the relay, and the `?quality=`/`?scenario=`
+ * overlay a hundred lines above rewrites it in place. On any of those, `activeMap()` kept
+ * whatever `resolveConfig` had inferred from a URL that did not name a map.
+ *
+ * Measured before the fix: a `?replay=` boot of `map=carthage&scenario=assault` built the Punic
+ * circuit on the **Campus Martius heightfield** and stood 1,340 men — the whole Punic garrison —
+ * about 3.96 m along the curtain from where an ordinary boot puts them, with `uf64`, `uctl`,
+ * `count` and `alive` all identical. Every siege replay was refused by its own checkpoint.
+ *
+ * Idempotent, and cheap: two assignments to two module singletons. Called unconditionally
+ * rather than only on the paths that need it, because "which paths need it" is exactly the
+ * judgement that was wrong the first time.
+ */
+publishConfig(config);
 const difficulty = config.difficulty;
 /**
  * Which side the player commands. The other is left to the AI.

@@ -293,12 +293,24 @@ if (!ONLY || ONLY === 'menu') {
     cls: document.querySelector('.menu')?.className ?? '',
     beginVisible: !!document.querySelector('.menu .begin')?.offsetParent,
   }));
+  /*
+   * Asserted against the plaque list read off the page a few lines above, not against three
+   * hard-coded ids.
+   *
+   * This read `kbDown === 'docs'`, and adding a fourth plaque between Battle and the
+   * documentation broke it — while the behaviour it exists to protect, *the arrows walk the
+   * list in document order*, was working perfectly. A check that has to be edited every time
+   * the thing it checks legitimately changes is a check people learn to edit without reading.
+   */
+  const order = door.dest.map((d) => d.id);
   record('front-door-keyboard',
-    kbTab === 'battle' && kbDown === 'docs' && kbUp === 'battle'
+    kbTab === order[0] && kbDown === order[1] && kbUp === order[0]
     && kbIn.cls.includes('at-setup') && kbIn.beginVisible,
     'Tab, ArrowDown, ArrowUp and Enter on the front door, with no pointer at all',
     `Tab → ${kbTab}, Down → ${kbDown}, Up → ${kbUp}, Enter → "${kbIn.cls}" `
-      + `with BEGIN BATTLE visible ${kbIn.beginVisible}`);
+      + `with BEGIN BATTLE visible ${kbIn.beginVisible}`,
+    `the plaques are ${order.join(', ')}, so Tab must land on '${order[0]}' and Down on `
+      + `'${order[1]}'`);
 
   /*
    * Back out of the setup and return: the army must still be there.
