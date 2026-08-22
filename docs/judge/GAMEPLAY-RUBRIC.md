@@ -201,3 +201,91 @@ baselines were taken on — and those 29 commits touch `BattleFlow.ts` (where `c
 would price the honesty fixes *plus* the lateral-census fix, the AI storm doctrine, both rams
 and the quality/sim split, and call the total B. So a second set of baselines has been taken on
 `main` itself (`tag=mainbase`), and B is graded against whichever base it actually lands on.
+
+---
+
+## Criteria RE-DERIVED against 10.0% / 18.2%, replacing the 2.6% version above
+
+The figure I pre-registered against was wrong: the change is **−10.0% at t+200 and −18.2% at
+t+400** on the shipped field-battle seed, not 2.6%. The 2.6% was the tick-only half. My
+conclusion that it was 1.05σ and therefore imperceptible **does not survive**, and the
+superseded version is left standing above rather than edited, because a pre-registration that
+gets quietly rewritten is not one.
+
+### What the correct arithmetic says, on my own baseline
+
+```
+t+200   n=8   mean 6691.1   sd 165.5   range 6456-6986   spread 530 = 7.9% of mean
+        a 10.0% shift = 669 men = 4.04 sd          (I had said 1.05)
+```
+
+**Three things follow, and the second is the one that matters.**
+
+**1. t+400 is the wrong place to measure and the −18.2% headline should not be used for
+perceptibility.** Only **2 of my 8 seeds are still being fought at t+400**; the other six were
+decided at t+311–393 and the median verdict is **t+367**. A survivor count at t+400 is, in
+three-quarters of the seed set, counting men trickling off a field whose result has already been
+called. **t+200 sits inside the contested window in 8 of 8** and is the only honest checkpoint
+of the two.
+
+**2. At t+200 the effect is *larger than the entire seed-to-seed spread*, which inverts the
+frame it is being defended with.** The defence is "the firewall's effect is the same order as
+changing the seed — 18.2% against a 14.2% seed spread". Both of those are t+400 numbers. At
+t+200, where the battle is actually live, the seed spread is **7.9%** and the effect is
+**10.0%**. The effect exceeds the whole distance between the best and the worst seed.
+
+Stated without a sigma, which is the form that decides it: **6691 − 10% = 6022, and the
+pre-change minimum was 6456.** If the shift is systematic, *the average battle after the change
+is bloodier than the worst battle before it.* No amount of rerolling beforehand could produce
+it. That is precisely what "a player cannot distinguish it from a reroll" has to mean, and on
+these numbers it fails.
+
+**3. 2.6% / 10.0% / 18.2% are not three effects. They are one divergence sampled at three
+times.** The mechanism given for the sibling change says so outright — *two men differing at
+t+90 becomes fifteen hundred by t+400*. So the "size" of this change is a **growth rate**, not a
+number, and the honest question is whether the amplification outruns the battle. On this
+baseline it reaches roughly 10% by the time the median battle is half over and ~15% by the time
+it ends.
+
+### The claim that actually decides it, and it is decidable
+
+A reroll is a **draw from** the distribution. A change that moves every seed the same way
+**moves** the distribution. Those are different in kind even when equal in men, because what a
+player learns over twenty battles is the *mean*, not a sample — "the line usually holds about
+here" is an expectation, and a translation breaks it while a reroll never can.
+
+So the frame reduces to one empirical question — **translation or reshuffle?** — and a sign test
+across the seed set settles it. All eight seeds moving the same way is p = 2/256 = 0.008 under
+reshuffle. `tools/judge/jg-compare.mjs` runs it, along with the "does the after-mean clear the
+whole before-range" test, and **refuses to grade at all if the state hashes show the tree did
+not move.**
+
+### The re-derived criteria
+
+Because a 4σ effect will be visible to the instrument whatever it does to the game, these
+separate *detectable* from *worse*.
+
+| # | test | threshold, from the measured baseline |
+|---|---|---|
+| 1 | translation vs reshuffle at t+200 | all-same-direction across 8 seeds ⇒ translation ⇒ the reroll defence fails |
+| 2 | after-mean vs before-range at t+200 | outside 6456–6986 ⇒ unreachable by rerolling |
+| 3 | contested window | mean moves > 87.3 s (its own sd) |
+| 4 | decided-at | mean moves > 85.4 s; **on Rome assault, any verdict outside t+104–125** |
+| 5 | outcome mix | any change from 8/8 Defeat/rout on the integration tree; on `main` the field battle already yields ≥2 outcomes, so the criterion has force there |
+| 6 | the sensitive detectors | Rome assault: their-first-break outside **t+42.17–42.43**, contested window off its five observed values |
+| 7 | the played arm | Pydna passive Defeat t+336 vs played Victory t+1141 — if the played arm stops being a victory, that outranks every number above |
+
+### What I will not assume
+
+**That fewer survivors is worse.** My own round-one finding is that the field battle's back half
+is a grind — Rome's headcount sat unchanged at 2 056 for 100 s and at 1 645 for 60 more, with
+"The lines have met" repeating. A change that makes battles bloodier and shorter could **improve**
+this game, and criteria 3–7 are written to detect movement in either direction. I will report the
+direction and judge it in prose; the arithmetic does not get to decide it by its sign.
+
+### Two changes, not one
+
+The `hypot` sweep in world generation moved the shipped seed's t+400 count from **4 288 to
+5 849** — **+36%, larger than the firewall's −18.2% and in the opposite direction.** Together
+they could very nearly cancel at t+400 and read as nothing. Each is graded against the base it
+lands on, identified by branch, never by when I noticed it.
