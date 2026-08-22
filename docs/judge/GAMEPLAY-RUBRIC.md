@@ -153,3 +153,51 @@ finding, not a shrug.
 
 I will refuse to answer at all if the state hashes show the tree did **not** move, because then
 I would be grading noise.
+
+---
+
+## An instrument of mine failed, and the failure is the one this project names
+
+Recorded because a judge who hides his own false positives is not one.
+
+I set a watch for the incoming change that hashed `src/` and compared it against my pinned
+baseline. It reported **both** `main` and the integration tree as MOVED while both were sitting
+on the commit they had started on. The cause:
+
+| | file set | source |
+|---|---|---|
+| the baseline | `find src -type f \( -name '*.ts' -o -name '*.css' -o -name '*.glsl' \)` — **192 files** | the **worktree** |
+| the watch | `git ls-tree -r --name-only -- src` — **199 files**, unfiltered | the **git tree** |
+
+Two different functions over two different file sets, so they could never agree, and the
+disagreement was constant rather than intermittent — which is why it fired immediately and
+looked like a real event.
+
+This is exactly the standing rule in HANDOFF: *a self-consistent instrument can never fail;
+compare against something outside the thing being checked.* I compared a tree against a
+differently-computed version of itself. The replacement compares **commit SHAs**, which are
+already a content hash of the tree computed by one implementation, so there is no second
+implementation left to disagree with.
+
+The general lesson for this rubric, and it applies to the game as much as to the watch: **a
+derived number must be derived once.** It is the same defect as three panels each deciding for
+itself what "the breach" means, which `src/ui/siege.ts` exists to prevent — and the same defect
+as the result card re-deriving which victory condition fired instead of being told.
+
+## Grading two changes that arrive together
+
+Two changes are inbound: **A**, the quantisation firewall (~2.6 % at t+200), and **B**, the
+honesty and order fixes taken from round one. They will not be separable by *when* they land.
+
+They do not have to be. Because every campaign here is a script and every baseline is pinned to
+a commit, **any two changes that are separate commits can be graded separately after the fact**
+— check out each, run the identical campaigns, compare each against the baseline for its own
+base. The thing that would actually prevent separation is not simultaneity, it is a squash.
+
+The live hazard is different and is already present: `e/fix/game-tells-the-truth` is based on
+**`main` (58bc584)**, which is **29 commits behind** the integration tree all three of my
+baselines were taken on — and those 29 commits touch `BattleFlow.ts` (where `censusWall` lives),
+`Siege.ts`, `WallDoctrine.ts` and `TacticalAI.ts`. Grading B against the integration baseline
+would price the honesty fixes *plus* the lateral-census fix, the AI storm doctrine, both rams
+and the quality/sim split, and call the total B. So a second set of baselines has been taken on
+`main` itself (`tag=mainbase`), and B is graded against whichever base it actually lands on.
