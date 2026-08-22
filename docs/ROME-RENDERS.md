@@ -41,7 +41,7 @@ node tools/film.mjs tools/shots/rome-assembled.shot.mjs --stills --nooverlay \
 | seed | `4265438264`, the shipped battle everything in `docs/` is measured from |
 | hour | 9.5 |
 | weather | clear |
-| unit size | ultra (3,074 men) |
+| unit size | ultra (3,072 men in 32 units, measured) |
 
 ## The pictures worth looking at first
 
@@ -97,7 +97,7 @@ it before this one**; it works.
 
 The second batch (`eye-*`) is the corrected one. **`aim = eye + 1.55 = 3.3` makes `rise` exactly
 zero and the lens exactly level**, which is the condition `docs/VISUAL-RUBRIC.md` §H attaches to
-being scorable at all. The first batch (`street-*`) guessed at `aim` and is 6–9° off level.
+being scorable at all. The first batch (`street-*`) guessed at `aim` and is 7-10 degrees off level (`pitch = atan2(eye - aim + 1.55, dist)`, positive looking down).
 
 | shot | focus (x, z) | eye | aim | dist | fov | yaw | level? |
 |---|---|---|---|---|---|---|---|
@@ -107,9 +107,9 @@ being scorable at all. The first batch (`street-*`) guessed at `aim` and is 6–
 | `eye-quarter-east` | 300, 900 | 1.75 | 3.3 | 24 | 50 | 3.1416 | **0.0°** |
 | `eye-quarter-south` | 520, 1010 | 1.75 | 3.3 | 24 | 50 | 0 | **0.0°** |
 | `eye-colosseum` | 671, 1042 | 1.75 | 3.3 | 28 | 50 | 3.1416 | **0.0°** |
-| `street-eye` | **106.3, 830.4** (stand −300) | 1.75 | 1.55 | 10 | 46 | `in` +90° | −10.0° |
-| `street-eye-quarter` | 102, 843 | 1.75 | 12 | 70 | 46 | 0.7854 | −8.7° |
-| `street-eye-marcellus` | 181, 1277 | 1.75 | 16 | 90 | 46 | 3.1416 | −8.1° |
+| `street-eye` | **106.3, 830.4** (stand −300) | 1.75 | 1.55 | 10 | 46 | `in` +90° | 9.9° down |
+| `street-eye-quarter` | 102, 843 | 1.75 | 12 | 70 | 46 | 0.7854 | 7.1° up |
+| `street-eye-marcellus` | 181, 1277 | 1.75 | 16 | 90 | 46 | 3.1416 | 8.0° up |
 
 ## Three things these frames establish that no probe reported
 

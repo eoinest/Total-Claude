@@ -1335,7 +1335,9 @@ quoting it.**
   film pass was unusable for reasons arithmetic would have predicted: `eye` is measured from the
   terrain **under the focus**, so a 1.75 m camera with a 70 m `dist` across ground that falls 8 m
   stands ten metres up; and a level lens needs `aim = eye + 1.55` exactly, which no shot in the
-  repo had ever set. The judge's own eye-level stations were copied forward from a pass taken
+  repo had ever set — `pitch = atan2(eye - aim + 1.55, dist)`, so pass one's cameras came out
+  5.6 and 7.1 degrees up and 9.9 down, all inside `VISUAL-RUBRIC` section H's 15-degree licence
+  and none of them the level frame the rubric is describing. The judge's own eye-level stations were copied forward from a pass taken
   before `KZ` moved 0.222 → 0.35, so they no longer land on the street they were chosen for.
   **A camera position is a measurement against a frame, and it goes stale when the frame moves —
   exactly like a survey row, and nothing marks it.**
