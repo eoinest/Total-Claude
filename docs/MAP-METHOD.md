@@ -341,6 +341,18 @@ the frame.
   silently reduced `assertTopology` from 44 rules to 34 and `assertHillRing` from 8 members to 6.
   Both now separate "the id is off this map" from "the id is a typo", count the skips and print them
   by name. A check count that quietly falls is the shape of the fault this whole file exists about.
+- **`tools/qa-determinism.mjs` reuses whatever is already serving the port, with no ownership
+  check, and that can silently record a pin from another agent's branch.** `probe-fabric.mjs` and
+  `probe-seams.mjs` refuse a port they did not start — *"a reused port serves another branch's
+  modules, and the probe then grades a tree it is not standing in"* — and `qa-determinism.mjs`
+  does not. With six agents on the box and orphaned servers accumulating, that is one collision
+  away from a determinism baseline recorded against somebody else's tree, which is the most
+  expensive possible version of this project's recurring "the check compared the wrong thing"
+  fault. **Before recording a pin, start your own server, confirm it serves your tree by fetching
+  a file and grepping for the change you made, and pass that port.** Every arm in this pass was
+  re-verified that way after the fact; all three were clean, and they were clean by luck rather
+  than by construction.
+
 - **`--absorb` should have been in the design document.** `ROME-FABRIC.md` §4.5 recommends
   per-monument authored footprints *"seeded at 0.65 and adjusted only where the probe says a pair
   conflicts"* without ever running that adjustment to see where it lands. Running it takes forty
