@@ -23,6 +23,7 @@ The full gate is green on this tree: tsc clean, lint 2/2, qa-deploy 33/33, seams
 | deploy | `node tools/qa-deploy.mjs` | 33/33 |
 | seams | `node tools/probe-seams.mjs` | PASS, both maps |
 | replay | `node tools/qa-replay.mjs` | 21/21 |
+| **multiplayer** | `node tools/relay.mjs` is not needed — `node tools/qa-net.mjs` starts its own | 22/22 |
 | determinism | the three arms below, **spelled exactly** | 7 checkpoints each |
 
 Determinism is pinned in `tools/determinism-baseline.json` at **t+0/30/90/150/200/250/400**, three
@@ -2100,3 +2101,113 @@ holding those scripts open after their last line.
   smaller army. Right behaviour, bad outcome, and §7.5 of the design says so.
 - The checkpoint grid is 30 s, so a playback can be up to 30 s of battle behind the fault it is
   about to report. Cheap to tighten if it ever matters; nothing suggests it does.
+
+---
+
+## 21 August 2026 — multiplayer, built and gated (`e/net/session`)
+
+**Two browsers, one relay, one battle, both armies under human command.** The owner's standing
+objective was "don't stop until multiplayer is completely functional", overriding
+`docs/MULTIPLAYER.md` §2. It is built. The whole design record is **`docs/MULTIPLAYER.md` §9**;
+this is the operational summary.
+
+### What landed
+
+- `src/net/` — `protocol.ts` (wire, turn grid, boot print, pairing table, libm fingerprint),
+  `room.ts` (the room state machine, pure), `NetLink.ts` (socket + pre-boot lobby),
+  `NetSession.ts` (the client: tick ceiling, catch-up, checkpoints, desync policy).
+- `tools/relay.mjs` — a dependency-free Node WebSocket relay. **Default port 5959.**
+- `net/worker.ts` + `net/wrangler.toml` — the Cloudflare Worker and Durable Object. **Written,
+  typechecked by nothing, never run**; there is no account and `wrangler` is not a dependency.
+  It drives the same `Room` as the Node relay, so the protocol cannot drift between them.
+- `tools/qa-net.mjs` — the gate. Two browser contexts through the real menu with a real mouse.
+- `src/ui/NetLobby.ts` (`?mp=1`, and a plaque on the front door) and `src/ui/NetPanel.ts`.
+
+### How to play it, on one machine
+
+```
+node tools/relay.mjs                    # ws://127.0.0.1:5959
+npm run dev
+open 'http://127.0.0.1:5173/?mp=1'      # create a room; the invite goes to the clipboard
+                                        # open the invite in a second window
+```
+
+### Rules earned
+
+- **A gate arm that reuses another arm's fixture must not be able to have it killed.** `late`
+  and `leave` reuse the long-running match the `battle` arm leaves open; the four fault arms
+  between them each ended by killing *every* relay. Both passed in isolation and failed in the
+  full run. Each relay now stops only itself.
+- **`waitForServer` accepts any 2xx, and a vite dev server answers 200 for every unknown path.**
+  A relay port already held by another agent's vite therefore passes the "is it up" check and
+  the arm then opens WebSockets against a game bundle. Read the body. `tools/qa-net.mjs`
+  requires `relay ok` before it will use a port.
+- **Six other agents' vite servers were scattered through the 5900s and one took a port between
+  two runs of the same arm.** The relay band is now 5985–5999, at the very top.
+- **A tree-identity marker must be a value, not a comment.** Vite's transform keeps
+  `protocol.ts`'s leading JSDoc and drops `room.ts`'s. The check reads the room-code alphabet,
+  which is a string literal the module cannot run without.
+- **A negative arm must fail if the corruption it injects changed nothing.** A duplicated *move*
+  order is idempotent in this simulation and a `swap` of two orders on *different* regiments
+  commutes — so two arms passed while demonstrating the opposite of what they claimed. Both now
+  target a case where §4.1's hazard is real, and the fault budget is only spent on a turn the
+  corruption actually altered.
+- **A metric that is true and useless is worse than none.** Counting every frame at the tick
+  ceiling as a "stall" reported 93 stalls in 12.6 s of a 13 s battle on a zero-latency link. A
+  stall is waiting *longer than a turn*; the corrected number is zero at a 229 ms round trip.
+
+### Traps that cost time
+
+- `HudSystem`'s `deploymentEnded` handler tore down the local player's deployment plaque when the
+  *opponent's* phase ended — a relayed battle runs two `DeploymentSystem`s per machine and both
+  raise the event. Guarded on `dep.active`.
+- The relay's post-desync probe deadline was not disarmed when the probes arrived, so three
+  seconds later it broadcast a second attribution saying no digests came back — overwriting a
+  correct "unit 12 differs" with a false one.
+- The cross-engine arm compared hashes wherever the two clients happened to be (7,846 against
+  7,848 ticks) and read two ticks of a battle as a cross-engine divergence. Settle to a common
+  tick first.
+- The same arm's first version had nobody commanding either army: 8,632 men stood still for 262
+  simulated seconds and nobody died. The escape §1.1 measured comes out of combat.
+
+### Measured facts that must not be re-derived
+
+- **Input delay, through the real mouse, click to executing tick:** 3.5 ticks (117 ms) at 0 ms
+  round trip, 4.0 (133 ms) at 50 ms, 5.7 (189 ms) at 120 ms. Zero stalls at all three. The legal
+  range is 3 to 6 ticks; **below 3 means an order reached the simulation without going through
+  the relay.**
+- **A one-ULP perturbation of one `UnitGroupState` float64 field is detected in one simulated
+  second**, on `uf64`, and attributed to exactly one regiment of thirty-five.
+- **Without the `UnitGroupState` quantisation firewall** (which is on `e/tools/xengine-arm`, not
+  here), Chromium and Firefox part company on `uf64` at **tick 30, t+1.0 s**, on the 8,632-man
+  field battle — four regiments of thirty-five. The same pairing on a 2,337-man battle ran
+  bit-identically to t+300, which is *not* evidence that it holds.
+- A duplicated **move** order changes nothing; a duplicated **deployment** operation is caught at
+  tick 0, before a tick of battle has run.
+
+### Open, nobody on them
+
+- **§7.1 is still the premise the product rests on.** Everything above is two browsers on one
+  laptop. Two machines, one `node tools/relay.mjs`, and the boot-print handshake will either
+  agree or name the field that does not. Note that §7.1's suggested shortcut is wrong: there is
+  no x86-64 Chromium in the Playwright cache — `chromium-1140` is Mach-O arm64 and so is every
+  other one.
+- **The Worker has never run.** §3's cost arithmetic is unverified, as is whether Durable Objects
+  are on the Cloudflare free plan at all.
+- **Reconnection into a live battle is still refused** (§4.5). It needs the §1.8 snapshot
+  serialiser. What exists instead is a legible failure at a stated tick.
+- **The desync fixture needs replacing once the firewall merges.** Chromium against Firefox stops
+  diverging, so the natural fixture disappears. The successor named in §9.8 is a client booted
+  with quantisation disabled against one with it on — a URL flag on `src/sim/quantise.ts` and a
+  fifth row in the pairing table.
+
+### For the integrator
+
+Files touched outside `src/net`, `tools/` and the two new UI files:
+`src/main.ts` (wiring — the largest single edit), `src/sim/replay.ts` (a `net` mode and an
+exported codec), `src/sim/deployment.ts` (relay hook, peer, settable name),
+`src/sim/stateHash.ts` (adds `unitDigests`; **existing arithmetic untouched**),
+`src/ui/theme.ts` (`PLAYER_FACTION` becomes settable), `src/ui/HudSystem.ts` (one guard),
+`src/ui/DeploymentPanel.ts` (one guard), `src/ui/Minimap.ts` and `src/ui/SelectionController.ts`
+(two static fields become getters), `src/ui/MainMenu.ts` (one plaque), `.gitignore`
+(`.vite-cache/`).

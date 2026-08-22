@@ -28,11 +28,16 @@ import { PostFXSystem } from './render/PostFX';
 import { DeploymentSystem } from './sim/deployment';
 import { getMap } from './maps';
 import { deployBattle } from './sim/scenario';
-import { type Difficulty, type ScenarioId, sanitiseConfig } from './sim/battleConfig';
+import { garrisonOf, type Difficulty, type ScenarioId, sanitiseConfig } from './sim/battleConfig';
 import { MainMenu, resolveConfig } from './ui/MainMenu';
 import { ALL_FACTIONS, Faction } from './sim/types';
 import { installSeamCheck } from './core/seams';
 import { decodeReplay, type ReplayRecord, ReplaySystem } from './sim/replay';
+import { NetLink, netParams } from './net/NetLink';
+import { NetSession } from './net/NetSession';
+import { setPlayerFaction } from './ui/theme';
+import { showLobby } from './ui/NetLobby';
+import { NetPanel } from './ui/NetPanel';
 import { stateHashes, UNIT_CTL_FIELDS, UNIT_F64_FIELDS } from './sim/stateHash';
 
 /**
@@ -82,9 +87,55 @@ const loadText = document.getElementById('load-text') as HTMLElement | null;
  * `?from=<seconds>` plays that much of it and then hands the army over, which is "take command
  * from here" and costs one comparison in `ReplaySystem.pump`.
  */
+/*
+ * `?mp=1` is the lobby, and it returns nothing: it navigates.
+ *
+ * Placed above every other decision because it is not a battle at all — there is no config to
+ * resolve, no engine to build and nothing to load. It writes `?net=…&room=…` and reloads, and
+ * the code below is what runs on the far side of that.
+ */
+if (params.get('mp') === '1') {
+  if (loading) loading.hidden = true;
+  showLobby(document.getElementById('menu-root') as HTMLElement);
+  /*
+   * A promise that never settles, rather than a `throw`.
+   *
+   * Both stop module evaluation, and only one of them does it silently. A top-level throw is an
+   * unhandled rejection: it reaches `window.onerror`, every harness in `tools/` collects
+   * `pageerror`, and a lobby that logs an error on every visit would make three gates report a
+   * console failure for a page behaving exactly as intended.
+   */
+  await new Promise(() => { /* the lobby navigates; nothing below this line ever runs */ });
+}
+/*
+ * The relay, and why it is opened before anything else exists.
+ *
+ * A challenger cannot build the engine until it knows which battle it is in: the quality tier
+ * fixes `quality.maxSoldiers` at construction, `fittedUnitScale` fits the army to it, and
+ * docs/MULTIPLAYER.md §7.7bis measured the Campus Martius assault at 3,074 men on ultra and
+ * 3,009 on medium — with the ram crew dying 16 m short of the door at one tier and opening the
+ * gate at the other. So a joiner connects, waits for the host's setup, and only then boots.
+ *
+ * `?net=ws://host:port&room=CODE` hosts; `&host=0` joins. See `src/net/NetLink.ts`.
+ */
+const net = netParams(params);
 const replayToken = params.get('replay');
-const skipMenu = harness || params.get('menu') === '0' || replayToken !== null;
+const skipMenu = harness || params.get('menu') === '0' || replayToken !== null
+  || (net !== null && net.want === 'join');
 let config = resolveConfig(params, !harness);
+let link: NetLink | null = null;
+let netDeployPhase = false;
+if (net) {
+  link = new NetLink(net.base, net.room, net.want);
+  try {
+    await link.connect();
+  } catch (e) {
+    const why = e instanceof Error ? e.message : String(e);
+    if (loadText) { loadText.textContent = `Multiplayer: ${why}`; loadText.style.color = '#e2564b'; }
+    console.error(`[net] ${why}`);
+    throw e;
+  }
+}
 {
   const q = params.get('quality') as QualityTier | null;
   const d = params.get('difficulty') as Difficulty | null;
@@ -142,6 +193,26 @@ if (!skipMenu) {
   config = chosen.config;
   if (loading) loading.hidden = false;
 }
+/*
+ * The setup exchange, and it happens between the menu and the engine on purpose.
+ *
+ * The host publishes what it chose the instant it has chosen; the joiner has been sitting on
+ * an open socket waiting for exactly that. Sending it here rather than folding it into the
+ * `ready` handshake means the joiner starts loading in parallel with the host instead of after
+ * it — two full-scale sieges load in about the time one does, which on this machine is the
+ * difference between a lobby that feels alive and ninety seconds of nothing.
+ */
+if (link) {
+  if (link.want === 'host') {
+    netDeployPhase = params.get('deploy') !== '0';
+    link.send({ k: 'setup', cfg: config, deployPhase: netDeployPhase });
+  } else {
+    if (loadText) loadText.textContent = 'Waiting for the host to choose the battle…';
+    const cm = await link.once(['config']) as { cfg: unknown; deployPhase: boolean };
+    config = sanitiseConfig(cm.cfg as Parameters<typeof sanitiseConfig>[0]);
+    netDeployPhase = cm.deployPhase;
+  }
+}
 const difficulty = config.difficulty;
 /**
  * Which side the player commands. The other is left to the AI.
@@ -155,9 +226,54 @@ const difficulty = config.difficulty;
 // A replay is never autoplay: the log commands Rome, and handing Rome to the AI as well
 // would have two commanders fighting over one army — the same failure `installAI`'s
 // `commanded` argument exists to prevent.
+/*
+ * A relayed battle defaults to autoplay off, and for a stronger reason than a replay: both
+ * player factions must be left uncommanded on *both* clients, or one machine's AI issues
+ * orders the other machine's AI does not and the two simulations part company on tick one.
+ *
+ * An **explicit** `?autoplay=1` still wins, and is deterministic under a relay for the same
+ * reason the default is: `commanded` is derived from the config, so both clients hand the
+ * planner the identical list. What it produces is a relayed battle nobody is commanding — two
+ * machines watching one AI battle in lockstep. `tools/qa-net.mjs`'s cross-engine arm uses it,
+ * because a melee is what makes two libms disagree and a battle with no orders in it is two
+ * armies standing still.
+ */
 const autoplay = replayRecord ? false
-  : params.has('autoplay') ? params.get('autoplay') === '1' : harness;
-const playerFaction = Faction.Rome;
+  : params.has('autoplay') ? params.get('autoplay') === '1'
+    : link ? false : harness;
+
+/**
+ * Who commands what, in a relayed battle. Derived from the config, identically on both clients.
+ *
+ * Slot 0 hosts and holds the ground; slot 1 comes at it. On an assault that is the wall's owner
+ * against everyone else, which is what `CityPlan.garrison` already says and what
+ * `siegeRoleOf` already reads. On a field battle it is Rome against whoever the setup named as
+ * the opponent. `?netside=storm` swaps the host to the attacking side, because "the host
+ * defends" is a convention rather than a fact and somebody will want the other one.
+ *
+ * Computed here, before `installAI`, because `installAI` binds its `commanded` set at
+ * construction and both player factions have to be outside it on both machines.
+ */
+const netFactions: number[] = (() => {
+  if (!link) return [];
+  const defender = config.scenario === 'assault' ? garrisonOf(config.map) : Faction.Rome;
+  const attacker = defender === Faction.Rome ? config.opponent : Faction.Rome;
+  const pair = [defender, attacker];
+  return params.get('netside') === 'storm' ? [attacker, defender] : pair;
+})();
+/**
+ * The side this client's *interface* belongs to.
+ *
+ * This is the value `src/ui/theme.ts` publishes as `PLAYER_FACTION` — the selection model, the
+ * card bar, the minimap and the results panel all key off it. Nothing in `src/sim` reads it,
+ * which is what lets the two clients of one battle hold different values and still run the
+ * identical simulation.
+ */
+const playerFaction: Faction = link ? (netFactions[link.slot] ?? Faction.Rome) : Faction.Rome;
+if (link) {
+  setPlayerFaction(playerFaction);
+  console.log(`[net] room ${link.room}, slot ${link.slot}, commanding faction ${playerFaction}`);
+}
 
 /**
  * Whether the player lays their army out before the clock starts.
@@ -173,9 +289,12 @@ const playerFaction = Faction.Rome;
  * forces it off so a player can skip straight to the fight. It is refused outright under
  * autoplay: with both armies handed to the AI there is no player to deploy for.
  */
-const deployPhase = replayRecord ? replayRecord.deployPhase
-  : params.has('deploy') ? params.get('deploy') === '1' && !autoplay
-    : !skipMenu && !autoplay;
+// In a relayed battle the host's answer is the only one that counts, on both machines: a
+// deployment phase on one client and not the other is two different games from tick zero.
+const deployPhase = link ? netDeployPhase
+  : replayRecord ? replayRecord.deployPhase
+    : params.has('deploy') ? params.get('deploy') === '1' && !autoplay
+      : !skipMenu && !autoplay;
 
 const engine = new Engine({
   canvas,
@@ -257,6 +376,24 @@ engine.add(new BattleFlowSystem());
  * is never called.
  */
 const deployment = deployPhase ? engine.add(new DeploymentSystem()) : null;
+/*
+ * The opponent's deployment phase, on this machine.
+ *
+ * Both clients simulate both armies, so both clients have to be able to *perform* both
+ * players' deployment operations — the ones that come back from the relay in canonical order.
+ * A second instance rather than a faction argument, because everything in `DeploymentSystem`
+ * is bound to `playerFaction`: the zone is measured off where the other army stands, the
+ * roster comes from `rosterFor(playerFaction, …)`, and the bench is per side.
+ *
+ * Registered under a second name so `ctx.tryGet('deployment')` still finds the local player's
+ * — the HUD builds its plaque from that and must not be handed the opponent's.
+ */
+const deploymentB = link && deployPhase
+  ? engine.add(new DeploymentSystem('deployment-peer')) : null;
+if (deployment && deploymentB) {
+  deployment.peer = deploymentB;
+  deploymentB.peer = deployment;
+}
 
 // Four AI subsystems sharing one blackboard: nav grid, per-unit utility selector,
 // per-faction plan, debug overlay. Registered as a bundle so their relative update
@@ -280,8 +417,31 @@ const deployment = deployPhase ? engine.add(new DeploymentSystem()) : null;
  */
 await installAI(engine, {
   difficulty,
-  commanded: autoplay ? [...ALL_FACTIONS] : ALL_FACTIONS.filter((f) => f !== playerFaction),
+  /*
+   * In a relayed battle *neither* player's faction is the AI's, on both machines.
+   *
+   * `netFactions` is derived from the config, so the two clients compute the identical list
+   * and hand the identical set to the planner. Getting this wrong in the obvious way — each
+   * client excluding only its own faction — would leave each machine's AI commanding the
+   * *other* player's army, and since the AI re-plans every few ticks the two simulations
+   * would part company inside half a second.
+   */
+  commanded: autoplay ? [...ALL_FACTIONS]
+    : link ? ALL_FACTIONS.filter((f) => !netFactions.includes(f))
+      : ALL_FACTIONS.filter((f) => f !== playerFaction),
 });
+
+/*
+ * The session, at order 4 — ahead of the order log at 5, which is ahead of every
+ * `fixedUpdate` in the tree.
+ *
+ * Registered here rather than with the UI because it is the thing that decides which ticks
+ * this machine is allowed to run. Its `init` attaches to `ReplaySystem`, and from that moment
+ * nothing this client does reaches the simulation until it has been through the relay.
+ */
+const session = link
+  ? engine.add(new NetSession(link, config, config.quality, deployPhase))
+  : null;
 
 const vfx = engine.add(new VFXSystem());
 // VFX cannot write the soldier pool (not its file), so blood only dirties men once
@@ -330,6 +490,9 @@ async function boot(): Promise<void> {
 
   // After the armies are on the field, because the deployment zone is measured off them.
   deployment?.begin(config, playerFaction);
+  // The opponent's phase, on this machine, so relayed operations for their army have
+  // somewhere to land. Same call, other faction; the zone it measures is theirs.
+  deploymentB?.begin(config, (netFactions[(link!.slot) ^ 1] ?? Faction.Germanic) as Faction);
 
   /*
    * The record's header and its three outlets, in the one place all four exist.
@@ -340,9 +503,46 @@ async function boot(): Promise<void> {
    * to fire before the halt reaches `BattleSystem`.
    */
   replay.begin(config, config.quality, deployPhase);
-  if (deployment) replay.bindDeployment(deployment);
+  if (link) {
+    /*
+     * Both phases, indexed by the slot that owns them, so a relayed operation goes to the
+     * instance bound to the faction that issued it. `bindDeployment(d)` alone would put the
+     * challenger's regiments in the host's army.
+     */
+    if (deployment) replay.bindDeployment(deployment, link.slot);
+    if (deploymentB) replay.bindDeployment(deploymentB, link.slot ^ 1);
+    // And both hand their verbs to the relay rather than performing them. `nextUnitId++`
+    // runs before `rng.fork('unit' + id)`, so a different interleaving of two players'
+    // deployment operations mints different ids and forks different RNG streams.
+    if (deployment) {
+      deployment.relay = (ev) => {
+        replay.relayDeploy(ev);
+        // The relay needs to know both armies are laid out before it starts the clock, and a
+        // commit op alone cannot tell it: it arrives in a turn packet that has to be emitted
+        // to both clients *before* the phase flips, so the flag has to travel separately and
+        // ahead of the flip. Same socket, so it can never overtake the op it belongs to.
+        if (ev.verb === 'commit') link!.send({ k: 'deployReady' });
+      };
+    }
+    if (deploymentB) deploymentB.relay = (ev) => replay.relayDeploy(ev);
+  } else if (deployment) {
+    replay.bindDeployment(deployment);
+  }
   replay.bindMachines(battle.siege);
   replay.bindWall(battle.siege);
+  /*
+   * The handshake, here and not a line earlier.
+   *
+   * `unitSizeScale` and `pool.count` are only final once `deployBattle` has run, and both are
+   * in the boot print — docs/MULTIPLAYER.md §7.7bis: the *effective* scale and the pool count
+   * are what have to match, not the tier name, because `high` and `ultra` are bit-identical
+   * while `high` and `low` are 8,632 men against 1,515.
+   */
+  if (session) {
+    const print = session.announce(netFactions);
+    console.log(`[net] boot print ${print.hash}/${print.uf64}/${print.uctl}, `
+      + `${print.count0} men at scale ${print.unitScale}, libm ${print.libm}`);
+  }
   if (replayRecord) {
     const from = params.get('from');
     const fromTick = from === null ? undefined : Math.max(0, Math.round(Number(from) * 30));
@@ -362,6 +562,19 @@ async function boot(): Promise<void> {
    * runs at runtime is the one that catches this — every one of these seams typechecks.
    */
   installSeamCheck(engine.context);
+
+  /*
+   * The session strip, outside the HUD's DOM and outside its update loop.
+   *
+   * `HudSystem` is a shared file with other agents live in it, and this needs nothing from it —
+   * it reads `NetSession.status()` and writes one element. Driven off `loadProgress`' sibling,
+   * the render loop, through a subsystem with only an `update`, so it is one registration
+   * rather than an edit to somebody else's file.
+   */
+  if (session) {
+    const panel = new NetPanel(document.body, session);
+    engine.add({ name: 'net-panel', order: 900, update: () => panel.update() });
+  }
 
   if (harness) {
     loading?.remove();
@@ -428,6 +641,15 @@ declare global {
       hashFields(): { f64: readonly string[]; ctl: readonly string[] };
       /** The order log. Save, share, watch, and take command from here. */
       replay: ReplaySystem;
+      /**
+       * The relayed session, or null in single player.
+       *
+       * Published for `tools/qa-net.mjs`, which drives two of these at once and reads the
+       * status, the latency samples and the desync report off both. Read-only by convention
+       * for the same reason `deployment` is: every order the gate issues goes through real
+       * mouse and keyboard events, because a gate that drives the API is testing the API.
+       */
+      net: NetSession | null;
     };
   }
 }
@@ -474,6 +696,7 @@ window.__game = {
   hashes: () => stateHashes(battle.pool, battle.units),
   hashFields: () => ({ f64: UNIT_F64_FIELDS, ctl: UNIT_CTL_FIELDS }),
   replay,
+  net: session,
 };
 
 boot()

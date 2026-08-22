@@ -290,6 +290,19 @@ const decEvent = (a: Tuple): ReplayEvent | null => {
   return ev;
 };
 
+/**
+ * The codec, exported, because a relayed order **is** a replay event.
+ *
+ * `src/net/` carries these exact tuples and the relay never decodes one — it orders them and
+ * hands them back. Exporting the codec rather than describing it in a second file is the whole
+ * of "do not design a second wire format": an order that survives a round trip through a
+ * `.tcr` file and an order that survives a round trip through a Durable Object are the same
+ * bytes going through the same two functions, so there is no second path for them to disagree
+ * on. It also means a desynced multiplayer match yields a playable `.tcr` from either side.
+ */
+export const encodeEvent = (e: ReplayEvent): unknown[] => encEvent(e);
+export const decodeEvent = (a: unknown[]): ReplayEvent | null => decEvent(a as Tuple);
+
 /** The JSON a token compresses. Exported so a `.tcr` file and a URL carry the same bytes. */
 export function replayToJson(r: ReplayRecord): string {
   return JSON.stringify({
@@ -406,12 +419,37 @@ interface DeployVerbs {
   remove(unitId: number): boolean;
   setFormation(unitId: number, formationId: string): boolean;
   commit(): void;
+  /**
+   * Run an operation that has come back from the relay, in canonical order.
+   *
+   * A relayed session hands every deployment verb to the relay instead of performing it, so
+   * the verbs have to know when they are performing one that has already been through it —
+   * otherwise the operation is relayed a second time and the two clients feed each other for
+   * ever. Absent outside a session, which is why it is optional.
+   */
+  runRelayed?(body: () => void): void;
+}
+
+/**
+ * What a relayed session takes from the order log.
+ *
+ * Small on purpose. `ReplaySystem` knows nothing about sockets, turns, latency or slots
+ * beyond an index; `src/net/NetSession.ts` knows nothing about tuple layouts. The seam is one
+ * method and an array of opaque tuples, which is also exactly what crosses the wire.
+ */
+export interface NetSink {
+  relayOps(blobs: unknown[][]): void;
 }
 
 /** Ticks between checkpoints. 30 s at 30 Hz — the grid `determinism-baseline.json` uses. */
 const MARK_EVERY = 900;
 
-export type ReplayMode = 'record' | 'play' | 'commanded';
+/**
+ * `net` is a relayed two-player battle: orders leave through the sink and come back through
+ * the feed, in an order a relay decided, and nothing this client does reaches the simulation
+ * until it has been round-tripped. See `src/net/NetSession.ts`.
+ */
+export type ReplayMode = 'record' | 'play' | 'commanded' | 'net';
 
 export class ReplaySystem implements Subsystem {
   readonly name = 'replay';
@@ -433,9 +471,35 @@ export class ReplaySystem implements Subsystem {
 
   private ctx!: EngineContext;
   private battle: BattleSystem | null = null;
-  private deployment: DeployVerbs | null = null;
+  /**
+   * One deployment phase per commanding slot, and in single player there is one slot.
+   *
+   * `DeploymentSystem` is bound to a faction at `begin` — its zone, its roster, its bench and
+   * its `ownUnits` filter all read `playerFaction` — so two players laying out two armies is
+   * two instances, not one instance with a faction argument threaded through nine methods.
+   * The relayed op carries the slot that issued it and this array is how it gets home.
+   */
+  private deployments: (DeployVerbs | null)[] = [null, null];
   private machines: MachineSink | null = null;
   private wall: WallCountermand | null = null;
+
+  /** The relay, when there is one. Set by `src/net/NetSession.ts`. */
+  private net: NetSink | null = null;
+  /**
+   * Ticks between the checkpoints a relayed session exchanges, or 0 for none.
+   *
+   * The record's own grid is 900 ticks (30 s) because that is what
+   * `tools/determinism-baseline.json` pins. A session needs one nearly two orders of
+   * magnitude finer, and the reason is measured: the float64 unit layer diverges at t+30 in
+   * both Firefox and WebKit while the float32 pool hash holds to t+200, so a checkpoint every
+   * simulated second turns "this match forked somewhere in the last thirty seconds" into
+   * "this match forked at tick 1,410". Both hashes cost about 0.25 ms together.
+   */
+  netEvery = 0;
+  onNetMark: ((m: ReplayMark) => void) | null = null;
+  /** Relayed ops waiting for the tick they were stamped for. Ordered; never sorted. */
+  private netFeed: { t: number; slot: number; e: ReplayEvent }[] = [];
+  private netAt = 0;
 
   private queued: ReplayEvent[] = [];
   private log: ReplayEvent[] = [];
@@ -474,9 +538,58 @@ export class ReplaySystem implements Subsystem {
   }
 
   /** Late binding for the three things the queue drives that are not the event bus. */
-  bindDeployment(d: DeployVerbs): void { this.deployment = d; }
+  bindDeployment(d: DeployVerbs, slot = 0): void { this.deployments[slot] = d; }
   bindMachines(m: MachineSink): void { this.machines = m; }
   bindWall(w: WallCountermand): void { this.wall = w; }
+
+  // -------------------------------------------------------------------------
+  // The relay
+  // -------------------------------------------------------------------------
+
+  /**
+   * Hand this log's input over to a relay.
+   *
+   * From here on `issue`, `machineOrder` and every deployment verb send instead of applying,
+   * and `feedNet` is the only thing that reaches the simulation. That asymmetry is the whole
+   * safety property: there is exactly one path from an intention to a mutation and it goes
+   * through a total order that both clients receive identically.
+   */
+  attachNet(sink: NetSink, every: number, onMark: (m: ReplayMark) => void): void {
+    this.net = sink;
+    this.netEvery = every;
+    this.onNetMark = onMark;
+    this.mode = 'net';
+  }
+
+  get relayed(): boolean { return this.net !== null; }
+
+  /**
+   * Take one turn's worth of canonical ops, already ordered by the relay.
+   *
+   * `t` is the execution tick the packet carries, which is `turn * TICKS_PER_TURN` in the
+   * battle phase and 0 during deployment. Appended, never sorted: the relay's order *is* the
+   * order, and re-sorting here would be a second opinion about a question that has already
+   * been settled by the only party entitled to settle it.
+   */
+  feedNet(t: number, ops: { slot: number; blob: unknown[] }[]): void {
+    for (const o of ops) {
+      const e = decodeEvent(o.blob);
+      if (!e) {
+        this.fail(`a relayed op did not decode: ${JSON.stringify(o.blob).slice(0, 120)}`);
+        continue;
+      }
+      e.t = t;
+      this.netFeed.push({ t, slot: o.slot, e });
+    }
+    // Deployment runs off the render loop, so a packet that lands while the clock is stopped
+    // has to be drained here rather than waiting for a tick that will never come.
+    if (this.mode === 'net' && this.ctx.time.paused) this.pumpNet();
+  }
+
+  /** A deployment operation, handed to the relay instead of performed. */
+  relayDeploy(ev: Omit<DeployEvent, 't'>): void {
+    this.net?.relayOps([encodeEvent({ k: 'deploy', t: 0, ...ev })]);
+  }
 
   // -------------------------------------------------------------------------
   // Input
@@ -518,6 +631,21 @@ export class ReplaySystem implements Subsystem {
   }
 
   /**
+   * Where a relayed session diverts an order, and it is one line above `push` on purpose.
+   *
+   * `t` is left as this client's own tick and the relay overwrites it with the execution tick
+   * of the turn it lands in. Sending it at all is a courtesy to a debugger — it is the tick
+   * the player was looking at when they clicked, so the difference between it and the tick the
+   * order executes at *is* the observed input delay, and `tools/qa-net.mjs` measures exactly
+   * that difference rather than a wall clock.
+   */
+  private relay(e: ReplayEvent): boolean {
+    if (!this.net) return false;
+    this.net.relayOps([encodeEvent(e)]);
+    return true;
+  }
+
+  /**
    * A deployment operation, recorded but *not* deferred.
    *
    * The clock is stopped during deployment — that is what the phase is — so there is no
@@ -525,11 +653,14 @@ export class ReplaySystem implements Subsystem {
    * sequence, and the sequence is the array.
    */
   noteDeploy(e: Omit<DeployEvent, 't'>): void {
-    if (this.mode === 'play') return;
+    // In a relayed session the log entry is written by `apply` when the op comes back from the
+    // relay. Writing one here as well would record every deployment operation twice.
+    if (this.mode === 'play' || this.mode === 'net') return;
     this.log.push({ k: 'deploy', t: this.tick, ...e });
   }
 
   private push(e: ReplayEvent): void {
+    if (this.relay(e)) return;
     /*
      * A paused clock will never reach another `fixedUpdate`, so queueing here would hold
      * the order until the player un-paused — which is not what pressing H while paused
@@ -547,7 +678,19 @@ export class ReplaySystem implements Subsystem {
 
   fixedUpdate(): void {
     this.mark();
+    /*
+     * The session's checkpoint, taken at the top of the tick and *before* this tick's relayed
+     * orders are applied.
+     *
+     * Before rather than after so the number is a statement about the completed tick `t-1`
+     * and nothing else. After the drain it would also depend on whether a turn packet had
+     * arrived, and two clients that both received the packet but hashed either side of
+     * applying it would disagree for a reason that is not a desync. It is the same choice
+     * `mark()` above already makes, for the same reason.
+     */
+    if (this.netEvery && this.tick % this.netEvery === 0) this.onNetMark?.(this.snapshotMark());
     this.pump();
+    this.pumpNet();
     if (this.queued.length) {
       // Spliced empty before dispatch: `applyOrder` can re-enter this system through a UI
       // probe, and an order issued by an order must go to the *next* tick, not to the tail
@@ -565,9 +708,33 @@ export class ReplaySystem implements Subsystem {
    * Only while `deployment.active`, and only in playback: everything else waits for a tick.
    */
   update(): void {
+    if (this.mode === 'net') {
+      // Only while the clock is stopped: everything else waits for a tick, and pumping the
+      // net feed from the render loop mid-battle would put an order at a frame boundary,
+      // which is the exact defect the tick stamp exists to remove.
+      if (this.ctx.time.paused) this.pumpNet();
+      return;
+    }
     if (this.mode !== 'play') return;
-    if (!this.deployment?.active) return;
+    if (!this.deployments[0]?.active) return;
     this.pump();
+  }
+
+  /** Drain every relayed op whose execution tick has arrived. */
+  private pumpNet(): void {
+    if (this.mode !== 'net') return;
+    while (this.netAt < this.netFeed.length) {
+      const o = this.netFeed[this.netAt];
+      if (o.t > this.tick) break;
+      this.netAt++;
+      this.apply(o.e, o.slot);
+    }
+    // Compact rather than grow: a ten-minute battle is 18,000 ticks and the array would
+    // otherwise hold every op of the match plus a cursor into it for the whole session.
+    if (this.netAt > 512) {
+      this.netFeed = this.netFeed.slice(this.netAt);
+      this.netAt = 0;
+    }
   }
 
   private pump(): void {
@@ -590,11 +757,11 @@ export class ReplaySystem implements Subsystem {
     if (this.feedAt >= this.feed.length) this.mode = 'commanded';
   }
 
-  private apply(e: ReplayEvent): void {
+  private apply(e: ReplayEvent, slot = 0): void {
     this.log.push(e);
     if (e.k === 'order') this.dispatchOrder(e);
     else if (e.k === 'machine') this.machines?.requestMachineOrder(e.unitId, dequantXZ(e.qx), dequantXZ(e.qz));
-    else this.dispatchDeploy(e);
+    else this.dispatchDeploy(e, slot);
   }
 
   private dispatchOrder(e: OrderEvent): void {
@@ -627,9 +794,16 @@ export class ReplaySystem implements Subsystem {
     this.ctx.events.emit('orderIssued', p);
   }
 
-  private dispatchDeploy(e: DeployEvent): void {
-    const d = this.deployment;
+  private dispatchDeploy(e: DeployEvent, slot = 0): void {
+    const d = this.deployments[slot];
     if (!d) return;
+    // `runRelayed` stops the verb handing the operation straight back to the relay it just
+    // came from. Absent in single player, where there is no relay to hand it to.
+    if (d.runRelayed) { d.runRelayed(() => this.dispatchDeployInner(d, e)); return; }
+    this.dispatchDeployInner(d, e);
+  }
+
+  private dispatchDeployInner(d: DeployVerbs, e: DeployEvent): void {
     switch (e.verb) {
       case 'add': {
         const got = d.add(e.typeId ?? '', e.qx === undefined ? undefined : dequantXZ(e.qx),

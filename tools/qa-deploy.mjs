@@ -223,30 +223,40 @@ if (!ONLY || ONLY === 'menu') {
     };
   });
   const ids = door.dest.map((d) => d.id).join(',');
-  record('front-door-destinations', ids === 'battle,docs,viewer' && door.setupHidden
+  record('front-door-destinations', ids === 'battle,multiplayer,docs,viewer' && door.setupHidden
     && door.dest.every((d) => d.w > 400 && d.h > 40 && d.sub.length > 40),
-    'load with no flags at all and read the three plaques off the front door',
+    'load with no flags at all and read the four plaques off the front door',
     `${ids || 'none'}  ·  setup screen hidden ${door.setupHidden}  ·  `
       + door.dest.map((d) => `${d.id} ${d.w}×${d.h}`).join(', '),
     door.dest.map((d) => d.label).join(' / '));
 
   /*
-   * Battle stays in this tab; everything else leaves in a new one.
+   * What is inside this app stays in this tab; what is outside it leaves in a new one.
    *
    * That is the rule the front door is built on — a player two minutes into an order of
    * battle must not be able to lose it to one mis-aimed click — and it is a rule made of
    * three attributes, which is exactly the kind of thing that survives a refactor only if
    * something asserts it. `rel=noopener` on every `target=_blank` as well.
+   *
+   * **Split on where the destination goes, not on which one it is.** This used to read
+   * "Battle stays, everything else leaves", and the multiplayer lobby broke it by being a
+   * third thing: in-app, so it must not open a tab, but reached by a real `href` so that
+   * middle-click and copy-link-address work on it. Testing the *href* rather than the *id*
+   * says the rule out loud and does not have to be edited again for the next in-app screen.
    */
+  const inApp = (d) => !d.href || /^[?#]/.test(d.href);
   const battle = door.dest.find((d) => d.id === 'battle');
-  const external = door.dest.filter((d) => d.id !== 'battle');
+  const internal = door.dest.filter(inApp);
+  const external = door.dest.filter((d) => !inApp(d));
+  const internalOk = internal.length >= 2 && internal.every((d) => !d.target);
   const externalOk = external.length === 2 && external.every(
-    (d) => d.tag === 'A' && d.target === '_blank' && (d.rel ?? '').includes('noopener') && !!d.href);
+    (d) => d.tag === 'A' && d.target === '_blank' && (d.rel ?? '').includes('noopener') && !!d.href)
+    && internalOk;
   const asidesOk = door.asides.length >= 2
     && door.asides.every((a) => a.target === '_blank' && /^https:\/\//.test(a.href));
   record('front-door-leaves-safely',
     !!battle && battle.tag === 'BUTTON' && !battle.href && externalOk && asidesOk,
-    'every destination that is not Battle must be an anchor into a new tab',
+    'every destination outside this app opens a new tab; every one inside it does not',
     `battle is a <${(battle?.tag ?? '?').toLowerCase()}> with href ${battle?.href ?? 'none'};  `
       + external.map((d) => `${d.id} → ${d.href} target ${d.target} rel ${d.rel}`).join(';  '),
     door.asides.map((a) => `${a.id} → ${a.href}`).join('  '));

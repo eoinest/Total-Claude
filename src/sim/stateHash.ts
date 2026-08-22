@@ -148,6 +148,45 @@ export function unitHash(units: readonly UnitGroupState[]): {
   return { uf64: f.hex(), uctl: c.hex(), units: units.length };
 }
 
+/**
+ * The same `uf64` arithmetic, per unit instead of over the whole array.
+ *
+ * This is the attribution half of a desync report. `unitHash` says the float64 layer differs;
+ * this says *which regiment*, which is the difference between a bug report and a shrug. Age of
+ * Empires debugged desyncs with 50 MB message traces and world dumps; 35 units × one 32-bit
+ * hash is about 300 bytes and can be sent on the tick the disagreement is noticed.
+ *
+ * The per-unit digest is deliberately **not** a decomposition of `unitHash` — folding one hash
+ * into the next would let a difference in unit 3 change the digest of unit 4 and name four
+ * regiments where one is at fault. Each unit is hashed from a fresh state, so exactly the
+ * units that differ are the units reported. The whole-array `uf64` is still the detector; this
+ * is only ever computed after it has already said something is wrong, plus a short rolling
+ * history so the tick it names can still be answered for.
+ *
+ * Array order is *not* hashed here, for the same reason: `unitHash` already reports a
+ * reordering, and a digest list that changed wholesale on a reorder would attribute a
+ * one-unit fault to every unit on the field.
+ */
+export function unitDigests(units: readonly UnitGroupState[]): [number, string][] {
+  const out: [number, string][] = [];
+  for (const u of units) {
+    const f = fnv();
+    const rec = u as unknown as Record<string, unknown>;
+    for (const k of UNIT_F64_FIELDS) f.f64(rec[k] as number);
+    const wp = u.waypoints ?? [];
+    f.u32(wp.length);
+    for (let i = 0; i < wp.length; i++) f.f64(wp[i]);
+    for (const k of UNIT_CTL_FIELDS) {
+      const v = rec[k];
+      if (typeof v === 'string') f.str(v);
+      else if (typeof v === 'boolean') f.bool(v);
+      else f.f64(v as number);
+    }
+    out.push([u.id, f.hex()]);
+  }
+  return out;
+}
+
 /** Both halves at once. About 0.15 ms for the pool and 0.1 ms for the units at 8,632 men. */
 export function stateHashes(p: SoldierPool, units: readonly UnitGroupState[]): StateHashes {
   return { ...poolHash(p), ...unitHash(units) };

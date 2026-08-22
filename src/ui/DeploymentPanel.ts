@@ -183,7 +183,10 @@ export class DeploymentPanel {
     }
     const id = this.dep.add(typeId);
     if (id < 0) {
-      this.flash(this.dep.lastRefusal);
+      // A relayed deployment returns -1 with nothing to say: the operation has gone to the
+      // relay and the unit appears when it comes back. Flashing an empty string would put an
+      // empty note strip on screen for five seconds every time somebody pressed plus.
+      if (this.dep.lastRefusal) this.flash(this.dep.lastRefusal);
       return;
     }
     this.pendingSelect = id;

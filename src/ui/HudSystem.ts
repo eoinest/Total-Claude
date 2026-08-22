@@ -429,7 +429,10 @@ export class HudSystem implements Subsystem {
     if (this.deployment) {
       const dep = this.deployment;
       this.controller.deployment = dep;
-      this.topbar.clockHeld = () => dep.blocksClock;
+      // The clock is held while *either* phase is open. In a relayed battle there are two, and
+      // the second player to press BEGIN BATTLE is the one who starts the fight — so a top bar
+      // keyed only on this client's phase would show a running clock over a stopped battle.
+      this.topbar.clockHeld = () => dep.blocksClock || !!dep.peer?.active;
       const open = (): void => {
         if (this.deployPanel || !dep.active) return;
         this.deployPanel = new DeploymentPanel(dep, this.model, this.controller);
@@ -438,6 +441,16 @@ export class HudSystem implements Subsystem {
       };
       this.offs.push(ctx.events.on('deploymentBegan', open));
       this.offs.push(ctx.events.on('deploymentEnded', () => {
+        /*
+         * Only when *this client's* phase is the one that ended.
+         *
+         * A relayed battle runs two `DeploymentSystem`s on every machine — one per commanding
+         * slot, because the roster, the zone, the bench and `ownUnits` are all bound to a
+         * faction — and both raise `deploymentEnded`. Without this guard the opponent pressing
+         * BEGIN BATTLE tore the plaque out from under the local player, who then had no way to
+         * lay out an army or to commit, in a phase the clock was still correctly holding.
+         */
+        if (dep.active) return;
         this.deployPanel?.dispose();
         this.deployPanel = null;
         this.controller.deployment = null;

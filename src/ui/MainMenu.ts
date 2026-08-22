@@ -98,8 +98,16 @@ interface Destination {
   sub: string;
   /** Inline SVG body from `ICON`. */
   ic: string;
-  /** Absent means the destination is inside this app; present means a new tab. */
+  /** Absent means the destination is inside this app; present means a link. */
   href?: string;
+  /**
+   * A link that stays in this tab.
+   *
+   * The two external plaques open a new tab because leaving a battle you are configuring to
+   * read a document is not what anyone meant by clicking it. The lobby is the opposite: it
+   * *replaces* this page, because the next thing it does is navigate to a battle.
+   */
+  sameTab?: boolean;
 }
 
 /**
@@ -120,6 +128,15 @@ const DESTINATIONS: readonly Destination[] = [
     ic: ICON.swords,
     sub: 'Choose the battlefield and the engagement, draw up both orders of battle, '
       + 'set the hour &mdash; then fight it.',
+  },
+  {
+    id: 'multiplayer',
+    label: 'Two commanders',
+    ic: ICON.swords,
+    href: '?mp=1',
+    sameTab: true,
+    sub: 'One battle on two machines, both armies under human command. The host chooses the '
+      + 'ground; the challenger takes the other side.',
   },
   {
     id: 'docs',
@@ -421,12 +438,13 @@ export class MainMenu {
       // The arrow-out-of-the-box glyph is the only thing on the plaque that says a click
       // will leave the game, and a glyph says nothing to a screen reader. `NEW_TAB` is the
       // same fact in words, clipped out of the visual layout — see `.sr-only` in `menu.css`.
+      const newTab = !!d.href && !d.sameTab;
       const body = `${icon(d.ic, 'dest-ic')}
-        <span class="dest-txt"><b>${d.label}</b><i>${d.sub}${d.href ? NEW_TAB : ''}</i></span>
-        <span class="dest-go" aria-hidden="true">${d.href ? '&#8599;' : '&rsaquo;'}</span>`;
+        <span class="dest-txt"><b>${d.label}</b><i>${d.sub}${newTab ? NEW_TAB : ''}</i></span>
+        <span class="dest-go" aria-hidden="true">${newTab ? '&#8599;' : '&rsaquo;'}</span>`;
       return d.href
         ? `<a class="dest dest-${d.id}" data-dest="${d.id}" href="${d.href}"
-             target="_blank" rel="noopener">${body}</a>`
+             ${newTab ? 'target="_blank" rel="noopener"' : ''}>${body}</a>`
         : `<button type="button" class="dest dest-${d.id}" data-dest="${d.id}">${body}</button>`;
     };
     return `<div class="menu-sheet menu-home">

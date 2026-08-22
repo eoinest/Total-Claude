@@ -1,0 +1,525 @@
+import type { EngineContext, QualityTier, Subsystem } from '../core/Engine';
+import type { BattleConfig } from '../sim/battleConfig';
+import type { BattleSystem } from '../sim/BattleSystem';
+import type { NetSink, ReplayMark, ReplayRecord, ReplaySystem } from '../sim/replay';
+import { stateHashes, unitDigests } from '../sim/stateHash';
+import type { NetLink } from './NetLink';
+import {
+  HASH_EVERY, libmPrint, TICKS_PER_TURN, turnTick,
+  type BootPrint, type MsgTurn, type RelayMsg,
+} from './protocol';
+
+/**
+ * Deterministic lockstep over a relay, on the client.
+ *
+ * ## The shape, and why it is lockstep rather than rollback
+ *
+ * `docs/MULTIPLAYER.md` §4.4 rules out rollback and gives the right reason: not the tick cost
+ * (3.4 ms, not the 11.06 ms one pass published — that figure is a whole frame) but that
+ * rollback needs a snapshot *and* a restore every frame, and §1.8 measured those at 9–14 ms
+ * and 4–7 ms. That is a 33 ms budget gone twice over before any re-simulation. It is also the
+ * reason that would not change if the simulation got faster, which is the test of a good one.
+ *
+ * What is left is lockstep with an input delay, and this codebase is unusually ready for it:
+ * the simulation is a pure function of `(config, seed, tick index)` — proved four separate
+ * ways and most strongly by `tools/qa-replay.mjs`, which replays a 6,783-tick battle carrying
+ * real recorded player input bit-identically at five ticks a frame and at one tick every two
+ * frames — and `src/sim/replay.ts` already stamps every player order with an execution tick
+ * and quantises its coordinates at the moment it is issued.
+ *
+ * So the netcode is small. It is three rules:
+ *
+ * 1. **Nothing this client does reaches the simulation until it has been round-tripped.**
+ *    `ReplaySystem` in `net` mode diverts every order, every siege-machine command and every
+ *    deployment verb to the relay, and applies only what comes back in a turn packet.
+ * 2. **The client may not simulate past the last turn it has.** `Time.tickCeiling` — which
+ *    exists for the replay gate — is set to `turnTick(readyTurn + 1)` every frame. A missing
+ *    packet stalls the battle; it never lets it guess.
+ * 3. **Wall clock is a pacing device and nothing else.** It decides how fast this client is
+ *    allowed to *catch up*, through `time.gameSpeed`, which scales the accumulator and never
+ *    the step. `docs/MULTIPLAYER.md` §1.10 lists "pause and speed are raw writes to the clock"
+ *    as a defect because two machines pressing 2× at different moments run different tick
+ *    counts for the same wall clock — which is exactly true, and exactly harmless here,
+ *    because the tick count is not this client's to decide.
+ *
+ * ## What this file does *not* do, deliberately
+ *
+ * There is no client-side prediction of any kind, not even cosmetic. A move order does not
+ * show a marker until the relay has stamped it. The reason is §3's warning about the
+ * commonest form of dishonest netcode: an acknowledgement that the input has been accepted,
+ * followed by a battle in which it was not. At 200 ms of delay a marker that appears when the
+ * order actually lands is a truthful interface; one that appears instantly is a lie about
+ * three frames in five. If that turns out to feel bad in play, the honest fix is a distinct
+ * "sent" state on the marker, not a predicted one — see §9.4.
+ */
+
+/** What the UI needs to draw a status line. Nothing in the protocol depends on this shape. */
+export interface NetStatus {
+  phase: 'connecting' | 'lobby' | 'deploy' | 'battle' | 'over';
+  slot: number;
+  room: string;
+  peer: string;
+  myFaction: number;
+  turn: number;
+  behindTicks: number;
+  stalls: number;
+  stalledMs: number;
+  rttMs: number;
+  delayTicks: number;
+  message: string;
+  ended: string;
+  /**
+   * Frames in and out on this client's socket.
+   *
+   * In the readout because a lockstep client that has stopped can have stopped for two very
+   * different reasons — nothing arriving, or something arriving that it has not got round to —
+   * and nothing else on screen distinguishes them. It earned its place: a cross-engine arm
+   * reported a correctly-detected divergence as a failure, and the question that resolved it
+   * was "did the slow client receive the message at all".
+   */
+  got: number;
+  sent: number;
+  /** The highest tick this client is authorised to reach, and the turn that authorised it. */
+  ceiling: number;
+  readyTurn: number;
+}
+
+/** A desync, as this client saw it. Every field is in the panel and in the gate's JSON. */
+export interface DesyncReport {
+  tick: number;
+  layer: string;
+  mine: string;
+  theirs: string;
+  lastAgreedTick: number;
+  units: number[];
+  note: string;
+}
+
+/**
+ * The fastest this client may run to close a gap. `Time.setSpeed` clamps at 8 and so does this.
+ *
+ * It is a *rate*, not a step: `Time.beginFrame` scales the accumulator and still hands out
+ * whole 1/30 s ticks capped at `maxStepsPerFrame = 5` a frame, so 8× is the same ticks sooner.
+ * The real ceiling is that cap — five ticks a frame at 60 fps is 300 ticks a second, ten times
+ * real time — and at 3.4 ms a tick that is already the whole main thread. Anything past this
+ * is not catching up, it is a second stall wearing a hat, which is why `maxLagTurns` exists.
+ */
+const MAX_CATCHUP_SPEED = 8;
+/** Rolling window of per-unit digests, so a desync at tick T can still be answered for. */
+const DIGEST_HISTORY = 12;
+/**
+ * How long the simulation must be held at its ceiling before that counts as a stall.
+ *
+ * One and a half turns of *simulated* time. Derived from `TICKS_PER_TURN` and not from the
+ * relay's wall-clock turn length, so it means the same thing when a gate runs the relay at five
+ * times speed to reach t+300 inside a minute.
+ */
+const STALL_MS = (TICKS_PER_TURN / 30) * 1000 * 1.5;
+
+export class NetSession implements Subsystem {
+  readonly name = 'net';
+  /**
+   * Ahead of `ReplaySystem` (5), which is ahead of `BattleSystem` (10).
+   *
+   * `order` decides `update` order and `init` order, and this only needs the second: it must
+   * resolve `replay` and attach to it before anything else has a chance to issue an order.
+   */
+  readonly order = 4;
+
+  phase: NetStatus['phase'] = 'connecting';
+  /** Faction this client's player commands. The other slot's is the other one. */
+  myFaction = 0;
+  factions: number[] = [];
+  desync: DesyncReport | null = null;
+  ended = '';
+  endedAtTick = -1;
+  message = '';
+
+  private ctx!: EngineContext;
+  private battle!: BattleSystem;
+  private replay!: ReplaySystem;
+  private link: NetLink;
+  private cfg: BattleConfig;
+  private quality: QualityTier;
+  private deployPhase: boolean;
+
+  /** Highest battle turn whose packet has arrived. -1 until the first one. */
+  private readyTurn = -1;
+  private lastMarkTick = -1;
+  private digests: { tick: number; d: [number, string][] }[] = [];
+  /** Sent ops awaiting their turn packet, for the input-delay measurement. */
+  private inFlight = new Map<string, { at: number; tick: number }>();
+  private lat: { rttMs: number; delayTicks: number }[] = [];
+  private stalls = 0;
+  private stalledMs = 0;
+  private stallSince = 0;
+  /** When this client first ran out of authorised ticks. Not yet a stall; see `STALL_MS`. */
+  private waitingSince = 0;
+  private perturbed = -1;
+
+  constructor(link: NetLink, cfg: BattleConfig, quality: QualityTier, deployPhase: boolean) {
+    this.link = link;
+    this.cfg = cfg;
+    this.quality = quality;
+    this.deployPhase = deployPhase;
+  }
+
+  init(ctx: EngineContext): void {
+    this.ctx = ctx;
+    this.battle = ctx.get<Subsystem>('battle') as unknown as BattleSystem;
+    this.replay = ctx.get<Subsystem>('replay') as unknown as ReplaySystem;
+    const sink: NetSink = {
+      relayOps: (blobs) => {
+        for (const b of blobs) {
+          this.inFlight.set(JSON.stringify(b), {
+            at: performance.now(), tick: this.ctx.time.tick,
+          });
+        }
+        this.link.send({ k: 'ops', ev: blobs });
+      },
+    };
+    this.replay.attachNet(sink, HASH_EVERY, (m) => this.onMark(m));
+  }
+
+  /**
+   * Announce this client to the relay, once the army is on the field.
+   *
+   * Called from `main.ts` after `deployBattle`, because `unitSizeScale` and `pool.count` are
+   * only final then and both are in the handshake. Everything in `BootPrint` is a thing
+   * measured to change the battle; the citations are on the interface.
+   */
+  announce(factions: number[]): BootPrint {
+    this.factions = factions;
+    this.myFaction = factions[this.link.slot] ?? 0;
+    const h = stateHashes(this.battle.pool, this.battle.units);
+    const print: BootPrint = {
+      cfgKey: JSON.stringify(this.cfg),
+      quality: this.quality,
+      unitScale: this.battle.unitSizeScale,
+      count0: h.count,
+      hash: h.hash,
+      uf64: h.uf64,
+      uctl: h.uctl,
+      libm: libmPrint(),
+      ua: navigator.userAgent.slice(0, 120),
+      deployPhase: this.deployPhase,
+    };
+    this.phase = 'lobby';
+    this.message = 'waiting for the other player';
+    this.link.send({ k: 'ready', print, cfg: this.cfg, factions });
+    return print;
+  }
+
+  // -------------------------------------------------------------------------
+  // The frame
+  // -------------------------------------------------------------------------
+
+  update(): void {
+    for (const m of this.link.drain()) this.onMessage(m);
+    this.pace();
+  }
+
+  /**
+   * The ceiling, and the catch-up.
+   *
+   * Two levers and no third. `tickCeiling` stops this client running a tick the relay has not
+   * authorised — that is what makes two machines run one battle. `gameSpeed` lets a client
+   * that has fallen behind close the gap, and it is safe because it scales the accumulator
+   * rather than the step: `Time.beginFrame` still hands out whole 1/30 s ticks and
+   * `maxStepsPerFrame` still caps them at five a frame, so a 4× speed is 4× the *rate* and
+   * bit-for-bit the same ticks.
+   *
+   * The asymmetry is deliberate: there is no lever that slows a client down, because there is
+   * nothing to slow down *to*. A client that is ahead is simply a client sitting on its
+   * ceiling, which costs nothing and is the normal state between turn packets.
+   */
+  private pace(): void {
+    const t = this.ctx.time;
+    if (this.phase === 'over') {
+      t.tickCeiling = t.tick;
+      t.gameSpeed = 1;
+      return;
+    }
+    if (this.phase !== 'battle' && this.phase !== 'deploy') return;
+    const ceiling = turnTick(this.readyTurn + 1);
+    t.tickCeiling = ceiling;
+    /*
+     * The deployment phase is not a stall and must not be counted as one.
+     *
+     * `readyTurn` is -1 until battle turn 0 arrives, so the ceiling is 0 and the simulation
+     * is held at tick 0 for the whole of deployment — which is correct, deliberate and has
+     * nothing to do with the network. Counting it reported a single 4.75-second stall in every
+     * run at every latency, which is a measurement of how long somebody took to press BEGIN
+     * BATTLE dressed up as a link quality figure.
+     */
+    if (this.phase !== 'battle') { this.waitingSince = 0; return; }
+    const behind = ceiling - t.tick;
+    /*
+     * A stall is *waiting longer than a turn*, not merely sitting on the ceiling.
+     *
+     * The first version of this counted every frame at the ceiling and reported 93 stalls
+     * totalling 12.6 seconds of a 13-second battle on a zero-latency localhost link — which is
+     * true and useless. Lockstep at real-time pacing spends most of its wall clock at the
+     * ceiling by construction: three ticks take about ten milliseconds and the next packet is a
+     * hundred away. Counting that as a stall makes the number a measure of how fast the machine
+     * is, and the thing worth knowing is how often the *network* made the battle wait.
+     *
+     * So the clock only starts once the wait has exceeded one and a half turns. `STALL_MS` is
+     * derived from `TICKS_PER_TURN` rather than from the relay's `turnMs`, deliberately: a turn
+     * is three ticks of *simulated* time whatever wall clock the relay schedules it on, so this
+     * threshold means the same thing when the gate runs a relay at five times speed.
+     */
+    const now = performance.now();
+    if (behind <= 0) {
+      if (this.waitingSince === 0) this.waitingSince = now;
+      else if (!this.stallSince && now - this.waitingSince > STALL_MS) {
+        this.stallSince = this.waitingSince + STALL_MS;
+        this.stalls++;
+      }
+      t.gameSpeed = 1;
+      return;
+    }
+    this.waitingSince = 0;
+    if (this.stallSince) { this.stalledMs += now - this.stallSince; this.stallSince = 0; }
+    /*
+     * Three steps rather than a continuous controller, because the thing being controlled is
+     * already quantised: `Time` hands out whole ticks and `maxStepsPerFrame` caps them at five,
+     * so any speed above about 10 is inexpressible and any fine-grained gain would be spent
+     * hunting between two integers. One turn behind is normal and gets 1×; a few turns behind
+     * is a hitch and gets 2×; anything more is a stall being recovered from.
+     */
+    t.gameSpeed = behind > TICKS_PER_TURN * 4 ? MAX_CATCHUP_SPEED
+      : behind > TICKS_PER_TURN * 2 ? 2 : 1;
+  }
+
+  // -------------------------------------------------------------------------
+  // Messages
+  // -------------------------------------------------------------------------
+
+  private onMessage(m: RelayMsg): void {
+    switch (m.k) {
+      case 'peer':
+        this.message = m.state === 'left' ? 'the other player left'
+          : m.state === 'ready' ? 'the other player is ready'
+            : 'the other player joined';
+        break;
+      case 'start':
+        this.factions = m.factions;
+        this.myFaction = m.factions[this.link.slot] ?? this.myFaction;
+        this.phase = m.phase;
+        this.message = m.phase === 'deploy' ? 'lay out your army' : 'battle';
+        break;
+      case 'turn': this.onTurn(m); break;
+      case 'desync': this.onDesync(m); break;
+      case 'wantProbe': this.onWantProbe(m.tick); break;
+      case 'attrib':
+        if (this.desync) {
+          this.desync.units = m.units;
+          this.desync.note = m.note;
+        }
+        break;
+      case 'refuse':
+        this.phase = 'over';
+        this.ended = m.why;
+        this.message = m.detail ?? m.why;
+        break;
+      case 'end': this.onEnd(m.why, m.atTick, m.detail); break;
+      default: break;
+    }
+  }
+
+  /**
+   * One canonical turn, handed to the order log.
+   *
+   * The client stamps the execution tick from the packet's own `t` and never from a clock.
+   * That is the sentence that makes this deterministic across two machines, and it is one
+   * line long because `src/sim/replay.ts` already had the hard part: an order log keyed to a
+   * tick index, drained at the top of that tick, from a system registered ahead of every
+   * `fixedUpdate` in the tree.
+   */
+  private onTurn(m: MsgTurn): void {
+    if (m.ph === 'battle') {
+      // Turn 0 of the battle phase is also the signal that the deployment phase is over
+      // everywhere, including on a client whose own player committed some seconds ago.
+      if (this.phase === 'deploy') this.phase = 'battle';
+      this.readyTurn = Math.max(this.readyTurn, m.n);
+    }
+    const ops: { slot: number; blob: unknown[] }[] = [];
+    for (const o of m.ops) {
+      if (this.testMarker(o.e)) continue;
+      ops.push({ slot: o.s, blob: o.e });
+      if (o.s !== this.link.slot) continue;
+      const key = JSON.stringify(o.e);
+      const sentAt = this.inFlight.get(key);
+      if (!sentAt) continue;
+      this.inFlight.delete(key);
+      /*
+       * Deployment operations are excluded from the latency figure, and not because they are
+       * fast — because they have no tick to be late by. The clock is stopped throughout the
+       * phase, so every deploy op is issued at tick 0 and executes at tick 0, and averaging
+       * those zeroes in with the battle's would report an input delay a third of the real one.
+       * They still cost a round trip; that shows in `rttMs`, which this keeps for them.
+       */
+      if (m.ph !== 'battle') continue;
+      this.lat.push({ rttMs: performance.now() - sentAt.at, delayTicks: m.t - sentAt.tick });
+      if (this.lat.length > 64) this.lat.shift();
+    }
+    if (ops.length) this.replay.feedNet(m.t, ops);
+  }
+
+  /**
+   * The one-ULP perturbation, and the reason it arrives as an order.
+   *
+   * A relay has no simulation, so it cannot perturb one. `tools/relay.mjs --fault=ulp` sends a
+   * marker to one slot instead and this turns it into the smallest possible disagreement: one
+   * `UnitGroupState` float64 field, one unit in the last place of its mantissa. That is the
+   * failure real hardware produces — §1.4 measured 1 ULP as the true magnitude of a libm
+   * disagreement, and the whole detection design rests on `uf64` seeing it. A detector that
+   * has never been shown a 1-ULP fault is a detector nobody has tested.
+   *
+   * It is reachable only from a relay started with an explicit test flag. A production relay
+   * has no code path that emits this marker.
+   */
+  private testMarker(blob: unknown[]): boolean {
+    if (blob[0] !== '__ulp__') return false;
+    const u = this.battle.units.find((x) => !x.destroyed && x.alive > 0);
+    if (!u) return true;
+    const dv = new DataView(new ArrayBuffer(8));
+    dv.setFloat64(0, u.x);
+    const lo = dv.getUint32(4);
+    dv.setUint32(4, (lo + 1) >>> 0);
+    u.x = dv.getFloat64(0);
+    this.perturbed = u.id;
+    console.warn(`[net] test perturbation: unit ${u.id} x moved by one ULP`);
+    return true;
+  }
+
+  /**
+   * The checkpoint, every `HASH_EVERY` ticks, and the rolling per-unit history behind it.
+   *
+   * `uf64` is the detector. Measured 21 August 2026: the float64 unit layer diverges at t+30
+   * in both Firefox and WebKit while the float32 pool hash holds all the way to t+200. The
+   * mechanism is §1.4 — every tick reads float32, computes in float64 and writes float32, and
+   * that quantisation is a firewall with about 29 bits of headroom; `UnitGroupState` has no
+   * firewall at all. All three hashes are sent because the pool hash and `uctl` are how a
+   * report says *what kind* of disagreement this is, and `uctl` moving is a much more serious
+   * finding than `uf64` moving.
+   *
+   * The digests are kept for twelve checkpoints — about twelve seconds — because a desync is
+   * declared roughly one round trip after the tick it happened at, and the relay then asks
+   * both clients about that tick. Without a history the honest answer would be "I have moved
+   * on", and the attribution half of this design would not exist.
+   */
+  private onMark(m: ReplayMark): void {
+    this.lastMarkTick = m.tick;
+    this.digests.push({ tick: m.tick, d: unitDigests(this.battle.units) });
+    if (this.digests.length > DIGEST_HISTORY) this.digests.shift();
+    this.link.send({
+      k: 'hash', tick: m.tick, hash: m.hash, uf64: m.uf64, uctl: m.uctl, alive: m.alive,
+    });
+  }
+
+  private onWantProbe(tick: number): void {
+    const found = this.digests.find((d) => d.tick === tick);
+    this.link.send({ k: 'probe', tick, units: found ? found.d : [] });
+  }
+
+  /**
+   * The policy: **halt, attribute, and end with a stated result.** Not resync.
+   *
+   * §1.8 found the simulation can be snapshotted, so resync-from-snapshot was genuinely on the
+   * table. Two things took it off, and the second is the decisive one.
+   *
+   * The first is cost. The shipping serialiser is not the reflective probe that proved the
+   * result: that pass's own reviewer counted 331 distinct mutated instance-field names across
+   * `src/sim` and `src/ai`, twelve systems needing `capture`/`restore`, 162 `private`
+   * declarations in `Siege.ts` alone, and a permanent tax on a 6,192-line file under active
+   * change. It is a larger piece of work than the whole of this session layer.
+   *
+   * The second is that it would not help. §4's review says it plainly: in same-engine lockstep
+   * there is no mechanism for a *transient* disagreement, so any mismatch is a fork. And a
+   * fork here has exactly one cause — two libms that do not agree — which is a *systematic*
+   * property of the pairing, not an event. Resyncing from a snapshot would hand both clients
+   * the same state and they would fork again on the next contested tick, for the same reason,
+   * for as long as anyone kept pressing the button. A resync repairs a lost packet. There are
+   * no lost packets here: the transport is TCP under a WebSocket and every op is
+   * acknowledged by being echoed back in a numbered turn.
+   *
+   * So the honest behaviour is to stop at the fork, say where it was, say which regiments
+   * differ, and report the result at the last tick both clients agreed on. Both sides keep a
+   * complete `.tcr` record of the match, which is the forensic artefact that makes the *next*
+   * desync cheaper to find.
+   *
+   * **What would change my mind:** a measured transient — two clients that disagree at one
+   * checkpoint and agree at the next without intervention. That cannot happen under this
+   * architecture as described, so observing one would mean the architecture is not what this
+   * comment says it is, and finding out which part is wrong would matter more than the policy.
+   */
+  private onDesync(m: Extract<RelayMsg, { k: 'desync' }>): void {
+    if (this.desync) return;
+    this.desync = {
+      tick: m.tick, layer: m.layer, mine: m.mine, theirs: m.theirs,
+      lastAgreedTick: m.lastAgreedTick, units: [], note: 'attributing…',
+    };
+    this.phase = 'over';
+    this.ended = 'desync';
+    this.endedAtTick = m.lastAgreedTick;
+    this.ctx.time.tickCeiling = this.ctx.time.tick;
+    this.message = `the two battles parted at tick ${m.tick} (${m.layer})`;
+    console.error(`[net] desync at tick ${m.tick}: ${m.layer} ${m.mine} vs ${m.theirs}; `
+      + `last agreed tick ${m.lastAgreedTick}`);
+  }
+
+  private onEnd(why: string, atTick: number, detail: string): void {
+    if (this.ended && this.ended !== why) return;
+    this.ended = why;
+    this.endedAtTick = atTick;
+    this.phase = 'over';
+    this.message = detail;
+    this.ctx.time.tickCeiling = this.ctx.time.tick;
+    console.warn(`[net] session ended (${why}) at tick ${atTick}: ${detail}`);
+  }
+
+  // -------------------------------------------------------------------------
+  // Readouts
+  // -------------------------------------------------------------------------
+
+  /** Everything the UI and the gate read. Never anything the simulation reads. */
+  status(): NetStatus {
+    const t = this.ctx?.time;
+    const n = this.lat.length;
+    const rtt = n ? this.lat.reduce((a, b) => a + b.rttMs, 0) / n : 0;
+    const dly = n ? this.lat.reduce((a, b) => a + b.delayTicks, 0) / n : 0;
+    return {
+      phase: this.phase,
+      slot: this.link.slot,
+      room: this.link.room,
+      peer: this.link.peer,
+      myFaction: this.myFaction,
+      turn: this.readyTurn,
+      behindTicks: t ? turnTick(this.readyTurn + 1) - t.tick : 0,
+      stalls: this.stalls,
+      stalledMs: Math.round(this.stalledMs),
+      rttMs: Math.round(rtt * 10) / 10,
+      delayTicks: Math.round(dly * 100) / 100,
+      message: this.message,
+      ended: this.ended,
+      got: this.link.counts.got,
+      sent: this.link.counts.sent,
+      ceiling: t ? t.tickCeiling : -1,
+      readyTurn: this.readyTurn,
+    };
+  }
+
+  /** Every measured order round trip, for the gate's latency table. */
+  latencies(): { rttMs: number; delayTicks: number }[] { return this.lat.slice(); }
+  /** The unit the test perturbation hit, or -1. */
+  get perturbedUnit(): number { return this.perturbed; }
+  get lastCheckpoint(): number { return this.lastMarkTick; }
+
+  /** The match, as a record. The same `.tcr` a single-player battle produces. */
+  record(): ReplayRecord | null { return this.replay.record(); }
+
+  /** Tell the relay we are going, so the peer gets `peerLeft` rather than a timeout. */
+  dispose(): void { this.link.close('page closed'); }
+}

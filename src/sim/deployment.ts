@@ -126,9 +126,27 @@ interface Benched {
 }
 
 export class DeploymentSystem implements Subsystem {
-  readonly name = 'deployment';
+  /**
+   * `deployment` for the phase this client's player drives, and a second name for the one
+   * the opponent drives in a relayed battle.
+   *
+   * Two instances rather than one instance with a faction argument, because everything here
+   * is bound to `playerFaction` at `begin` — the zone is measured off where the *other* army
+   * stands, the roster comes from `rosterFor(playerFaction, …)`, `ownUnits` filters on it,
+   * `headroom` counts against it and the bench is per side. A faction threaded through nine
+   * methods would be nine chances to forget it, and forgetting it in `add` mints a unit for
+   * the wrong army, which is a desync rather than a bug you can see.
+   *
+   * The HUD finds the local one by the name `deployment`; `src/sim/replay.ts` routes a relayed
+   * operation to whichever instance the op's slot owns.
+   */
+  readonly name: string;
   /** Just ahead of the HUD (700), so the panel reads state settled this frame. */
   readonly order = 690;
+
+  constructor(name = 'deployment') {
+    this.name = name;
+  }
 
   /** True while the player is laying out the army and the clock is held. */
   active = false;
@@ -173,6 +191,51 @@ export class DeploymentSystem implements Subsystem {
   /** Re-entrancy depth: `place` calls `remove` and `add`, and `add` calls `place`. */
   private recDepth = 0;
 
+  /**
+   * The relay, in a two-player battle. Set from `main.ts`; null in single player.
+   *
+   * When it is set the five public verbs below **do not perform the operation**. They hand it
+   * over and return, and it arrives back in a turn packet in an order both clients agree on.
+   * The reason is the sharpest hazard in this file, stated in its own docstring on `gotId`:
+   * `add` → `spawnUnit` runs `nextUnitId++` *before* `rng.fork('unit' + id)`, so two players'
+   * deployment operations interleaved differently mint different unit ids, which fork
+   * different RNG streams, which take different pool slots. There is no local-prediction path
+   * that survives that. The cost is that a placement lags by one round trip through the relay
+   * — about a millisecond on this machine, fifty on a real link, against a phase in which the
+   * clock is stopped and nothing is under pressure.
+   */
+  relay: ((ev: Omit<DeployEvent, 't'>) => void) | null = null;
+  /** True while a relayed operation is being performed, so the verbs do not relay it again. */
+  private replaying = false;
+  /**
+   * The other player's deployment phase, in a relayed battle.
+   *
+   * `commitInner` releases the clock, and there are two phases to wait for. Without this the
+   * first player to press BEGIN BATTLE starts the battle for both of them and the second is
+   * still laying out an army while it is being attacked.
+   */
+  peer: DeploymentSystem | null = null;
+
+  /**
+   * Perform an operation that has come back from the relay.
+   *
+   * The flag rather than a separate set of `*Inner` entry points, because the public verbs are
+   * where the quantisation lives — `place` snaps to the int16 grid and dequantises back before
+   * the body runs, so live play lays a unit down on exactly the grid the wire carries. A
+   * relayed op that skipped the public verb would skip that round trip, and
+   * `docs/MULTIPLAYER.md` §3 names recording quantised and applying raw as the commonest real
+   * lockstep bug there is.
+   */
+  runRelayed(body: () => void): void {
+    this.replaying = true;
+    try { body(); } finally { this.replaying = false; }
+  }
+
+  /** True when this verb call has to go to the relay instead of doing anything. */
+  private get diverted(): boolean {
+    return this.relay !== null && !this.replaying && this.recDepth === 0;
+  }
+
   init(ctx: EngineContext): void {
     this.ctx = ctx;
     this.battle = ctx.get<BattleSystem>('battle');
@@ -215,6 +278,7 @@ export class DeploymentSystem implements Subsystem {
    * off on the first tick to a destination it was given before the player moved it.
    */
   commit(): void {
+    if (this.diverted) { this.relay!({ verb: 'commit' }); return; }
     this.note({ verb: 'commit' }, () => this.commitInner());
   }
 
@@ -232,8 +296,12 @@ export class DeploymentSystem implements Subsystem {
     // Whatever is still benched will never be seen again; drop the references so the
     // unit objects and their member arrays can be collected.
     this.bench.length = 0;
-    this.ctx.time.paused = false;
-    this.ctx.time.resync();
+    // In a relayed battle both players hold the clock and the second one to commit releases
+    // it, so neither is attacked while still laying out an army.
+    if (!this.peer?.active) {
+      this.ctx.time.paused = false;
+      this.ctx.time.resync();
+    }
     this.ctx.events.emit('deploymentEnded', { units: this.ownUnits().length });
   }
 
@@ -454,6 +522,14 @@ export class DeploymentSystem implements Subsystem {
     const qz = quantXZ(z);
     const qf = quantAngle(facing);
     const w = width === undefined ? undefined : Math.max(1, Math.round(width));
+    if (this.diverted) {
+      this.relay!({ verb: 'place', unitId, qx, qz, qf, width: w });
+      // True rather than false, and it is not a lie about the outcome — it is a statement that
+      // the gesture was accepted. `lastRefusal` is cleared so nothing flashes a stale reason,
+      // and the unit moves when the relay says it does.
+      this.lastRefusal = '';
+      return true;
+    }
     return this.note(
       { verb: 'place', unitId, qx, qz, qf, width: w },
       () => this.placeInner(unitId, dequantXZ(qx), dequantXZ(qz), dequantAngle(qf), w)
@@ -532,6 +608,10 @@ export class DeploymentSystem implements Subsystem {
 
   /** Adopt a formation and re-stand the men in it, without moving the unit. */
   setFormation(unitId: number, formationId: string): boolean {
+    if (this.diverted) {
+      this.relay!({ verb: 'formation', unitId, formation: formationId });
+      return true;
+    }
     return this.note({ verb: 'formation', unitId, formation: formationId },
       () => this.setFormationInner(unitId, formationId));
   }
@@ -694,6 +774,13 @@ export class DeploymentSystem implements Subsystem {
     const qx = x === undefined ? undefined : quantXZ(x);
     const qz = z === undefined ? undefined : quantXZ(z);
     const qf = facing === undefined ? undefined : quantAngle(facing);
+    if (this.diverted) {
+      this.relay!({ verb: 'add', typeId, qx, qz, qf });
+      // -1 with no refusal: the unit does not exist yet and there is nothing to complain
+      // about. `DeploymentPanel` only flashes when `lastRefusal` says something.
+      this.lastRefusal = '';
+      return -1;
+    }
     return this.note(
       { verb: 'add', typeId, qx, qz, qf },
       () => this.addInner(typeId,
@@ -746,6 +833,7 @@ export class DeploymentSystem implements Subsystem {
    * if a unit of the same type is added again.
    */
   remove(unitId: number): boolean {
+    if (this.diverted) { this.relay!({ verb: 'remove', unitId }); return true; }
     return this.note({ verb: 'remove', unitId }, () => this.removeInner(unitId));
   }
 

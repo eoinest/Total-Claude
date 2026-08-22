@@ -81,8 +81,40 @@ export const FACTION_UI: Record<Faction, FactionUI> = {
   },
 };
 
-/** The side the player commands. Everything selectable belongs to it. */
-export const PLAYER_FACTION = Faction.Rome;
+/**
+ * The side the player commands. Everything selectable belongs to it.
+ *
+ * **`let`, not `const`, and read live at all thirty-one sites.** It was a compile-time
+ * constant, which `docs/MULTIPLAYER.md` §1.10 lists as a thing the shipped code gets wrong in
+ * a way that matters: *"the second player cannot be anything but Rome"*. In a relayed battle
+ * the challenger commands the storm, so the constant has to become a value — and because ES
+ * module bindings are live, changing `const` to `let` and adding one setter makes every
+ * existing `PLAYER_FACTION` read follow it with no other edit anywhere.
+ *
+ * Two rules come with that, and both are enforced by where the setter is called from:
+ *
+ * 1. **Set it once, before the HUD is constructed.** `src/main.ts` does, immediately after the
+ *    relay hands out slots and before `engine.add(new HudSystem(...))`. There is no path that
+ *    changes it mid-battle and there must not be: the selection model, the card bar and the
+ *    results panel all key off it, and a mid-battle change would silently hand the player the
+ *    other army.
+ * 2. **Nothing in `src/sim` may read it.** It is interface state. The simulation learns which
+ *    faction is whose from `DeploymentSystem.playerFaction` and from `installAI`'s `commanded`
+ *    list, both of which are arguments rather than globals. Two clients of a relayed battle
+ *    hold *different* values of this and must run the identical simulation; that is only true
+ *    because it never reaches one.
+ */
+export let PLAYER_FACTION: Faction = Faction.Rome;
+
+/**
+ * Bind the side this client commands. Called once, from `src/main.ts`, before the HUD exists.
+ *
+ * Returns the value it set so a caller can log it, which is the only reason it has a return.
+ */
+export function setPlayerFaction(f: Faction): Faction {
+  PLAYER_FACTION = f;
+  return f;
+}
 
 /**
  * True when the page is being driven by `tools/shoot.mjs` rather than by a player.

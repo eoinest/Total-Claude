@@ -1742,5 +1742,9 @@ export class SelectionController {
     return this.model.unitsLeft[PLAYER_FACTION] > 0;
   }
 
-  static readonly playerFaction: Faction = PLAYER_FACTION;
+  /**
+   * A getter, not a field. `PLAYER_FACTION` is bound at boot from the relay's slot assignment
+   * and a static field initialiser runs when this module is *evaluated*, which is before that.
+   */
+  static get playerFaction(): Faction { return PLAYER_FACTION; }
 }

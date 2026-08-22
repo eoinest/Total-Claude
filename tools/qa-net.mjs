@@ -1,0 +1,1200 @@
+#!/usr/bin/env node
+/**
+ * QA: two clients, one relay, one battle — driven through the real menu with a real mouse.
+ *
+ * Usage: node tools/qa-net.mjs [--port=5937] [--relay=5989] [--json=path] [--shots=dir]
+ *                              [--only=proto,battle,drop,dup,swap,ulp,late,leave,lag,xengine]
+ *                              [--all] [--seconds=70] [--keep] [--xsize=ultra] [--xticks=1500]
+ *
+ * Nine arms by default. `xengine` — two full-scale battles in two browser engines — is opt-in;
+ * see `DEFAULT_ARMS`.
+ *
+ * An unknown flag, or an unknown `--only=` arm, exits 2 rather than quietly running nothing —
+ * `tools/qa-replay.mjs` explains why at length and the reason is that this project has shipped
+ * a gate that could be pointed at nothing and still report success.
+ *
+ * ## What this is for
+ *
+ * `tools/qa-replay.mjs` proves one machine replays its own battle. It is structurally unable to
+ * say anything about two machines, because both of its runs are the same page. This boots two
+ * browser contexts against one relay, drives both through the front door with real mouse
+ * events, has both players lay out an army and fight, and then demands that:
+ *
+ *   - every checkpoint the two clients exchanged agreed, bit for bit, on all four layers;
+ *   - both clients end at the same tick with the same pool hash, `uf64`, `uctl` and survivors;
+ *   - both clients' *merged order logs* are byte-identical, which is the claim that the relay
+ *     delivered one total order and not two;
+ *   - and `BattleFlow.result` is the same battle.
+ *
+ * ## And then it breaks it on purpose, six ways
+ *
+ * A gate that has never gone red is a decoration. `tools/relay.mjs --fault=` corrupts one
+ * client's view of the canonical stream, and each of the four corruptions is a real relay
+ * failure: a lost frame (`drop`), a retransmit that was not idempotent (`dup`), a reordering
+ * across a coalescing proxy (`swap`), and — the one that matters most — a **one-ULP
+ * perturbation of a `UnitGroupState` float64 field** (`ulp`), which is the magnitude
+ * `docs/MULTIPLAYER.md` §1.4 measured for a real libm disagreement. Two more break the session
+ * rather than the stream: a third client arriving mid-battle, and a client vanishing.
+ *
+ * Every one of those arms **fails if the session does not notice**. There is no arm here whose
+ * pass condition is "nothing happened".
+ *
+ * ## Ports
+ *
+ * 5937 for vite and 5985-5999 for the relays. Never 5173. The relay band is deliberately at
+ * the very top of the 5900s because six other agents' vite servers were scattered through the
+ * rest of it, and one of them took a port between two runs of the same arm — which is why
+ * `startRelay` reads the response body rather than trusting a 200, and why the tree-identity
+ * check below reads a string literal out of the bundle before anything is measured.
+ */
+
+import { chromium, firefox } from 'playwright';
+import { spawn } from 'node:child_process';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import process from 'node:process';
+import { bootThroughMenu, ensureServer, waitForServer } from './lib/menu-boot.mjs';
+
+const ROOT = path.resolve(import.meta.dirname, '..');
+const ARMS = ['proto', 'battle', 'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 'lag', 'xengine'];
+/**
+ * `xengine` is opt-in, and that is a judgement rather than an omission.
+ *
+ * It runs two full-scale battles in two different browser engines at once, and Firefox
+ * software-rendering 8,632 soldiers is the most expensive thing in this repository. On a shared
+ * machine — six other agents' Playwright runs had the load average at 144 while this was being
+ * written — it times out on `page.goto`, and **a gate that goes red because the laptop is busy
+ * teaches people to ignore it**. What it measures is cross-engine determinism, which
+ * `tools/qa-determinism.mjs` owns and asserts against pinned hashes; what this file uniquely
+ * owns is the *session*, and the `ulp` arm covers detect-attribute-end with a real one-ULP
+ * fault that costs nothing.
+ *
+ * Run it deliberately, on a quiet machine: `--only=xengine`, or `--all`.
+ */
+const DEFAULT_ARMS = ARMS.filter((a) => a !== 'xengine');
+const FLAGS = ['port', 'relay', 'json', 'shots', 'only', 'seconds', 'keep', 'xsize', 'xticks',
+  'all'];
+
+const args = new Map(process.argv.slice(2).map((a) => {
+  const m = a.match(/^--([^=]+)(?:=(.*))?$/);
+  return m ? [m[1], m[2] ?? 'true'] : [a, 'true'];
+}));
+const bad = [...args.keys()].filter((k) => !FLAGS.includes(k));
+if (bad.length) {
+  console.error(`unknown flag(s): ${bad.map((k) => `--${k}`).join(', ')}`);
+  console.error(`known: ${FLAGS.map((k) => `--${k}`).join(' ')}`);
+  process.exit(2);
+}
+const ONLY = args.get('only') ?? null;
+if (ONLY) {
+  const unknown = ONLY.split(',').filter((a) => !ARMS.includes(a));
+  if (unknown.length) {
+    console.error(`unknown arm(s) in --only: ${unknown.join(', ')}`);
+    console.error(`known arms: ${ARMS.join(', ')}`);
+    process.exit(2);
+  }
+}
+const PORT = Number(args.get('port') ?? 5937);
+const RELAY_PORT = Number(args.get('relay') ?? 5989);
+const SECONDS = Number(args.get('seconds') ?? 70);
+const JSON_OUT = args.get('json') ?? null;
+const SHOT_DIR = args.get('shots') ? path.resolve(ROOT, args.get('shots')) : null;
+const KEEP = args.has('keep');
+/*
+ * The cross-engine arm wants the *big* battle, and separately from the rest.
+ *
+ * The escape `docs/MULTIPLAYER.md` §1.1 measured at t+205.5 is on the 8,632-man field battle,
+ * and the mechanism is a stochastic boundary crossing (§7.2) — so the number of men is the
+ * number of chances for one to happen. A 2,337-man battle ran bit-identically in Chromium and
+ * Firefox to t+300 on the first attempt, which is a real result and is *not* evidence that the
+ * pairing holds at full scale.
+ */
+const XSIZE = args.get('xsize') ?? 'ultra';
+const XTICKS = Number(args.get('xticks') ?? 1500);
+if (!Number.isFinite(SECONDS) || SECONDS < 20) {
+  console.error(`--seconds must be at least 20; got '${args.get('seconds')}'`);
+  process.exit(2);
+}
+const W = 1280;
+const H = 800;
+const ALL = args.has('all');
+const wanted = (n) => (ONLY ? ONLY.split(',').includes(n) : ALL || DEFAULT_ARMS.includes(n));
+
+const results = [];
+const measured = {};
+let failed = 0;
+function record(name, pass, what, changed, note = '') {
+  results.push({ name, pass, what, changed, note });
+  if (!pass) failed++;
+  console.log(`${pass ? '  PASS' : '  FAIL'}  ${name.padEnd(22)} ${what}`);
+  console.log(`        → ${changed}${note ? `  [${note}]` : ''}`);
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---------------------------------------------------------------------------
+// Servers. Everything this starts, this kills — including on the way out of a throw.
+// ---------------------------------------------------------------------------
+
+const relays = [];
+/**
+ * Start a relay and wait for it to answer.
+ *
+ * Its own process per fault arm rather than one relay reconfigured, because a `Room` that has
+ * already refused a pairing or declared a desync stays refused — that is the correct behaviour
+ * and it makes a shared relay a shared fixture between arms. A node process is 40 ms.
+ */
+async function startRelay(port, extra = []) {
+  const p = spawn('node', [path.join(ROOT, 'tools', 'relay.mjs'), `--port=${port}`, ...extra],
+    { cwd: ROOT, stdio: 'ignore' });
+  relays.push(p);
+  /*
+   * Wait for *this relay*, not for "something answering on that port".
+   *
+   * `waitForServer` accepts any 2xx, and a vite dev server answers 200 with `index.html` for
+   * every unknown path — so a port already held by another agent's server passes that check and
+   * the arm then opens WebSockets against a game bundle. Six of those were on the 5900s while
+   * this was being written and one of them took a port between two runs of the same arm. The
+   * body says `relay ok`; nothing else does.
+   */
+  const end = Date.now() + 15000;
+  let ok = false;
+  while (Date.now() < end && !ok) {
+    const body = await fetch(`http://127.0.0.1:${port}/health`)
+      .then((r) => r.text()).catch(() => '');
+    if (body.startsWith('relay ok')) ok = true;
+    else if (body) throw new Error(`port ${port} is answering, but not as a relay: `
+      + `'${body.slice(0, 60).replace(/\s+/g, ' ')}' — somebody else's server has it`);
+    else await sleep(200);
+  }
+  if (!ok) throw new Error(`relay did not start on ${port}`);
+  /*
+   * Each relay stops itself, and there is no blanket "stop them all" inside an arm.
+   *
+   * There was, and it cost two arms. `late` and `leave` reuse the long-running match the
+   * `battle` arm left open, and the four fault arms in between each ended by killing *every*
+   * relay — so the third client found nothing to be refused by and the survivor was never told
+   * its peer had gone. Both arms passed in isolation and failed in the full run, which is the
+   * shape of bug a gate is supposed to have none of.
+   */
+  const stop = () => {
+    const at = relays.indexOf(p);
+    if (at >= 0) relays.splice(at, 1);
+    try { p.kill('SIGTERM'); } catch { /* already gone */ }
+  };
+  return { port, base: `ws://127.0.0.1:${port}`, http: `http://127.0.0.1:${port}`, proc: p, stop };
+}
+const stopRelays = () => { for (const p of relays.splice(0)) { try { p.kill('SIGTERM'); } catch { /* gone */ } } };
+
+const { base, server } = await ensureServer({
+  port: PORT,
+  root: ROOT,
+  cacheDir: path.join(ROOT, '.vite-cache', `qa-net-${PORT}`),
+});
+console.log(`server ${base}${server ? ' (started here)' : ' (already up)'}`);
+/*
+ * Tree identity, before anything is measured.
+ *
+ * `ensureServer` reuses a listener that is already on the port, and with several agents live
+ * that listener may be serving somebody else's branch — `docs/MAP-METHOD.md` §3 records a
+ * determinism pin recorded against another agent's tree from exactly this. `src/net/room.ts`
+ * exists only here, so fetching it off the server under test is a one-request proof that the
+ * server is standing in this worktree.
+ */
+{
+  const probe = await fetch(`${base}/src/net/protocol.ts`).then((r) => r.text()).catch(() => '');
+  // A *string literal*, not a comment. Vite's transform keeps `protocol.ts`'s leading JSDoc and
+  // drops `room.ts`'s, which is the kind of difference a marker must not depend on. The room
+  // code alphabet is a value the module cannot run without.
+  if (!probe.includes('ABCDEFGHJKLMNPQRSTUVWXYZ23456789')) {
+    console.error(`\nThe server on ${PORT} is not serving this worktree — no src/net/protocol.ts.`);
+    console.error('Kill it, or pass --port= for one nobody else is using. Measuring another');
+    console.error("agent's tree is how a pin gets recorded against a branch nobody chose.");
+    if (server) server.kill('SIGTERM');
+    process.exit(2);
+  }
+}
+if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
+
+const browsers = [];
+const launchArgs = ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
+  '--ignore-gpu-blocklist', '--hide-scrollbars'];
+const chrome = await chromium.launch({ args: launchArgs });
+browsers.push(chrome);
+
+function cleanup() {
+  stopRelays();
+  for (const b of browsers.splice(0)) { void b.close().catch(() => { /* already gone */ }); }
+  if (server && !KEEP) server.kill('SIGTERM');
+}
+/*
+ * Both handlers, and the second one is the one that was missing.
+ *
+ * A `throw` inside this file's top-level `await` is an **unhandled rejection**, not an uncaught
+ * exception — so when Firefox timed out on `page.goto`, `cleanup()` never ran and two browsers
+ * and a relay were left holding CPU on a machine that already had six other agents on it. An
+ * agent that starts a server owns killing it, and that has to include the paths where it fails.
+ */
+const die = (e) => { console.error(e); cleanup(); process.exit(1); };
+process.on('uncaughtException', die);
+process.on('unhandledRejection', die);
+
+// ---------------------------------------------------------------------------
+// Page-side readers. Read-only: every order below goes through page.mouse.
+// ---------------------------------------------------------------------------
+
+const INSTALL = () => {
+  const g = window.__game;
+  const ctx = g.engine.context;
+  const V = new (ctx.camera.position.constructor)();
+  window.__proj = (x, y, z) => {
+    V.set(x, y, z).project(ctx.camera);
+    if (V.z > 1) return null;
+    return { x: (V.x * 0.5 + 0.5) * ctx.viewW, y: (-V.y * 0.5 + 0.5) * ctx.viewH };
+  };
+  window.__net = () => (g.net ? {
+    ...g.net.status(),
+    desync: g.net.desync,
+    perturbed: g.net.perturbedUnit,
+    lastCheckpoint: g.net.lastCheckpoint,
+    lat: g.net.latencies(),
+  } : null);
+  window.__tick = () => g.engine.time.tick;
+  window.__rec = () => g.replay.record();
+  window.__flow = () => ctx.tryGet('battleFlow')?.result ?? null;
+  window.__dep = () => {
+    const d = g.deployment;
+    return d ? { active: d.active, committed: d.committed, own: d.ownUnits().length } : null;
+  };
+  window.__bare = () => {
+    const out = [];
+    for (const fy of [0.42, 0.5, 0.58, 0.36]) {
+      for (const fx of [0.3, 0.45, 0.6, 0.7, 0.38]) {
+        const x = Math.round(window.innerWidth * fx);
+        const y = Math.round(window.innerHeight * fy);
+        const el = document.elementFromPoint(x, y);
+        if (el && el.id === 'viewport') out.push({ x, y });
+      }
+    }
+    return out;
+  };
+  /** A regiment of *this client's* faction, projected to the screen, camera parked on it. */
+  window.__unitAt = (i) => {
+    const mine = g.net ? g.net.myFaction : 0;
+    const own = g.battle.units.filter((u) => !u.destroyed && u.faction === mine && u.alive > 0);
+    const u = own[i % Math.max(1, own.length)];
+    if (!u) return null;
+    g.setCamera(u.x, u.z, 0.55, 0);
+    const p = g.battle.pool;
+    let n = 0, sx = 0, sy = 0, sz = 0;
+    for (const k of u.members) {
+      if (p.hp[k] <= 0) continue;
+      n++; sx += p.x[k]; sy += p.y[k]; sz += p.z[k];
+    }
+    if (!n) return null;
+    const q = window.__proj(sx / n, sy / n + 0.5, sz / n);
+    return q ? { id: u.id, ...q } : null;
+  };
+  window.__selection = () => ctx.tryGet('hud')?.controller.model.selection.slice() ?? [];
+};
+
+const newPage = async (browser) => {
+  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  const errs = [];
+  page.on('pageerror', (e) => errs.push(`pageerror: ${e.message}`));
+  page.on('console', (m) => { if (m.type() === 'error') errs.push(`console.error: ${m.text()}`); });
+  page.__errs = errs;
+  return page;
+};
+const shot = async (page, name) => {
+  if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, `${name}.png`) });
+};
+
+// ---------------------------------------------------------------------------
+// Booting a match
+// ---------------------------------------------------------------------------
+
+let roomSeq = 0;
+const nextRoom = () => `QA${String(++roomSeq).padStart(3, '0')}`.slice(0, 5)
+  .replace(/0/g, 'Q').replace(/1/g, 'R');
+
+/**
+ * Two clients in one room, both booted the way a player boots.
+ *
+ * The host goes through the front door and the setup sheet with real clicks — `bootThroughMenu`
+ * is the same driver `tools/qa-replay.mjs` and the playability rig use, so there is one menu
+ * sequence in this repository rather than three that drift. The challenger has no menu: it is
+ * given the host's battle over the wire, which is the whole point of `setup` arriving before
+ * either client has an army.
+ */
+async function bootMatch(relay, {
+  room = nextRoom(), deploy = true, guestBrowser = chrome, shots = null, size = 'small',
+  autoplay = 0,
+} = {}) {
+  const q = `net=${encodeURIComponent(relay.base)}&room=${room}`
+    + `&autoplay=${autoplay}&deploy=${deploy ? 1 : 0}`;
+  const host = await newPage(chrome);
+  await bootThroughMenu(host, {
+    base,
+    map: 'campus-martius',
+    scenario: 'field',
+    tier: 'high',
+    size,
+    query: q,
+    onSetup: shots ? (p) => shot(p, `${shots}-01-setup`) : undefined,
+  });
+  const guest = await newPage(guestBrowser);
+  await guest.goto(`${base}/?${q}&host=0`, { waitUntil: 'domcontentloaded' });
+  await guest.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
+  await host.evaluate(INSTALL);
+  await guest.evaluate(INSTALL);
+  // Both sides in the same phase before anybody clicks anything.
+  for (const p of [host, guest]) {
+    await p.waitForFunction(
+      () => ['deploy', 'battle'].includes(window.__net()?.phase),
+      null,
+      { timeout: 90000 }
+    );
+  }
+  return { host, guest, room };
+}
+
+/** Lay out an army with the plaque and the mouse, then press BEGIN BATTLE. */
+async function deployWith(page, tag) {
+  const d = await page.evaluate(() => window.__dep());
+  if (!d?.active) return [];
+  const done = [];
+  await shot(page, `${tag}-02-deploy`);
+  /*
+   * Wait for the plaque rather than clicking straight at it.
+   *
+   * The panel is attached on `deploymentBegan`, which fires inside `boot()` — but the HUD
+   * root fades in over two frames and `bootThroughMenu` returns on `window.__game.ready`,
+   * which is the frame before that. A bare `page.click` on a page whose plaque has not been
+   * attached yet reports "waiting for locator" thirty seconds later and says nothing about
+   * which of the two clients it was.
+   */
+  try {
+    await page.waitForSelector('.dep-add', { timeout: 30000 });
+  } catch {
+    const why = await page.evaluate(() => ({
+      hud: document.querySelector('.hud')?.className ?? '(no .hud)',
+      dep: window.__dep(),
+      net: window.__net(),
+      panels: Array.from(document.querySelectorAll('.hud > *')).map((e) => e.className),
+    }));
+    throw new Error(`${tag}: no deployment plaque — ${JSON.stringify(why)}`);
+  }
+  await page.click('.dep-add');
+  await sleep(220);
+  const rows = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.dep-row')).map((r) => r.dataset.unit));
+  if (rows.length) {
+    await page.click(`.dep-row[data-unit="${rows[0]}"] [data-d="1"]`);
+    done.push(`palette +1 ${rows[0]}`);
+    await sleep(320);
+  }
+  const cards = await page.$$('.cardbar .card:not(.foe)');
+  if (cards.length) {
+    const box = await cards[0].boundingBox();
+    if (box) { await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); await sleep(260); }
+  }
+  const spots = await page.evaluate(() => window.__bare());
+  if (spots.length >= 2) {
+    await page.mouse.move(spots[0].x, spots[0].y);
+    await sleep(140);
+    await page.mouse.down({ button: 'right' });
+    await page.mouse.move(spots[1].x, spots[1].y, { steps: 8 });
+    await sleep(200);
+    await page.mouse.up({ button: 'right' });
+    await sleep(420);
+    done.push('right-drag place');
+  }
+  await page.click('.dep-begin');
+  done.push('BEGIN BATTLE');
+  await sleep(400);
+  return done;
+}
+
+/** One burst of orders: select a regiment, move it, change its gait. */
+async function burst(page, i) {
+  let u = null;
+  for (let k = 0; k < 4 && !u; k++) {
+    await page.evaluate((n) => window.__unitAt(n), i * 3 + k);
+    await sleep(200);
+    const qq = await page.evaluate((n) => window.__unitAt(n), i * 3 + k);
+    if (qq && qq.x > 40 && qq.x < W - 40 && qq.y > 180 && qq.y < H - 220) u = qq;
+  }
+  if (!u) return [];
+  const acts = [];
+  await page.mouse.move(u.x, u.y);
+  await sleep(160);
+  await page.mouse.click(u.x, u.y);
+  await sleep(240);
+  const sel = await page.evaluate(() => window.__selection());
+  if (!sel.length) return acts;
+  acts.push(`select ${sel.join(',')}`);
+  const spots = await page.evaluate(() => window.__bare());
+  if (spots.length) {
+    const p = spots[(i + 1) % spots.length];
+    await page.mouse.move(p.x, p.y);
+    await sleep(110);
+    await page.mouse.down({ button: 'right' });
+    await sleep(190);
+    await page.mouse.up({ button: 'right' });
+    await sleep(260);
+    acts.push('right-click move');
+  }
+  await page.keyboard.press('KeyR');
+  await sleep(180);
+  acts.push('R gait');
+  return acts;
+}
+
+/**
+ * Two move orders on the same regiment, fast enough to land in one 100 ms turn.
+ *
+ * The `swap` arm needs exactly this and nothing else will do: `applyOrder` mutates only the
+ * units an order names, so two orders on *different* regiments commute and exchanging them
+ * proves nothing. §4.1's claim is about two orders touching one unit, and two right-clicks a
+ * few tens of milliseconds apart on one selection is what a player does when they change their
+ * mind — which is also, not coincidentally, the gesture that a reordering breaks.
+ */
+async function doubleOrder(page, i) {
+  let u = null;
+  for (let k = 0; k < 4 && !u; k++) {
+    await page.evaluate((n) => window.__unitAt(n), i * 2 + k);
+    await sleep(200);
+    const qq = await page.evaluate((n) => window.__unitAt(n), i * 2 + k);
+    if (qq && qq.x > 40 && qq.x < W - 40 && qq.y > 180 && qq.y < H - 220) u = qq;
+  }
+  if (!u) return false;
+  await page.mouse.click(u.x, u.y);
+  await sleep(240);
+  const sel = await page.evaluate(() => window.__selection());
+  if (!sel.length) return false;
+  const spots = await page.evaluate(() => window.__bare());
+  if (spots.length < 2) return false;
+  /*
+   * Three, not two, and 25 ms apart.
+   *
+   * The relay closes a turn every 100 ms, and two clicks straddling a boundary land in two
+   * different turns — at which point there is no pair in one packet for the swap to exchange
+   * and the arm passes by never having fired. Three clicks inside 75 ms cannot all straddle
+   * one boundary, so at least two of them share a turn whatever the phase of the relay's clock.
+   */
+  for (const p of [spots[0], spots[1], spots[0]]) {
+    await page.mouse.move(p.x, p.y);
+    await page.mouse.down({ button: 'right' });
+    await sleep(25);
+    await page.mouse.up({ button: 'right' });
+    await sleep(25);
+  }
+  return true;
+}
+
+/** Wait until both clients sit on the same tick, or the session ends. Never longer than `ms`. */
+async function settleTogether(host, guest, ms = 40000) {
+  const t0 = Date.now();
+  let last = [-1, -2];
+  while (Date.now() - t0 < ms) {
+    const a = await host.evaluate(() => window.__tick());
+    const b = await guest.evaluate(() => window.__tick());
+    const na = await host.evaluate(() => window.__net());
+    if (a === b && a === last[0] && b === last[1]) return { tick: a, ended: na?.ended ?? '' };
+    if (na?.ended) {
+      // An ended session stops moving; one more read confirms it.
+      await sleep(400);
+      const a2 = await host.evaluate(() => window.__tick());
+      const b2 = await guest.evaluate(() => window.__tick());
+      return { tick: Math.min(a2, b2), ended: na.ended, apart: a2 !== b2 };
+    }
+    last = [a, b];
+    await sleep(350);
+  }
+  const a = await host.evaluate(() => window.__tick());
+  const b = await guest.evaluate(() => window.__tick());
+  return { tick: Math.min(a, b), ended: '', timedOut: true, apart: a !== b };
+}
+
+/** Both clients' final state, for comparison. */
+async function readBoth(host, guest) {
+  const rd = async (p) => ({
+    net: await p.evaluate(() => window.__net()),
+    tick: await p.evaluate(() => window.__tick()),
+    hashes: await p.evaluate(() => window.__game.hashes()),
+    rec: await p.evaluate(() => window.__rec()),
+    flow: await p.evaluate(() => window.__flow()),
+    errs: p.__errs.slice(),
+  });
+  return { a: await rd(host), b: await rd(guest) };
+}
+
+/** First event that differs between two merged order logs, spelled out. */
+function logDiff(a, b) {
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const x = JSON.stringify(a[i] ?? null);
+    const y = JSON.stringify(b[i] ?? null);
+    if (x !== y) return `event ${i}: host ${x} vs guest ${y}`;
+  }
+  return null;
+}
+
+const relayStatus = async (relay) =>
+  fetch(`${relay.http}/status`).then((r) => r.json()).catch(() => null);
+
+// ---------------------------------------------------------------------------
+// Arm: the protocol, headless, with two synthetic clients
+// ---------------------------------------------------------------------------
+
+if (wanted('proto')) {
+  console.log('\n=== the room state machine, over a real socket ===');
+  const relay = await startRelay(5991);
+  const open = (room, want) => new Promise((ok, no) => {
+    const ws = new WebSocket(`${relay.base}/room/${room}?want=${want}&v=1`);
+    ws.log = [];
+    ws.onmessage = (e) => ws.log.push(JSON.parse(e.data));
+    ws.onopen = () => ok(ws);
+    ws.onerror = () => no(new Error('socket error'));
+    setTimeout(() => no(new Error('open timeout')), 5000);
+  });
+  const waitFor = (ws, k, ms = 5000) => new Promise((ok, no) => {
+    const t0 = Date.now();
+    const iv = setInterval(() => {
+      const m = ws.log.find((x) => x.k === k);
+      if (m) { clearInterval(iv); ok(m); }
+      else if (Date.now() - t0 > ms) { clearInterval(iv); no(new Error(`no ${k}`)); }
+    }, 10);
+  });
+  const put = (ws, m) => ws.send(JSON.stringify(m));
+  const print = (over = {}) => ({
+    cfgKey: '{"map":"pydna"}', quality: 'high', unitScale: 1, count0: 100,
+    hash: 'aaaa1111', uf64: 'bbbb2222', uctl: 'cccc3333',
+    libm: 'deadbeef', ua: 'Mozilla/5.0 Chrome/151.0.0.0', deployPhase: false, ...over,
+  });
+
+  const A = await open('AQAQA', 'host');
+  await waitFor(A, 'welcome');
+  put(A, { k: 'setup', cfg: { map: 'pydna' }, deployPhase: false });
+  const B = await open('AQAQA', 'join');
+  const wb = await waitFor(B, 'welcome');
+  const cfgMsg = await waitFor(B, 'config');
+  record('proto-slots', A.log[0].slot === 0 && wb.slot === 1 && !!cfgMsg.cfg,
+    'the host takes slot 0 and the challenger is handed the battle before it loads one',
+    `slots ${A.log[0].slot}/${wb.slot}, config ${JSON.stringify(cfgMsg.cfg)}`,
+    'want decides the slot, not arrival order: slot 0 is a side, not a queue position');
+
+  put(A, { k: 'ready', print: print(), cfg: { map: 'pydna' }, factions: [0, 1] });
+  put(B, { k: 'ready', print: print(), cfg: { map: 'pydna' }, factions: [0, 1] });
+  await waitFor(A, 'start');
+  put(B, { k: 'ops', ev: [['B1']] });
+  put(A, { k: 'ops', ev: [['A1']] });
+  put(A, { k: 'ops', ev: [['A2']] });
+  await sleep(800);
+  const turnsA = A.log.filter((m) => m.k === 'turn' && m.ops.length);
+  const turnsB = B.log.filter((m) => m.k === 'turn' && m.ops.length);
+  const flat = turnsA.flatMap((t) => t.ops.map((o) => `${o.s}:${o.e[0]}`)).join(',');
+  record('proto-order', flat === '0:A1,0:A2,1:B1',
+    'ops arriving out of order come back stamped (turn, slot, seq)',
+    `guest sent first; the packet reads ${flat}`,
+    'applyOrder mutates as it iterates, so sequence is the battle — §4.1');
+  record('proto-same-packet',
+    JSON.stringify(turnsA.map((t) => [t.n, t.t, t.ops]))
+      === JSON.stringify(turnsB.map((t) => [t.n, t.t, t.ops])),
+    'and both clients get the identical packet, execution tick included',
+    `${turnsA.length} non-empty turn(s), first at n=${turnsA[0]?.n} t=${turnsA[0]?.t}`);
+
+  put(A, { k: 'hash', tick: 30, hash: 'h', uf64: 'u', uctl: 'c', alive: 9 });
+  put(B, { k: 'hash', tick: 30, hash: 'h', uf64: 'u', uctl: 'c', alive: 9 });
+  await sleep(150);
+  put(A, { k: 'hash', tick: 60, hash: 'h', uf64: 'u2', uctl: 'c', alive: 9 });
+  put(B, { k: 'hash', tick: 60, hash: 'h', uf64: 'uX', uctl: 'c', alive: 9 });
+  const ds = await waitFor(A, 'desync');
+  await waitFor(A, 'wantProbe');
+  put(A, { k: 'probe', tick: 60, units: [[1, 'p'], [2, 'q']] });
+  put(B, { k: 'probe', tick: 60, units: [[1, 'p'], [2, 'r']] });
+  const at = await waitFor(A, 'attrib');
+  const en = await waitFor(A, 'end');
+  record('proto-desync',
+    ds.layer === 'uf64' && ds.tick === 60 && ds.lastAgreedTick === 30
+      && JSON.stringify(at.units) === '[2]' && en.why === 'desync' && en.atTick === 30,
+    'a hash that disagrees is detected on uf64, attributed to a unit, and ends the match',
+    `${ds.layer}@${ds.tick}, last agreed ${ds.lastAgreedTick}, `
+      + `units ${JSON.stringify(at.units)}, end ${en.why}@${en.atTick}`,
+    'uf64 first because it moves thousands of ticks before the float32 pool hash does');
+  A.close(); B.close();
+
+  /*
+   * Two Chromiums on different libm generations, under the strict posture.
+   *
+   * `--unknown=refuse` rather than the default, because the default flipped to `allow` once the
+   * quantisation firewall made every measured pairing hold for a whole battle: refusing a
+   * pairing that would have worked became the likelier and the worse mistake. What still has to
+   * work is the *mechanism*, and both postures are checked here — strict refuses by name, and
+   * the default plays and says the pairing is unlisted.
+   */
+  const strict = await startRelay(5990, ['--unknown=refuse', '--quiet']);
+  const openOn = (r, room, want) => new Promise((ok, no) => {
+    const ws = new WebSocket(`${r.base}/room/${room}?want=${want}&v=1`);
+    ws.log = [];
+    ws.onmessage = (e) => ws.log.push(JSON.parse(e.data));
+    ws.onopen = () => ok(ws);
+    ws.onerror = () => no(new Error('socket error'));
+    setTimeout(() => no(new Error('open timeout')), 5000);
+  });
+  const C = await openOn(strict, 'BQBQB', 'host');
+  await waitFor(C, 'welcome');
+  put(C, { k: 'setup', cfg: { map: 'pydna' }, deployPhase: false });
+  const D = await openOn(strict, 'BQBQB', 'join');
+  await waitFor(D, 'welcome');
+  put(C, { k: 'ready', print: print(), cfg: { map: 'pydna' }, factions: [0, 1] });
+  put(D, { k: 'ready', print: print({ libm: '0badf00d' }), cfg: { map: 'pydna' }, factions: [0, 1] });
+  const ref = await waitFor(C, 'refuse');
+  record('proto-pair-refused', ref.why === 'libm' && ref.detail.includes('149'),
+    'under --unknown=refuse, two Chromium generations are refused by name before a tick runs',
+    ref.detail.slice(0, 150),
+    'a generation is a fingerprint class, not a version range: 143/147/149 are identical on '
+      + 'all 14 functions and 149 to 151 changes twelve of them');
+  C.close(); D.close();
+  strict.stop();
+
+  const P = await open('PQPQP', 'host');
+  await waitFor(P, 'welcome');
+  put(P, { k: 'setup', cfg: { map: 'pydna' }, deployPhase: false });
+  const Q = await open('PQPQP', 'join');
+  await waitFor(Q, 'welcome');
+  put(P, { k: 'ready', print: print(), cfg: { map: 'pydna' }, factions: [0, 1] });
+  put(Q, { k: 'ready', print: print({ libm: '0badf00d' }), cfg: { map: 'pydna' }, factions: [0, 1] });
+  const stU = await waitFor(P, 'start');
+  record('proto-pair-unlisted', stU.willFork === true && stU.pairNote.includes('unlisted'),
+    'and under the default it plays, having said that nothing is known about the pairing',
+    stU.pairNote.slice(0, 130),
+    'refusing a pairing that would have worked is now the likelier and the worse mistake');
+  P.close(); Q.close();
+
+  const E = await open('CQCQC', 'host');
+  await waitFor(E, 'welcome');
+  put(E, { k: 'setup', cfg: { map: 'pydna' }, deployPhase: false });
+  const F = await open('CQCQC', 'join');
+  await waitFor(F, 'welcome');
+  put(E, { k: 'ready', print: print(), cfg: { map: 'pydna' }, factions: [0, 1] });
+  put(F, {
+    k: 'ready',
+    print: print({ libm: 'feedface', ua: 'Mozilla/5.0 Firefox/153.0' }),
+    cfg: { map: 'pydna' }, factions: [0, 1],
+  });
+  const st = await waitFor(E, 'start');
+  record('proto-pair-allowed', st.willFork === false && st.pairNote.includes('t+400'),
+    'chromium against firefox is a listed pairing, with its measurement attached',
+    st.pairNote.slice(0, 150),
+    'a policy table, not a flag: this answer moved three times on the day it was written');
+  E.close(); F.close();
+
+  const G = await open('DQDQD', 'host');
+  await waitFor(G, 'welcome');
+  put(G, { k: 'setup', cfg: { map: 'pydna' }, deployPhase: false });
+  const Hs = await open('DQDQD', 'join');
+  await waitFor(Hs, 'welcome');
+  put(G, { k: 'ready', print: print(), cfg: { map: 'pydna' }, factions: [0, 1] });
+  put(Hs, { k: 'ready', print: print(), cfg: { map: 'pydna' }, factions: [0, 1] });
+  await waitFor(G, 'start');
+  Hs.close();
+  const end2 = await waitFor(G, 'end');
+  record('proto-peer-left', end2.why === 'peerLeft',
+    'a socket that goes away ends the match at a stated tick rather than hanging',
+    end2.detail.slice(0, 120));
+  G.close();
+  relay.stop();
+}
+
+// ---------------------------------------------------------------------------
+// Arm: the real thing
+// ---------------------------------------------------------------------------
+
+let mainMatch = null;
+if (wanted('battle')) {
+  console.log('\n=== two clients, one battle, real menu, real mouse ===');
+  const relay = await startRelay(RELAY_PORT);
+  const { host, guest, room } = await bootMatch(relay, { shots: 'net' });
+  const n0 = await host.evaluate(() => window.__net());
+  const n1 = await guest.evaluate(() => window.__net());
+  measured.factions = { host: n0.myFaction, guest: n1.myFaction, slots: [n0.slot, n1.slot] };
+  record('two-factions', n0.myFaction !== n1.myFaction && n0.slot === 0 && n1.slot === 1,
+    'the two clients command different armies',
+    `slot 0 commands faction ${n0.myFaction}, slot 1 commands faction ${n1.myFaction}`,
+    'PLAYER_FACTION was a compile-time constant — §1.10, "the second player cannot be '
+      + 'anything but Rome"');
+
+  const gestures = { host: await deployWith(host, 'net-host'), guest: await deployWith(guest, 'net-guest') };
+  await sleep(1200);
+  const phase = await host.evaluate(() => window.__net().phase);
+  const dh = await host.evaluate(() => window.__dep());
+  const dg = await guest.evaluate(() => window.__dep());
+  record('two-deployments', phase === 'battle' && dh?.committed === true && dg?.committed === true,
+    'both players laid out an army and the clock started once both had committed',
+    `phase '${phase}'; host ${dh?.own} units committed=${dh?.committed}, `
+      + `guest ${dg?.own} units committed=${dg?.committed}`,
+    'deployment.add mints unit ids before forking the RNG, so both clients apply one '
+      + 'canonical sequence of operations — §4.1');
+
+  const bursts = Math.max(3, Math.round(SECONDS / 18));
+  for (let i = 0; i < bursts; i++) {
+    gestures.host.push(...await burst(host, i));
+    gestures.guest.push(...await burst(guest, i + 1));
+    await sleep(1600);
+  }
+  await shot(host, 'net-03-host');
+  await shot(guest, 'net-04-guest');
+  // Let it run to the length asked for, then let both clients settle on one tick.
+  const target = Math.round(SECONDS * 30);
+  const t0 = Date.now();
+  while (Date.now() - t0 < SECONDS * 1200) {
+    const t = await host.evaluate(() => window.__tick());
+    if (t >= target) break;
+    await sleep(700);
+  }
+  const settled = await settleTogether(host, guest);
+  const { a, b } = await readBoth(host, guest);
+  const rs = await relayStatus(relay);
+  measured.battle = {
+    ticks: settled.tick, hostTick: a.tick, guestTick: b.tick,
+    relay: rs?.rooms?.[0] ?? null,
+    gestures, hostStatus: a.net, guestStatus: b.net,
+    hashes: { host: a.hashes, guest: b.hashes },
+  };
+
+  const sameHash = a.tick === b.tick && a.hashes.hash === b.hashes.hash
+    && a.hashes.uf64 === b.hashes.uf64 && a.hashes.uctl === b.hashes.uctl
+    && a.hashes.alive === b.hashes.alive;
+  record('same-battle', sameHash,
+    'both clients are at the same tick with the same state, bit for bit',
+    a.tick === b.tick
+      ? `tick ${a.tick}: pool ${a.hashes.hash}/${b.hashes.hash}, uf64 ${a.hashes.uf64}/${b.hashes.uf64}, `
+        + `uctl ${a.hashes.uctl}/${b.hashes.uctl}, alive ${a.hashes.alive}/${b.hashes.alive}`
+      : `they stopped at different ticks: ${a.tick} and ${b.tick}`,
+    `${a.hashes.count} men`);
+
+  const agreed = rs?.rooms?.[0]?.lastAgreedTick ?? -1;
+  record('checkpoints-agreed', agreed >= Math.min(a.tick, b.tick) - 60 && agreed > 0
+    && !a.net.desync && !b.net.desync,
+    'every checkpoint the two exchanged agreed, all the way to the end',
+    `the relay's last agreed tick is ${agreed} against a final tick of ${a.tick}`,
+    'one checkpoint a second on four layers, uf64 first');
+
+  const ld = logDiff(a.rec.events, b.rec.events);
+  record('one-order-log', ld === null && a.rec.events.length > 2,
+    'both clients hold the identical merged order log — one total order, not two',
+    ld ?? `${a.rec.events.length} events, byte-identical on both clients`,
+    'this is the claim the relay exists to make');
+
+  record('same-result', JSON.stringify(a.flow) === JSON.stringify(b.flow),
+    'and the same verdict',
+    a.flow ? `${a.flow.reason}, victor ${a.flow.victor}` : 'battle still running on both');
+
+  const lat = [...(a.net.lat ?? []), ...(b.net.lat ?? [])];
+  const mean = (xs) => (xs.length ? xs.reduce((p, c) => p + c, 0) / xs.length : 0);
+  measured.inputDelay = {
+    samples: lat.length,
+    meanRttMs: +mean(lat.map((l) => l.rttMs)).toFixed(1),
+    meanDelayTicks: +mean(lat.map((l) => l.delayTicks)).toFixed(2),
+    maxDelayTicks: lat.length ? Math.max(...lat.map((l) => l.delayTicks)) : 0,
+    stalls: [a.net.stalls, b.net.stalls],
+    stalledMs: [a.net.stalledMs, b.net.stalledMs],
+  };
+  /*
+   * The delay has a floor as well as a ceiling, and the floor is the interesting assertion.
+   *
+   * Two turns of scheduled delay is six ticks, and an op lands in `max(turn + 1, turn + 2)` of
+   * a turn counter that has already advanced past the one it was sent during — so 3 to 6 ticks
+   * is the whole legal range. **Anything below 3 would mean an order reached the simulation
+   * without going through the relay**, which is the one failure this design cannot survive and
+   * the one a passing hash comparison would not necessarily catch: a locally-applied order on
+   * both clients in the same frame looks identical until the frames stop lining up.
+   */
+  record('input-delay', lat.length >= 3
+    && measured.inputDelay.meanDelayTicks >= 3 && measured.inputDelay.maxDelayTicks <= 12,
+    'every order took the relay\'s full scheduled delay and no order skipped it',
+    `${lat.length} battle orders: mean ${measured.inputDelay.meanDelayTicks} ticks `
+      + `(${(measured.inputDelay.meanDelayTicks * 33.3).toFixed(0)} ms), `
+      + `max ${measured.inputDelay.maxDelayTicks} ticks, `
+      + `mean round trip ${measured.inputDelay.meanRttMs} ms`,
+    'the floor is what matters: 3 ticks is the next scheduled turn, so under 3 means an '
+      + 'order reached the simulation without going through the relay. The ceiling is soft — an '
+      + 'op arriving after a turn boundary lands a turn later — so this refuses above 12.');
+
+  record('battle-console', a.errs.length === 0 && b.errs.length === 0,
+    'neither page raised a console error',
+    [...a.errs, ...b.errs].slice(0, 3).join(' ; ') || 'clean');
+
+  mainMatch = { relay, host, guest, room };
+  if (!wanted('late') && !wanted('leave')) {
+    await host.close(); await guest.close(); relay.stop(); mainMatch = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Arms that break it on purpose. Each fails if the session does NOT notice.
+// ---------------------------------------------------------------------------
+
+/**
+ * Run a short match with a fault injected and report what the session did about it.
+ *
+ * The fault fires from battle turn 30 (about three seconds in), which is late enough that both
+ * clients are past the deployment phase and early enough that the arm is quick.
+ */
+async function faultArm(name, kind, port, what, why, opts = {}) {
+  console.log(`\n=== breaking it on purpose: ${what} ===`);
+  const relay = await startRelay(port, [
+    `--fault=${kind}`, '--fault-slot=1', '--quiet',
+    `--fault-from=${opts.fromTurn ?? 20}`,
+    `--fault-phase=${opts.phase ?? 'battle'}`,
+  ]);
+  const { host, guest } = await bootMatch(relay);
+  await deployWith(host, `${name}-h`);
+  await deployWith(guest, `${name}-g`);
+  await sleep(1200);
+  // Orders, so the drop/dup/swap arms have something to corrupt. Two in one burst from one
+  // client, so `swap` has a pair to exchange that touches the same regiments.
+  /*
+   * Keep issuing orders until the fault has bitten, or until the rounds run out.
+   *
+   * The corruption is armed but only fires on a turn it can actually corrupt — `swap` needs two
+   * orders from one player inside one 100 ms turn, and real mouse input does not guarantee that
+   * on any particular attempt. Polling between rounds rather than after them means a run that
+   * needs six attempts is slower than one that needs one, and neither is a flake.
+   */
+  let seen = null;
+  const rounds = opts.rounds ?? (opts.pairs ? 8 : 4);
+  for (let i = 0; i < rounds && !seen; i++) {
+    if (opts.pairs) { await doubleOrder(host, i); await doubleOrder(guest, i + 1); }
+    else { await burst(host, i); await burst(guest, i + 2); }
+    for (let k = 0; k < 4 && !seen; k++) {
+      const n = await host.evaluate(() => window.__net());
+      if (n?.desync || n?.ended) seen = n;
+      else await sleep(350);
+    }
+  }
+  const t0 = Date.now();
+  while (Date.now() - t0 < 30000 && !seen) {
+    const n = await host.evaluate(() => window.__net());
+    if (n?.desync || n?.ended) { seen = n; break; }
+    await sleep(400);
+  }
+  const ng = await guest.evaluate(() => window.__net());
+  const rs = await relayStatus(relay);
+  const d = seen?.desync ?? null;
+  measured[name] = {
+    detected: !!d, ended: seen?.ended ?? '', guestEnded: ng?.ended ?? '',
+    desync: d, relay: rs?.rooms?.[0] ?? null,
+    perturbed: [seen?.perturbed ?? -1, ng?.perturbed ?? -1],
+  };
+  record(name, !!d && d.tick >= 0,
+    what,
+    d ? `caught at tick ${d.tick} on ${d.layer} (${d.mine} against ${d.theirs}); `
+      + `last agreed tick ${d.lastAgreedTick}; ${d.note}`
+      : 'NOT DETECTED — the two clients diverged and the session said nothing',
+    why);
+  if (d) {
+    record(`${name}-both`, (seen?.ended ?? '') === 'desync' && (ng?.ended ?? '') === 'desync',
+      'and both clients stopped, rather than one of them playing on alone',
+      `host ended '${seen?.ended}', guest ended '${ng?.ended}'`);
+  }
+  await host.close(); await guest.close();
+  relay.stop();
+  return d;
+}
+
+if (wanted('drop')) {
+  await faultArm('dropped-order', 'drop', 5992,
+    'one order dropped from one client\'s turn packet',
+    'a lost frame. The client that kept it fights a different battle from the one that did not');
+}
+if (wanted('dup')) {
+  await faultArm('duplicated-order', 'dup', 5993,
+    'one deployment operation delivered twice to one client',
+    'a retransmit, against the sharpest hazard in the design: deployment.add runs '
+      + 'nextUnitId++ before rng.fork(\'unit\' + id), so one extra add on one client mints a '
+      + 'regiment the other has not got and shifts every unit id after it',
+    { phase: 'deploy', fromTurn: 0 });
+}
+if (wanted('swap')) {
+  await faultArm('reordered-pair', 'swap', 5994,
+    'two orders in one turn delivered in the opposite sequence to one client',
+    'the total-order claim itself: §4.1 says two orders touching one unit in a different '
+      + 'sequence are a different battle, and this is the arm that shows it',
+    { pairs: true });
+}
+if (wanted('ulp')) {
+  const d = await faultArm('one-ulp', 'ulp', 5995,
+    'one UnitGroupState float64 field moved by a single ULP on one client',
+    'the magnitude §1.4 measured for a real libm disagreement. Nothing about the order '
+      + 'stream is wrong here — the arithmetic is');
+  if (d) {
+    record('one-ulp-layer', d.layer === 'uf64',
+      'and it is caught on the float64 unit layer, which is why that layer is the detector',
+      `caught on '${d.layer}' at tick ${d.tick}`,
+      'the float32 pool has a quantisation firewall with ~29 bits of headroom; '
+        + 'UnitGroupState has none');
+    record('one-ulp-attributed', d.units.length >= 1 && d.units.length <= 4,
+      'and attributed to the regiment it happened to, not to the whole field',
+      `${d.units.length} unit(s): ${d.units.join(', ')} — ${d.note}`,
+      'per-unit digests are hashed from a fresh state each, so a one-unit fault names one unit');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Session-level failures
+// ---------------------------------------------------------------------------
+
+if (wanted('late')) {
+  console.log('\n=== a third client arrives mid-battle ===');
+  const relay = mainMatch?.relay ?? await startRelay(5996);
+  const m = mainMatch ?? await bootMatch(relay);
+  if (!mainMatch) { await deployWith(m.host, 'late-h'); await deployWith(m.guest, 'late-g'); await sleep(1500); }
+  const room = m.room;
+  const said = await new Promise((ok) => {
+    const ws = new WebSocket(`${relay.base}/room/${room}?want=join&v=1`);
+    let got = null;
+    ws.onmessage = (e) => { got = JSON.parse(e.data); };
+    ws.onclose = () => ok(got);
+    ws.onerror = () => ok(got);
+    setTimeout(() => { try { ws.close(); } catch { /* gone */ } ok(got); }, 4000);
+  });
+  measured.late = said;
+  record('late-join-refused', !!said && said.k === 'refuse',
+    'a third client is refused by name, and told which kind of refusal it is',
+    said ? `${said.why}: ${said.detail}` : 'NOT REFUSED — it was let into a live battle',
+    '§4.5 refuses reconnection into a live battle; the refusal has to be legible');
+}
+
+if (wanted('leave')) {
+  console.log('\n=== one client disappears ===');
+  const relay = mainMatch?.relay ?? await startRelay(5997);
+  const m = mainMatch ?? await bootMatch(relay);
+  if (!mainMatch) { await deployWith(m.host, 'leave-h'); await deployWith(m.guest, 'leave-g'); await sleep(1500); }
+  const before = await m.host.evaluate(() => window.__net());
+  await m.guest.close();
+  let after = null;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 20000) {
+    after = await m.host.evaluate(() => window.__net());
+    if (after?.ended) break;
+    await sleep(300);
+  }
+  const stopped = await m.host.evaluate(() => window.__tick());
+  await sleep(1200);
+  const still = await m.host.evaluate(() => window.__tick());
+  measured.leave = { before: before?.phase, ended: after?.ended, message: after?.message, stopped, still };
+  record('peer-left', after?.ended === 'peerLeft',
+    'the surviving client is told, by name, at a stated tick',
+    after?.ended ? `${after.ended}: ${after.message}` : 'the survivor was never told anything',
+    'a lockstep client with no peer looks exactly like a frozen game unless something says so');
+  record('peer-left-halts', still === stopped,
+    'and it stops rather than running on into a battle nobody else is in',
+    `tick ${stopped} then ${still} a second later`);
+  await m.host.close();
+  mainMatch = null;
+  relay.stop();
+}
+
+// ---------------------------------------------------------------------------
+// Arm: what the input delay costs at a realistic latency
+// ---------------------------------------------------------------------------
+
+if (wanted('lag')) {
+  console.log('\n=== what the delay costs at a realistic round trip ===');
+  const rows = [];
+  for (const [row, oneWay] of [0, 25, 60].entries()) {
+    const relay = await startRelay(5985 + row, [`--lag=${oneWay}`, '--quiet']);
+    const { host, guest } = await bootMatch(relay);
+    await deployWith(host, `lag${oneWay}-h`);
+    await deployWith(guest, `lag${oneWay}-g`);
+    await sleep(1200);
+    for (let i = 0; i < 3; i++) { await burst(host, i); await sleep(1200); }
+    const n = await host.evaluate(() => window.__net());
+    const lat = n.lat ?? [];
+    const mean = (xs) => (xs.length ? xs.reduce((p, c) => p + c, 0) / xs.length : 0);
+    rows.push({
+      oneWayMs: oneWay,
+      rttMs: +mean(lat.map((l) => l.rttMs)).toFixed(1),
+      delayTicks: +mean(lat.map((l) => l.delayTicks)).toFixed(2),
+      delayMs: +(mean(lat.map((l) => l.delayTicks)) * 33.33).toFixed(0),
+      stalls: n.stalls,
+      stalledMs: n.stalledMs,
+      samples: lat.length,
+    });
+    console.log(`  one-way ${oneWay} ms → round trip ${rows.at(-1).rttMs} ms, `
+      + `${rows.at(-1).delayTicks} ticks (${rows.at(-1).delayMs} ms), `
+      + `${n.stalls} stall(s) totalling ${n.stalledMs} ms`);
+    await host.close(); await guest.close();
+    relay.stop();
+  }
+  measured.lag = rows;
+  const worst = rows.at(-1);
+  record('delay-holds', rows.every((r) => r.samples >= 2)
+    && worst.delayTicks <= 12 && worst.stalledMs < 20000,
+    'the input delay is bounded and the link does not stall the battle at 120 ms round trip',
+    rows.map((r) => `${r.oneWayMs}ms→${r.delayTicks} ticks/${r.stalledMs}ms stalled`).join('  '),
+    'the relay defers a late op to the next open turn; there is no path that drops one');
+}
+
+// ---------------------------------------------------------------------------
+// Arm: two engines, which is a real desync rather than an injected one
+// ---------------------------------------------------------------------------
+
+if (wanted('xengine')) {
+  console.log('\n=== Chromium against Firefox: a divergence nobody chose ===');
+  /*
+   * The best fixture available, and it is better than the one-ULP poke.
+   *
+   * A synthetic perturbation tests the detector against a fault whose tick, unit and magnitude
+   * the test chose. This one tests it against real floating-point disagreement, at a moment
+   * nobody picked. Either outcome is informative and only one is a failure:
+   *
+   *   - the two engines agree for the whole run  → the pairing holds on this battle, say so;
+   *   - they disagree and the session detects, attributes and ends  → the design works;
+   *   - they disagree and nothing notices        → RED, and the whole safety net is decorative.
+   *
+   * The relay runs at a five-times turn rate so a fork three and a half minutes into the battle
+   * is reachable inside a minute of wall clock. That is not a determinism shortcut: turn length
+   * is wall-clock scheduling and the tick index is unaffected — the same battle, sooner.
+   */
+  let ff = null;
+  try {
+    ff = await firefox.launch();
+    browsers.push(ff);
+  } catch (e) {
+    record('xengine', false, 'Firefox is needed for the cross-engine arm and did not launch',
+      String(e).slice(0, 160),
+      'npx playwright install firefox');
+  }
+  if (ff) {
+    /*
+     * Real-time turns here, not the accelerated ones the first version used.
+     *
+     * At a 33 ms turn the relay ran 215 turns while Firefox — 8,632 men, a second browser on
+     * the same laptop — reached tick 30, and a client that far behind is a client with no main
+     * thread left to process the desync message it has already been sent. The divergence
+     * happens at tick 30 whatever the turn rate, so there was nothing to gain by hurrying: the
+     * fixture needs the first second of the battle, not the first four minutes of it.
+     */
+    const relay = await startRelay(5999, ['--max-lag-turns=6000', '--quiet']);
+    /*
+     * `autoplay=1`: both armies under AI command, identically on both clients.
+     *
+     * Not a shortcut — a necessity, and the reason is what the first run of this arm measured.
+     * With neither player faction commanded and no orders issued, 8,632 men stood still for
+     * 262 simulated seconds and nobody died; the two engines agreed perfectly and the run
+     * proved nothing, because the escape §1.1 measured at t+205.5 comes out of *combat*. The
+     * AI's plan is derived from the config and the seed, so both clients run the same one, and
+     * what this arm then measures is exactly what it claims to: two engines executing one
+     * relayed battle with a real melee in it.
+     */
+    const { host, guest } = await bootMatch(relay, {
+      deploy: false, guestBrowser: ff, size: XSIZE, autoplay: 1,
+    });
+    const t0 = Date.now();
+    let n = null;
+    let ng = null;
+    while (Date.now() - t0 < 240000) {
+      n = await host.evaluate(() => window.__net());
+      ng = await guest.evaluate(() => window.__net());
+      if (n?.desync || n?.ended) break;
+      const t = await host.evaluate(() => window.__tick());
+      if (t > XTICKS) break;                     // t+50 by default; the fork is at tick 30
+      await sleep(600);
+    }
+    /*
+     * Let the ending finish arriving before asking whether it arrived.
+     *
+     * A desync is three messages, not one: `desync`, then `wantProbe` and the two `probe`
+     * replies, then `attrib` and `end`. The loop above breaks on the *first* of those, so
+     * reading `ended` immediately caught the session mid-sentence — the arm reported a real
+     * divergence, correctly detected, as a failure, on the strength of a field that was about
+     * to be set. Poll for the conclusion rather than assuming it.
+     */
+    /*
+     * Settle to a common tick before comparing, or the comparison is meaningless.
+     *
+     * The first version of this read both clients' hashes wherever they happened to be, got
+     * 7,846 against 7,848, and reported a pool-hash difference as a cross-engine divergence.
+     * It was two ticks of a battle, not two engines. The relay's own per-second comparison —
+     * which *is* at equal ticks — had said nothing, and that disagreement between the two
+     * instruments is what caught it.
+     */
+    const settled = await settleTogether(host, guest, 60000);
+    /*
+     * Re-read the status after settling, and not before.
+     *
+     * The loop above exits on the *host's* tick target, which can happen seconds before the
+     * relay has finished comparing the checkpoints that matter — so the `n` it leaves behind is
+     * stale, and asserting on a stale status reported a session that had correctly declared a
+     * desync as one that had noticed nothing. Read it again after the battle has stopped moving.
+     */
+    n = await host.evaluate(() => window.__net());
+    ng = await guest.evaluate(() => window.__net());
+    if ((n?.desync || ng?.desync) && !(n?.ended && ng?.ended)) {
+      const untilEnded = Date.now() + 40000;
+      while (Date.now() < untilEnded) {
+        n = await host.evaluate(() => window.__net());
+        ng = await guest.evaluate(() => window.__net());
+        if (n?.ended && ng?.ended) break;
+        await sleep(300);
+      }
+    }
+    const ta = await host.evaluate(() => window.__tick());
+    const tb = await guest.evaluate(() => window.__tick());
+    const ha = await host.evaluate(() => window.__game.hashes());
+    const hb = await guest.evaluate(() => window.__game.hashes());
+    void settled;
+    const rs = await relayStatus(relay);
+    const d = n?.desync ?? null;
+    measured.xengine = {
+      size: XSIZE, men: ha.count,
+      hostTick: ta, guestTick: tb, desync: d,
+      ended: [n?.ended, ng?.ended], frames: [n?.got, ng?.got],
+      ceiling: [n?.ceiling, ng?.ceiling], readyTurn: [n?.readyTurn, ng?.readyTurn],
+      status: [n, ng], relay: rs?.rooms?.[0] ?? null,
+      hashes: { chromium: ha, firefox: hb },
+      lastAgreedTick: rs?.rooms?.[0]?.lastAgreedTick ?? -1,
+    };
+    if (d) {
+      console.log(`  Firefox and Chromium parted at tick ${d.tick} (t+${(d.tick / 30).toFixed(1)} s) `
+        + `on ${d.layer}; last agreed tick ${d.lastAgreedTick}`);
+      record('xengine', d.tick > 0 && (n?.ended === 'desync') && (ng?.ended === 'desync'),
+        'a real cross-engine divergence is detected, attributed and ended on both clients',
+        `parted at tick ${d.tick} (t+${(d.tick / 30).toFixed(1)} s) on ${d.layer}: `
+          + `${d.mine} against ${d.theirs}; last agreed tick ${d.lastAgreedTick}; ${d.note}`
+          + `${d.units.length ? `; regiments ${d.units.slice(0, 8).join(', ')}` : ''}`,
+        'nobody chose where or when this happened, which is what makes it worth more '
+          + 'than the injected arm');
+    } else {
+      const same = ta === tb && ha.hash === hb.hash && ha.uf64 === hb.uf64
+        && ha.uctl === hb.uctl && ha.alive === hb.alive;
+      record('xengine', same && ta > 3000,
+        'Chromium and Firefox ran the same battle for the whole run',
+        `${ha.count} men, tick ${ta}/${tb} (t+${(ta / 30).toFixed(0)} s): `
+          + `pool ${ha.hash}/${hb.hash}, uf64 ${ha.uf64}/${hb.uf64}, `
+          + `uctl ${ha.uctl}/${hb.uctl}, alive ${ha.alive}/${hb.alive}`,
+        'no fork inside this run — one seed, one machine, and a stronger result than the '
+          + 'pairing table claims');
+    }
+    await host.close(); await guest.close();
+    relay.stop();
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+cleanup();
+
+if (results.length === 0) {
+  console.log('\n✗ no checks ran — nothing was measured');
+  failed = 1;
+}
+console.log(`\n${failed === 0 ? '✓' : '✗'} ${results.length - failed}/${results.length} checks passed`);
+if (JSON_OUT) {
+  await writeFile(path.resolve(ROOT, JSON_OUT), JSON.stringify({ results, measured }, null, 2));
+  console.log(`wrote ${JSON_OUT}`);
+}
+process.exit(failed === 0 ? 0 : 1);
