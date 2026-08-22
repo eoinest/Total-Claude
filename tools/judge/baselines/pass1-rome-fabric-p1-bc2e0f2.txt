@@ -20,8 +20,8 @@ ludus-magnus             survey             —       280         —         �
 trajan-market            survey             —       269         —         —
 largo-argentina          plate             12       238       227        99
 temple-serapis           survey             —       221         —         —
-temple-jupiter           restated           —       201       201        88
-forum-romanum            restated           —       199       199        78
+temple-jupiter           plate             18       201       219        96
+forum-romanum            plate             16       199       188        72
 tabularium               survey             —       181         —         —
 mausoleum-hadrian        plate              8       161       169        75
 imperial-fora            survey             —       164         —         —
@@ -39,8 +39,8 @@ aventine-temples         survey OFFMAP       —         —         —        
 baths-caracalla          restated OFFMAP       —         —         —         —
 caelian-villas           survey OFFMAP       —         —         —         —
 
-graded rows 14/29 placed.  survey-vs-plate: median 39 m, worst 138 m
-built-vs-plate (evidence rows only, n=14): median 294 m, worst 1031 m
+graded rows 16/29 placed.  survey-vs-plate: median 29 m, worst 138 m
+built-vs-plate (evidence rows only, n=16): median 227 m, worst 1031 m
 built-vs-reference (incl. restated survey cites, n=17): median 227 m, worst 1031 m
 resolver displacement, all 29 placed: mean 352 m, median 238 m, worst 1098 m real  (399 m world)
 

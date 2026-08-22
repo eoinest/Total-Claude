@@ -66,14 +66,15 @@ export const CONTROL = [
   { id: 'baths-titus', e: 1023, n: -53, err: 70, how: 'plate-weak',
     note: 'the hatched block north-east of the Colosseum, read at 0.68 m/px and NOT positively identified against the Domus Aurea substructures beside it. 65 m from the survey row.' },
 
+  { id: 'temple-jupiter', e: -18, n: 0, err: 20, how: 'plate',
+    note: "the inked podium under Palazzo Caffarelli, read at 0.4 m/px. 18 m west of the survey's own origin, and a sheet seam runs through it so 20 m is the floor on the reading. **This is the control that matters most**: everything on the map is measured from this point, and it holds." },
+  { id: 'forum-romanum', e: 265, n: -2, err: 35, how: 'plate',
+    note: 'the open strip between the Basilica Iulia and the Basilica Aemilia, read at 0.52 m/px; 16 m from the survey row. Long axis reads 118 deg against the survey 117.' },
   // --- WGS84, not confirmed on the plate this pass ---------------------------
   // Only `baths-nero` is genuinely independent: the rest turned out to restate survey.ts's own
   // cite to four decimals, which is a check comparing a thing against itself.
   { id: 'baths-nero', lat: 41.8990, lon: 12.4758, err: 60, how: 'gazetteer',
     note: 'Thermae Neronianae/Alexandrinae ran from the Pantheon NORTH toward the Stadium (Palazzo Madama / S. Eustachio). The survey puts them 58 m SOUTH of the Pantheon; the gazetteer puts them 45 m NORTH.' },
-  { id: 'forum-romanum', lat: 41.8925, lon: 12.4853, err: 40, how: 'restated' },
-  { id: 'temple-jupiter', lat: 41.8925, lon: 12.4823, err: 20, how: 'restated',
-    note: 'the survey origin. Graded so that a build which moves the origin is caught.' },
   { id: 'trajan-column', lat: 41.8959, lon: 12.4843, err: 15, how: 'restated',
     note: 'the column still stands; its position is known to a metre.' },
   { id: 'circus-maximus', lat: 41.8859, lon: 12.4853, err: 40, how: 'restated' },

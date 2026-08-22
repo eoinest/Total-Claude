@@ -21,10 +21,12 @@ from `KZ` 0.222 to 0.35 and nothing else was rebuilt. No roads, no grid, no fabr
 
 ### Verdict: **18 / 100 — FAIL.** All three veto criteria score zero.
 
-*(Scored **18 under rubric v1.0** and **17 under v1.1**, which adds P3 — the channel's drawn width
-— at weight 4 and P16 — the road armature — at weight 5, both funded out of criteria that already
-score zero or near it. Both totals are reported so the series stays comparable across the
-amendment.)*
+*(**19 under rubric v1.0, 18 under v1.1**, which adds P3 — the channel's drawn width — at weight 4
+and P16 — the road armature — at weight 5, both funded out of criteria that already score zero or
+near it. Both are reported so the series stays comparable across the amendment. The total moved
+from 18.2 to 18.7 during the pass as six more plate controls landed and P7 rose from 3.3 to 3.8;
+**every version of the evidence puts this map between 17 and 19**, so nothing in the verdict turns
+on which one you take.)*
 
 | # | criterion | weight | score | measurement |
 |---|---|---:|---:|---|
@@ -32,8 +34,8 @@ amendment.)*
 | P2 | Tiber bend — the shape | 9 | **0.0** ⚠ | the engine reproduces **21 %** of the plate's bend; 80 % required |
 | P4 | circuit waypoints vs the inked wall | 7 | **0.0** | 0 of 6 measured gates inside 30 m; worst **361 real m** (Porta Salaria) |
 | P5 | the wall meets the water | 3 | **1.1** | **40.7 world m** of dry ground where the curtain should stand on the bank |
-| P6 | landmark position, as built | 20 | **0.0** ⚠ | median **294 real m** over the fourteen rows with plate evidence, worst **1,031 m** (Theatre of Pompey); 25 m allowed |
-| P7 | landmark position, as surveyed | 6 | **3.4** | 8 of 14 evidence rows inside their own error bar; median **39 m**, worst 138 m |
+| P6 | landmark position, as built | 20 | **0.0** ⚠ | median **227 real m** over the sixteen rows with plate evidence, worst **1,031 m** (Theatre of Pompey); 25 m allowed |
+| P7 | landmark position, as surveyed | 6 | **3.8** | 10 of 16 evidence rows inside their own error bar; median **29 m**, worst 138 m |
 | P8 | bearing | 7 | **7.0** | median **2.4°**, worst 3.8° over 29 monuments; 5° allowed |
 | P9 | footprint vs published | 5 | **4.2** | 10 of 12 pass; compression **0.696 uniform** across the cohort |
 | P10 | topology vs the plate | 4 | **0.1** | **18 of 184** plate relations inverted |
@@ -44,7 +46,7 @@ amendment.)*
 | P15 | grain vs the street armature | 7 | **0.0** | median **21.3°**; a coin toss gives 22.5° |
 | P3 | the channel's drawn width *(v1.1: weight 4)* | 0 | **0.0** | the drawn channel reaches **385 world m** across in x where it declares 94; 65 of 559 samples over 45° |
 | P16 | the road armature *(v1.1: weight 5)* | 0 | **0.0** | **13** ways at 42 m where the design says one; carriageway **25.5 %** of the walled ground against a Roman city's 12–15 %; **43** ranked ways where the real city had hundreds |
-| | **total (v1.0 / v1.1)** | **100** | **18.3 / 17.1** | |
+| | **total (v1.0 / v1.1)** | **100** | **18.7 / 17.5** | |
 
 ⚠ = veto criterion at zero.
 
@@ -59,7 +61,7 @@ across twelve sourced monuments — **the projection arithmetic is honest and is
 
 Ranked by damage, with the cause named, because two of the top four share one.
 
-#### 1 — Every monument is in the wrong place, by a median of 294 real metres, and the cause is one function
+#### 1 — Every monument is in the wrong place, by a median of 227 real metres, and the cause is one function
 
 `resolveOverlaps` moves the twenty-nine placed monuments a **mean of 352 real metres** (median 238,
 worst **1,098**) off `worldOf(e, n)`. Measured independently of the resolver, by taking the built
@@ -315,6 +317,11 @@ A judge that never passes anything is useless. These are passing and should be l
   Castra Praetoria 113 m, Baths of Nero 104 m, Insula Tiberina 43 m) are not a small tail.
 - **The fabric generator's street reservation.** Zero insulae in a carriageway out of 1,160.
 - **The Colosseum**, position 20 m and bearing inside 5° — measured off the plate, not asserted.
+- **The survey origin holds.** The Temple of Jupiter OM's inked podium under Palazzo Caffarelli sits
+  **18 m** from the point the entire survey frame is measured from, at the 20 m floor the plate's
+  sheet seam imposes there. Everything on this map hangs off that point and it is right.
+- **The Mausoleum of Hadrian at 8 m** and **Largo Argentina at 12 m** — the two best-surveyed rows
+  on the map.
 - **Nothing inside the curtain** except one insula corner and the Horti Sallustiani, which declares
   `atWall: 0.6` and is historically correct to be cut by the wall.
 
@@ -342,7 +349,7 @@ Stated rather than suppressed, per the rubric's rule 1.
    for a feature I cannot positively identify. **The coarse reading was wrong and the claim is
    retracted.** The same crop refines the Theatre of Marcellus: its cavea's centre of curvature is
    at plate (−252, −91), 39 m from the survey row, not the 0 m the contact sheet suggested.
-4. **Fifteen of twenty-nine placed monuments have no plate control at all** and their positions are
+4. **Thirteen of twenty-nine placed monuments have no plate control at all** and their positions are
    therefore ungraded, including the Imperial fora, the Basilica Ulpia, Trajan's Market, the
    Tabularium, the Temple of Serapis, the Baths of Titus and Trajan, the Ludus Magnus, the Ara
    Pacis, the Horologium and the Iseum. *Settles it:* about two hours of crops at 0.4–0.6 m/px, and

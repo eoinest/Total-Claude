@@ -191,16 +191,20 @@
   {
    "id": "temple-jupiter",
    "name": "Temple of Jupiter Optimus Maximus",
-   "how": "restated",
-   "graded": false,
+   "how": "plate",
+   "graded": true,
    "placed": true,
+   "surveyErr": 18,
+   "surveyErrE": 18,
+   "surveyErrN": 0,
+   "ctlErr": 20,
    "resolverWorld": 88.17616834286292,
    "resolverReal": 201.15584416769624,
    "builtE": 195.48374959658136,
    "builtN": 47.43181723779474,
-   "builtErr": 201.15584416769624,
-   "builtWorldErr": 88.17616834286292,
-   "refIsEvidence": false
+   "builtErr": 218.6894799214069,
+   "builtWorldErr": 96.01930531468015,
+   "refIsEvidence": true
   },
   {
    "id": "tabularium",
@@ -216,16 +220,20 @@
   {
    "id": "forum-romanum",
    "name": "Forum Romanum",
-   "how": "restated",
-   "graded": false,
+   "how": "plate",
+   "graded": true,
    "placed": true,
+   "surveyErr": 16.1245154965971,
+   "surveyErrE": -16,
+   "surveyErrN": 2,
+   "ctlErr": 35,
    "resolverWorld": 77.79260033345462,
    "resolverReal": 199.0212581333667,
    "builtE": 376.53442531700307,
    "builtN": -152.78884628155927,
-   "builtErr": 199.07394255740223,
-   "builtWorldErr": 77.81905087205688,
-   "refIsEvidence": false
+   "builtErr": 187.5558695261704,
+   "builtWorldErr": 72.2955030833417,
+   "refIsEvidence": true
   },
   {
    "id": "basilica-ulpia",
