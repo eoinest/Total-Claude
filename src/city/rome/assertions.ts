@@ -492,16 +492,21 @@ export function assertWaysClearOfMonuments(): {
   samples: number;
   inside: number;
   worst: { id: string; pct: number } | null;
+  byWay: { id: string; pct: number; inside: number; samples: number; hit: string[] }[];
 } {
   const solids = LANDMARKS.filter((l) => !l.soft);
   const pt: Obb = { x: 0, z: 0, hw: 0.1, hd: 0.1, rot: 0 };
   let samples = 0;
   let inside = 0;
   let worst: { id: string; pct: number } | null = null;
+  // Naming the monuments a way still runs through is the difference between "via-lata 13 %",
+  // which nobody can act on, and "via-lata 13 %, porticus-pompei", which is a decision.
+  const byWay: { id: string; pct: number; inside: number; samples: number; hit: string[] }[] = [];
   for (const w of WAYS) {
     if (w.id.startsWith('ring-') || WAY_RANK[w.cls] < WAY_RANK.secondary) continue;
     let n = 0;
     let bad = 0;
+    const hit = new Set<string>();
     for (let i = 0; i + 1 < w.path.length; i++) {
       const a = w.path[i];
       const b = w.path[i + 1];
@@ -514,16 +519,76 @@ export function assertWaysClearOfMonuments(): {
         pt.x = x;
         pt.z = z;
         // The carriageway, not the centreline: half the road has to clear the masonry.
-        if (solids.some((l) => obbOverlap(pt, l, w.width * 0.5) !== null)) bad++;
+        const on = solids.filter((l) => obbOverlap(pt, l, w.width * 0.5) !== null);
+        if (on.length) {
+          bad++;
+          for (const l of on) hit.add(l.id);
+        }
       }
     }
     if (!n) continue;
     samples += n;
     inside += bad;
     const pct = (bad / n) * 100;
+    byWay.push({ id: w.id, pct: +pct.toFixed(0), inside: bad, samples: n, hit: [...hit] });
     if (!worst || pct > worst.pct) worst = { id: w.id, pct: +pct.toFixed(0) };
   }
-  return { ok: inside === 0, samples, inside, worst };
+  byWay.sort((a, b) => b.pct - a.pct);
+  return { ok: inside === 0, samples, inside, worst, byWay };
+}
+
+/**
+ * **The straight line out of the Porta Flaminia, which is not the same thing as the road.**
+ *
+ * A ground judge's headline finding is that *"the road the assault arrives on is 32 % solid"*,
+ * measured by walking **the gate's own outward normal** inward in 5 m steps. That number is real
+ * and this reproduces it, because a claim in the record that no instrument in the tree can
+ * re-derive is a claim nobody can check.
+ *
+ * **And it is worth being exact about what it measures, because the name it travels under is
+ * wrong in a way that changes what to do about it.** The gate's normal is a straight line; the
+ * Via Lata is not, and `deflect` has bent it round its monuments since phase 1. So this counts
+ * the ground under a column ordered to walk *dead straight* into the city, which is a different
+ * question from whether the carriageway is passable, and the two answers should be read side by
+ * side rather than one reported as the other. The judge says as much in its own §13: *"if a
+ * player never orders a column down the Porta Flaminia's own axis, §10.5's 32 % is the wrong
+ * number."*
+ *
+ * Both are now printed at every boot. `assertWaysClearOfMonuments` above is the carriageway, per
+ * way; this is the axis. Neither replaces the other, and neither is gated yet — the axis cannot
+ * be cleared without moving a surveyed monument off its plate position, which is the trade the
+ * record has to make in the open. The interval each blocking monument occupies is named so the
+ * next reader argues about a building rather than about a percentage.
+ */
+export function assertGateAxisClear(): {
+  samples: number;
+  inside: number;
+  pct: number;
+  blockers: { id: string; from: number; to: number }[];
+} {
+  const solids = LANDMARKS.filter((l) => !l.soft);
+  const pt: Obb = { x: 0, z: 0, hw: 0.1, hd: 0.1, rot: 0 };
+  // A standing man on the gate's own inward normal. The circuit runs east–west at the gate, so
+  // that normal is +Z, which is also what the judge's `judge-fabric.mjs` walks.
+  const STEP = 5;
+  const RUN = 700;
+  let samples = 0;
+  let inside = 0;
+  const blockers: { id: string; from: number; to: number }[] = [];
+  for (let d = 0; d <= RUN; d += STEP) {
+    const x = GATE_X;
+    const z = GATE_Z + d;
+    samples++;
+    pt.x = x;
+    pt.z = z;
+    const hit = solids.find((l) => obbOverlap(pt, l, 0) !== null);
+    if (!hit) continue;
+    inside++;
+    const last = blockers[blockers.length - 1];
+    if (last && last.id === hit.id && last.to >= d - STEP) last.to = d;
+    else blockers.push({ id: hit.id, from: d, to: d });
+  }
+  return { samples, inside, pct: +((100 * inside) / samples).toFixed(1), blockers };
 }
 
 // ---------------------------------------------------------------------------

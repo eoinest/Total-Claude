@@ -851,9 +851,45 @@ const STREET_PLAN: {
 }[] = [
   {
     id: 'via-lata',
+    /**
+     * **The last two hundred metres now go round the Mausoleum of Augustus, because that is
+     * where the road went.**
+     *
+     * It used to run [-497, 2045] -> [-470, 1560] -> [-440, 1080], which passes **14 real metres
+     * from the centre of an 87 m tomb** — straight through it. With `resolveOverlaps` alive that
+     * was invisible, because the solver had shoved the Mausoleum 100-odd metres off its plate
+     * position and the road went through the hole. Phase 2 put the tomb back where the survey
+     * puts it and the road has run through masonry ever since: a ground judge measured **85
+     * unbroken metres of it across the carriageway**, and the same frame is the best view the map
+     * has produced, because the terminus and the obstruction are the same object.
+     *
+     * That tension does not have to be traded, and the judge named the fix: *"bend the last
+     * hundred metres of the carriageway round the tomb's eastern flank, as the real road did, and
+     * keep the tomb closing the view from further out. That is not deflecting a street around a
+     * solver's fiction; it is drawing the street where the street was."* The Via Flaminia ran
+     * along the Mausoleum's **eastern** side; the tomb's precinct was its west kerb.
+     *
+     * So the first 215 real metres out of the gate are dead straight — the frame a player sees
+     * first after a breach is 30 m in, and the tomb still closes it — and the swing east begins
+     * at n 1650, clearing the tomb's precinct by 5.4 world metres of carriageway edge at n 1500.
+     * `deflect` still runs afterwards and does the fine work; what it cannot do is invent a
+     * hundred-metre detour from a line that starts inside the building, which is why the armature
+     * has to state the bend and not merely permit it.
+     *
+     * **What this does and does not fix, stated because the two get conflated.** The
+     * *carriageway* clears the tomb, and the carriageway is what a column walks, because pathing
+     * follows the way graph. The **straight normal out of the gate** is still blocked 145-235 m
+     * in, and it always will be: the tomb stands on it, in reality and on the plate. That number
+     * is the one the judge's headline quotes, `assertGateAxisClear` now re-derives it at every
+     * boot beside this one, and clearing it would mean moving a surveyed monument — which is the
+     * thing this whole rebuild exists to stop doing.
+     */
     path: [
       [-497, 2045],
-      [-470, 1560],
+      [-487, 1830],
+      [-430, 1650],
+      [-375, 1500],
+      [-395, 1350],
       [-440, 1080],
       [-400, 620],
       [-340, 240],

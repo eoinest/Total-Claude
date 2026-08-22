@@ -12,6 +12,7 @@ import {
   assertOneAmphitheatre,
   assertRomeFrame,
   assertTopology,
+  assertGateAxisClear,
   assertWaysClearOfMonuments,
 } from './assertions';
 import { buildWall } from './circuit';
@@ -300,9 +301,27 @@ export const ROME_PLAN: CityPlan = {
     if (!wayClearance.ok) {
       console.warn(
         `[city] ${wayClearance.inside}/${wayClearance.samples} ranked-way samples ` +
-          `inside a monument; worst ${wayClearance.worst?.id} at ${wayClearance.worst?.pct}%`
+          `inside a monument; worst ${wayClearance.worst?.id} at ${wayClearance.worst?.pct}%` +
+          `; per way: ${wayClearance.byWay
+            .filter((w) => w.inside > 0)
+            .map((w) => `${w.id} ${w.pct}% (${w.inside}/${w.samples}: ${w.hit.join('+')})`)
+            .join(', ')}`
       );
     }
+    /**
+     * The gate axis, printed beside the carriageway rather than instead of it. A ground judge's
+     * headline is measured on this line and the record could not re-derive it; now it can, and
+     * the difference between the two numbers is visible in one place. See `assertGateAxisClear`.
+     */
+    const axis = assertGateAxisClear();
+    console.info(
+      `[city:rome] gate axis (the straight normal out of the Porta Flaminia, NOT the ` +
+        `carriageway, which deflect bends): ${axis.inside}/${axis.samples} = ${axis.pct}% ` +
+        `inside masonry over the first 700 m` +
+        (axis.blockers.length
+          ? `; blocked by ${axis.blockers.map((b) => `${b.id} ${b.from}-${b.to} m`).join(', ')}`
+          : '')
+    );
 
     const trees: TreeRequest[] = [...wall.trees, ...landmarks.trees, ...districts.trees];
     const chunks: CityChunkSpec[] = [
