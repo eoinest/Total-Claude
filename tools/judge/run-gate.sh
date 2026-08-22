@@ -31,7 +31,11 @@ echo "dev server on $PORT after ${i}s"
 run node tools/probe-seams.mjs --port=$((PORT + 1)) --maps=campus-martius,carthage
 run node tools/qa-deploy.mjs --port=$((PORT + 2))
 run node tools/qa-replay.mjs --port=$((PORT + 3))
-run node tools/probe-siege.mjs --port=$((PORT + 4))
+# `probe-siege` **reuses** a server on its `--port` and falls through to serving `dist/`
+# when none answers — its own header says a stale pass is worse than a failure, and that
+# is exactly what a fresh port bought it here: "no dev server; serving dist/ (which may be
+# stale)". It goes at the one server this script actually started.
+run node tools/probe-siege.mjs --port="$PORT"
 run node tools/qa-wallorder.mjs --port="$PORT"
 run node tools/qa-wallattack.mjs --port="$PORT" --map=carthage
 run node tools/qa-siegecommand.mjs --port="$PORT"
