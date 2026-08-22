@@ -93,6 +93,10 @@ recorded here because it is a trap and because those four frames turned out to b
 | `rome-axis-inside-mausoleum.jpg` | 58bc584 | gate, `stand -130` — **eye 120 m in, which is inside the Mausoleum of Augustus** |
 | `rome-axis-inside-pompey.jpg` | 58bc584 | gate, `stand -360` — eye 350 m in, 5 m off the Theatre of Pompey's wall |
 | `pair-kz-before-after.jpg` | 58bc584 \| bc2e0f2 | gate, `stand -40`, identical on both trees |
+| `kz35-gate-from-inside.jpg` | bc2e0f2 | gate, `stand -40`, eye 1.75, aim 8, dist 40, fov 42, **`yaw out`** — eye 80 m in, looking back at the gate |
+| `kz35-axis-180m.jpg` | bc2e0f2 | gate, `stand -240`, eye 1.75, aim 10, dist 60, fov 42, `yaw in` — eye 180 m in |
+| `kz35-campus-martius.jpg` | bc2e0f2 | world (309, 951), eye 55, aim 12, dist 150, fov 42, yaw 0 — **the one frame here that is not at eye level**, shot to verify §5.1's third finding |
+| `kz35-baths-nero.jpg` | bc2e0f2 | world (309, 951), eye 1.75, aim 18, dist 110, fov 45, yaw 0 |
 
 ---
 
@@ -325,7 +329,7 @@ from the Porta Flaminia to the Capitol is a straight line and the history says s
 `local` and `vicus` ranks, let the survey polyline bend, and spend the monument's scale only when
 the plate says the street really did run straight through where the building now stands.
 
-### G5 — The porticoes are stage flats. **Severity: medium-high.**
+### G5 — The porticoes are stage flats, and from any distance they read as slabs in the sky. **Severity: high — raised from medium-high after §5.1.**
 
 ![The pomerium and the Via Lata's portico, 30 m inside the gate](images/judge-ground/rome-portico-30m.jpg)
 
@@ -335,6 +339,9 @@ measures roughly 12–15 m against a real intercolumniation of 3–4 m, the colu
 beyond a plain abacus and no bases beyond a flat plinth, and there is no roof. The Via Lata's
 porticoes were the *fronts of continuous shop ranges*; drawn like this they are scenery.
 This is the most conspicuous single object in the first frame the player sees after a breach.
+And §5.1 found the second half of it: at any distance over about forty metres the thin, widely
+spaced supports stop resolving and **the portico roof reads as a flat slab hanging in the air**.
+One fix — more columns, closer together — answers both.
 
 ### G6 — Grass grows down the middle of the Via Flaminia. **Severity: medium-high, and the cheapest fix on this list.**
 
@@ -420,6 +427,59 @@ without giving anything a taller frontage. Enclosure is not a by-product of dens
 by-product of blocks that address a line, and that is Phase 4.
 
 **This is not a sign-off.** Per the brief: better than before is not the bar.
+
+### 5.1 Four things visible only on `bc2e0f2`, from the same eye
+
+Shot from the tree this document is committed on (`74e0841`, whose `src/` is `bc2e0f2`'s),
+`hour` 8.2, cameras named in §2 of the shot script `tools/shots/judge-city-eye3.shot.mjs` and
+`tools/shots/judge-float-verify.shot.mjs`.
+
+![The Campus Martius at bc2e0f2, from 55 m](images/judge-ground/kz35-campus-martius.jpg)
+
+**First, credit where it is due: the right half of this frame is a city.** Three to five storeys,
+painted, tiled, windowed, in continuous rows, with an aqueduct running out through it. Nothing on
+`main` looks like this. The projection change bought it and it should be said plainly.
+
+**Second, the grain fault is now the most visible thing in the frame** and it was not, before,
+because there was not enough fabric to see it in. Follow any row of roofs from the middle of the
+right-hand quarter outward and it turns — twice — with no street, contour or river at the turn.
+`MAP-METHOD.md` §1 rule 9 from the air; §4.2's `H/W` is the same fault from the ground.
+
+**Third — and this is the finding I nearly published wrong — the porticoes read as floating
+slabs.** In `kz35-axis-180m.jpg` below, a row of flat roof plates hangs in the air over the
+Campus Martius with nothing visibly under them, and my first reading was "a monument is
+levitating". It is not: they are portico roofs whose columns are thin enough and far enough apart
+(12–15 m against a real 3–4 m) that at any distance over about forty metres **the supports stop
+resolving and the roof reads as a slab in the sky.** Verified with two extra cameras before
+writing it down, which is the only reason this paragraph says what it says. G5 is therefore worse
+than pass two graded it: the porticoes fail at eye level *and* from the air, and the fix —
+more columns, closer together — is the same one.
+
+![180 m in on the axis at bc2e0f2](images/judge-ground/kz35-axis-180m.jpg)
+
+*Grass has swallowed the carriageway; the paving survives as ribbons in it. The slabs at
+mid-right are portico roofs, not floating buildings.*
+
+**Fourth, two material faults on the two biggest objects in the Campus Martius.**
+
+![The Baths of Nero at bc2e0f2](images/judge-ground/kz35-baths-nero.jpg)
+
+- **The domes are surfaced in a mottled grey-green speckle** that reads as lichen or granite
+  chippings, on the largest curved surfaces on the map. A Roman dome of this date is tiled, or
+  gilt bronze, or rendered *opus signinum*. This is the single most conspicuous material error at
+  `bc2e0f2` and it is one texture.
+- **The precinct wall is twenty metres of unarticulated brick across the whole frame** — no
+  pilasters, no blind arcading, no cornice, no string course. The Aurelian Wall's *inner* face in
+  `kz35-gate-from-inside.jpg` has blind arcading and looks far better for it; the same treatment
+  on the bath precincts is nearly free.
+
+![Eighty metres inside the wall, looking back at the Porta Flaminia](images/judge-ground/kz35-gate-from-inside.jpg)
+
+*The frame the player is looking at while the ram works, at `bc2e0f2`. The inner face of the
+circuit and the aqueduct both carry real mass and this is the best interior frame either tree
+produced. The aqueduct's piers have no imposts and its arches no mouldings, so it reads as a
+concrete flyover rather than an Aqua; and the ground inside the gate is a shapeless apron of
+grass and cobble with no kerb and no carriageway, which is G6 again.*
 
 ---
 
