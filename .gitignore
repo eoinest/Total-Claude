@@ -27,6 +27,11 @@ screenshots/**/*.avif
 screenshots/**/*.webm
 screenshots/**/*.mp4
 screenshots/**/report.json
+# Probe reports land beside the plates they describe and are per-run, per-tag artefacts, not
+# source. `probe-plan` writes `report-<tag>.json` and `plate.json`; the old line above matched
+# only the exact name `report.json` and would have let `report-mirror.json` through.
+screenshots/**/report-*.json
+screenshots/**/plate.json
 !screenshots/keep/**
 
 # Local-only visual reference material. Copyrighted third-party screenshots used

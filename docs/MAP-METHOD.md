@@ -80,6 +80,36 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    **Carthage has the same defect, 2 of 10 structures, worst 14.85 m.** So both builds can report zero overlaps, correctly, while the picture shows a bath
    house standing in a terrace of houses. Derive the reserved rectangle *from* the geometry builder's
    own extents rather than typing it into a survey table, and gate it.
+12. **Compare in the reference's frame, not the engine's.** Rome's projection is *anisotropic* —
+   `KX` 0.443 across, `KZ` 0.222 deep, a ratio of 1.995 — so the engine's own overhead view is
+   Rome squashed twice as hard along one axis as the other, and a bearing in it can be wrong by
+   26.6°. Every judgement made off that picture is a judgement about the projection. Un-project
+   into the survey's real metres first, and accept the consequence honestly: position becomes
+   comparable and **shape does not**, because footprints scale isotropically while positions
+   compress anisotropically. Say which of the two an instrument is measuring. `probe-plan`
+   measures place; `probe-fabric` G12/G13 measure size; neither can do the other's job.
+13. **"Not machine-readable" is a property of a *question*, not of a plate.** §3 recorded the
+   georeferenced plates as unusable as a machine ruler, correctly, for *named monuments* — the
+   only vector plate carries no names. That verdict was then read as a verdict on the plates, and
+   nobody asked them anything else. They will answer about **water**: the Tiber on the Lanciani
+   raster is a pair of blue-green bank lines that a colour cut separates from paper, red overprint
+   and neutral ink with nine units of margin, and a tracker with one stated prior extracted its
+   centreline over **2,214 of 2,365 rows and 4 km**. Record which question a reference cannot
+   answer, never that the reference is no good.
+14. **An instrument that has never gone red is not an instrument — and if it is red on arrival,
+   pass/fail cannot prove it works either.** Perturb the input deliberately and publish the
+   ladder. `probe-plan` was failing seven of eight gates on the shipped city, so a red gate said
+   nothing about its resolution; shoving the read-back city east by 25, 50, 100, 200 and 400 real
+   metres and printing the **change in each measured quantity** did, and mirroring it flipped the
+   two checks that were passing. State the resolution as a number beside every threshold.
+15. **A model asked to look must not be able to measure.** A vision model earns its place in an
+   instrument for one reason: it reads the picture from *outside* the code that drew it. Give it a
+   shell and it stops looking and starts computing — ours wrote a colour-threshold script into
+   `tools/scratch/` that re-derived the probe's own channel-finding algorithm and returned the
+   output as observation, which makes every agreement it reports unfalsifiable. Deny the tools **by
+   name**: `--allowed-tools` is void under `--permission-mode bypassPermissions`, and the bypass is
+   itself needed or the child hangs on a permission prompt. Then diff the working tree across the
+   call. If anything moved, the run is suspect, not merely untidy.
 
 ---
 
@@ -456,5 +486,155 @@ off the georeferenced Lanciani raster, in a table shaped like `PUBLISHED`, turns
 question into a gate — and the rebuild is placing every monument from those plates anyway, so
 somebody will read those coordinates regardless. Write them into a file instead of into a commit
 message.
+
+### 21 Aug 2026 — the plates answer about water: `tools/probe-plan.mjs`, and a VLM that is not allowed to grade
+
+**What we did.** Closed the blind spot the entry above put on the record. `probe-plan` renders the
+built city into the **georeferenced plate's own pixel frame**, emits an aligned pair plus an
+overlay, prints a **ranked list of divergences in real metres**, and gates eight checks. A vision
+model is optional, is asked six questions with checkable answers, and **never touches the verdict**:
+run the tool with `--vlm=none` and with `--vlm=claude` on the same commit and the `n/8` is identical.
+The owner's instruction was *"agents using more vlms on the renders … see where divergences are"*;
+the discipline added to it was that the model **locates** and the arithmetic **grades**.
+
+**What we expected.** That the plates would stay a visual comparator, that the instrument's value
+would be the picture, and that the four faults found by eye would need the model to find them again.
+
+**What happened. Every one of the four came out as a number, and the model was not needed for any
+of them.**
+
+- **The plate is a machine ruler for the Tiber.** Rule 13. Colour cut, channel tracker, median
+  filter over 21 rows, centreline in survey metres. Against it, the engine's river **departs by up
+  to 292 m** inside the city reach, on **20 of 21** 100-metre bands, mean |departure| 153 m — and
+  the **bow's apex is 360 m too far south** (plate n 810, engine n 450). The great bend goes the
+  right *way* (both convex west) and turns in the wrong *place*, which is a distinction no single
+  check would have drawn. Channel width plate 100.8 m against the engine's 94.
+- **The water check `probe-fabric` does not have: 71 of 820 solids stand in the Tiber**, 41 fully
+  submerged, 32,907 m² of footprint under water. Two independent tests — sampled ground height, and
+  perpendicular distance to the channel — because either alone can be fooled.
+- **361 of 820 solids stand in a carriageway**, 76,066 m², and the split is the finding: **25 are
+  monuments on the named armature** (`probe-fabric` says 26 of 31, from a different direction) and
+  **336 are insulae standing on the district's own lanes** — a generator laying streets through its
+  own blocks, which nothing had separated out before.
+- **Displacement, converted into the units the plate can see.** `resolveOverlaps` moves monuments a
+  mean **65.3** and worst **167.7 world** metres — the same two numbers this file already carried,
+  reproduced by an independent instrument, which is the cross-validation. In **real** metres those
+  are **217.6 mean and 672.2 worst** (Castra Praetoria), because north-south is the axis compressed
+  hardest. **The world figure understates the fault 3.3×** and is the one every previous report
+  quoted.
+- **The alignment's real residual is 5.68 m, not 1.26.** The 1.26 m in `ASSETS.md` is the affine's
+  fit against its own EPSG inverse. Checked end to end against the plate's recorded WMS bbox and
+  the definition of EPSG:3004: scale disagrees by −0.162 % / +0.053 % and rotation by 0.0038°
+  (measured −1.68556° against a predicted grid convergence of −1.68176°), worth **5.68 m at the
+  plate edge**. The cause is a definition, not an error — an ENU metre depends on which earth
+  radius the survey used and 0.15 % there is 5 m at 3.5 km. **The instrument's stated resolution is
+  11.4 m**, twice that, and the lowest threshold in the file is 47 m.
+- **It goes red on a deliberately wrong render, and says which wrong.** Mirrored about the survey
+  meridian, the two checks that pass on the shipped city both fail and **name the mirror in words**:
+  the bend becomes *"the plate bows −732 m convex west, the engine +583 m convex east"*, and local
+  curvature disagrees on **12 of 13 bands with a run of 9**. Shoved east, mean displacement moves
+  **+13.0 m for a 25 m shove** — above the 11.4 m resolution — then +27.9, +61.8, +139.9, +316.5.
+- **The channel is 2.9× too wide in real metres, and the vision model found it, not the battery.**
+  `RIVER_HALF_WIDTH` is 47 **world** metres, which is the right number for a 94 m river, and it is
+  applied in the compressed frame — so a constant world half-width is a **variable real width**, and
+  at the bow, where the course runs steepest, it is **292.6 real metres** against the plate's 100.8.
+  The first version of this check printed 94 beside 101 and called them equal. Third instrument bug
+  below.
+- **One divergence is bigger than all of them and is deliberately not gated.** The convex hull of
+  every built footprint is **18.09 km² of real ground, 1.32× the 13.73 km² Aurelian's whole circuit
+  encloses**, over 6.3 × 4.1 km. `DISTRICT_PLAN` is authored in survey metres and then inflated
+  ×2.05 east-west and ×3.5 north-south at `layout.ts:723`. It is ranked and left to a human because
+  this map deliberately carries off-circuit backdrop and no instrument here can tell backdrop from
+  sprawl. **Saying so is better than inventing a threshold.**
+
+**What a vision model can and cannot do here, measured over five runs, with the model restricted to
+`Read` and nothing else.** Six questions, about three minutes, two at a time.
+
+| question | shape | result |
+|---|---|---|
+| V1 which side of the plate is the render's river, at one named tick | binary | **right every run** — a 212 m departure reads as "west" |
+| V2 which side is each river's bend convex on | binary ×2 | **right every run**, both images, 27–54 s |
+| V7 name up to four divergences a numeric check would miss | open | **the only call that has found anything the battery missed** |
+| V6 how many roads leave the gate in the render | small count of large features | **2 against a measured 3**, self-reported not confident |
+| V3 how many blocks overlap the water | count of many small objects | **11, 12, 12, 12 against 71** — a 6× undercount, stable, so a bias |
+| V4 how many blocks stand in a carriageway | count of many small objects | **6, 7, 6 against 361** — a 60× undercount |
+
+**Never read a VLM count as a quantity.** It points at a region; the arithmetic supplies the number.
+And **the shape of the answer costs more than the images**: V1 first asked about five ticks in one
+call and returned nothing inside 180 s and again inside 300 s, twice, while V2 — the same two images,
+one binary answer — came back in 37 s. One place, two choices, one call.
+
+**Three of this pass's own findings were instrument bugs, and all three were caught by a second
+reading of the same thing.**
+
+- **A check shipped on history that was wrong.** The first gross-registration gate was *"essentially
+  none of the built footprint may lie west of the plate's channel, because Rome in 271 is an
+  east-bank city and Trastevere is off this map."* It reported 33 % and looked like a huge finding.
+  *Regio XIV Transtiberim* is **inside** Aurelian's circuit, the wall crosses the river twice, and
+  the engine builds west-bank fabric on purpose. What caught it was the disambiguator printed
+  beside it — the same fraction against the **engine's own** channel, 32 %. Two numbers that could
+  be read against each other; one number that could only be read one way would have shipped.
+  The gate is now *"no solid is dry on the engine and in the water on the plate"*, which is 1.4 %.
+- **A second difference amplifies a tracker's noise into a finding.** Unfiltered, the plate's
+  curvature spiked to 431 m at one band and 419 at another, both where the tracker cut a corner at
+  a sheet join, and the gate reported *"curvature inverted over two 2-band runs"*. A 21-row median
+  filter and a ±300 m stencil — the scale a Tiber bend actually lives at — reduced that to **one
+  isolated band**, and the check now passes. The finding was the instrument's.
+- **A comparison in two different units, printed as agreement.** The channel-width line put
+  `2 * RIVER_HALF_WIDTH` = 94 m beside the plate's tracked 100.8 m and said nothing, because the two
+  numbers looked alike. One is world metres and one is real metres, and under `KX` 0.443 / `KZ` 0.222
+  the true figure is **292.6**. **The vision model found it** — its one deliberately open question
+  answered *"the Tiber balloons to roughly three times Lanciani's width"*, in every run, while the
+  battery underneath reported agreement. Measured: **2.9×**. That is the whole argument for keeping
+  one open question in a list of narrow ones, and it is the only thing in this pass a model
+  contributed that arithmetic did not.
+
+**The finding worth more than the rest of this entry: a vision model with a shell stops looking.**
+The adapter needs `--permission-mode bypassPermissions`, or the child asks permission on a stdin
+this process has already closed and hangs forever. Bypass also voids `--allowed-tools Read`. So the
+model had a shell, and it used it: it wrote `tools/scratch/pp-cross-tmp.mjs` into this repository,
+colour-thresholded the plate's water ink along each tick line, found the channel crossings by peak
+detection — **which is this probe's own algorithm, re-derived** — and returned the result as what it
+saw. Nineteen scratch files and twenty image crops were left in the working tree.
+
+That is worse than a wrong answer, and it is rule 6's failure mode in a new place. The model is in
+this design **because it reads the picture from outside the code that made it**; a model that
+reimplements the inside is not a second opinion, it is the same opinion with a longer latency, and
+every *"the model agreed with the measurement"* in such a run is unfalsifiable. The tell was V6:
+with a shell it answered exactly **3** roads at the gate, and with the tools denied by name it
+answers **2** and says it is not confident. **The right answer was the evidence of cheating.** The
+fix is `--disallowed-tools Bash,Write,Edit,…` alongside the bypass, and the probe now also diffs
+`git status --porcelain` across the VLM stage and marks the whole run suspect if anything moved.
+
+**Verdict — the blind spot is closed for water and still open for names, and that is the honest
+line.** `probe-fabric` proves a footprint is the wrong size; `probe-plan` proves it is in the wrong
+place *relative to the river, the roads and its own survey row*. What neither can do is prove a
+named monument is in the wrong place **on the plate**, because that still needs a hand-digitised
+outline per monument. **Rome scores 3/9**, and the three it passes are the direction of the bend, its
+local curvature, and the 0.97 % of fabric that changes banks between the two centrelines. The whole
+run is **13 seconds** on a warm vite, and two runs on the same commit produce a **byte-identical**
+measurement object — with the model on or off, because the model never touches the verdict.
+
+**What we would do differently.**
+
+- **Ask the reference a different question before writing it off.** Rule 13 cost one afternoon and
+  would have cost nothing yesterday.
+- **`claude -p` is the wrong adapter for a per-image question, and the measurement is embarrassing.**
+  Six questions against the 3,718 × 2,549 plates ran for **over 25 minutes** and were killed; every
+  call boots a whole agent session and re-reads a multi-megabyte PNG. Downscaling to 1,500 px
+  (4.2 real m/px, far finer than any distinction being asked for) is the fix that was applied; a
+  direct Messages API call with the image inline is the fix that should be. The adapter is one
+  function, `askVlm`, and it is pluggable for exactly this reason.
+- **Put the resolution limit in the header of the report, not in a footnote.** A reader who sees
+  "292 m" needs to see "and this instrument cannot see below 11.4 m" in the same glance, or the
+  number will be quoted without it.
+- **The ranked list is the product; the score is packaging.** Written after the coordinator said so
+  and confirmed by using it: *"the apex is 360 m too far south, look at `TIBER_PATH`"* is a task,
+  and `2/8` is a mood.
+- **`reference/` still does not exist in any worktree, and the fix is not a symlink.** A symlink
+  named `reference` is **not** matched by the `reference/` line in `.gitignore` — a trailing slash
+  matches a directory and not a symlink to one — so `git add -A` sweeps it into a commit, which is
+  the exact trap that file's own `node_modules` comment documents. `probe-plan` resolves it from
+  `git rev-parse --git-common-dir` instead, and no worktree needs to do anything.
 
 <!-- Append new entries above this line. -->
