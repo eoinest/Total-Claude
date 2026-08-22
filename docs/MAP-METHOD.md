@@ -990,3 +990,83 @@ use, where `complex-invent`'s expectation string listed G8 as needing to go red 
   fault in the city, which is the most expensive kind of false positive a gate can produce.
 
 <!-- Append new entries above this line. -->
+
+### 21 Aug 2026 — Rome fabric phase 3: the frame decision, and four mechanisms that were never wired up
+
+**What I did.** Took the ground judge's four-item list in its own priority order, on
+`e/city/rome-landmarks-p3` off `e/city/rome-landmarks` at `6c975e8`. `docs/ROME-FABRIC.md` §9 is
+the full write-up; this is what the method learned.
+
+**What I expected.** That item 1 — *"`KZ` = 0.30, or the reason it is impossible in writing"* —
+would be a half-day of sweeping and a judgement call about how much backdrop to trade for how
+much depth.
+
+**What happened.** `KZ` = 0.30 is *more* compression, not less. The judge's own diagnosis is
+"the frame is too small for the survey", and 0.30 makes the frame smaller: anisotropy 1.27× →
+1.48×, conflicting pairs 14 → 18, and a true-depth insula fits over **0 %** of the real
+cross-street range instead of 11 %, which is precisely the arithmetic impossibility rule 10 was
+written about and phase 1 existed to escape. Two independent readings of the same number reached
+the same wrong sign — the judge's, and my own first reading of the brief — because "raise `KZ`"
+and "raise compression" sound like the same direction and are opposites.
+
+Then the sweep said something nobody had asked for: **the feasible window is
+[0.3334, ~0.357] and it is 0.024 wide.** The floor is the insula module; the ceiling is the
+Colosseum leaving the heightfield between 0.355 and 0.360. `KZ` was never a lever. It had one
+notch of travel and phase 1 already used it.
+
+**Verdict: right to demand the measurement, wrong to expect a decision. The measurement closed
+the question instead of informing it, and that is the better outcome — four findings that were
+all "spend a pass on `KZ`" are now one finding that says "spend it on `HALF_EXTENT` or on the
+complexes".**
+
+**What I would do differently.** Bracket the constraint *window* before pricing any single value
+inside it. I swept the six points the tool shipped with, read the table, and only then thought to
+ask where the walls were; had I bisected the ceiling first — two runs, four minutes — the whole
+of item 1 would have been answered before I read the rest of the verdict, and it gates everything
+else.
+
+---
+
+Four rules this pass paid for, offered for §1 in the numbering that follows the judge's 14–18.
+
+> **19. A field that is declared, documented and never read is worse than a missing one, and the
+> way to find them is to grep for readers rather than for writers.** Rome's Castra Praetoria is
+> drawn at a fifth of its published plan because the camp stands 59 world metres inside a wall it
+> needs 260 m of half-depth to sit behind. The survey has carried `atWall` — *"fraction of the
+> footprint's depth that may sit north of the wall crest"* — for two phases, with a paragraph
+> explaining it; `place()` copied it onto the placement and **nothing ever read it**. Nor
+> `drawMax`, anywhere in `src/`. Nor `maxDrawAt`, which has no callers at all. Three mechanisms,
+> all documented as constraints, all inert, and the constraint they describe enforced instead by a
+> human transcribing an offline script's answer into a literal. Implementing one of them took the
+> fortress from 76 × 72 m to 130 × 123 m and removed seven of nine size inversions. **A grep for
+> the *definition* of a field finds it; only a grep for its *consumers* tells you whether the
+> mechanism exists.**
+
+> **20. A check whose failure sets its own "pending" cannot fail.** Rome's frame report filters
+> faults with `!ok && pending === null` and one row set `pending` as `ok ? null : '…'` — non-null
+> exactly when the check failed. So a genuine monument-in-a-street regression printed as PENDING
+> and left the fault list empty. The generalisation is worth more than the bug: **an escape hatch
+> whose condition is correlated with the failure it excuses is not an escape hatch, it is a
+> deletion.** Same shape as rule 16's born-dark exclusion, one level up — there the population was
+> chosen to exclude the fault, here the severity was.
+
+> **21. Reproduce the other instrument's headline inside the tree before arguing with it, because
+> the argument is usually about what was measured and not about the number.** A judge reported
+> *"the road the assault arrives on is 32 % solid"*, walking the gate's own straight normal. The
+> road is not straight — the layout has deflected ways round their monuments since phase 1 — and a
+> column follows the way graph, so "the road" and "a straight line out of the gate" are two
+> claims and only the second had ever been measured. Both now print at every boot, side by side,
+> and the carriageway is 13 % where the axis is 20.6 %. **Neither number is wrong; the name was.** A
+> claim in the record that no instrument in the tree can re-derive is a claim nobody can check,
+> and the act of re-deriving it is what surfaces the definition.
+
+> **22. When two independent agents make the same sign error in the same formula, the formula
+> needs a comment more than the agents need care.** `rot = atan2(cos θ, sin θ)` in an
+> `(x = e, z = −n)` frame: get the sign wrong and every box is mirrored about its own centre,
+> which is **invisible on an axis-aligned building and silently inverts every rotated one**. It
+> reported the Basilica Ulpia and Trajan's Column interpenetrating by 27.3 m, then 13.6 m, then
+> made all five of Rome's declared complexes read as detached including the two that genuinely
+> abut. Three independent occurrences: the offline allocator, a judge's own probe, and the first
+> draft of the check written to catch it — each caught only by disagreeing with a hand-computed
+> separation. **A geometric convention that fails silently on the symmetric case needs its
+> failure mode written at the site, not its correctness asserted.**

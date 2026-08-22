@@ -74,19 +74,23 @@ import { clamp } from '../../util/math';
  *  1. **Corrected coordinates.** Five rows were in the wrong place and one of them by 234 m, and
  *     fixing those removed more conflict than any amount of shrinking. Each carries the
  *     correction and its evidence in its own `cite`.
- *  2. **`complex`** — twenty-one rows in six groups where the city had a party wall and not a
+ *  2. **`complex`** — twenty-one rows in five groups where the city had a party wall and not a
  *     street, so the layout stops demanding seven metres of carriageway between the Basilica
  *     Ulpia and the forum it stands in. Inside a complex two rows may
  *     interpenetrate by at most 2.4 m, which is `probe-fabric`'s own abutment allowance.
  *  3. **`draw`** — a per-monument authored footprint, held beside the real published dimension
  *     it departs from. There is **no global plan scale any more** and there must not be one
  *     again: `ROME-FABRIC.md` §4.5 measured that the largest uniform scale with zero conflicts
- *     is 0.232, a 44 m Colosseum. The authored floor achieved here is **0.445**, eleven rows are
- *     at full published plan, and the Colosseum is drawn at its real 189 × 156.
+ *     is 0.232, a 44 m Colosseum. The authored floor achieved here is **0.339**, four *drawn*
+ *     rows are at full published plan (nine rows carry 1.000, but five of those are the rows
+ *     `offMapSouth` drops and are not drawn at all), and the Colosseum is drawn at 108 × 89 —
+ *     0.573 of its real 189 × 156. Every one of those four numbers was wrong here for two
+ *     phases; `tools/scratch/rome-landmarks.mjs --audit` is what re-derives them.
  *
  * The compression is real and worth stating plainly: positions compress by 0.443 × 0.35, so a
  * building at 1:1 covers 6.4× its real share of the ground. That is why some rows must shrink.
- * Heights are never scaled.
+ * Heights shrink with them: see `drawY`, which defaults to `draw` precisely so that a smaller
+ * monument is a smaller model of the real thing and not a squashed one.
  *
  * Anisotropy rotates plan angles, so `worldRot` transforms the long axis through the same map
  * instead of copying the compass bearing. **It is scale-invariant** — the factor cancels inside
@@ -154,7 +158,11 @@ export interface RomeMonument {
    * the Horologium, Trajan's Column and Hadrian's tomb all become eggs. A uniform scalar keeps
    * a circle a circle, and keeps the **aspect ratio** the probe's scale-free check measures.
    *
-   * Heights are never scaled. The Colosseum keeps its 48 m attic whatever this says.
+   * **Heights are scaled with the plan, and this docstring used to say the opposite.** It read
+   * *"heights are never scaled; the Colosseum keeps its 48 m attic whatever this says"* — and the
+   * very next field, `drawY`, defaults to `draw` and brings the attic down to 27.8 m. A field
+   * whose documentation contradicts the field below it is worse than an undocumented one, because
+   * the next reader will believe it. `MAP-METHOD.md` rule 2, found by a ground judge.
    */
   draw?: number;
   /**
@@ -176,8 +184,9 @@ export interface RomeMonument {
    * one. The rows that carry no `draw` at all are drawn at 1.00 on all three axes and were right
    * by accident; this generalises them.
    *
-   * **What it costs, stated because it is the real objection.** The Colosseum is drawn at 0.548,
-   * so its attic comes down from 48 m to 26. That is a visibly lower skyline and it is the price
+   * **What it costs, stated because it is the real objection.** The Colosseum is drawn at 0.573,
+   * so its attic comes down from 48 m to 27.8 m. (This paragraph said 0.548 and 26 m for two
+   * phases; 0.548 was a working value from an earlier allocation and never shipped.) That is a visibly lower skyline and it is the price
    * of the ratio being right. A row may set `drawY: 1` where a building's height genuinely is its
    * identity and the distortion is worth paying — **no row does today**, and any that does must
    * say why in its `cite` and expect to be argued with.
@@ -224,16 +233,34 @@ export interface RomeMonument {
    * collapsing the rows keeps every id, every builder, every bearing and every real dimension,
    * and it is the same statement about the ground.
    *
-   * Every complex below is evidenced by `rome-landmarks.mjs --realgaps`: a set whose published
-   * plans interpenetrate or abut **in real metres, with no projection involved**. That is
-   * arithmetic from published dimensions, not an appeal to convenience.
+   * Every complex below is evidenced by `rome-landmarks.mjs --realgaps`: a set containing a pair
+   * whose published plans interpenetrate or abut **in real metres, with no projection involved**.
+   * That is arithmetic from published dimensions, not an appeal to convenience.
+   *
+   * **And "one piece of continuous built fabric" is a stronger claim than that evidence supports,
+   * which is a fault this docstring owns.** A set with *a* joined pair is not a joined set.
+   * `assertComplexJoined` in `assertions.ts` now asks the harder question — is the complex
+   * *connected* under "closer than a 12 m real street"? — against the same published plans, and
+   * **three of five fail**: `campus-medius` is four pieces, `forum-valley` five, and
+   * `colosseum-valley` four, the last of those being two groups on two different levels, the
+   * Colosseum and the Ludus in the valley and the Baths of Titus and Trajan on the Oppian terrace
+   * 38 real metres away. `pompey` and `octavia-marcellus` are genuinely one piece. The check
+   * faults at every boot and the repair is phase 4's, because narrowing a complex makes its former
+   * members owe each other a projected street and re-opens the `draw` allocation.
    *
    * **What a complex licenses is bounded, and the bound is the gate's, not this file's.** Two
    * rows in one complex may interpenetrate by at most **2.4 m** — just inside
    * `probe-fabric.mjs`'s own `ABUT_DEPTH_M = 2.5`, the depth below which it classes an
-   * intersection as a joint in one structure rather than two buildings inside each other. So a
-   * licensed abutment is licensed by the external instrument too, and not merely by this file's
-   * opinion of itself.
+   * intersection as a joint in one structure rather than two buildings inside each other.
+   *
+   * **That last sentence used to end "so a licensed abutment is licensed by the external
+   * instrument too", and it claimed more than it could.** `probe-fabric`'s abutment class needs
+   * `dep <= 2.5` **and** an area limb, `area <= ABUT_FRAC × min(area)` = 5 %, and for a small
+   * monument the depth alone does not buy the class: 2.4 m along the Tabularium's 12.7 m edge is
+   * 30 m² against a 17 m² allowance. The external licence is narrower than the depth bound
+   * suggests, so the depth bound is this file's floor and not a guarantee about the gate.
+   * `assertions.ts:ABUT_DEPTH` is where it is now actually enforced — it was enforced nowhere in
+   * `src/` at all until this phase, while a docstring said it was.
    *
    * **That bound was learnt the expensive way and the lesson is general.** This field first
    * shipped as an *exemption*: a named pair was skipped by the conflict solve entirely. It
@@ -351,7 +378,7 @@ export const ROME: readonly RomeMonument[] = [
     id: 'pantheon',
     name: 'Pantheon',
     e: -447, n: 678, len: 84, wid: 58, bearing: 176, axis: 'z',
-    draw: 0.704, // 84 x 58 m real -> 59 x 41 m drawn
+    draw: 0.484, // 84 x 58 m real -> 41 x 28 m drawn — see the size-order note below
     where: 'campus-martius', complex: 'campus-medius',
     cite: '41.8986 N 12.4769 E. Rotunda 58 m external / 43.3 m internal diameter, dome apex ' +
       '43.3 m; pronaos 33.1 × 15.5 m facing north, 3.7° west of true north (Hannah & Magli ' +
@@ -461,7 +488,7 @@ export const ROME: readonly RomeMonument[] = [
     id: 'porticus-octaviae',
     name: 'Porticus Octaviae',
     e: -319, n: 61, len: 132, wid: 119, bearing: 26.5,
-    draw: 0.532, // 132 x 119 m real -> 70 x 63 m drawn
+    draw: 0.462, // 132 x 119 m real -> 61 x 55 m drawn
     where: 'campus-martius', complex: 'octavia-marcellus',
     cite: '41.8928 N 12.4784 E, the double-temple precinct of Juno Regina and Jupiter Stator ' +
       'north of the Theatre of Marcellus. 132 × 119 m per the Severan Marble Plan. **Moved 121 m ' +
@@ -480,7 +507,7 @@ export const ROME: readonly RomeMonument[] = [
     id: 'theatre-marcellus',
     name: 'Theatre of Marcellus',
     e: -252, n: -91, len: 130, wid: 115, bearing: 204, axis: 'z',
-    draw: 0.339, // 130 x 115 m real -> 44 x 39 m drawn
+    draw: 0.407, // 130 x 115 m real -> 53 x 47 m drawn
     where: 'campus-martius', complex: 'octavia-marcellus',
     cite: '41.8918 N 12.4797 E. Cavea 111 m across, 32.6 m to the top of the attic, 41 arcade ' +
       'bays per storey, seated c. 15,000; dedicated 13 BC. The cavea opens SE onto its stage, ' +
@@ -522,7 +549,7 @@ export const ROME: readonly RomeMonument[] = [
     id: 'forum-romanum',
     name: 'Forum Romanum',
     e: 265, n: -2, len: 200, wid: 90, bearing: 117,
-    draw: 0.731, // 200 x 90 m real -> 146 x 66 m drawn
+    draw: 0.561, // 200 x 90 m real -> 112 x 50 m drawn
     where: 'forum-valley', complex: 'forum-valley',
     cite: '41.8925 N 12.4853 E. The open square runs NW–SE between the Capitoline and the ' +
       'Velia, c. 200 × 90 m from the Rostra to the Regia. Bearing from the axis of the ' +
@@ -714,8 +741,8 @@ export const ROME: readonly RomeMonument[] = [
     id: 'castra-praetoria',
     name: 'Castra Praetoria',
     e: 2113, n: 1484, len: 400, wid: 377, bearing: 340,
-    draw: 0.190, // 400 x 377 m real -> 76 x 72 m drawn
-    drawMax: 0.190,
+    draw: 0.326, // 400 x 377 m real -> 130 x 123 m drawn
+    drawMax: 0.326,
     where: 'viminal', atWall: 0.02, offMapEast: true,
     cite: '41.9057 N 12.5057 E. 440 × 380 m brick-faced camp of AD 23; Aurelian took its own ' +
       'north and east walls into the circuit, which is why the curtain runs into it. ' +
@@ -749,13 +776,31 @@ export const ROME: readonly RomeMonument[] = [
       'Two hundred metres of barracks therefore stood on the ATTACKERS\' side of the ' +
       'curtain, and `probe-fabric` G6 and G7 saw it the moment `confine` was deleted — ' +
       'because `confine` had been hiding it, clamping the camp from z 733 to z 975 at every ' +
-      'boot, six hundred real metres south of its own surveyed position, silently. 0.228 is ' +
-      '`(centre z 733.5 - wall z 666.7) / 278.6 m of half-depth per unit`, and it draws a ' +
-      '91 x 86 m camp. That is small for a 437 m fortress and it is the honest number: the ' +
-      'alternatives are a fortress standing outside the city it defends, or the six-hundred-' +
-      'metre lie the resolver used to tell. **This is the sharpest measurement of what ' +
-      '`KZ` = 0.35 costs after the Colosseum\'s** — see ROME-FABRIC.md 8.5a for the same ' +
-      'trade and the same three remedies.',
+      'boot, six hundred real metres south of its own surveyed position, silently. ' +
+      '**Phase 3 corrects that arithmetic and then makes it unnecessary.** The number this row ' +
+      'used to carry was 0.190 under a paragraph deriving 0.228, and both were wrong in the ' +
+      'same way: `(733.5 - 666.7) / 278.6` mixes a centre z the built map does not use (it is ' +
+      '**726.096**) with the PRECINCT-inflated half-depth, and it measures the box\'s north face ' +
+      'at the centre\'s own x when the rotated box\'s northernmost corner sits 17 m further east, ' +
+      'where the crest is 4 m further south. Re-derived on the true oriented outline, the ' +
+      'ceiling with the centre pinned is **0.1997** — so 0.190 was right to three per cent and ' +
+      'the reasoning printed for it was not. ' +
+      '**What changes the answer is not the arithmetic but the anchor.** A ground judge put it ' +
+      'exactly right: this is a frame problem stated as a footprint problem. The camp\'s north ' +
+      'wall IS the curtain — that is the archaeology this cite spends a paragraph establishing ' +
+      'from three plate corners — while the centre is a derived midpoint. So `atWall`, declared ' +
+      'and documented and never read by anything for two phases, is now implemented in ' +
+      '`layout.ts:place`: the row is placed by its north edge and the centre follows, 25 m south ' +
+      'of the projection. Measured ceilings at that anchor: **0.326** keeping the footprint west ' +
+      'of the camp\'s own surveyed east return, 0.674 keeping it on the heightfield (which ' +
+      '`offMapEast` licenses, and which the east return does not yet contest — `circuit.ts` ' +
+      'builds only the west one), 1.301 against `CITY_Z_MAX`. This row ships the conservative ' +
+      'one: **130 x 123 m, 1.7x the old footprint in both axes.** It is still not a 437 m ' +
+      'fortress, and it is no longer smaller than the stretch of curtain in front of it, which ' +
+      'is what the judge measured and what made it read as a walled farmyard. ' +
+      'The 25 m shift is a declared placement override and `assertRomeFrame` check 5 prints it ' +
+      'by name at every boot rather than excluding it — MAP-METHOD.md rule 16, learnt from the ' +
+      'Janiculum. See ROME-FABRIC.md 9.2.',
   },
   {
     id: 'gardens-sallust',

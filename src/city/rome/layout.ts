@@ -179,11 +179,20 @@ const drawHeightOf = (m: RomeMonument): number => (m.soft ? 1 : (m.drawY ?? m.dr
  * `assertRomeFrame`'s `offMap` list, which prints the names at every boot, so the cost is
  * visible rather than implied.
  *
- * The bound is `HALF_EXTENT`, the heightfield's own edge, and the test is on the **footprint**
- * and not the centre — which is what `topography.ts:KZ`'s original docstring meant by *"with
- * its precinct clear of the edge"*, and what reproduces `ROME-FABRIC.md` §4.5's off-map sets at
- * every swept `KZ`. A monument whose centre is on the map but whose south half hangs over the
- * edge is a monument with a straight cut through it, which is worse than an absent one.
+ * **The bound is `CITY_Z_MAX` and the test is on the centre, and this paragraph used to say the
+ * opposite.** It claimed the bound was `HALF_EXTENT` and the test was *"on the **footprint** and
+ * not the centre… what reproduces `ROME-FABRIC.md` §4.5's off-map sets at every swept `KZ`"*. The
+ * code below tests `worldOf(m.e, m.n).z > CITY_Z_MAX`. Both halves of the claim are wrong and the
+ * second is the dangerous one: `tools/scratch/rome-landmarks.mjs` records that the centre test and
+ * the footprint test agree **only at `KZ` = 0.35** and diverge at 0.30 and 0.38, so the file
+ * documents a test about the +Z edge, ships a test about the fabric inset, and the divergence is
+ * invisible at exactly the value in use.
+ *
+ * The centre test is the right one and `rome-landmarks.mjs:reserve` argues why: with `draw`
+ * authored per row, a footprint test is circular — membership would depend on a footprint chosen
+ * after membership, so a monument could be deleted from the map for the crime of being drawn at
+ * its real size. What the footprint test was protecting against, a building hanging over the edge
+ * of the ground, is `maxDrawAt` below, measured on the true oriented reach.
  *
  * **Phase 6, not now:** whether these six can come back as off-field silhouette geometry beyond
  * the heightfield is tagged **[?]** in §4.5 and is measured by
@@ -225,8 +234,38 @@ export const maxDrawAt = (m: RomeMonument): number => {
 function place(m: RomeMonument): LandmarkPlacement {
   const w = worldOf(m.e, m.n);
   let x = w.x;
-  const z = clamp(w.z, CITY_Z_MIN(w.x) + 20, CITY_Z_MAX);
-  if (m.farBank) x = FAR_BANK(z, 90);
+  let z = clamp(w.z, CITY_Z_MIN(w.x) + 20, CITY_Z_MAX);
+  /**
+   * **The channel-relative overrides, and the one row they must not touch.**
+   *
+   * `FAR_BANK` exists because a *building* on the far bank wants a known clearance from a river
+   * whose exact channel is still being re-surveyed on another branch: better to hold the
+   * Mausoleum of Hadrian 90 m west of the modelled bank than to trust an east–west coordinate
+   * through a 1.27x anisotropy and find the drum in the water.
+   *
+   * Applied to **landscape** it is not a clearance, it is a deletion of the survey. The Janiculum
+   * Ridge is a 520 x 240 m planted ridge that *is* the far bank's topography; it is not placed
+   * relative to the channel, and overriding its x put it **404 world metres east of its own
+   * survey row**, in the middle of the map's southern edge, where a 40 m mound with a 230 m
+   * planting radius clamped onto the last row of the heightfield is the best available
+   * explanation of the forty-odd trees a ground judge photographed hanging in the sky over the
+   * Campus Martius. Between phase 1 and phase 2 it moved **715 m** under a headline of
+   * *"displacement is 0.0 m by construction"*, because the check that would have caught it
+   * excluded exactly the rows this override applies to (`MAP-METHOD.md` rule 16; the check is
+   * fixed in `assertions.ts` check 5 and now prints every override row by name every run).
+   *
+   * **So the override is a bound and not a position: it may pull a row west, never east.**
+   * `Math.min` keeps the clearance for the drum that wants it and returns the ridge to its own
+   * survey row, and it generalises the `soft` case rather than special-casing it — any far-bank
+   * row already west of the clearance line is simply left where the survey puts it.
+   *
+   * `e/terrain/tiber-resurvey` arrives independently at the same shape,
+   * `Math.min(w.x, FAR_BANK(z, 100))`, from the other side of the same fault: that branch is
+   * re-surveying the channel and found `FAR_BANK` throwing away survey x too. Two branches, one
+   * conclusion, and writing it the same way here is deliberate — it is the hunk the two must
+   * merge, and `100` against `90` is the only thing left to reconcile.
+   */
+  if (m.farBank) x = Math.min(w.x, FAR_BANK(z, 90));
   else if (m.onRiver) x = riverCentreX(z);
   // `len` runs along whichever local axis the monument is built on: X for a circus or a
   // bath block, Z for a temple, a theatre or the Pantheon, whose axial plan runs from the
@@ -235,6 +274,69 @@ function place(m: RomeMonument): LandmarkPlacement {
   const planScale = drawScaleOf(m);
   const hw = (alongZ ? m.wid : m.len) * 0.5 * PRECINCT * planScale;
   const hd = (alongZ ? m.len : m.wid) * 0.5 * PRECINCT * planScale;
+  /**
+   * **`atWall`, implemented. It has been declared, documented and dead for two phases.**
+   *
+   * The field's docstring in `survey.ts` says it is the *"fraction of the footprint's depth that
+   * may sit north of the wall crest"*, because Aurelian took the Castra Praetoria's own north and
+   * east walls into the circuit. Nothing read it: `place` copied it onto the placement and no
+   * consumer ever looked, so the constraint it describes was enforced only by a hand-transcribed
+   * `draw` and by `probe-fabric` G6 noticing afterwards.
+   *
+   * That inertness had a measured cost, and it is the fault a ground judge named twice. With the
+   * centre pinned at `worldOf(e, n)` the camp stands **59 world metres** inside its own north
+   * wall while needing 260 m of half-depth to stand behind it, so the only footprint that keeps
+   * the barracks inside the city is `draw` 0.20 — a **437 m brick fortress drawn 76 x 72 m**,
+   * which reads as a walled farmyard and as *smaller than the stretch of curtain in front of it*.
+   * At full plan **223 m of barracks** stand on the attackers' side. The judge's diagnosis is the
+   * right one: *that is a frame problem stated as a footprint problem*, and the footprint is the
+   * wrong place to pay for it.
+   *
+   * Anchoring the north edge instead of the centre is not a licence, it is the archaeology: the
+   * camp's **north wall is the curtain**, which is a surveyed fact this row's own `cite` spends a
+   * paragraph establishing from three plate corners. What the survey pins precisely is that
+   * wall's line; the centre is a derived midpoint. So the row is placed by its north edge, it may
+   * keep `atWall` of its depth north of the crest, and the resulting southward shift of the
+   * centre is a **declared override reported by name** at every boot by `assertRomeFrame` check 5
+   * — the same treatment `farBank` gets, for the same reason (`MAP-METHOD.md` rule 16).
+   *
+   * The measured ceilings at this anchor, on the true oriented outline: **0.326** keeping the
+   * footprint west of the camp's own surveyed east return, 0.674 keeping it on the heightfield
+   * (which `offMapEast` licenses and which the east return does not yet contest, `circuit.ts`
+   * building only the west one), and 1.301 against `CITY_Z_MAX`. The row ships the conservative
+   * one.
+   */
+  if (m.atWall !== undefined) {
+    const rot = worldRot(m.bearing, m.axis ?? 'x');
+    // The box's true half-extent along world +Z — not `hd`, which is its depth in its own frame.
+    const zReach = Math.abs(hw * Math.sin(rot)) + Math.abs(hd * Math.cos(rot));
+    /**
+     * **Solved on the four corners, not at the centre's own x, and that distinction is the
+     * whole difficulty.** `wallCrestZ` slopes 0.249 world metres south per metre east across
+     * this run, and a box turned 115° has its northernmost corner some 17 m east of its centre,
+     * where the crest is already 4 m further south. Anchoring on `wallCrestZ(x_centre)`
+     * therefore leaves that corner *north* of the local curtain — measured, as
+     * `probe-fabric` G6, G7 and G16 all failing on the first attempt at this.
+     *
+     * So take the deepest incursion over the actual outline. Shifting `z` translates every
+     * corner equally and does not move any corner's x, so one pass is exact rather than
+     * iterative. `+3` clears the curtain's own 6 m of masonry from its centreline; `atWall`
+     * then buys back that fraction of the footprint's depth north of it, which is the licence
+     * the field is for — Aurelian's curtain runs *along* the camp's north wall, not outside it.
+     */
+    const cos = Math.cos(rot);
+    const sin = Math.sin(rot);
+    let worst = -Infinity;
+    for (const su of [-1, 1]) {
+      for (const sv of [-1, 1]) {
+        // makeRotationY maps local +X to (cos, −sin) and local +Z to (sin, cos).
+        const cx = x + su * hw * cos + sv * hd * sin;
+        const cz = z - su * hw * sin + sv * hd * cos;
+        worst = Math.max(worst, wallCrestZ(cx) + 3 - m.atWall * 2 * zReach - cz);
+      }
+    }
+    if (worst > 0) z += worst;
+  }
   return {
     id: m.id,
     name: m.name,
@@ -758,9 +860,45 @@ const STREET_PLAN: {
 }[] = [
   {
     id: 'via-lata',
+    /**
+     * **The last two hundred metres now go round the Mausoleum of Augustus, because that is
+     * where the road went.**
+     *
+     * It used to run [-497, 2045] -> [-470, 1560] -> [-440, 1080], which passes **14 real metres
+     * from the centre of an 87 m tomb** — straight through it. With `resolveOverlaps` alive that
+     * was invisible, because the solver had shoved the Mausoleum 100-odd metres off its plate
+     * position and the road went through the hole. Phase 2 put the tomb back where the survey
+     * puts it and the road has run through masonry ever since: a ground judge measured **85
+     * unbroken metres of it across the carriageway**, and the same frame is the best view the map
+     * has produced, because the terminus and the obstruction are the same object.
+     *
+     * That tension does not have to be traded, and the judge named the fix: *"bend the last
+     * hundred metres of the carriageway round the tomb's eastern flank, as the real road did, and
+     * keep the tomb closing the view from further out. That is not deflecting a street around a
+     * solver's fiction; it is drawing the street where the street was."* The Via Flaminia ran
+     * along the Mausoleum's **eastern** side; the tomb's precinct was its west kerb.
+     *
+     * So the first 215 real metres out of the gate are dead straight — the frame a player sees
+     * first after a breach is 30 m in, and the tomb still closes it — and the swing east begins
+     * at n 1650, clearing the tomb's precinct by 5.4 world metres of carriageway edge at n 1500.
+     * `deflect` still runs afterwards and does the fine work; what it cannot do is invent a
+     * hundred-metre detour from a line that starts inside the building, which is why the armature
+     * has to state the bend and not merely permit it.
+     *
+     * **What this does and does not fix, stated because the two get conflated.** The
+     * *carriageway* clears the tomb, and the carriageway is what a column walks, because pathing
+     * follows the way graph. The **straight normal out of the gate** is still blocked 145-235 m
+     * in, and it always will be: the tomb stands on it, in reality and on the plate. That number
+     * is the one the judge's headline quotes, `assertGateAxisClear` now re-derives it at every
+     * boot beside this one, and clearing it would mean moving a surveyed monument — which is the
+     * thing this whole rebuild exists to stop doing.
+     */
     path: [
       [-497, 2045],
-      [-470, 1560],
+      [-487, 1830],
+      [-430, 1650],
+      [-375, 1500],
+      [-395, 1350],
       [-440, 1080],
       [-400, 620],
       [-340, 240],

@@ -319,7 +319,16 @@ function conflicts(boxes) {
 // 5. The tables
 // ---------------------------------------------------------------------------
 
-const KZ_SWEEP = [0.222, 0.26, 0.3, 0.35, 0.38, 0.413];
+/**
+ * The swept `KZ` values. **Overridable with `--sweep=0.34,0.35,0.36`** so the ceiling can be
+ * bracketed finely without editing this file — `ROME-FABRIC.md` §9.1 needs the exact `KZ` at
+ * which the Colosseum leaves the heightfield, and the default six-point sweep steps straight
+ * over it (0.35 on, 0.38 off).
+ */
+const KZ_SWEEP = (arg('sweep', '') || '0.222,0.26,0.3,0.35,0.38,0.413')
+  .split(',')
+  .map(Number)
+  .filter((n) => Number.isFinite(n) && n > 0);
 const PS_SWEEP = [0.65, 0.8, 1.0];
 const report = { gateX: GATE_X, gateZ: GATE_Z, kx: KX, rows: ROME.length, circuit: CIRCUIT.length };
 

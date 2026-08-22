@@ -12,6 +12,7 @@ import {
   assertOneAmphitheatre,
   assertRomeFrame,
   assertTopology,
+  assertGateAxisClear,
   assertWaysClearOfMonuments,
 } from './assertions';
 import { buildWall } from './circuit';
@@ -192,8 +193,31 @@ export const ROME_PLAN: CityPlan = {
     // circle that used to stand in for it left five sixths of its footprint free for the
     // fabric to grow through — which is precisely what happened.
     const keepOut = new KeepOut();
+    /**
+     * **A monument gets a keep-out, not a non-intersection, and that margin is the whole point.**
+     *
+     * `l.hw`/`l.hd` are already the precinct box, but `PRECINCT` = 1.07 buys a monument 3.5 % of
+     * its own half-width — about 1.3 m on the Pantheon — and two separate instruments say that is
+     * not enough. `probe-fabric` G9 wants `CLEAR_MON_BLD` = 1.5 m, the *ambitus* of the XII
+     * Tables and the oldest surviving Roman rule on exactly this question, and it fails at
+     * **0.69 m** between the Ara Pacis and an insula. G16 wants no monument's drawn stone inside
+     * a building, and it fails wherever a builder's cornice or podium oversails its own box,
+     * which G14 measures separately and independently.
+     *
+     * Reserving the *ambitus* plus a metre of oversail here makes both pass **by construction**
+     * rather than by where an insula happened to fall — which is how they were passing, as this
+     * pass discovered by moving the Janiculum 404 m and watching an unrelated insula land on the
+     * Theatre of Pompey. A ground judge asked for this in as many words: *"a monument needs a
+     * keep-out, not a non-intersection… G9 is right and too weak."*
+     *
+     * It is deliberately small. The same judge also wants the Pantheon's 60 m paved forecourt,
+     * and that is a *plaza* — an authored piece of the plan with its own shape and paving — not a
+     * uniform margin, and it belongs to phase 5 with the rest of the fabric. This is the floor,
+     * not the answer.
+     */
+    const MON_AMBITUS = 2.5;
     for (const l of LANDMARKS) {
-      keepOut.addRect(l.x, l.z, l.hw, l.hd, l.rot);
+      keepOut.addRect(l.x, l.z, l.hw + MON_AMBITUS, l.hd + MON_AMBITUS, l.rot);
       // A mound is bigger in plan than the building on it.
       if (l.mound) keepOut.addCircle(l.x, l.z, (l.moundRadius ?? l.clear) * 1.02);
     }
@@ -277,9 +301,27 @@ export const ROME_PLAN: CityPlan = {
     if (!wayClearance.ok) {
       console.warn(
         `[city] ${wayClearance.inside}/${wayClearance.samples} ranked-way samples ` +
-          `inside a monument; worst ${wayClearance.worst?.id} at ${wayClearance.worst?.pct}%`
+          `inside a monument; worst ${wayClearance.worst?.id} at ${wayClearance.worst?.pct}%` +
+          `; per way: ${wayClearance.byWay
+            .filter((w) => w.inside > 0)
+            .map((w) => `${w.id} ${w.pct}% (${w.inside}/${w.samples}: ${w.hit.join('+')})`)
+            .join(', ')}`
       );
     }
+    /**
+     * The gate axis, printed beside the carriageway rather than instead of it. A ground judge's
+     * headline is measured on this line and the record could not re-derive it; now it can, and
+     * the difference between the two numbers is visible in one place. See `assertGateAxisClear`.
+     */
+    const axis = assertGateAxisClear();
+    console.info(
+      `[city:rome] gate axis (the straight normal out of the Porta Flaminia, NOT the ` +
+        `carriageway, which deflect bends): ${axis.inside}/${axis.samples} = ${axis.pct}% ` +
+        `inside masonry over the first 700 m` +
+        (axis.blockers.length
+          ? `; blocked by ${axis.blockers.map((b) => `${b.id} ${b.from}-${b.to} m`).join(', ')}`
+          : '')
+    );
 
     const trees: TreeRequest[] = [...wall.trees, ...landmarks.trees, ...districts.trees];
     const chunks: CityChunkSpec[] = [

@@ -21,7 +21,7 @@ import {
   WAY_RANK,
   WAYS,
 } from './layout';
-import { GATE_X, KX, KZ, ROME, worldOf } from './survey';
+import { GATE_X, KX, KZ, ROME, worldOf, type RomeMonument } from './survey';
 
 /**
  * Build-time checks on Rome's plan.
@@ -35,6 +35,225 @@ import { GATE_X, KX, KZ, ROME, worldOf } from './survey';
  * build-time self-check Rome's wall builder has never had and `carthageWall.ts` has three of
  * (§14.4a) — and this is the file it goes in.
  */
+
+/**
+ * **How deep two structures in one declared `complex` may interpenetrate before it is a fault.**
+ *
+ * This constant is the correction of a documentation fault that a ground judge caught and that
+ * was worse than it looked. `assertNoFootprintOverlaps`'s docstring claimed the abutment
+ * population was *"gated at `ABUT_DEPTH`, not exempt"*, and **`ABUT_DEPTH` existed nowhere in
+ * `src/`**: the function pushed every same-complex overlap into an array, printed it, and gated
+ * only `pairs.length === 0`. The only place the bound was enforced was
+ * `tools/scratch/rome-landmarks.mjs`, where it is `+arg('abut', '2.4')` — command-line
+ * overridable, in the offline script that chose `draw` in the first place. So the licence was
+ * granted and checked by the same file, which is `MAP-METHOD.md` rule 6's forbidden shape, and
+ * the docstring asserting otherwise is rule 2's: *a number in prose without a source is a guess
+ * that will be read as a measurement.*
+ *
+ * The value is **not** invented here. It is `tools/probe-fabric.mjs`'s own `ABUT_DEPTH_M = 2.5`
+ * less the 0.1 m the allocator holds in reserve, so a footprint this file passes is a footprint
+ * the external gate also classes as a joint in one structure rather than two buildings inside
+ * each other. `survey.ts:RomeMonument.complex` carries the per-complex evidence.
+ */
+export const ABUT_DEPTH = 2.4;
+
+/**
+ * **The separation inside which two monuments share one frame, and the size deadband.**
+ *
+ * `VISUAL-RUBRIC.md` H8's own tell is *"pick two monuments **visible in one frame** and compare
+ * which is bigger against which really was"*, so the relation that has to hold is about
+ * co-visibility rather than about the whole city. `FRAME_RANGE` is measured rather than chosen:
+ * the ground judge's `lm2-colosseum-200m.jpg` stands 200 m from a 108 m amphitheatre at a man's
+ * eye and **the Colosseum is not in the picture** — a sliver of attic over a roofline, everything
+ * else three- and four-storey insulae. If Rome's largest monument is already hidden by its own
+ * fabric at 200 m, two monuments 400 m apart are not one view, and 150 m is the honest bound.
+ *
+ * `SIZE_DEADBAND` is the fraction of the shorter plan within which the survey is treated as
+ * asserting **no** order. It is relative because length is: twelve metres between two 130 m
+ * buildings is nothing and between two 18 m buildings is everything. 20 % is about the eye's
+ * discrimination threshold for comparing two plan extents at different distances and elevations,
+ * and inside it the ranking is the author's to make rather than the archaeology's — which is why
+ * the Tabularium (73 m) is deliberately drawn smaller than the Temple of Jupiter (63 m) it is
+ * 1.16x the length of: the Capitolium is the datum the whole survey is measured from and it
+ * already reads as a warehouse with a gable. `tools/scratch/rome-landmarks.mjs --audit` prints
+ * the inversion count at every band and at a 5 % deadband, so that choice is visible and counted
+ * rather than absorbed.
+ */
+export const FRAME_RANGE = 150;
+export const SIZE_DEADBAND = 0.2;
+
+/**
+ * **Do two monuments in one frame have the size order the archaeology gives them?**
+ *
+ * The invariant nobody had, and the one a person can actually see. Phase 2's proudest number was
+ * *"0 of 860 spatial relations inverted"* — is the Pantheon still north of the Theatre of Pompey
+ * — and it is a proof rather than a measurement, because `worldOf` is strictly monotone in both
+ * axes and cannot invert a position. **Nobody asked the same question about size**, and the
+ * answer was 52 of 331 pairs reversed, one in ten of the ones close enough to share a frame,
+ * against **zero** before, because the single global `PLAN_SCALE` it replaced was uniform and a
+ * uniform scale preserves order by definition.
+ *
+ * `MAP-METHOD.md` rule 17 is the general form: *when you replace a constant with a table, write
+ * down what the constant was silently guaranteeing.* A scalar made this free; twenty-seven
+ * authored footprints do not, because the allocation is driven by **crowding**, which is
+ * uncorrelated with real size — the max-min floor holds a crowded 180 m porticus at 0.339 while
+ * the raise pass lifts an uncrowded 135 m temple to 0.863. The result was a Castra Praetoria
+ * drawn 0.87x the length of a tomb it is 4.60x longer than.
+ *
+ * The reference is outside the build: `len`/`wid` are the published dimensions each row cites,
+ * and what is compared against them is `len × draw`, which is what gets drawn. Nothing here reads
+ * the allocation's own intention (`MAP-METHOD.md` rule 6).
+ *
+ * Rows held down by a `drawMax` are counted apart and named rather than excluded: the frame or
+ * the curtain is holding them, the inversion is real either way, and the reader is owed the split
+ * rather than a smaller number (rule 16).
+ */
+export function assertSizeOrder(): {
+  ok: boolean;
+  relations: number;
+  inverted: number;
+  cappedInverted: number;
+  worst: { big: string; small: string; real: number; drawn: number } | null;
+  capped: string[];
+} {
+  const longOf = (m: { len: number; wid: number }) => Math.max(m.len, m.wid);
+  const rows = LANDMARKS.filter((l) => !l.soft)
+    .map((l) => ({ l, m: ROME.find((r) => r.id === l.id) }))
+    .filter((e): e is { l: (typeof LANDMARKS)[number]; m: RomeMonument } => e.m !== undefined);
+  let relations = 0;
+  let inverted = 0;
+  let cappedInverted = 0;
+  let worst: { big: string; small: string; real: number; drawn: number } | null = null;
+  const capped = rows.filter((e) => e.m.drawMax !== undefined).map((e) => e.l.id);
+  for (let i = 0; i < rows.length; i++) {
+    for (let j = i + 1; j < rows.length; j++) {
+      const a = rows[i];
+      const b = rows[j];
+      const la = longOf(a.m);
+      const lb = longOf(b.m);
+      if (Math.abs(la - lb) <= SIZE_DEADBAND * Math.min(la, lb)) continue;
+      if (Math.hypot(a.l.x - b.l.x, a.l.z - b.l.z) > FRAME_RANGE) continue;
+      relations++;
+      const da = la * a.l.planScale;
+      const db = lb * b.l.planScale;
+      // A tie has lost the relation, not reversed it: two rows compressed to the same drawn
+      // length is the allocation working, and `Math.sign(0)` would call it a fault.
+      if (la > lb ? da >= db : da <= db) continue;
+      if (a.m.drawMax !== undefined || b.m.drawMax !== undefined) cappedInverted++;
+      else inverted++;
+      const big = la > lb ? a : b;
+      const small = la > lb ? b : a;
+      const real = longOf(big.m) / longOf(small.m);
+      const drawn = (longOf(big.m) * big.l.planScale) / (longOf(small.m) * small.l.planScale);
+      if (worst === null || real / drawn > worst.real / worst.drawn) {
+        worst = { big: big.l.id, small: small.l.id, real, drawn };
+      }
+    }
+  }
+  return { ok: inverted === 0, relations, inverted, cappedInverted, worst, capped };
+}
+
+/**
+ * **What a real street is, in real metres, for judging a `complex` declaration.**
+ *
+ * Not a projected quantity and deliberately not `STREET_GAP`: this is the width below which two
+ * published plans are too close to have had a carriageway between them, which is the claim a
+ * `complex` makes. Twelve metres is a *vicus* plus its two footways — wider than the 7 m the
+ * projected frame argues about, because the question here is about Rome and not about the frame.
+ */
+const REAL_STREET = 12;
+
+/**
+ * **Is each declared `complex` actually one piece of fabric? Measured in real metres.**
+ *
+ * `RomeMonument.complex` says its members are *"one piece of continuous built fabric"*, and on
+ * the strength of that they are excused the 7 m street every other monument pair owes. A ground
+ * judge asked the obvious question nothing in the tree asked — *is the set connected?* — and
+ * found three of five complexes in pieces at any threshold under 20 m, with **the Theatre of
+ * Pompey standing 17.4 m from its own porticus post scaenam** while the row's docstring says they
+ * share the scaena.
+ *
+ * This asks it of the **published plans**, with no projection, no `PRECINCT` and no `draw` in the
+ * arithmetic — the same reference `--realgaps` uses. That matters for two reasons. It cannot be
+ * satisfied by shrinking a footprint, so it grades the *declaration* rather than the allocation
+ * (`MAP-METHOD.md` rule 6). And it is the stronger test: the drawn boxes can be pushed together
+ * by the frame's own compression, so a complex that is connected on screen may still be a false
+ * statement about the city.
+ *
+ * **It fails today, and the failures are the finding.** Measured here: `pompey` and
+ * `octavia-marcellus` are one piece; `campus-medius`, `forum-valley` and `colosseum-valley` are
+ * not, and the last of those is two groups on two different levels — the Colosseum and the Ludus
+ * Magnus in the valley, the Baths of Titus and Trajan on the Oppian terrace 38 real metres above
+ * and away. That is not one continuous masonry front and no threshold makes it one.
+ *
+ * **Deliberately not repaired in this pass.** Narrowing a complex makes its former members owe
+ * each other a 7 m projected street, which re-opens the allocation the rest of this branch just
+ * settled, and a change that moves the authored floor needs its own before and after rather than
+ * being smuggled in beside four others. Recorded as owed, with the instrument in place, so the
+ * next pass argues with a number. `MAP-METHOD.md` rule 18: the new class must be able to fail,
+ * and this one does.
+ */
+export function assertComplexJoined(): {
+  ok: boolean;
+  complexes: { id: string; rows: number; pieces: number; detached: string[] }[];
+} {
+  /**
+   * Real oriented boxes in an `(x = e, z = −n)` frame, so `obbOverlap` can be reused unchanged.
+   *
+   * **This is `tools/scratch/rome-landmarks.mjs:realBox`, to the sign**, and the duplication is
+   * deliberate rather than lazy: that convention was hand-checked against a computed separation
+   * before its table was trusted, and the same sign error — `atan2(−n, e)` instead of
+   * `atan2(n, e)` — has now been made independently by the offline allocator *and* by a judge's
+   * own probe. It mirrors every box about its own centre, which is invisible on an axis-aligned
+   * building and silently inverts every rotated one: it reported the Basilica Ulpia and Trajan's
+   * Column interpenetrating by 27.3 m when they are 8.2 m apart. Getting it wrong here made all
+   * five complexes read as detached, including the two that genuinely abut, which is how this
+   * comment came to be written.
+   *
+   * `len` stays on `hw` for both `axis` values, because `bearing` is the direction of the long
+   * axis in either convention — for an `axis: 'z'` row it is the way you face standing at the
+   * front looking in, which is the same line.
+   */
+  const boxOf = (m: RomeMonument): Obb => {
+    const th = (m.bearing * Math.PI) / 180;
+    return {
+      x: m.e,
+      z: -m.n,
+      hw: m.len * 0.5,
+      hd: m.wid * 0.5,
+      rot: Math.atan2(Math.cos(th), Math.sin(th)),
+    };
+  };
+  const byComplex = new Map<string, RomeMonument[]>();
+  for (const m of ROME) {
+    if (m.complex === undefined) continue;
+    byComplex.set(m.complex, [...(byComplex.get(m.complex) ?? []), m]);
+  }
+  const complexes: { id: string; rows: number; pieces: number; detached: string[] }[] = [];
+  let ok = true;
+  for (const [id, rows] of byComplex) {
+    // Union-find over "closer than a real street", then count components.
+    const parent = rows.map((_, i) => i);
+    const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    for (let i = 0; i < rows.length; i++) {
+      for (let j = i + 1; j < rows.length; j++) {
+        if (obbOverlap(boxOf(rows[i]), boxOf(rows[j]), REAL_STREET) === null) continue;
+        parent[find(i)] = find(j);
+      }
+    }
+    const roots = new Map<number, string[]>();
+    for (let i = 0; i < rows.length; i++) {
+      const r = find(i);
+      roots.set(r, [...(roots.get(r) ?? []), rows[i].id]);
+    }
+    const groups = [...roots.values()].sort((a, b) => b.length - a.length);
+    // Everything outside the largest group is what stops the complex being one piece.
+    const detached = groups.slice(1).flat();
+    complexes.push({ id, rows: rows.length, pieces: groups.length, detached });
+    if (groups.length > 1) ok = false;
+  }
+  return { ok, complexes };
+}
 
 /**
  * Build-time proof that the monument layout is correct **by construction**.
@@ -51,12 +270,17 @@ import { GATE_X, KX, KZ, ROME, worldOf } from './survey';
  *
  *  - **`pairs`** — two monuments in *different* complexes closer than `STREET_GAP`. Always a
  *    fault: it means a monument is standing in another quarter's street.
- *  - **`abutments`** — two monuments in the *same* complex, overlapping. Reported with the depth
- *    and gated at `ABUT_DEPTH`, not exempt: a complex is a declaration that the city had
+ *  - **`deepAbut`** — two monuments in the *same* complex interpenetrating deeper than
+ *    `ABUT_DEPTH`. **Now genuinely a fault**, which is what this docstring claimed for two
+ *    phases while the code merely printed it: a complex is a declaration that the city had
  *    continuous fabric there, and continuous fabric shares a wall rather than a volume.
- *    `survey.ts:RomeMonument.complex` carries the evidence for each.
- *  - **`worstAbut`** — the deepest licensed overlap. Not gated here, but printed, because it is
- *    the number that will grow silently if somebody adds a row to a complex without checking.
+ *  - **`abutments`** — the licensed ones, inside the bound. Printed with the deepest, because it
+ *    is the number that will grow silently if somebody adds a row to a complex without checking.
+ *
+ * `soft` rows — gardens, the planted hills, the island — are landscape rather than masonry and
+ * are skipped. That skip is **counted and named** in the return value rather than being silent,
+ * per `MAP-METHOD.md` rule 16: a temple standing in the middle of the Horti Sallustiani is how
+ * Rome worked, but "we did not look" and "there was nothing to see" must not print the same.
  */
 export function assertNoFootprintOverlaps(): {
   ok: boolean;
@@ -64,10 +288,14 @@ export function assertNoFootprintOverlaps(): {
   worst: number;
   pairs: { a: string; b: string; depth: number }[];
   abutments: { a: string; b: string; depth: number }[];
+  deepAbut: { a: string; b: string; depth: number }[];
   worstAbut: number;
+  softSkipped: string[];
 } {
   const pairs: { a: string; b: string; depth: number }[] = [];
   const abutments: { a: string; b: string; depth: number }[] = [];
+  const deepAbut: { a: string; b: string; depth: number }[] = [];
+  const softSkipped = LANDMARKS.filter((l) => l.soft).map((l) => l.id);
   let worst = 0;
   let worstAbut = 0;
   for (let i = 0; i < LANDMARKS.length; i++) {
@@ -83,7 +311,9 @@ export function assertNoFootprintOverlaps(): {
       if (together) {
         const hit = obbOverlap(ab, bb, 0);
         if (!hit) continue;
-        abutments.push({ a: a.id, b: b.id, depth: +hit.depth.toFixed(2) });
+        const rec = { a: a.id, b: b.id, depth: +hit.depth.toFixed(2) };
+        if (hit.depth > ABUT_DEPTH) deepAbut.push(rec);
+        else abutments.push(rec);
         worstAbut = Math.max(worstAbut, hit.depth);
         continue;
       }
@@ -95,12 +325,14 @@ export function assertNoFootprintOverlaps(): {
     }
   }
   return {
-    ok: pairs.length === 0,
+    ok: pairs.length === 0 && deepAbut.length === 0,
     count: pairs.length,
     worst: +worst.toFixed(2),
     pairs,
     abutments,
+    deepAbut,
     worstAbut: +worstAbut.toFixed(2),
+    softSkipped,
   };
 }
 
@@ -362,16 +594,21 @@ export function assertWaysClearOfMonuments(): {
   samples: number;
   inside: number;
   worst: { id: string; pct: number } | null;
+  byWay: { id: string; pct: number; inside: number; samples: number; hit: string[] }[];
 } {
   const solids = LANDMARKS.filter((l) => !l.soft);
   const pt: Obb = { x: 0, z: 0, hw: 0.1, hd: 0.1, rot: 0 };
   let samples = 0;
   let inside = 0;
   let worst: { id: string; pct: number } | null = null;
+  // Naming the monuments a way still runs through is the difference between "via-lata 13 %",
+  // which nobody can act on, and "via-lata 13 %, porticus-pompei", which is a decision.
+  const byWay: { id: string; pct: number; inside: number; samples: number; hit: string[] }[] = [];
   for (const w of WAYS) {
     if (w.id.startsWith('ring-') || WAY_RANK[w.cls] < WAY_RANK.secondary) continue;
     let n = 0;
     let bad = 0;
+    const hit = new Set<string>();
     for (let i = 0; i + 1 < w.path.length; i++) {
       const a = w.path[i];
       const b = w.path[i + 1];
@@ -384,16 +621,76 @@ export function assertWaysClearOfMonuments(): {
         pt.x = x;
         pt.z = z;
         // The carriageway, not the centreline: half the road has to clear the masonry.
-        if (solids.some((l) => obbOverlap(pt, l, w.width * 0.5) !== null)) bad++;
+        const on = solids.filter((l) => obbOverlap(pt, l, w.width * 0.5) !== null);
+        if (on.length) {
+          bad++;
+          for (const l of on) hit.add(l.id);
+        }
       }
     }
     if (!n) continue;
     samples += n;
     inside += bad;
     const pct = (bad / n) * 100;
+    byWay.push({ id: w.id, pct: +pct.toFixed(0), inside: bad, samples: n, hit: [...hit] });
     if (!worst || pct > worst.pct) worst = { id: w.id, pct: +pct.toFixed(0) };
   }
-  return { ok: inside === 0, samples, inside, worst };
+  byWay.sort((a, b) => b.pct - a.pct);
+  return { ok: inside === 0, samples, inside, worst, byWay };
+}
+
+/**
+ * **The straight line out of the Porta Flaminia, which is not the same thing as the road.**
+ *
+ * A ground judge's headline finding is that *"the road the assault arrives on is 32 % solid"*,
+ * measured by walking **the gate's own outward normal** inward in 5 m steps. That number is real
+ * and this reproduces it, because a claim in the record that no instrument in the tree can
+ * re-derive is a claim nobody can check.
+ *
+ * **And it is worth being exact about what it measures, because the name it travels under is
+ * wrong in a way that changes what to do about it.** The gate's normal is a straight line; the
+ * Via Lata is not, and `deflect` has bent it round its monuments since phase 1. So this counts
+ * the ground under a column ordered to walk *dead straight* into the city, which is a different
+ * question from whether the carriageway is passable, and the two answers should be read side by
+ * side rather than one reported as the other. The judge says as much in its own §13: *"if a
+ * player never orders a column down the Porta Flaminia's own axis, §10.5's 32 % is the wrong
+ * number."*
+ *
+ * Both are now printed at every boot. `assertWaysClearOfMonuments` above is the carriageway, per
+ * way; this is the axis. Neither replaces the other, and neither is gated yet — the axis cannot
+ * be cleared without moving a surveyed monument off its plate position, which is the trade the
+ * record has to make in the open. The interval each blocking monument occupies is named so the
+ * next reader argues about a building rather than about a percentage.
+ */
+export function assertGateAxisClear(): {
+  samples: number;
+  inside: number;
+  pct: number;
+  blockers: { id: string; from: number; to: number }[];
+} {
+  const solids = LANDMARKS.filter((l) => !l.soft);
+  const pt: Obb = { x: 0, z: 0, hw: 0.1, hd: 0.1, rot: 0 };
+  // A standing man on the gate's own inward normal. The circuit runs east–west at the gate, so
+  // that normal is +Z, which is also what the judge's `judge-fabric.mjs` walks.
+  const STEP = 5;
+  const RUN = 700;
+  let samples = 0;
+  let inside = 0;
+  const blockers: { id: string; from: number; to: number }[] = [];
+  for (let d = 0; d <= RUN; d += STEP) {
+    const x = GATE_X;
+    const z = GATE_Z + d;
+    samples++;
+    pt.x = x;
+    pt.z = z;
+    const hit = solids.find((l) => obbOverlap(pt, l, 0) !== null);
+    if (!hit) continue;
+    inside++;
+    const last = blockers[blockers.length - 1];
+    if (last && last.id === hit.id && last.to >= d - STEP) last.to = d;
+    else blockers.push({ id: hit.id, from: d, to: d });
+  }
+  return { samples, inside, pct: +((100 * inside) / samples).toFixed(1), blockers };
 }
 
 // ---------------------------------------------------------------------------
@@ -792,30 +1089,77 @@ export function assertRomeFrame(): RomeFrame {
   );
 
   // ---- 5. every monument stands where the survey puts it ----------------
-  // §4.1 check 5, and the check that proves the resolver is gone. **It is gone**, so this is no
-  // longer PENDING and it is no longer a measurement of anything but a typo: with `place()`
-  // returning `worldOf(e, n)` unmodified, the only way this can be non-zero is the z clamp,
-  // which check 8 below reports separately. It was 398.9 m at phase 1.
+  // §4.1 check 5, and the check that proves the resolver is gone. **It is gone**, so for a row
+  // placed by the affine map alone this is no longer a measurement of anything but a typo: with
+  // `place()` returning `worldOf(e, n)` unmodified, the only way it can be non-zero is the z
+  // clamp, which check 8 below reports separately. It was 398.9 m at phase 1.
+  //
+  // **And that is exactly why the version of this check that shipped was measuring nothing.**
+  // It skipped `farBank` and `onRiver` rows — the only rows whose x does *not* come from the
+  // affine map, which is to say the only rows that can be displaced at all — and then reported
+  // *"worst 0.0 m"* over the 27 rows that cannot move. A ground judge found the Janiculum Ridge
+  // standing **404 world metres** from its own survey row, having moved **715 m** between phase 1
+  // and phase 2, under that headline. `MAP-METHOD.md` rule 16 is the rule it broke: *a check whose
+  // exclusion list is exactly the rows a mechanism touches is a measurement of that mechanism's
+  // absence.*
+  //
+  // So the population is now every placed row, split by how it was placed and **both halves
+  // printed with their counts and their names**:
+  //
+  //  - `affine` — x and z both from `worldOf`. Target 0.5 m, and it is a proof.
+  //  - `override` — `farBank` / `onRiver`, whose x is taken from the terrain's channel on
+  //    purpose, and `atWall`, whose z is taken from the curtain the monument's own wall belongs
+  //    to. Comparing those against `worldOf()` is not a fault, it is the mechanism working, so
+  //    what is *reported* is the departure the override chose, by name, every run, and what is
+  //    gated is its size: a row moved further than `OVERRIDE_MAX` is not "placed against the
+  //    river" or "placed on the wall", it is somewhere else. That bound is the whole lesson of
+  //    the Janiculum, which the shipped check could not see at 404 m.
+  const OVERRIDE_MAX = 120;
   let worstDrift = 0;
   let worstDriftId = '';
+  let affineCount = 0;
+  const overrides: { id: string; dx: number; dz: number; why: string }[] = [];
   for (const l of LANDMARKS) {
     const m = surveyById.get(l.id);
-    if (!m || m.farBank || m.onRiver) continue; // placed off the river, not by the affine map
+    if (!m) continue;
     const w = worldOf(m.e, m.n);
     const dx = l.x - w.x;
     const dz = l.z - w.z;
+    if (m.farBank || m.onRiver || m.atWall !== undefined) {
+      overrides.push({
+        id: l.id,
+        dx,
+        dz,
+        why: m.onRiver ? 'onRiver' : m.farBank ? 'farBank' : 'atWall',
+      });
+      continue;
+    }
+    affineCount++;
     const d = Math.sqrt(dx * dx + dz * dz);
     if (d > worstDrift) {
       worstDrift = d;
       worstDriftId = l.id;
     }
   }
+  const worstOverride = overrides.reduce((a, o) => Math.max(a, Math.hypot(o.dx, o.dz)), 0);
   add(
     'every monument centre at worldOf(e, n)',
     worstDrift,
     '<= 0.5 m',
     worstDrift <= 0.5,
-    `worst ${worstDrift.toFixed(1)} m (${worstDriftId || 'none'}) — was 398.9 m before resolveOverlaps was deleted`
+    `worst ${worstDrift.toFixed(1)} m (${worstDriftId || 'none'}) over ${affineCount} affine-placed row(s) ` +
+      `— was 398.9 m before resolveOverlaps was deleted`
+  );
+  add(
+    'declared placement overrides stay inside their bound',
+    worstOverride,
+    `<= ${OVERRIDE_MAX} m, over the farBank/onRiver/atWall rows`,
+    worstOverride <= OVERRIDE_MAX,
+    `${overrides.length} override row(s): ` +
+      (overrides
+        .map((o) => `${o.id} (${o.why}) dx ${o.dx.toFixed(0)} dz ${o.dz.toFixed(0)}`)
+        .join('; ') || 'none') +
+      ` — these are the rows check 5 above cannot see, and the Janiculum was 404 m out under it`
   );
 
   // ---- 6. nothing solid intersects anything solid -----------------------
@@ -823,15 +1167,60 @@ export function assertRomeFrame(): RomeFrame {
   // an insula, which `ROME-FABRIC.md` §2.5 measures as the fault that let the others survive.
   // The whole-population version is `tools/probe-fabric.mjs`, external and going live in
   // phase 2; this row exists so the target is written down before there is anything to grade.
+  //
+  // **This row could not fail, and that was a bug rather than a policy.** `pending` was set
+  // `fp.ok ? null : '…'` — non-null exactly when the check failed — and `faults` below filters on
+  // `!c.ok && c.pending === null`. So a real monument-in-a-street regression rendered as PENDING
+  // in the boot log and left `frame.faults` empty. The `pending` note is about the *insula*
+  // population this check does not cover, which is true whether or not the monument population
+  // passes, so it belongs in the target string. The monument half gates.
   const fp = assertNoFootprintOverlaps();
   add(
     'monuments in different complexes keep the 7 m street',
     fp.count,
-    '0 pairs; insulae are phase 5 and are not in this population',
+    '0 pairs; insulae are phase 5 and are graded by tools/probe-fabric.mjs, not here',
     fp.ok,
     `${fp.count} pair(s) short of the street, worst ${fp.worst.toFixed(1)} m; ` +
-      `${fp.abutments.length} licensed abutment(s) inside a complex, deepest ${fp.worstAbut.toFixed(1)} m`,
-    fp.ok ? null : 'phase 5 (fabric) still owes the whole-population version, graded by tools/probe-fabric.mjs'
+      `${fp.abutments.length} licensed abutment(s) inside a complex, deepest ${fp.worstAbut.toFixed(1)} m ` +
+      `against the ${ABUT_DEPTH.toFixed(1)} m bound; ${fp.deepAbut.length} over it` +
+      (fp.deepAbut.length ? ` (${fp.deepAbut.map((d) => `${d.a}/${d.b} ${d.depth}m`).join(', ')})` : '') +
+      `; ${fp.softSkipped.length} soft row(s) skipped: ${fp.softSkipped.join(', ') || 'none'}`
+  );
+
+  // ---- 6c. is a declared complex actually one piece of fabric? ----------
+  // Measured on the published plans in real metres, so it grades the declaration rather than the
+  // allocation and cannot be satisfied by shrinking anything. See `assertComplexJoined`. It fails
+  // today on three of five, deliberately unrepaired in this pass, because narrowing a complex
+  // re-opens the footprint allocation and that needs its own before and after.
+  const cj = assertComplexJoined();
+  add(
+    'a declared complex is one piece of fabric in real metres',
+    cj.complexes.filter((c) => c.pieces > 1).length,
+    `0 complexes in pieces, at a ${REAL_STREET} m real street`,
+    cj.ok,
+    cj.complexes
+      .map((c) => `${c.id} ${c.pieces} piece(s)${c.detached.length ? ` (detached: ${c.detached.join(', ')})` : ''}`)
+      .join('; ')
+      + ' — owed to phase 4: narrowing a complex re-opens the draw allocation, so it is measured'
+      + ' here and repaired there'
+  );
+
+  // ---- 6b. the relation the survey asserts on the OTHER axis of the row --
+  // Phase 2 proved 0 of 860 inverted *position* relations and everybody read it as covering the
+  // ground. A survey row asserts two things about a building — where it is and how big it is —
+  // and the placement preserved only the one the player cannot see. See `assertSizeOrder`.
+  const so = assertSizeOrder();
+  add(
+    'monuments in one frame keep the size order the archaeology gives them',
+    so.inverted,
+    `0 inverted inside ${FRAME_RANGE} m at a ${(SIZE_DEADBAND * 100).toFixed(0)} % deadband`,
+    so.ok,
+    `${so.inverted} of ${so.relations} inverted` +
+      (so.cappedInverted ? `, plus ${so.cappedInverted} held by a drawMax` : '') +
+      (so.worst
+        ? `; worst ${so.worst.big} vs ${so.worst.small} really ${so.worst.real.toFixed(2)}x drawn ${so.worst.drawn.toFixed(2)}x`
+        : '') +
+      `; drawMax rows: ${so.capped.join(', ') || 'none'}`
   );
 
   // ---- 7. the fabric's own two numbers ----------------------------------
@@ -885,12 +1274,28 @@ export function assertRomeFrame(): RomeFrame {
    */
   let worstClamp = 0;
   let worstClampId = '';
+  let clampPop = 0;
+  const clampSkipped: string[] = [];
   for (const l of LANDMARKS) {
     const m = surveyById.get(l.id);
-    if (!m || m.farBank || m.onRiver) {
-      // Far-bank and on-river rows take their x from the channel, so only z is comparable.
-      if (!m) continue;
+    if (!m) continue;
+    // Far-bank and on-river rows take their x from the channel, so only z is comparable — and z
+    // is what this loop compares, which is why they belong in the population rather than out of
+    // it. (The guard that used to sit here tested for them and then did nothing, so they were
+    // measured anyway; the behaviour is unchanged and the intent is now written down.)
+    //
+    // **`atWall` rows are a different case and are genuinely excluded.** Their z is *deliberately*
+    // moved off the projection — the Castra Praetoria is placed by the north wall Aurelian built
+    // into the curtain, 31 m south of `worldOf` — so `|idealZ − worldOf().z|` for those rows
+    // measures the override, not the clamp, and reporting it here would make a working mechanism
+    // read as a frame fault. They are gated by the override check above, which bounds exactly
+    // this quantity at 120 m, and they are named here so the exclusion is counted rather than
+    // assumed (`MAP-METHOD.md` rule 16).
+    if (m.atWall !== undefined) {
+      clampSkipped.push(l.id);
+      continue;
     }
+    clampPop++;
     const d = Math.abs(l.idealZ - worldOf(m.e, m.n).z);
     if (d > worstClamp) {
       worstClamp = d;
@@ -902,7 +1307,9 @@ export function assertRomeFrame(): RomeFrame {
     worstClamp,
     '<= 10 m, or the row belongs in offMapSouth instead',
     worstClamp <= 10,
-    `worst ${worstClamp.toFixed(1)} m (${worstClampId || 'none'})`
+    `worst ${worstClamp.toFixed(1)} m (${worstClampId || 'none'}) over ${clampPop} row(s); ` +
+      `${clampSkipped.length} atWall row(s) excluded and gated by the override check instead: ` +
+      `${clampSkipped.join(', ') || 'none'}`
   );
 
   const faults = checks.filter((c) => !c.ok && c.pending === null).map((c) => `${c.name}: ${c.detail}`);
