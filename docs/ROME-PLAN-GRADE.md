@@ -21,7 +21,10 @@ from `KZ` 0.222 to 0.35 and nothing else was rebuilt. No roads, no grid, no fabr
 
 ### Verdict: **18 / 100 — FAIL.** All three veto criteria score zero.
 
-*(Scored under rubric v1.0. Re-scored under v1.1, which adds P3 at weight 4 out of P1 and P12: **unchanged at 18**, because all three of those criteria score zero.)*
+*(Scored **18 under rubric v1.0** and **17 under v1.1**, which adds P3 — the channel's drawn width
+— at weight 4 and P16 — the road armature — at weight 5, both funded out of criteria that already
+score zero or near it. Both totals are reported so the series stays comparable across the
+amendment.)*
 
 | # | criterion | weight | score | measurement |
 |---|---|---:|---:|---|
@@ -39,8 +42,9 @@ from `KZ` 0.222 to 0.35 and nothing else was rebuilt. No roads, no grid, no fabr
 | P13 | nothing inside the curtain | 3 | **2.5** | 1 undeclared insula; the one monument north of the line declares `atWall` |
 | P14 | regions partition | 5 | **0.0** | 17 districts claim **2.66×** the walled ground over **79** overlapping pairs |
 | P15 | grain vs the street armature | 7 | **0.0** | median **21.3°**; a coin toss gives 22.5° |
-| P3 | the channel's drawn width *(v1.0 weight 0; scored 0 under v1.1 too)* | 0 | **0.0** | the drawn channel reaches **385 world m** across in x where it declares 94 |
-| | **total** | **100** | **18.3** | |
+| P3 | the channel's drawn width *(v1.1: weight 4)* | 0 | **0.0** | the drawn channel reaches **385 world m** across in x where it declares 94; 65 of 559 samples over 45° |
+| P16 | the road armature *(v1.1: weight 5)* | 0 | **0.0** | **13** ways at 42 m where the design says one; carriageway **25.5 %** of the walled ground against a Roman city's 12–15 %; **43** ranked ways where the real city had hundreds |
+| | **total (v1.0 / v1.1)** | **100** | **18.3 / 17.1** | |
 
 ⚠ = veto criterion at zero.
 
@@ -237,12 +241,49 @@ generator reserves `WAYS` into its keep-out before it plans, and it works. The o
 monuments, and they are there because the resolver moved them after the roads were drawn and
 `deflect()` could not bend the roads far enough. **This is downstream of fault 1.**
 
-#### 7 — The seventeen layout regions claim 2.66× the ground
+#### 7 — The roads are too few and far too wide, and half the tarmac is 42 metres across
+
+Nobody is working on this and it is on the record anyway.
+
+| measure | Rome as built | what it should be | source for the target |
+|---|---:|---:|---|
+| ways at processional rank (42 m) | **13** | 1, plus the *via sagularis* | `ROME-FABRIC.md` §4.2: *"processional 42 m — **Via Lata only**"* |
+| total carriageway | **37.0 ha, 25.5 %** of the walled world ground | 12–15 % | excavated street-area fraction at Pompeii and Ostia |
+| share of carriageway at 42 m | **53.7 %** (19.9 ha) | ~9 % | the same §4.2 table |
+| ranked ways in total | **43** | several hundred | a Roman city's network is dense and narrow |
+| the six ways Shepherd names and the tree lacks | **0 of 6** | 6 | Shepherd pl. 22 draws Clivus Suburanus, Argiletum, Via Tecta, Clivus Capitolinus, the Subura and the Via Pinciana with endpoints |
+
+**Eight of the thirteen 42-metre avenues are machine-generated** — seven `feeder-*` ways and one
+`stitch-*`, 5.5 ha between them — so the generator is manufacturing processional boulevards that no
+design asked for. `layout.ts` is honest that 42 m is a game compromise so a 35-metre cohort can
+move, and that is a fair trade made **once**. Made thirteen times it is not a compromise, it is the
+shape of the city.
+
+**And the Via Lata, the one street the assault runs down, is drawn as a bow.** The Via Lata is the
+Via Flaminia inside the walls and is the modern Via del Corso — 1.6 km ruler-straight from Piazza
+del Popolo to Piazza Venezia, and one of the most famously straight streets in Europe. The engine's
+polyline departs from that straight line by **360 real metres / 160 world metres** at its worst,
+bowing east across the middle of the run:
+
+| along the run | engine, survey (e, n) | off the Corso's line |
+|---|---|---:|
+| t = 0.01 | (−497, 2022) | 7 real m |
+| t = 0.27 | (−488, 1560) | 130 |
+| t = 0.54 | (−459, 1080) | 239 |
+| t = 0.80 | (−400, 620) | **314** |
+| dense worst | | **360 real / 160 world** |
+
+The cause is `deflect()`: the way is resampled every 30 m and pushed out of the monuments the
+resolver had already moved. **So this is a third consequence of fault 1**, and deleting
+`resolveOverlaps` and `deflect` together should straighten it without anyone authoring a new
+polyline.
+
+#### 8 — The seventeen layout regions claim 2.66× the ground
 
 79 overlapping pairs, 4.55 km² claimed twice or more against 1.45 km² of walled world ground. This
 is `ROME-FABRIC.md` §2.3 reproduced with independent arithmetic and it is unchanged by phase 1.
 
-#### 8 — Two footprints are wrong and one of them is wrong in the other direction
+#### 9 — Two footprints are wrong and one of them is wrong in the other direction
 
 Compression measured **0.696 across twelve sourced monuments, uniform to three figures** — the
 projection is honest and the exceptions are modelling faults, not projection faults.
@@ -325,9 +366,8 @@ Stated rather than suppressed, per the rubric's rule 1.
    longitude** — see the self-correction below. Until the rest are digitised, P7 is scored on nine
    rows and the map's survey is mostly untested rather than mostly right.
 
-7. **Roads: rank membership is unchecked.** `ROME-FABRIC.md` §4.2 asks for four demotions and six
-   additions off the plates. Nothing has been done and nothing grades it. Ranked as low priority
-   only because faults 1–3 dominate; it is not low priority once they are fixed.
+7. ~~**Roads: rank membership is unchecked.**~~ **Measured — see ranked fault 7.** It is now
+   criterion P16 and it scores zero.
 
 ---
 

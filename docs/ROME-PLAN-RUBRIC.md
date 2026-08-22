@@ -139,10 +139,11 @@ samples above 45° to the z axis.
 
 #### Amendment — rubric v1.1, effective from pass 2
 
-P3 takes **weight 4**, and it comes from **P1 (10 → 8)** and **P12 (6 → 4)**. Announced rather than
-applied silently, and pass 1 is re-scored under both: because P1, P3 and P12 all score zero at pass
-1, **the total is unchanged at 18.2 either way**, so the series stays comparable. Any later
-amendment must be recorded the same way and must re-score every earlier pass.
+Two criteria that pass 1 showed I had missed. **P3** (above) becomes gradeable at **weight 4**, and
+**P16** (below) is new at **weight 5**. Funded by P1 10→8, P5 3→2, P6 20→17, P12 6→4 and P13 3→2.
+Announced rather than applied silently; pass 1 is re-scored under both and comes out **18 under
+v1.0 and 17 under v1.1**, both reported so the series stays comparable. Any later amendment must
+be recorded the same way and must re-score every earlier pass.
 
 ---
 
@@ -268,6 +269,28 @@ not the smaller set the plan-view diagnostic uses.
 
 **Threshold.** Zero undeclared.
 
+#### P16 — the road armature: how many streets, how wide, and which ones · weight 0 in v1.0, **5 from v1.1**
+
+**Test.** Three numbers and one list.
+(a) the count of ways at processional rank (42 m);
+(b) total carriageway area as a share of the walled world ground;
+(c) the count of ranked ways;
+(d) the named ways the plates draw that the tree lacks.
+
+**Ruler.** `ROME-FABRIC.md` §4.2's own rank table for (a) — *"processional 42 m, **Via Lata
+only**"* — plus the excavated street-area fraction of a Roman city (Pompeii and Ostia both run
+about **12–15 %** of the walled area) for (b), and Shepherd pl. 22's drawn and named streets for
+(d).
+
+**Threshold.** One processional way plus the *via sagularis*; carriageway ≤ **15 %** of walled
+ground; **≥ 40 ranked ways**, because a Roman city's street network is dense and narrow, not
+sparse and monumental; and the six ways Shepherd names and the tree lacks (Clivus Suburanus,
+Argiletum, Via Tecta, Clivus Capitolinus, the Subura's own line, the Via Pinciana) present.
+
+**Why this is a plan criterion and not a gameplay one.** `layout.ts` is honest that 42 m is a game
+compromise so a 35 m cohort can move, and that is a fair trade **once**. Made thirteen times it
+stops being a compromise and becomes the shape of the city.
+
 ---
 
 ### E. The fabric's plan
@@ -296,23 +319,27 @@ whatever the generator's comments say.**
 
 ## 2. The weights, in one table
 
+Two columns where v1.1 changed a weight: **v1.0 → v1.1**. v1.1 applies from pass 2, and pass 1 is
+reported under both.
+
 | # | criterion | weight | veto |
 |---|---|---:|:--:|
-| P1 | Tiber centreline departure | 10 → **8** (v1.1) | |
+| P1 | Tiber centreline departure | 10 → **8** | |
 | P2 | Tiber bend — the shape | 9 | **●** |
-| P3 | the channel's drawn width | 0 → **4** (v1.1) | |
+| P3 | the channel's drawn width | 0 → **4** | |
 | P4 | circuit waypoints vs the inked wall | 7 | |
-| P5 | the wall meets the water | 3 | |
-| P6 | landmark position **as built** | 20 | **●** |
+| P5 | the wall meets the water | 3 → **2** | |
+| P6 | landmark position **as built** | 20 → **17** | **●** |
 | P7 | landmark position **as surveyed** | 6 | |
 | P8 | bearing | 7 | |
 | P9 | footprint vs published | 5 | |
 | P10 | topology vs the plate | 4 | |
 | P11 | nothing in water | 8 | **●** |
-| P12 | nothing in a carriageway | 6 → **4** (v1.1) | |
-| P13 | nothing inside the curtain | 3 | |
+| P12 | nothing in a carriageway | 6 → **4** | |
+| P13 | nothing inside the curtain | 3 → **2** | |
 | P14 | regions partition | 5 | |
 | P15 | grain vs the street armature | 7 | |
+| P16 | the road armature | 0 → **5** | |
 | | **total** | **100** | |
 
 ## 3. Verdict bands
