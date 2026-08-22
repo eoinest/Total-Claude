@@ -11,9 +11,21 @@ identical, and Vercel's own SHA-1 digest matching the rebuild for 86 of 86 files
 directions. All three maps boot against the live URL with the clock advancing.
 
 The full gate is green on this tree: tsc clean, **lint 3/3**, qa-deploy 33/33, seams PASS both
-maps, **`qa-replay` 27/27**, **`qa-net` 30/30**, and all three determinism arms UNCHANGED at all
+maps, **`qa-replay` 27/27**, **`qa-net` 38/38**, and all three determinism arms UNCHANGED at all
 seven checkpoints (**8,632 / 3,072 / 3,440** — Rome's pin moved to 3,072 at `63be5cd`; anything
 still saying 3,074 predates that commit).
+
+> **Re-measured end to end on `e/net/session-integration` at `0df200d`, 22 Aug 2026**, which is
+> `e/net/session` merged onto `main` and pointed at a siege. `qa-net` is **38/38**, and the six
+> new checks are a `siege` arm (five) and `net-coverage`, which goes red unless the run relayed
+> both a field battle and an assault. Closing that blind spot found three real faults — see the
+> session record at the bottom of this file.
+>
+> The merged tree measured **32/32** before that work, against the **30/30** this file claimed
+> from the branch. Diffing the two runs by check name accounts for every difference as the six
+> additions and nothing else, so the 30 is unexplained rather than explained: it predates the
+> merge and nobody has reproduced it. **Read the printed total, not this table**, and if you can
+> make it print 30 again, write down how.
 
 > **`qa-replay` grew from 21 to 27 checks on 21 Aug**, and the six new ones are the ones that
 > mattered: it had only ever recorded `campus-martius / field`, so **no siege record had ever
@@ -40,7 +52,7 @@ still saying 3,074 predates that commit).
 | deploy | `node tools/qa-deploy.mjs` | 33/33 |
 | seams | `node tools/probe-seams.mjs` | PASS, both maps |
 | replay | `node tools/qa-replay.mjs` | **27/27** |
-| **multiplayer** | `node tools/qa-net.mjs` (starts its own relays and server) | **30/30** |
+| **multiplayer** | `node tools/qa-net.mjs` (starts its own relays and server) | **38/38** |
 | determinism | the three arms below, **spelled exactly** | 7 checkpoints each |
 
 > **`lint` is three checks now, not two — changed 22 Aug 2026.** `check-determinism` and
