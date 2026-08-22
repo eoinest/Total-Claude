@@ -361,4 +361,68 @@ the frame.
   floor because two of the three are east–west and `KX` cannot move. **A design that proposes an
   optimisation should run it once before recommending it.**
 
+### 21 Aug 2026 — Rome fabric phase 2: the resolver is gone, and the survey was the bigger fault
+
+**What we did.** Deleted `resolveOverlaps`, abolished the global `PLAN_SCALE`, replaced it with a
+per-monument authored footprint beside the real published dimension, declared five complexes and
+seven authored abutments, and froze every monument at `worldOf(e, n)`. `docs/ROME-FABRIC.md` §8.
+
+**What happened, in the order it mattered.**
+
+- **Displacement went from a mean of 142 world metres to zero, by construction**, and the
+  eighteen inverted spatial relations the plan judge found went to **zero of 858**. The second
+  number is the interesting one and it is a *proof* rather than a measurement: `worldOf` is
+  strictly monotone in both axes, so with nothing moving after it, no relation can invert. All
+  eighteen were the solver's.
+- **The biggest single lever was not in the plan.** `ROME-FABRIC.md` §4.5 framed the problem as
+  geometry — too much footprint in too little ground — and prescribed merging and shrinking.
+  Both help. But **fourteen of thirty-five survey rows were in the wrong place**, five of them by
+  more than 100 m, and no amount of merging or shrinking fixes a wrong coordinate. Two of the
+  three "unabsorbable east–west pairs" §7.8 escalated to the owner as a taste decision turned out
+  to be **measurement faults in the survey**, and they evaporated when the coordinates were
+  corrected. *The rule this earns:* before optimising a layout, check that the layout's inputs are
+  right. A solver's residual is only evidence about the solver if its inputs are.
+- **A survey row has four independent things that can be wrong, and the fourth has no
+  instrument.** The coordinate, the dimension, the bearing — and **which part of the building the
+  coordinate refers to.** The Porticus Octaviae was cited at its *propylon*, which is the
+  precinct's south edge, so a 132 × 119 m quadriportico centred on its own front door sat half
+  inside the Theatre of Marcellus. The Theatre of Pompey was cited at its *cavea* and dimensioned
+  as the *whole complex*. Both rows are internally consistent, both cite a real place, and both
+  put a building 120 m from where it stands. Only a plate finds that.
+- **`draw` was compressing two axes out of three, and nobody noticed for three passes.** The old
+  `PLAN_SCALE` scaled plan and left height at 1:1, and the code said so as though it were a
+  feature. A ground-level judge measured the result: Rome's monuments read **1.54× too tall for
+  their width**. *The rule:* when a scale factor is applied to a subset of a thing's dimensions,
+  say which subset in the constant's own name, and state the ratio it produces.
+
+**What we would do differently.**
+
+- **Digitise the plate before authoring against it, not after.** Nine of the fourteen corrections
+  came from reading the georeferenced raster directly and five came from a control table another
+  agent digitised mid-pass. The control table was worth more than everything this phase built for
+  the purpose, and §3's own previous entry had already asked for it — *"budget the digitising"* —
+  and it was not budgeted. It cost a pass.
+- **Check an instrument against a hand-computed case before trusting it, especially when it
+  agrees with you.** This phase's own `--realgaps` had a sign error in the bearing convention that
+  mirrored every box in `n`. It is invisible on an axis-aligned building and inverts every rotated
+  one, and it reproduced a figure the design document had computed independently — 49 real metres
+  of Octavia–Marcellus overlap — closely enough to look like corroboration. It was wrong, and so
+  was the document. Separately, the judge's own control table disclosed that nine of its sixteen
+  rows restated `survey.ts` rather than reading the plate. **Two instruments built to enforce rule
+  6 both broke rule 6 in the same day.** An instrument that agrees with the document it is
+  checking is not thereby correct; it may only be inbred.
+- **A plate is not one ruler, it is a ruler per zoom level.** The judge's contact sheet at
+  1.0 m/px reported the Theatre of Marcellus at zero error; at 0.46 m/px the same reader measured
+  39 m. This phase made the same mistake in the other direction, reading a 20 m Pantheon offset at
+  zoom 4 that vanished at zoom 5. **Record the reading scale beside every plate-derived number**,
+  and treat a reading taken at a coarser scale than the error being claimed as no reading at all.
+
+**One thing that was kept against the plan, and the reason generalises.** §5 listed `TOPOLOGY` for
+deletion with the resolver, because the solver used it as a constraint set. But it is also an
+independently written statement of Rome's adjacency, and with positions frozen it becomes exactly
+what rule 6 asks for: a check on the survey whose reference is outside the survey. It is the only
+thing in the tree that would have caught this pass mistyping one of fourteen corrected
+coordinates. **Deleting a check because a solver used to borrow it is the wrong reason to delete a
+check.**
+
 <!-- Append new entries above this line. -->

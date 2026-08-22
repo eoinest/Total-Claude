@@ -30,7 +30,7 @@ import {
 import { crestZAt, HALF_EXTENT, roadCentreX } from '../../terrain/topography';
 import { CITY_MAT_KEYS, type CityMatKey } from '../materials';
 import { GATE_X } from './apertures';
-import { AQUEDUCTS, LANDMARKS, type LandmarkPlacement } from './layout';
+import { AQUEDUCTS, LANDMARKS, PRECINCT, type LandmarkPlacement } from './layout';
 import { PAL } from '../palette';
 import { cylinderBetween, type CityChunkSpec, type TreeRequest } from '../wall';
 
@@ -85,7 +85,12 @@ function mausoleumTerraces(g: number): { rOut: number; rIn: number; y: number }[
  * those run once per detail level.
  */
 function planLandmarkTrees(l: LandmarkPlacement, heightAt: Ground, rng: Rng, out: TreeRequest[]): void {
-  const g = heightAt(l.x, l.z) + (l.mound ?? 0);
+  // **This function is outside the placement matrix and emits WORLD positions**, so anything
+  // it takes from the monument's own frame has to be scaled by hand: plan offsets by
+  // `planScale`, heights by `heightScale`. The mound is an authored height in the building's
+  // metres and now shrinks with the building, so the top of the hill the trees stand on is
+  // `mound * heightScale` above the ground and not `mound`.
+  const g = heightAt(l.x, l.z) + (l.mound ?? 0) * l.heightScale;
   const cs = Math.cos(l.rot);
   const sn = Math.sin(l.rot);
   const push = (lx: number, lz: number, kind: TreeRequest['kind'], scale: number, y?: number): void => {
@@ -93,7 +98,13 @@ function planLandmarkTrees(l: LandmarkPlacement, heightAt: Ground, rng: Rng, out
   };
 
   if (l.id === 'mausoleum-augustus') {
-    const terraces = mausoleumTerraces(heightAt(l.x, l.z));
+    // `mausoleumTerraces` works in the tomb's own frame, so it is asked for pure offsets
+    // from zero and they are carried out to world here, radius through `planScale` and
+    // height through `heightScale`. Both are 1 for this row — it declares no `draw` — so
+    // every cypress lands exactly where it did; what changes is that the grove now follows
+    // the drums if the Mausoleum is ever authored smaller, which it did not before.
+    const gw = heightAt(l.x, l.z);
+    const terraces = mausoleumTerraces(0);
     for (let d = 0; d < terraces.length; d++) {
       const t = terraces[d];
       // Sparse and irregular: a perfect ring of cones on a terrace reads as a
@@ -103,8 +114,8 @@ function planLandmarkTrees(l: LandmarkPlacement, heightAt: Ground, rng: Rng, out
       const n = Math.max(5, Math.round(mid * 0.34));
       for (let i = 0; i < n; i++) {
         const a = (Math.PI * 2 * (i + rng.range(-0.35, 0.35))) / n;
-        const r = lerp(t.rIn + 2.5, t.rOut - 2.5, rng.next());
-        push(Math.cos(a) * r, Math.sin(a) * r, 'cypress', (1.0 + d * 0.1) * rng.range(0.85, 1.2), t.y);
+        const r = lerp(t.rIn + 2.5, t.rOut - 2.5, rng.next()) * l.planScale;
+        push(Math.cos(a) * r, Math.sin(a) * r, 'cypress', (1.0 + d * 0.1) * rng.range(0.85, 1.2), gw + t.y * l.heightScale);
       }
     }
     return;
@@ -152,9 +163,20 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
     // ordered onto the Janiculum stopped at its foot. They stay in the keep-out map, so
     // nobody builds houses on them, but they do not stop a man.
     if (l.soft) continue;
-    // Slightly inside the reserved precinct: the precinct includes the steps and the
-    // paved area round the building, which a man may walk on.
-    footprints.push({ x: l.x, z: l.z, hw: l.hw * 0.88, hd: l.hd * 0.88, rot: l.rot });
+    // **The collision box is exactly the published building; the precinct apron stays
+    // walkable.** `l.hw`/`l.hd` are the *reserved* footprint — the building times `PRECINCT`
+    // — and the precinct is the steps and the paved area round it, which a man may walk on.
+    // So divide the precinct back out and what is left is the building itself.
+    //
+    // It used to read `* 0.88`, an unexplained magic number that did the same job by eye and
+    // did it too hard: 0.88 against `PRECINCT` 1.07 makes the box 0.9416 of the surveyed
+    // rectangle, so a builder that honestly draws its own published dimensions already
+    // measures 1.062 against its own collision box and has 8 % of `probe-fabric` G14's 15 %
+    // tolerance left for a cornice, a flight of steps or a podium moulding. Every builder in
+    // this file was therefore spending its whole budget before it drew a stone. Dividing by
+    // `PRECINCT` states the intent the old comment already claimed — box = building — and
+    // hands the tolerance back to the geometry.
+    footprints.push({ x: l.x, z: l.z, hw: l.hw / PRECINCT, hd: l.hd / PRECINCT, rot: l.rot });
   }
 
   // Planting and tomb layout are *planned* here, not emitted from the geometry
@@ -296,17 +318,44 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
 }
 
 function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, heightAt: Ground, rng: Rng): void {
-  const g = heightAt(world.x, world.z);
-  // Monuments are authored at true scale and compressed **in plan only** by the placement
-  // matrix: heights pass through at 1:1, so the Colosseum keeps its 48 m attic while its
-  // footprint takes the share of the ground the projection can actually spare. See
-  // `PLAN_SCALE` in layout.ts for the measurement that fixes the number. Normals are
-  // recomputed from the transformed edges in `GeoStream.prepare`, so a non-uniform scale is
-  // safe here in a way it would not be if they were transformed directly.
+  /**
+   * **A monument is a smaller model of the real building, not a squashed one.**
+   *
+   * This matrix used to read `(planScale, 1, planScale)`, and the comment that stood here
+   * defended it: monuments were "authored at true scale and compressed **in plan only** ...
+   * so the Colosseum keeps its 48 m attic while its footprint takes the share of the ground
+   * the projection can actually spare." That is a description of the fault. A plan squeezed
+   * to 0.445 at full height is not a smaller Colosseum, it is a tower: a ground-level judge
+   * measured Rome's monuments at **1.54x too tall for their width**, and at the floor the
+   * Pantheon came out 37 × 26 m under a 43 m dome — 1.65 taller than wide, against a real
+   * building that is 0.74. Twenty-two rows carry a `draw` and every one of them was drawn
+   * that way; the rows with no `draw` were the only correct ones, because 1.0 on all three
+   * axes is isotropic by accident. This generalises those rows rather than the others.
+   *
+   * So Y takes `LandmarkPlacement.heightScale`, which `layout.ts` defaults to the same
+   * number as the plan scale. A row that genuinely should keep its height says so with
+   * `survey.ts:RomeMonument.drawY` and states why — **no row does today.**
+   *
+   * The scale is still, formally, non-uniform (any row that sets `drawY` makes it so), and
+   * that is safe here only because normals are recomputed from the transformed edges in
+   * `GeoStream.prepare` rather than being transformed directly. That sentence used to be a
+   * footnote about the plan squeeze; with an authored Y it is load-bearing.
+   */
   const mat = new THREE.Matrix4()
     .makeRotationY(world.rot)
     .setPosition(world.x, 0, world.z)
-    .scale(SCALE_V.set(world.planScale, 1, world.planScale));
+    .scale(SCALE_V.set(world.planScale, world.heightScale, world.planScale));
+  /**
+   * **Terrain height is a WORLD height, and everything below this line is inside a matrix
+   * that now scales Y.** Divide it back out here and the monument sits on the ground; leave
+   * it and a monument at `heightScale` 0.445 is buried to 55 % of the local elevation.
+   *
+   * This is the same idiom `localExtents` applies to X and Z, and the boundary is the same
+   * one: `heightAt`, `g`, `podium` and every `heightAt` sample taken inside a builder are
+   * the only Y values here that come from the world. `mound` is not one of them — it is an
+   * authored height in the building's own metres, so it scales with the building.
+   */
+  const g = heightAt(world.x, world.z) / world.heightScale;
   // Everything below works in the monument's own frame, so it needs the *unscaled* extents.
   const m = localExtents(world);
   // Every stream the monument builders might touch has to share the placement
@@ -332,7 +381,27 @@ function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, h
     // masonry; the Aventine, the Caelian and the Janiculum are natural hills and read
     // as earth and planting.
     const built = m.id === 'temple-jupiter' || m.id === 'palatine';
-    buildMound(batch, detail, m.moundRadius ?? m.clear, m.mound, g, heightAt, m.x, m.z, m.rot, built, m.planScale);
+    /**
+     * **One survey radius, two semi-axes.**
+     *
+     * `moundRadius` is a *circumradius* — `layout.ts` documents it as "the footprint's
+     * circumradius plus a margin" and `m.clear`, the value used when a row states none, is
+     * literally `sqrt(hw² + hd²)`. So the ellipse that carries the same reach with the
+     * building's own aspect is that radius split in the ratio `hw : hd : clear`, and the
+     * default collapses to exactly `(hw, hd)`: the ellipse inscribed in the reserved
+     * rectangle, which is what "follows the footprint" should mean when a row says nothing.
+     *
+     * On the Capitol this turns a 192 × 192 m disc into a 124 × 147 m hill — the drawn
+     * short axis falls from 3.85 of the collision box to 2.33, and the two axes now agree
+     * instead of the short one being 26 % worse than the long. It still reads as a hill and
+     * not as a plinth, and that is not luck: a *built* mound's deck is `0.66` of its base,
+     * so carrying a 63 × 53 m podium needs `k ≥ √2 / 0.66 = 2.14`, and the survey's own
+     * 96 m gives `k = 2.18`. The residual over G14's 1.15 is a fact about the survey and
+     * not about this builder — the Capitoline hill really is more than twice the temple on
+     * it, while the collision box is only ever the temple.
+     */
+    const k = (m.moundRadius ?? m.clear) / m.clear;
+    buildMound(batch, detail, m.hw * k, m.hd * k, m.mound, g, heightAt, m.x, m.z, m.rot, built, m.planScale, m.heightScale);
     podium = g + m.mound;
   }
 
@@ -356,13 +425,38 @@ function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, h
       buildMarket(batch, detail, podium, 120, 70);
       break;
     case 'imperial-fora':
-      buildPrecinct(batch, detail, podium, 250, 130, rng, { temples: 2, colH: 9.2, wall: false });
+      // 250 × 100, from the placement rather than typed: the width used to read 130, which
+      // is not a figure the survey has anywhere — the row is `len: 250, wid: 100` — so the
+      // precinct was drawn 30 m wider than the ground reserved for it on every side but its
+      // own. Derived so the two cannot part company again.
+      buildPrecinct(batch, detail, podium, (m.hw * 2) / PRECINCT, (m.hd * 2) / PRECINCT, rng, { temples: 2, colH: 9.2, wall: false });
       break;
     case 'porticus-octaviae':
       buildPrecinct(batch, detail, podium, 132, 119, rng, { temples: 2, colH: 10.5, wall: true });
       break;
     case 'largo-argentina':
       buildPrecinct(batch, detail, podium, 90, 60, rng, { temples: 3, colH: 7.4, wall: false });
+      break;
+    /**
+     * The Porticus Pompei: the quadriporticus behind Pompey's stage, and the other half of a
+     * monument the survey used to carry as one 300 × 180 box on the theatre's own coordinate.
+     *
+     * A precinct with **no temples in it**, which is the one thing that distinguishes it from
+     * the three above. The Severan Marble Plan shows four rows of columns round an open court
+     * planted as a double grove of plane trees — the trees are `planLandmarkTrees`' business,
+     * and the default scatter it gives an unnamed row is a ring round the precinct wall, which
+     * is wrong here and is left for phase 3 rather than special-cased now. `wall: true` because
+     * the porticus was enclosed: its back range is what the Curia Pompeia was cut into.
+     *
+     * Extents derived from the placement rather than typed, for the reason the `imperial-fora`
+     * case above gives: a literal here is a number free to part company with the survey row.
+     */
+    case 'porticus-pompei':
+      buildPrecinct(batch, detail, podium, (m.hw * 2) / PRECINCT, (m.hd * 2) / PRECINCT, rng, {
+        temples: 0,
+        colH: 9.0,
+        wall: true,
+      });
       break;
     case 'aventine-temples':
     case 'caelian-villas':
@@ -427,7 +521,14 @@ function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, h
     // frigidarium, domed caldarium on the sunny side, palaestrae either flank. The
     // dimensions are each monument's real precinct, from `ROME`.
     case 'baths-trajan':
-      buildBaths(batch, detail, podium, 330, 215, rng);
+      // 230 × 170, from the placement. It used to read `330, 215`, and 330 × 215 is the
+      // *platform* on the Oppian — gardens, cisterns, the lot — while the row this monument
+      // is projected from is `len: 230, wid: 170` and its own cite says "the bathing block
+      // is c. 230 × 190 and that is what is modelled, the gardens being district fabric".
+      // The builder drew the platform and the sim collided with the block, which made this
+      // the worst offender in `probe-fabric` G14: 1.524 of its own footprint, 34.8 m of
+      // stone per side standing on ground the insula generator was free to build houses on.
+      buildBaths(batch, detail, podium, (m.hw * 2) / PRECINCT, (m.hd * 2) / PRECINCT, rng);
       break;
     // **There is deliberately no `baths-diocletian` case, and there was one.**
     //
@@ -444,7 +545,14 @@ function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, h
     // authentic and still wrong for your date. Same for the Baths of Constantine, the Basilica
     // of Maxentius and the Arch of Constantine, none of which is in the survey.
     case 'baths-caracalla':
-      buildBaths(batch, detail, podium, 337, 328, rng);
+      // 218 × 112, from the placement — the same fault as Trajan's, found beside it. The
+      // literals were `337, 328`, which is the *precinct* on the Via Nova, while the row is
+      // `len: 218, wid: 112` and its cite says in as many words "the block is what is
+      // modelled". Corrected even though this case is currently unreachable — the Baths of
+      // Caracalla project south of the heightfield and `offMapSouth` drops them before
+      // `LANDMARKS` is built — because a dead builder holding a wrong number is exactly how
+      // it comes back wrong the day the frame changes. See the note on `baths-diocletian`.
+      buildBaths(batch, detail, podium, (m.hw * 2) / PRECINCT, (m.hd * 2) / PRECINCT, rng);
       break;
     case 'baths-titus':
       buildBaths(batch, detail, podium, 120, 105, rng);
@@ -456,8 +564,14 @@ function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, h
       buildBaths(batch, detail, podium, 120, 100, rng);
       break;
     case 'castra-praetoria':
-      // 440 × 380 m, brick curtain about 4.7 m high in its original phase.
-      buildCastra(batch, detail, podium, 440, 380, heightAt, m);
+      // 400 × 377 m, from the placement, with a brick curtain about 4.7 m high in its
+      // original phase. The literals used to be `440, 380`: 440 × 380 is the camp as
+      // Platner-Ashby gives it, but the row deliberately does not draw it at that size —
+      // its cite reads "Modelled 400 × 377 and pushed hard against the east edge of the
+      // heightfield", because at true size the camp is a tenth of the buildable city. The
+      // builder was drawing the published camp inside a footprint reserved for the modelled
+      // one, which is 20 m of curtain per side standing outside its own collision box.
+      buildCastra(batch, detail, podium, (m.hw * 2) / PRECINCT, (m.hd * 2) / PRECINCT, heightAt, m);
       break;
     case 'horologium':
       // The obelisk of Psammetichus II, 21.8 m of red granite on a 5 m base.
@@ -528,6 +642,12 @@ const SCALE_V = new THREE.Vector3();
  * the movement grid and the plan diagnostic all measure ground. The geometry builders are
  * inside the placement matrix, which compresses plan by `planScale`, so they need the
  * extents divided back out or the compression is applied twice.
+ *
+ * Plan only. Nothing on a placement is a *height* except `mound`, and `mound` is already in
+ * the building's own metres — it is an authored podium, not a measurement of the world — so
+ * it passes through and the matrix's `heightScale` scales it with everything else. The Y
+ * values that *do* cross the boundary all come from `heightAt`, and they are divided out at
+ * each call site rather than here, because this function never sees them.
  */
 function localExtents(m: LandmarkPlacement): LandmarkPlacement {
   if (m.planScale === 1) return m;
@@ -589,13 +709,20 @@ function buildSubstructure(
   const cs = Math.cos(m.rot);
   const sn = Math.sin(m.rot);
   // The building, not the precinct: the plinth should not swallow the paved area around it.
-  const hw = m.hw / 1.07;
-  const hd = m.hd / 1.07;
-  // `m` is in the monument's own frame; the terrain is not. Sampling offsets go back through
-  // the plan compression or the plinth follows ground 1/PLAN_SCALE too far out.
+  // `PRECINCT` rather than the 1.07 that used to be typed here, so this cannot drift from
+  // the constant `layout.ts` actually multiplies the surveyed rectangle by.
+  const hw = m.hw / PRECINCT;
+  const hd = m.hd / PRECINCT;
+  // `m` is in the monument's own frame; the terrain is not, in either plan or height.
+  // Sampling *offsets* go back out through the plan compression (`planScale`, authored as
+  // `survey.ts:RomeMonument.draw`) or the plinth follows ground `1 / planScale` too far out;
+  // the sampled *height* comes back through the vertical one (`heightScale`) or every
+  // number below — `low`, `high`, `podium`, the per-bay `g0` — is a world metre being
+  // compared against a local one, and the plinth foot leaves the ground.
   const k = m.planScale;
+  const hk = m.heightScale;
   const sample = (u: number, v: number): number =>
-    heightAt(m.x + (u * cs - v * sn) * k, m.z + (u * sn + v * cs) * k);
+    heightAt(m.x + (u * cs - v * sn) * k, m.z + (u * sn + v * cs) * k) / hk;
   const nu = Math.max(2, Math.round(hw / 24));
   const nv = Math.max(2, Math.round(hd / 24));
   let low = Infinity;
@@ -683,10 +810,25 @@ function buildSubstructure(
 // where the battlefield terrain is smooth, the mound *is* the substructure.
 // ---------------------------------------------------------------------------
 
+/**
+ * An artificial hill under a monument — **an ellipse on the footprint's own proportions.**
+ *
+ * It took a single `radius` and drew a disc, and a disc round a rectangle circumscribes it:
+ * the Capitol's `moundRadius: 96` against a 63 × 53 m temple podium drew 192 m of earth
+ * across a 53 m axis, 3.85 of the footprint the sim collides with, and because
+ * `probe-fabric` attributes a drawn vertex to the nearest owner, most of the overshoot was
+ * charged to the Tabularium next door rather than to the Capitol that emitted it. The same
+ * shape of error is waiting in the Palatine (132), the Aventine (120) and the Caelian (120),
+ * all three currently off the south edge of the map.
+ *
+ * Taking `rx` and `rz` separately lets the caller give the hill the plan the building has.
+ * See the call in `buildLandmark` for how the survey's one number becomes two.
+ */
 function buildMound(
   batch: Batch,
   detail: number,
-  radius: number,
+  rx: number,
+  rz: number,
   height: number,
   g: number,
   heightAt: Ground,
@@ -694,8 +836,18 @@ function buildMound(
   wz: number,
   rot: number,
   built: boolean,
-  /** Plan compression the placement matrix applies, for terrain sampling. See `PLAN_SCALE`. */
-  planScale: number
+  /**
+   * Plan compression the placement matrix applies, for terrain sampling. Authored per
+   * monument as `survey.ts:RomeMonument.draw` and carried here as
+   * `LandmarkPlacement.planScale`.
+   */
+  planScale: number,
+  /**
+   * Vertical compression the same matrix applies. `heightAt` hands back a world metre and
+   * this function runs inside the matrix, so the sample has to come back through it or the
+   * bank's foot chases a ground line it is no longer standing on.
+   */
+  heightScale: number
 ): void {
   const st = batch.s(built ? 'stone' : 'concrete');
   const seg = detail >= 1 ? 30 : 14;
@@ -720,8 +872,12 @@ function buildMound(
     const lift = built
       ? (t: number): number => Math.min(1, t * 1.9)
       : (t: number): number => Math.sin((t * Math.PI) / 2);
-    const r0 = radius * shrink(t0);
-    const r1 = radius * shrink(t1);
+    // Both semi-axes shrink by the same factor, so every ring is the same ellipse and the
+    // hill keeps the footprint's aspect all the way to its deck.
+    const ax0 = rx * shrink(t0);
+    const az0 = rz * shrink(t0);
+    const ax1 = rx * shrink(t1);
+    const az1 = rz * shrink(t1);
     const y0 = g + height * lift(t0);
     const y1 = g + height * lift(t1);
     const face = new THREE.Color()
@@ -731,27 +887,35 @@ function buildMound(
       const a0 = (Math.PI * 2 * i) / seg;
       const a1 = (Math.PI * 2 * (i + 1)) / seg;
       // The base of the outermost ring must follow the terrain or it floats.
-      const groundAt = (a: number, rr: number): number => {
+      const groundAt = (a: number): number => {
         if (r > 0) return y0;
-        const lx = Math.cos(a) * rr;
-        const lz = Math.sin(a) * rr;
+        const lx = Math.cos(a) * ax0;
+        const lz = Math.sin(a) * az0;
         return Math.min(
           y0,
-          heightAt(wx + (lx * cs - lz * sn) * planScale, wz + (lx * sn + lz * cs) * planScale) - 1.5
+          heightAt(wx + (lx * cs - lz * sn) * planScale, wz + (lx * sn + lz * cs) * planScale) / heightScale - 1.5
         );
       };
       // Per-facet tone so a 130 m bank is not one flat plate of colour.
       const shade = new THREE.Color().copy(face).multiplyScalar(0.93 + hash2(i, r, 0x71a) * 0.14);
+      // Outward normal of the *ellipse* at the middle of this facet, which is not the radial
+      // direction once the two axes differ: `(cos a / ax, sin a / az)`, normalised. Only the
+      // shading reads it — the prism is 10 mm thick — but on a bank a hundred metres across
+      // the wrong normal is a visible seam down every facet on the flatter flanks.
+      const am = (a0 + a1) / 2;
+      const nx = Math.cos(am) / ax0;
+      const nz = Math.sin(am) / az0;
+      const nl = Math.sqrt(nx * nx + nz * nz);
       quadPrism(
         st,
-        Math.cos(a0) * r0,
-        Math.sin(a0) * r0,
-        Math.cos(a1) * r0,
-        Math.sin(a1) * r0,
-        Math.cos((a0 + a1) / 2),
-        Math.sin((a0 + a1) / 2),
+        Math.cos(a0) * ax0,
+        Math.sin(a0) * az0,
+        Math.cos(a1) * ax0,
+        Math.sin(a1) * az0,
+        nx / nl,
+        nz / nl,
         0.01,
-        Math.min(groundAt(a0, r0), groundAt(a1, r0)),
+        Math.min(groundAt(a0), groundAt(a1)),
         y1,
         shade,
         shade,
@@ -762,19 +926,20 @@ function buildMound(
       const s0 = Math.sin(a0);
       const c1 = Math.cos(a1);
       const s1 = Math.sin(a1);
-      const p0 = new THREE.Vector3(c0 * r0, y1, s0 * r0);
-      const p1 = new THREE.Vector3(c1 * r0, y1, s1 * r0);
-      const p2 = new THREE.Vector3(c1 * r1, y1, s1 * r1);
-      const p3 = new THREE.Vector3(c0 * r1, y1, s0 * r1);
+      const p0 = new THREE.Vector3(c0 * ax0, y1, s0 * az0);
+      const p1 = new THREE.Vector3(c1 * ax0, y1, s1 * az0);
+      const p2 = new THREE.Vector3(c1 * ax1, y1, s1 * az1);
+      const p3 = new THREE.Vector3(c0 * ax1, y1, s0 * az1);
       UP.set(0, 1, 0);
       st.quadN(UP, p0, p1, p2, p3, new THREE.Color().copy(deckCol).multiplyScalar(0.92 + hash2(i, r, 0x4d3) * 0.16));
     }
   }
-  // Ramped approach on the north face so the hill reads as accessible.
+  // Ramped approach on the north face so the hill reads as accessible. It runs along −Z, so
+  // its width comes off `rx` and everything measured along the flight comes off `rz`.
   if (detail >= 1 && built) {
-    const w = Math.min(18, radius * 0.24);
-    st.pushTranslate(0, 0, -radius * 0.34);
-    steps(st, w, g, -radius * 0.66 + radius * 0.34, Math.round(height / 0.34), 0.34, radius * 0.32 / Math.max(1, Math.round(height / 0.34)), PAL.travertineDirty);
+    const w = Math.min(18, rx * 0.24);
+    st.pushTranslate(0, 0, -rz * 0.34);
+    steps(st, w, g, -rz * 0.66 + rz * 0.34, Math.round(height / 0.34), 0.34, (rz * 0.32) / Math.max(1, Math.round(height / 0.34)), PAL.travertineDirty);
     st.pop();
   }
 }
@@ -1611,9 +1776,20 @@ function buildMausoleum(batch: Batch, detail: number, g: number, rng: Rng): void
   });
   stone.pop();
   stone.pop();
+  // The pair of red granite obelisks flanking that entrance.
+  //
+  // They stood at `rOut + 9` on a plinth `0.8 * 2.4` half-wide, i.e. 54.4 m from the centre
+  // of an 87 m tomb: 1.25 of the footprint the sim reserves, and the two of them were the
+  // only stone this monument drew outside its own plot. They are brought in so the outer
+  // face of each plinth lands exactly on the tumulus's own 43.5 m radius — and moved out
+  // along the façade from ±12 to ±18, because at ±12 the drum's own curve is at z = 41.8 and
+  // an obelisk pulled back to 41.6 would be buried in it. At ±18 the drum is at 39.6 and the
+  // plinth clears it by a few centimetres, so the pair still stands free on the socle and
+  // still reads as flanking the door, only a little wider apart.
+  const obBase = 0.8;
   for (const s2 of [-1, 1]) {
-    stone.pushTranslate(s2 * 12, 0, rOut + 9);
-    buildObelisk(batch, detail, g, 9.2, 0.8);
+    stone.pushTranslate(s2 * 18, 0, rOut - obBase * 2.4);
+    buildObelisk(batch, detail, g, 9.2, obBase);
     stone.pop();
   }
 }
@@ -1899,39 +2075,54 @@ function buildStadium(batch: Batch, detail: number, g: number, L: number, W: num
 // Basilica, Forum, Baths, Castra
 // ---------------------------------------------------------------------------
 
-/** Basilica Ulpia: a 130 × 55 m hall with apses at both ends and a bronze roof. */
+/**
+ * Basilica Ulpia: a 130 × 55 m hall with apses at both ends and a bronze roof.
+ *
+ * **`L` is the outer extent, apses included, and that is a change.** The two apses are
+ * half-cylinders of radius `W * 0.36` — 19.8 m on a 55 m hall — and they used to be centred
+ * *on* the end walls at `±L/2`, so they added their whole radius to each end and the
+ * building drew 169.6 m in a 130 m footprint: 1.386 of the box the sim collides with, and
+ * 19.8 m per end of marble standing in the street. The survey's own cite is unambiguous
+ * that this is not what the number means — "130 × 55 m **with apses at both ends**" — so the
+ * hall proper is `L - 2 * W * 0.36` and the apses fill the difference.
+ */
 function buildBasilica(batch: Batch, detail: number, g: number, L: number, W: number): void {
   const stone = batch.s('stone');
   const metal = batch.s('metal');
   const navH = 26;
+  // The apse radius, and what is left for the hall between the two of them.
+  const apseR = W * 0.36;
+  const hl = L / 2 - apseR;
 
+  // The stylobate is the full published rectangle: it is the platform both the hall and the
+  // apses stand on, and its corners are the plinth either side of each apse's curve.
   box(stone, -L / 2, g - 0.6, -W / 2, L / 2, g + 1.4, W / 2, PAL.travertineDirty, { topGain: 1.06 });
   // Aisle walls with engaged columns; the nave rises above them.
-  box(stone, -L / 2, g + 1.4, -W / 2, L / 2, g + 13.5, W / 2, PAL.marbleShadow, { topGain: 1.06 });
-  box(stone, -L / 2 + 6, g + 13.5, -W / 2 + 9, L / 2 - 6, g + navH, W / 2 - 9, PAL.marble, { topGain: 1.06 });
+  box(stone, -hl, g + 1.4, -W / 2, hl, g + 13.5, W / 2, PAL.marbleShadow, { topGain: 1.06 });
+  box(stone, -hl + 6, g + 13.5, -W / 2 + 9, hl - 6, g + navH, W / 2 - 9, PAL.marble, { topGain: 1.06 });
   if (detail >= 1) {
-    const n = Math.round(L / 7);
+    const n = Math.round((hl * 2) / 7);
     for (let i = 0; i < n; i++) {
-      const px = lerp(-L / 2 + 4, L / 2 - 4, i / (n - 1));
+      const px = lerp(-hl + 4, hl - 4, i / (n - 1));
       for (const s of [-1, 1]) column(stone, px, g + 1.4, (s * W) / 2 + s * 0.4, 0.62, 11.5, 'corinthian', PAL.marble, detail - 1);
       // Clerestory windows above the aisle roofs.
       box(stone, px - 1.4, g + 16, -W / 2 + 8.8, px + 1.4, g + 21, -W / 2 + 9.2, new THREE.Color(0.05, 0.045, 0.04));
       box(stone, px - 1.4, g + 16, W / 2 - 9.2, px + 1.4, g + 21, W / 2 - 8.8, new THREE.Color(0.05, 0.045, 0.04));
     }
   }
-  // Apses.
+  // Apses, standing off the ends of the hall and reaching exactly ±L/2.
   for (const s of [-1, 1]) {
-    cylinder(stone, (s * L) / 2, g + 1.4, 0, W * 0.36, W * 0.36, 15, detail >= 1 ? 16 : 8, PAL.marbleShadow, {
+    cylinder(stone, s * hl, g + 1.4, 0, apseR, apseR, 15, detail >= 1 ? 16 : 8, PAL.marbleShadow, {
       arcFrom: s < 0 ? Math.PI * 0.5 : -Math.PI * 0.5,
       arcTo: s < 0 ? Math.PI * 1.5 : Math.PI * 0.5,
     });
-    dome(metal, (s * L) / 2, g + 16.4, 0, W * 0.36, detail >= 1 ? 16 : 8, 5, PAL.bronze, { heightScale: 0.55 });
+    dome(metal, s * hl, g + 16.4, 0, apseR, detail >= 1 ? 16 : 8, 5, PAL.bronze, { heightScale: 0.55 });
   }
   // Gilt-bronze tiled roofs: the aisles low, the nave high.
-  gableRoof(stone, metal, L - 12, W - 18, g + navH, 4.5, 1.0, PAL.bronze, true);
+  gableRoof(stone, metal, hl * 2 - 12, W - 18, g + navH, 4.5, 1.0, PAL.bronze, true);
   for (const s of [-1, 1]) {
     const z0 = (s * (W / 2 + W / 2 - 9)) / 2;
-    box(metal, -L / 2, g + 13.5, Math.min(z0, (s * W) / 2), L / 2, g + 14.0, Math.max(z0, (s * W) / 2), PAL.bronze);
+    box(metal, -hl, g + 13.5, Math.min(z0, (s * W) / 2), hl, g + 14.0, Math.max(z0, (s * W) / 2), PAL.bronze);
   }
 }
 
@@ -1948,24 +2139,42 @@ function buildForum(batch: Batch, detail: number, g: number, rng: Rng): void {
   const road = batch.s('road');
   const L = 200;
   const W = 90;
+  // **`W` is the outer face of the built edge, and it used not to be.**
+  //
+  // The square was drawn outward from `W`: the colonnade stood *on* `±W/2` with 9 m of
+  // lean-to roof beyond it, and the two basilica ranges were then hung a further 20 m
+  // outside that, at `±(W/2 + 20)` with a hipped roof on top, reaching ±75.9 against a
+  // half-width of 45. That is 1.79 of the footprint the sim collides with — the widest
+  // mismatch in the city and about 12,000 m² of marble hall standing on ground the insula
+  // generator was free to build on. So the 90 m is now everything: the ranges' outer walls
+  // land on it, the portico stands in front of them, and the open square is what is left.
+  // The square loses width (44 m between the colonnades against 90) and that is the honest
+  // reading of the row, whose cite gives 200 × 90 for "the open square ... from the Rostra
+  // to the Regia" and reserves no ground at all for the halls that walled it.
+  const rangeD = 14; // depth of the basilica ranges, the outermost thing here
+  const porticoD = 9; // colonnade line to the range's front wall, i.e. the lean-to's span
+  const rangeZ = W / 2 - rangeD / 2; // range centre
+  const colZ = W / 2 - rangeD - porticoD; // colonnade line
 
   // Paved piazza, in slabs. As one quad it was 18,000 m² of unmodulated tan and the
-  // largest featureless region in any strategic frame.
+  // largest featureless region in any strategic frame. Still the full rectangle: the
+  // ranges and the porticoes stand *on* the paving, as they did.
   pavedField(road, L / 2, W / 2, g + 0.12, 5.5, PAL.marbleShadow, 0x40c1, 0.2);
 
-  // Porticoes down both long sides, two columns deep with a tiled lean-to roof.
+  // Porticoes down both long sides, two columns deep with a tiled lean-to roof that runs
+  // back from the colonnade to the basilica wall behind it.
   const colH = 8.6;
   for (const side of [-1, 1] as const) {
     const n = Math.round(L / 5.4);
     for (let i = 0; i < n; i++) {
       const px = lerp(-L / 2 + 3, L / 2 - 3, i / (n - 1));
-      column(stone, px, g + 0.7, (side * W) / 2, 0.5, colH, 'corinthian', PAL.marble, detail - 1);
-      if (detail >= 1) column(stone, px, g + 0.7, side * (W / 2 + 7), 0.5, colH, 'corinthian', PAL.marbleShadow, detail - 1);
+      column(stone, px, g + 0.7, side * colZ, 0.5, colH, 'corinthian', PAL.marble, detail - 1);
+      if (detail >= 1) column(stone, px, g + 0.7, side * (colZ + 7), 0.5, colH, 'corinthian', PAL.marbleShadow, detail - 1);
     }
-    box(stone, -L / 2, g + 0.7 + colH, (side * W) / 2 - side * 0.9, L / 2, g + 0.7 + colH + 1.9, (side * W) / 2 + side * 8.2, PAL.marble, {
+    box(stone, -L / 2, g + 0.7 + colH, side * (colZ - 0.9), L / 2, g + 0.7 + colH + 1.9, side * (colZ + 8.2), PAL.marble, {
       topGain: 1.12,
     });
-    box(batch.s('roof'), -L / 2, g + 0.7 + colH + 1.9, (side * W) / 2 - side * 1.2, L / 2, g + 0.7 + colH + 3.4, (side * W) / 2 + side * 9, PAL.roofTile, {
+    box(batch.s('roof'), -L / 2, g + 0.7 + colH + 1.9, side * (colZ - 1.2), L / 2, g + 0.7 + colH + 3.4, side * (colZ + porticoD), PAL.roofTile, {
       topGain: 1.1,
     });
   }
@@ -1995,7 +2204,7 @@ function buildForum(batch: Batch, detail: number, g: number, rng: Rng): void {
   box(stone, -L / 2 + 8, g + 0.12, -18, -L / 2 + 17, g + 3.2, 18, PAL.marbleShadow, { topGain: 1.1 });
   if (detail >= 1) {
     for (let i = 0; i < 7; i++) {
-      const pz = lerp(-W / 2 + 12, W / 2 - 12, i / 6);
+      const pz = lerp(-colZ + 3, colZ - 3, i / 6);
       column(stone, -L / 2 + 26, g + 0.12, pz, 0.55, 11.5, 'corinthian', PAL.marble, detail - 1);
       statue(batch.s('metal'), -L / 2 + 26, g + 12.5, pz, 3.0, PAL.gilt, Math.PI * 0.5, detail >= 1 ? 7 : 5);
     }
@@ -2012,13 +2221,16 @@ function buildForum(batch: Batch, detail: number, g: number, rng: Rng): void {
     stone.pop();
   }
   // The Basilica Aemilia and the Basilica Iulia, the two long halls that actually walled
-  // the square in; without them the forum reads as a bare slab with a colonnade.
+  // the square in; without them the forum reads as a bare slab with a colonnade. They are
+  // now the square's outer wall rather than a pair of blocks hung outside it: the hipped
+  // roof is given `rangeD - 1.8` so that with its 0.9 m eaves it lands exactly on `±W/2`.
+  // Fifteen metres tall against the portico's 12.7, so the hall still rises behind it.
   for (const side of [-1, 1] as const) {
-    const bz = side * (W / 2 + 20);
-    box(stone, -L / 2 + 20, g, bz - side * 10, L / 2 - 40, g + 15, bz + side * 10, PAL.marbleShadow, { topGain: 1.06 });
+    const bz = side * rangeZ;
+    box(stone, -L / 2 + 20, g, bz - side * (rangeD / 2), L / 2 - 40, g + 15, bz + side * (rangeD / 2), PAL.marbleShadow, { topGain: 1.06 });
     const roof = batch.s('roof');
     roof.pushTranslate((-L / 2 + 20 + L / 2 - 40) / 2, 0, bz);
-    hipRoof(roof, L - 60, 20, g + 15, 3.4, 0.9, PAL.roofTileOld);
+    hipRoof(roof, L - 60, rangeD - 1.8, g + 15, 3.4, 0.9, PAL.roofTileOld);
     roof.pop();
   }
   void rng;
@@ -2306,18 +2518,52 @@ function buildTabularium(batch: Batch, detail: number, g: number, L: number, W: 
 function buildMarket(batch: Batch, detail: number, g: number, L: number, W: number): void {
   const brick = batch.s('brick');
   const roof = batch.s('roof');
-  const R = L * 0.5;
+  /**
+   * **The hemicycle is an ellipse, and its short axis is the depth the plan actually has.**
+   *
+   * It was a circle of radius `L * 0.5` — the half-*length* used as a *radius* — so a curve
+   * whose chord is 120 m also went 120 m deep, in a box 70 m deep: 1.563 of the footprint
+   * the sim collides with, and the curve alone reached 25 m past the back of its own plot.
+   * The 120 is a chord and `survey.ts` says so ("the 120 m dimension runs along the
+   * hemicycle's chord, which is the forum's own axis"), so the long axis keeps it and the
+   * short axis becomes `W * 0.5`. Nothing about the reading changes: from the forum this is
+   * still a 120 m curved brick façade stepping up the Quirinal.
+   */
+  const rx = L * 0.5;
+  const rz = W * 0.5;
   const tiers = 3;
   for (let t = 0; t < tiers; t++) {
-    const rr = R - t * (W / tiers) * 0.86;
+    // Each tier steps in by a third of the plan and up by a storey. Both semi-axes shrink
+    // together, which is what keeps the tiers concentric now that they are not circles; the
+    // old `rr - t * (W / tiers) * 0.86` was a setback tuned to the old radius and goes
+    // negative the moment the radius is anything smaller.
+    const k = 1 - t / tiers;
+    const ax = rx * k;
+    const az = rz * k;
     const y = g + t * 8.2;
     const n = detail >= 1 ? 20 : 9;
     for (let i = 0; i < n; i++) {
       const a0 = Math.PI + (Math.PI * i) / n;
       const a1 = Math.PI + (Math.PI * (i + 1)) / n;
       const am = (a0 + a1) / 2;
-      const bw = 2 * rr * Math.sin(Math.PI / (2 * n));
-      brick.push(new THREE.Matrix4().makeRotationY(-am + Math.PI * 0.5).setPosition(Math.cos(am) * rr, y, Math.sin(am) * rr));
+      // Chord between the two ends of this bay's arc, which on an ellipse is not a constant.
+      const cw = (Math.cos(a1) - Math.cos(a0)) * ax;
+      const cd = (Math.sin(a1) - Math.sin(a0)) * az;
+      const bw = Math.sqrt(cw * cw + cd * cd);
+      // The ellipse's outward normal, and the bay turned so its FACE looks along it and its
+      // eight metres of *tabernae* run back into the hill. They used to run the other way —
+      // `archPanel` builds from its face at local z = 0 toward +z, and the bay was placed
+      // with +z pointing radially *outward* — so every bay added its whole depth outside the
+      // curve. Facing out is also the right building: the market's storeys look down over
+      // the Forum of Trajan, they are not a courtyard.
+      // `atan2` is invariant under a positive scale, so the normal needs no normalising here.
+      const nx = Math.cos(am) / ax;
+      const nz = Math.sin(am) / az;
+      brick.push(
+        new THREE.Matrix4()
+          .makeRotationY(Math.atan2(-nx, -nz))
+          .setPosition(Math.cos(am) * ax, y, Math.sin(am) * az)
+      );
       archPanel(brick, bw + 0.05, 8.2, t === 0 ? PAL.brick : PAL.brickPale, {
         depth: 8,
         spring: 4.2,
@@ -2329,7 +2575,7 @@ function buildMarket(batch: Batch, detail: number, g: number, L: number, W: numb
     }
     // The terrace behind each tier.
     if (t === tiers - 1) {
-      roof.pushTranslate(0, 0, (R - W) * 0.5);
+      roof.pushTranslate(0, 0, (L * 0.5 - W) * 0.5);
       hipRoof(roof, L * 0.6, W * 0.5, y + 8.2, 3.0, 0.8, PAL.roofTileOld);
       roof.pop();
     }
@@ -2359,6 +2605,28 @@ function buildPrecinct(batch: Batch, detail: number, g: number, L: number, W: nu
   const roof = batch.s('roof');
   pavedField(road, L / 2, W / 2, g + 0.14, 5.5, PAL.marbleShadow, Math.round(L * 7), 0.2);
 
+  /**
+   * **`L × W` is the precinct's outer face, so everything here is built inward from it.**
+   *
+   * It used not to be. The colonnade stood *on* `±L/2, ±W/2` and its entablature and roof
+   * were then drawn outward from that line — `+7.5` for the architrave, `+8.2` for the
+   * eaves — and where `o.wall` is set the enclosing wall was hung a further metre outside
+   * *that*, at `+9.0`, with its corner returns run out to `±(L/2 + 8)`. So the three
+   * monuments this builds all drew 8 to 9 m of marble on every side of a footprint the sim
+   * had already reserved to the millimetre, which is what `probe-fabric` G14 sees.
+   *
+   * The fix is only a change of datum, not of architecture. A quadriportico's lean-to roof
+   * genuinely does run *outward*, from the columns back to the enclosure — that is what a
+   * portico is — so the roof still runs outward and the colonnade simply stands where it
+   * belongs relative to the published rectangle: `eave` in from the wall's inner face.
+   */
+  const wallT = o.wall ? 1.5 : 0; // the closed precinct wall's own thickness
+  const eave = 8.2; // colonnade line to the outer edge of its lean-to roof
+  const hx = L / 2 - wallT; // inner face of the enclosure, or the published line itself
+  const hz = W / 2 - wallT;
+  const cx = hx - eave; // the colonnade
+  const cz = hz - eave;
+
   // Colonnade all the way round, on a low stylobate.
   const colH = o.colH;
   const pitch = 5.0;
@@ -2368,25 +2636,30 @@ function buildPrecinct(batch: Batch, detail: number, g: number, L: number, W: nu
       column(stone, px, g + 0.8, pz, 0.5, colH, 'corinthian', PAL.marble, detail - 1);
     }
   };
-  const nx = Math.max(2, Math.round(L / pitch));
-  const nz = Math.max(2, Math.round(W / pitch));
+  const nx = Math.max(2, Math.round((cx * 2) / pitch));
+  const nz = Math.max(2, Math.round((cz * 2) / pitch));
   for (const s of [-1, 1] as const) {
-    along(nx, (t) => [lerp(-L / 2, L / 2, t), (s * W) / 2]);
-    along(nz, (t) => [(s * L) / 2, lerp(-W / 2, W / 2, t)]);
-    box(stone, -L / 2 - 1, g + 0.8 + colH, (s * W) / 2 - side1(s) * 1.0, L / 2 + 1, g + 0.8 + colH + 1.8, (s * W) / 2 + side1(s) * 7.5, PAL.marble, { topGain: 1.12 });
-    box(roof, -L / 2 - 1.4, g + 0.8 + colH + 1.8, (s * W) / 2 - side1(s) * 1.3, L / 2 + 1.4, g + 0.8 + colH + 3.2, (s * W) / 2 + side1(s) * 8.2, PAL.roofTile, { topGain: 1.1 });
-    box(stone, (s * L) / 2 - side1(s) * 1.0, g + 0.8 + colH, -W / 2, (s * L) / 2 + side1(s) * 7.5, g + 0.8 + colH + 1.8, W / 2, PAL.marble, { topGain: 1.12 });
-    box(roof, (s * L) / 2 - side1(s) * 1.3, g + 0.8 + colH + 1.8, -W / 2 - 1.4, (s * L) / 2 + side1(s) * 8.2, g + 0.8 + colH + 3.2, W / 2 + 1.4, PAL.roofTileOld, { topGain: 1.1 });
+    along(nx, (t) => [lerp(-cx, cx, t), s * cz]);
+    along(nz, (t) => [s * cx, lerp(-cz, cz, t)]);
+    box(stone, -cx - 1, g + 0.8 + colH, s * (cz - 1.0), cx + 1, g + 0.8 + colH + 1.8, s * (cz + 7.5), PAL.marble, { topGain: 1.12 });
+    box(roof, -cx - 1.4, g + 0.8 + colH + 1.8, s * (cz - 1.3), cx + 1.4, g + 0.8 + colH + 3.2, s * (cz + eave), PAL.roofTile, { topGain: 1.1 });
+    box(stone, s * (cx - 1.0), g + 0.8 + colH, -cz, s * (cx + 7.5), g + 0.8 + colH + 1.8, cz, PAL.marble, { topGain: 1.12 });
+    box(roof, s * (cx - 1.3), g + 0.8 + colH + 1.8, -cz - 1.4, s * (cx + eave), g + 0.8 + colH + 3.2, cz + 1.4, PAL.roofTileOld, { topGain: 1.1 });
     if (o.wall) {
-      box(stone, -L / 2 - 8, g, (s * W) / 2 + side1(s) * 7.5, L / 2 + 8, g + colH + 5.0, (s * W) / 2 + side1(s) * 9.0, PAL.marbleShadow, { topGain: 1.1 });
-      box(stone, (s * L) / 2 + side1(s) * 7.5, g, -W / 2 - 8, (s * L) / 2 + side1(s) * 9.0, g + colH + 5.0, W / 2 + 8, PAL.marbleShadow, { topGain: 1.1 });
+      // The wall IS the outer extent, and the colonnade is inboard of it — the Porticus
+      // Octaviae's quadriportico stands inside its own precinct wall, not beside it.
+      box(stone, -L / 2, g, s * hz, L / 2, g + colH + 5.0, s * (W / 2), PAL.marbleShadow, { topGain: 1.1 });
+      box(stone, s * hx, g, -W / 2, s * (L / 2), g + colH + 5.0, W / 2, PAL.marbleShadow, { topGain: 1.1 });
     }
   }
 
-  // Temples on podia, standing in a row along the long axis.
-  const tw = Math.min(30, (L / o.temples) * 0.62);
+  // Temples on podia, standing in a row along the long axis. `temples: 0` is a legitimate
+  // precinct — the Porticus Pompei enclosed a planted court and nothing else — and the guard is
+  // here rather than left to `L / 0` evaluating to Infinity and being clamped by the `min`,
+  // which is true today and is not a thing to rely on.
+  const tw = o.temples === 0 ? 0 : Math.min(30, (L / o.temples) * 0.62);
   for (let i = 0; i < o.temples; i++) {
-    const px = o.temples === 1 ? 0 : lerp(-L / 2 + tw * 0.9, L / 2 - tw * 0.9, i / (o.temples - 1));
+    const px = o.temples === 1 ? 0 : lerp(-cx + tw * 0.9, cx - tw * 0.9, i / (o.temples - 1));
     stone.pushTranslate(px, 0, W * 0.1);
     buildTemple(batch, detail, g, {
       w: tw,
@@ -2407,8 +2680,6 @@ function buildPrecinct(batch: Batch, detail: number, g: number, L: number, W: nu
   }
   void rng;
 }
-
-const side1 = (s: number): number => (s < 0 ? -1 : 1);
 
 /**
  * A hilltop quarter: the Aventine and the Caelian. By the third century both were
@@ -2495,6 +2766,11 @@ function buildTiberIsland(batch: Batch, detail: number, g: number, heightAt: Gro
   const road = batch.s('road');
   const L = m.hw * 0.9;
   const W = m.hd * 0.82;
+  // `WATER` is a WORLD height and `g` is a local one, and mixing them is only safe because
+  // the island is `soft`: `layout.ts:drawScaleOf`/`drawHeightOf` return 1 for landscape on
+  // both axes, so this monument's frame and the world's are the same frame. If a soft row
+  // ever gains a `draw`, this line and the two `WATER` references below are the first
+  // things that break — the revetment would meet the river at the wrong level.
   const deck = Math.max(g, WATER + 4.2);
 
   // The travertine revetment, cut to a point at each end like a ship's prow.
@@ -2605,7 +2881,11 @@ function buildCastra(batch: Batch, detail: number, g: number, W: number, D: numb
     const len = Math.sqrt((x1 - x0) * (x1 - x0) + (z1 - z0) * (z1 - z0));
     const dx = (x1 - x0) / len;
     const dz = (z1 - z0) / len;
-    const g0 = heightAt(m.x + x0, m.z + z0) - g;
+    // World height in, local height out: `g` is already inside the placement matrix's
+    // vertical scale, so the terrain sample has to come through it before the difference
+    // means anything. `heightScale` is 1 for this monument — the row states no `draw` — so
+    // the arithmetic is unchanged today and correct if that ever stops being true.
+    const g0 = heightAt(m.x + x0, m.z + z0) / m.heightScale - g;
     quadPrism(brick, x0, z0, x1, z1, -dz, dx, t, g + g0 - 1.2, g + H, PAL.brick, PAL.travertine, { ends: false });
     crenellation(brick, x0, z0, x1, z1, g + H, 1.5, t, PAL.brick, 1.3, 0.7, detail >= 1);
     // Square interval towers.
@@ -2662,7 +2942,13 @@ function buildObelisk(batch: Batch, detail: number, g: number, height: number, b
 function buildAltarEnclosure(batch: Batch, detail: number, g: number, w: number, d: number): void {
   const stone = batch.s('stone');
   const t = 0.6;
-  box(stone, -w / 2 - 1, g - 0.4, -d / 2 - 1, w / 2 + 1, g + 0.5, d / 2 + 1, PAL.travertineDirty, { topGain: 1.06 });
+  // The travertine apron under the enclosure, as a *fraction* of the enclosure and not the
+  // flat 1 m it used to be. The Ara Pacis is 11.6 × 10.6 m, so a fixed metre is 17 % of the
+  // half-width and drew the smallest monument in the city at 1.245 of its own footprint —
+  // the constant was written for a building an order of magnitude larger. 3 % is a kerb.
+  const apronW = w * 0.03;
+  const apronD = d * 0.03;
+  box(stone, -w / 2 - apronW, g - 0.4, -d / 2 - apronD, w / 2 + apronW, g + 0.5, d / 2 + apronD, PAL.travertineDirty, { topGain: 1.06 });
   box(stone, -w / 2, g + 0.5, -d / 2, w / 2, g + 4.8, -d / 2 + t, PAL.marble, { topGain: 1.14 });
   box(stone, -w / 2, g + 0.5, d / 2 - t, w / 2, g + 4.8, d / 2, PAL.marble, { topGain: 1.14 });
   box(stone, -w / 2, g + 0.5, -d / 2, -w / 2 + t, g + 4.8, d / 2, PAL.marble, { topGain: 1.14 });

@@ -1488,3 +1488,463 @@ itself in the one place the battle happens, with no fabric work done at all.
 - **`offMapSouth` is the one place that decides what is on this map**, so a future frame change moves
   five monuments by editing one predicate rather than by hunting.
 - **`ROT_RATIO` is measurably nearly identity** (3.78° worst) and can go out with the resolver.
+
+---
+
+## 8. Phase 2, as built — landmarks
+
+**Status: built, measured, and awaiting the owner's review.** Written on `e/city/rome-landmarks`,
+based on `bc2e0f2`. `resolveOverlaps` is deleted. Every monument now stands at exactly
+`worldOf(e, n)`.
+
+The brief's priority order was the owner's own: *"adhere to the original plans of Rome as much as
+possible"* — merge first, raise the floor second, shrink only what must shrink. It survived
+contact, but the biggest single lever turned out to be one nobody had listed.
+
+### 8.1 The headline
+
+| | phase 1 | phase 2 |
+|---|---|---|
+| resolver displacement, mean | 141.9 world m | **0.0 m — by construction** |
+| worst | 398.9 m (Theatre of Pompey) | **0.0 m** |
+| the same, in **real** metres | mean 351, worst 1,098 | **0** |
+| **inverted spatial relations** | **18 of 184** (the plan judge) | **0 of 858** |
+| global `PLAN_SCALE` | 0.65, applied to everything | **abolished** |
+| monument height : width | **1.54× too tall** (the ground judge) | **isotropic — `drawY` defaults to `draw`** |
+| Colosseum drawn | 123 × 101 m at 48 m, **12 m past the edge of the ground** | **108 × 89 m at 27 m, entirely on it** |
+| monuments at full published plan, all three axes | 0 of 27 | **9 of 27** |
+| authored floor | n/a (uniform 0.65 with 22 conflicts) | **0.339, with zero conflicts** |
+| worst monument/monument interpenetration | 0 m (the resolver's whole job) | **2.4 m**, inside the gate's own abutment allowance |
+| merged complexes | 0 (5 proposed) | **5, covering 21 rows** |
+| survey rows moved to a plate control | 0 | **16** |
+| survey rows | 34 | **35** |
+
+### 8.2 The lever the plan did not have: five monuments were in the wrong place
+
+§4.5 framed this as a geometry problem — too much footprint in too little projected ground — and
+prescribed merging and shrinking. Both help. **But the largest single source of conflict was that
+the survey had five monuments in the wrong place, and no amount of merging or shrinking fixes a
+wrong coordinate.** Every one was found by drawing the survey's own published plans onto the
+georeferenced Lanciani raster and looking (`tools/scratch/rome-landmarks.mjs --plate`).
+
+| row | was | is | moved | what was wrong |
+|---|---|---|---|---|
+| **Baths of Nero** | e −560, n 620 | **e −580, n 800** | **181 m** | the row contradicted its own citation (41.8985 N is n 667, not 620) and *both* put the baths south of the Pantheon, on top of the Baths of Agrippa. The inked block — a symmetrical thermae plan with a tinted natatio and paired apsidal halls — is at n 729–869. `wid` 120 → 140 and **bearing 8 → 88**: the long axis is the 191 m east–west dimension, so the old bearing was 82° out. |
+| **Theatre of Pompey** | e −836, n 244 | **e −772, n 298** | **83 m**, and split | the row's **position was the cavea's and its footprint was the whole complex's**. A 300 × 180 box centred on the cavea reaches 150 m west into open ground and stops short of the porticus it claims to include. Now the theatre proper, with `porticus-pompei` as its other half. |
+| **Porticus Octaviae** | e −300, n −60 | **e −319, n 61** | **123 m** | the cited coordinate is the **propylon** — the porch under S. Angelo in Pescheria — which is the precinct's *south edge*. Centring a 132 × 119 m quadriportico on its own front door puts half of it inside the Theatre of Marcellus. **This is the whole of §4.5's "the survey's two boxes already overlap by 49 real metres."** It was not a fact about how closely they abut; it was a fact about this coordinate. Corrected, they are 177 real metres apart. |
+| **Trajan's Market** | e 262, n 400 | **e 356, n 344** | **109 m** | the old coordinate put the markets north-west of Trajan's Column, on ground the Column and the libraries occupy. The great hemicycle is inked at e 332–375. |
+| **Baths of Titus** | e 978, n −100 | **e 940, n −125** | **44 m** | at the old position it and the Ludus Magnus interpenetrated by **26.7 real metres** — an overlap present with no projection applied at all, which no plan scale can remove and which dominated the layout at every floor. |
+
+Two more corrections are dimensional rather than positional, and both close a row that
+contradicted its own citation or the gate:
+
+- **Iseum Campense 70 × 34 → 200 × 50.** The worst fidelity failure the gate found, 2.85× too
+  small, confessed in this file's prose for three passes. Also nudged 30 m east: the 200 m figure
+  is the whole Iseum *and* Serapeum, and a 200 m box on the Iseum's own coordinate reaches through
+  the Baths of Agrippa.
+- **Baths of Caracalla `wid` 140 → 112** and **Circus Maximus `wid` 190 → 118.** Both rows
+  contradicted their own `cite`; both are off the +Z edge, which is what made them easy to forget.
+
+**Nine more rows moved to a digitised plate control**, which arrived mid-pass and is a better
+ruler than anything this phase built: `tools/judge/control.mjs` on `e/judge/rome-plan` carries
+sixteen monuments read off the georeferenced Lanciani raster with a **method and an error bar per
+row**, and it is the thing `probe-fabric`'s header says cannot exist — an independent ruler for
+*position*. Every row below was taken from it.
+
+| row | moved | control's `how`, err | note |
+|---|---:|---|---|
+| **Castra Praetoria** | **113 m** | `plate`, 35 m | and the internal check is sharper than the external one: `ROME_CIRCUIT_SURVEY` anchors the curtain's east end on the camp's own NE angle at e 2353, and a 437 m camp centred at the old e 1939 puts that angle 124 m short of the wall that runs into it. |
+| **Baths of Titus** | **110 m** | `plate-weak`, 70 m | taken over this pass's own earlier guess: a weak plate read beats a coordinate recalled from memory. It also settles the pair that dominated the layout — 196 real metres from the Ludus Magnus instead of 125. |
+| **Baths of Trajan** | 109 m | `plate-weak`, 60 m | |
+| **Theatre of Marcellus** | 39 m | `plate`, 30 m | the reader's own contact sheet at 1.0 m/px had reported *zero* error for this row; at 0.46 m/px it is 39 m. **A monument is not checked until it is checked at a scale that can see it.** |
+| **Tiber Island** | 43 m | `plate`, 25 m | 34 m of it perpendicular to a 67 m wide island. |
+| **Baths of Agrippa** | 29 m | `plate`, 30 m | |
+| **Colosseum** | 20 m | `plate`, 20 m | and 7 m of it northward, which the +Z edge is grateful for. |
+| **Forum Romanum** | 16 m | `plate`, 35 m | |
+| **Area Sacra** | 12 m | `plate`, 25 m | |
+
+**One control was declined, with evidence.** The table puts the Pantheon at n 655, 23 m south of
+the survey's 678 and inside its own 25 m error bar. The survey is right: 41.8986 N is the rotunda,
+and the **AGEA 2012 orthophoto** — pixel-registered to the same affine — shows the dome and its
+oculus centred on the survey's crosshair to about 5 m. The control's own note on that row is
+internally muddled about whether it is describing the rotunda or the box. Recorded rather than
+silently overridden.
+
+**And the control's own disclosure is worth repeating** because it is the sharpest methodological
+finding of the day: nine of its sixteen rows turned out to restate `survey.ts`'s citations rather
+than being independent reads, and are excluded from scoring. That is rule 6's failure mode
+occurring *inside the instrument built to enforce rule 6*. The same thing happened to this phase's
+own `--realgaps` (§8.8) and it happened for the same reason — an instrument that agrees with the
+document it is checking looks corroborated and may only be inbred.
+
+**The general lesson, and it is the one worth carrying to phase 3.** A survey row has *four*
+independent things that can be wrong — the coordinate, the dimension, the bearing, and **which
+part of the building the coordinate refers to** — and the fourth is the one with no natural
+instrument. A propylon coordinate on a precinct footprint and a cavea coordinate on a complex
+footprint are both internally consistent, both cite a real place, and both put a building 120 m
+from where it stands. Nothing but a plate finds them.
+
+### 8.3 The merges — five complexes, and what "merge" turned out to mean
+
+§4.5 proposed merging by **replacing** each set of rows with one box carrying the merged
+precinct's published dimension. That was not done, and the reason is measured rather than
+aesthetic:
+
+- `monuments.ts` dispatches its geometry on the row id, so absorbing `pantheon` into an
+  `agrippan` row **stops the dome being drawn at all**;
+- `probe-fabric` G11 gates twelve hardcoded monument ids, and **four of them** — `pantheon`,
+  `temple-jupiter`, `theatre-marcellus`, `porticus-octaviae` — are absorbed by §4.5's five merges.
+  The merge would have failed the gate that exists to notice a monument going missing.
+
+So a merge here **declares a relation instead of collapsing the rows**: `RomeMonument.complex`.
+Rows sharing it keep their own id, builder, bearing and published dimension, and what changes is
+the clearance the layout owes between them — a party wall (`PARTY_GAP`) instead of a 7 m street.
+That is the same statement about the ground and it costs nothing.
+
+| complex | rows | why it is one thing |
+|---|---|---|
+| **forum-valley** | Temple of Jupiter, Tabularium, Forum Romanum, imperial fora, Basilica Ulpia, Trajan's Column, Trajan's Market | one continuous masonry front from the Capitoline platform to the Quirinal slope. The Tabularium is built into the saddle *below* the temple and its façade **is** the Forum's west wall; the Forum of Nerva is the *transitorium* joining the Forum Romanum to the chain; the Basilica and the Column stand **inside** Trajan's Forum; the Market's lowest storey **is** that forum's north-east retaining wall. The Clivus Capitolinus, the Argiletum and the Clivus Argentarius are internal passages of the complex, not streets between free-standing monuments. |
+| **campus-medius** | Stadium of Domitian, Baths of Nero, Pantheon, Baths of Agrippa, Iseum Campense | Agrippa built the Pantheon, the Basilica Neptuni and his baths as one insula-block; Nero's baths abut it on the north-west; Domitian's stadium abuts those. The Serapeum's west wall and the Baths of Agrippa's east wall are contiguous on the Severan Marble Plan. Every consecutive pair is within 35 real metres. **This is the merge §7.8 called for as "merge 6" and rejected on the evidence then available** — it said folding the Thermae Neronianae in *"does not fix the problem, it moves it to the Area Sacra"*. It was measuring the Baths of Nero 180 m from where they stand. |
+| **pompey** | Theatre of Pompey, Porticus Pompei, Area Sacra | the porticus is the theatre's own *porticus post scaenam* and they share the scaena. The Curia Pompeia — the exedra where Caesar was killed — is the porticus's east end and its back wall is the Area Sacra's west boundary; the survey's own Area Sacra `cite` already said *"the Curia of Pompey stood behind them."* Measured at −12.0 real metres. |
+| **colosseum-valley** | Colosseum, Ludus Magnus, Baths of Titus, Baths of Trajan | the brief named this one. Domitian built the Ludus as part of the amphitheatre's service complex, joined to the arena by a tunnel; the Baths of Titus stand on the terrace directly above it; Trajan's platform is built over the Domus Aurea whose grid Titus's block still follows. Every member is within 39 real metres of another. |
+| **octavia-marcellus** | Porticus Octaviae, Theatre of Marcellus | they abut; and see §8.2 for why they used to appear to overlap by 49 m. |
+
+Five complexes, 21 of 35 rows — against §4.5's five complexes over 12 rows. §4.5's `capitolium`
+and `imperial-fora` are folded together into `forum-valley`, because the Tabularium/Forum pair
+needs the same licence and splitting them would have drawn a street through the Forum's west end.
+
+### 8.4 The authored floor: 0.445, and what stopped it
+
+**`PLAN_SCALE` is abolished.** In its place `RomeMonument.draw` records, per row and beside the
+real published dimension, what fraction of it is drawn. A row with no `draw` is drawn at **full
+published plan** — the default is now 1.00, where it used to be an invisible 0.65.
+
+The allocation is **max-min, then raise**, and both halves matter:
+
+1. binary-search the largest *uniform* scale at which no pair is short of what it is owed. That is
+   the largest achievable value of the minimum, so no row can be raised without pushing another
+   below it. **This number is the floor.**
+2. then, largest real plan first, lift each row as high as it will go without creating a fault.
+
+§7.8's solve was greedy — worst pair first, shrink the larger — and greedy is the wrong algorithm
+here, because the quantity that matters is the *smallest monument on the map*. Run on this survey
+it settles the Basilica Ulpia at **0.20**, a 130 m basilica drawn 26 m long, while the forum it
+stands in keeps 0.47 — when both can stand at 0.46.
+
+**The floor is 0.339**, against §7.8's 0.36 — and the two numbers are not comparable in the
+direction the digits suggest. §7.8's 0.36 still had three pairs inside the 7 m street and drew a
+**68 × 56 m Colosseum**; this allocation has **zero** pairs short of anything they are owed, and
+nine of twenty-seven monuments are at full published plan on all three axes, which was not
+possible at all under a global scale. What it costs is named in §8.5a: the Colosseum is drawn at
+0.573 and the Castra Praetoria at 0.228, and neither of those is set by a neighbour.
+
+**A licence mechanism was built, measured, and removed, and the measurement is the useful part.**
+`RomeMonument.abuts` briefly let a named pair be **skipped by the conflict solve entirely**, with
+a three-limb rule for when a pair qualified. It produced a much better headline — an authored
+floor of **0.444** against 0.339 — and the external gate priced it immediately:
+
+| | with `abuts` exempting eight pairs | with the same pairs capped at 2.4 m |
+|---|---|---|
+| authored floor | **0.444** | 0.339 |
+| worst monument/monument interpenetration | **58.0 m** (Colosseum / Ludus Magnus) | 2.4 m |
+| `probe-fabric` G1, footprints intersect | **FAIL**, 8 pairs, 16,221 m² | **PASS** |
+| G15, one monument's stone inside another's plot | **FAIL**, 40,412 vertices, 26 pairs | 3,205 vertices, 11 pairs |
+| `probe-fabric` verdict | **2/21** | 3/21 |
+
+**An exemption from a check is not a weaker check, it is no check** — and it bought thirty per
+cent of footprint by putting fifty-eight metres of the Ludus Magnus inside the Colosseum. What
+survives is the bound rather than the exemption: two rows in one `complex` may interpenetrate by
+at most **2.4 m**, which is `probe-fabric`'s own `ABUT_DEPTH_M` less a tenth, so a licensed
+abutment is licensed by the external instrument and not merely by this file's opinion of itself.
+If a constraint has to be relaxed, relax it to a number something outside the file also believes.
+
+**And with the ratio fixed (§8.5b) the floor stopped being worth fighting for.** Once `drawY`
+defaults to `draw`, a monument at 0.34 is a correctly proportioned smaller model rather than a
+squashed one, so the marginal value of the last tenth of footprint collapsed at exactly the moment
+its price became visible. Both halves of that trade were measured on the same afternoon.
+
+### 8.5 The three east–west unabsorbable pairs — all three dissolved
+
+§7.8 named three pairs that no floor could fix because they conflict east–west, where `KX` cannot
+move, and said the decision belonged to the owner. **None of them exists any more, and not one was
+fixed by geometry.**
+
+| §7.8's pair | what it really was | what it is now |
+|---|---|---|
+| **Colosseum / Ludus Magnus** — *"170 real metres apart east–west, which is 75 world metres, against 113 m of footprint at the seed"* | real | **a licensed authored abutment.** The Ludus is joined to the arena by a tunnel and is part of the amphitheatre's own service complex; the Colosseum is an *ellipse* modelled as a rectangle and the Ludus sits in the empty corner. The Colosseum is drawn at 104 × 85, the largest footprint the +Z edge allows it — see §8.5a. |
+| **Agrippan complex / Baths of Nero** — *"125 real metres apart in `e` and 3 in `n`: 55 world metres against 69 m of footprint even at a third of plan"* | **a survey error** | the Baths of Nero were 180 m from where they stand. At the true position they are 250 m apart in `n`, they are in the same complex, and the pair does not exist. §7.8's own note that merge 6 *"does not fix the problem, it moves it to the Area Sacra"* was measuring the wrong coordinate. |
+| **Oppian baths / Ludus Magnus** — *"195 real metres in `n`, with the Ludus squeezed from two sides"* | **a survey error plus a rectangle artefact** | the Baths of Titus were 44 m out; corrected, the pair goes from −26.7 to **+19.0** real metres. The residual is licensed inside `colosseum-valley`. |
+
+**The recommendation is therefore that there is nothing here to decide.** Two of the three were
+measurement faults in the survey and are gone; the third is one named licence with its reason
+beside it. Nothing was shrunk to make a third monument fit, which was the thing the brief
+explicitly forbade.
+
+### 8.5a The Colosseum cannot be drawn at full size, and that is a new measurement
+
+The allocation caps every monument's drawn footprint at the **+Z edge of the heightfield**, and
+the Colosseum is the row that cap binds hardest: it is drawn at **0.548 of plan, 104 × 85 m**.
+
+The arithmetic is short. Its centre projects to z **1335.1**; the ground stops at `HALF_EXTENT` =
+1400; so it has **64.9 world metres** of southward room. And a 189 × 156 m plan turned 115°
+reaches `|hw·sin(rot)| + |hd·cos(rot)|` = **118.4 m** south at full size — 1.42× its own local
+half-depth, because the rotation swings the long axis into `z`. 64.9 / 118.4 = 0.548.
+
+**Three things about that are worth stating separately.**
+
+1. **The shipped map is already over the edge and nothing measured it.** At `PLAN_SCALE` = 0.65
+   the Colosseum's south corner stands at z **1412**, twelve metres past the last row of the
+   heightfield. `offMapSouth` did not notice because it tested the box's half-depth *in the
+   monument's own frame* — 83.5 m — rather than its extent along world `z`. That approximation
+   was harmless while every monument shared one plan scale and is not harmless now.
+2. **The membership test had to stop depending on the footprint.** With `draw` authored per row,
+   `w.z + hd·draw > HALF_EXTENT` is circular — a monument would be deleted from the map for the
+   crime of being drawn at its real size, which is exactly what happened on the first run of this
+   allocation: the Colosseum was silently dropped and the table cheerfully reported it at 1.000.
+   `offMapSouth` is now the **centre** test, which at `KZ` = 0.35 returns precisely the five
+   monuments the owner agreed to lose, and the edge is a separate cap on `draw` (`maxDrawAt`).
+3. **This is the sharpest measurement of what `KZ` = 0.35 costs, and §4.5 did not have it.** §4.5
+   lists the Colosseum among the monuments that *survive* the frame change, and it does survive —
+   at 55 % of plan. A frame that puts the map's signature building 65 metres from the edge of the
+   world cannot draw it at full size, whatever else is done about footprints.
+
+**The decision, taken here because the owner is not available and recorded so he can overturn it
+in one line:** the cap stays at `HALF_EXTENT`. A monument standing on ground that does not exist
+is a worse fault than a monument drawn at 55 %, the overhang is invisible from inside the city and
+obvious from anywhere else, and "correct by construction" is the whole point of this phase. The
+alternatives, both of which need the owner:
+
+- **an overhang budget** — allow the drawn footprint past `HALF_EXTENT` by a stated number of
+  metres. Today's map spends 12 m of one without saying so. At 55 m the Colosseum reaches full
+  plan. `heightAt` clamps at the edge, so the ground query stays well defined; what is undefined
+  is whether the rendered terrain mesh or `buildFarHills` covers the gap, and that is one
+  screenshot to settle.
+- **`KZ` = 0.30**, which §4.6 already names as the fallback. It moves the Colosseum north and
+  costs the Palatine and the Caelian.
+
+*What would change my mind on the Ludus Magnus's bearing:* a published plan giving its own axis. Its bearing is
+the one number this pass changed on an argument rather than a measurement — 55° → 112°, on the
+grounds that a building put up in the amphitheatre's own campaign shares the amphitheatre's grid
+and the Via Labicana's line, both of which run WNW–ESE. The plate's ink in that window reads 84°
+at a coherence of 0.10, which is too low to be evidence either way and is recorded so that nobody
+quotes it as such.
+
+### 8.5b Heights: `draw` was compressing two axes out of three
+
+**The ground judge shot this branch's uncommitted work and measured the fault that mattered most,
+and it was not one this phase was looking for: Rome's monuments read 1.54× too tall for their
+width.**
+
+`place()` scales the footprint; the placement matrix in `buildLandmark` left Y at 1.0. That is
+inherited from `PLAN_SCALE`, and the old code said so with some pride — *"heights are not scaled,
+only the plan, so the Colosseum remains six times the height of the curtain beside it."* Applied
+to one shared 0.65 it is a uniform 1.54× vertical stretch on every monument in Rome. Applied to a
+**per-monument** authored footprint it is worse, because the stretch then varies row by row: at
+this table's floor the Pantheon would be drawn 37 × 26 m at its true 43 m height, a
+height-to-width ratio of **1.65 against the real building's 0.74**. That is not a smaller
+Pantheon, it is a different building — and this phase was about to author twenty-two of them.
+
+So `RomeMonument.drawY` exists and **defaults to `draw`, not to 1**. A monument is scaled
+isotropically: a smaller model of the real thing rather than a squashed one. The rows carrying no
+`draw` at all were already right by accident, being 1.00 on all three axes, and this generalises
+them.
+
+**What it costs, because the objection is real.** The Colosseum comes down from a 48 m attic to
+27 m. That is a visibly lower skyline, and it is the price of the proportion being right. A row
+may set `drawY: 1` where a building's height genuinely is its identity; **no row does**, and any
+that does has to argue for it in its own `cite`.
+
+**It also changes the trade this phase was making.** The instruction had been to push the footprint
+floor as high as it would go, on the theory that a shrunken monument reads small at eye level. The
+measurement says the fault was anisotropy, not size — so a *lower* floor applied to three axes
+beats a *higher* floor applied to two, and the floor stops being the thing to optimise past the
+point where it costs a licence. That is why §8.4's licence list stops at seven and not at nine:
+three of the nine went stale when the Baths of Titus moved to its plate control, and with the
+ratio fixed there was no longer a reason to hunt for replacements.
+
+*What would change my mind:* a render from the Porta Flaminia showing the Colosseum reading as a
+drum rather than an amphitheatre at 27 m. `docs/CITY-GROUND-JUDGE.md` lists every camera's
+coordinates, so this is one screenshot from a named position rather than an argument.
+
+### 8.5c The stone the player sees now fits the box the game collides with
+
+`probe-fabric` G14 measured **13 of 26 monuments drawing stone beyond their own collision box,
+worst 34.8 m per side.** That is a different fault from everything above — nothing to do with
+placement — and it was worth fixing in the same pass because a monument whose masonry overhangs
+its reserved ground is a monument the fabric grows into, and the fabric is phase 5's problem
+already.
+
+**One structural cause and one class of transcription error.**
+
+The structural one: `buildLandmarks` published each collision box at `hw * 0.88`, and combined
+with `PRECINCT = 1.07` that made the box **0.9416× the surveyed rectangle**. So a builder that
+honestly drew its published dimensions already read 1.062 against a 1.15 gate and had 8 % left for
+steps, roofs, aprons and plinths — eleven of twenty-six sat in that band with nothing to spare.
+The `0.88` was an unexplained constant doing the opposite of what its comment said. It is now
+`hw / PRECINCT`: **the collision box is exactly the published building and the precinct apron is
+the walkable margin**, which is what the comment always claimed.
+
+The transcription class: builders passed literals that contradicted their own survey row. The
+Baths of Trajan drew **330 × 215** against a row of `230 × 170` and a `cite` that says in as many
+words *"the bathing block is what is modelled"* — a 1.435 ratio and the worst overhang on the map.
+The Castra Praetoria drew 440 × 380 against a row of 400 × 377 whose `cite` says *"modelled
+400 × 377"*. The imperial fora drew a width of 130 against `wid: 100`, a figure the survey has
+nowhere. All three now derive their extents from the placement, so they cannot part company again.
+
+Beyond those, seven builders drew *outward* from their own boundary: `buildPrecinct` hung its
+entablature at +7.5 and its eaves at +8.2 **outside** `L × W` and, where walled, the enclosure a
+further metre outside that; `buildBasilica` centred its end apses **on** the end walls, adding
+39.6 m to a 130 m hall; `buildForum` put its flanking ranges at `W/2 + 20`; `buildMarket` used the
+half-**length** as the hemicycle's **radius**, so a 120 m curve sat in a 70 m box. Each is a change
+of datum rather than of architecture.
+
+And `buildMound` drew a **circle** against a rectangle. The Capitol's `moundRadius: 96` on a
+63 × 53 podium is a 3.85× ratio on the short axis, and the probe's nearest-owner vertex
+attribution charged part of that skirt to the Tabularium 30 m away — which is how a building with
+no fault of its own appeared in the failure list. The mound is elliptical now, inscribed in the
+reserved rectangle by default. **It still does not pass, and cannot**: the Capitoline hill really
+is twice the size of the temple on it while the collision box is only ever the temple. That is
+stated in the code rather than tuned away.
+
+**Result: G14 goes 13 of 26 → 6 of 27**, and every monument named in the original list is off it.
+The six that remain all fail on the **short** axis while their long axis reads under 1.0, which is
+the signature of the probe attributing a neighbour's vertices rather than of a builder drawing
+outside itself — Rome emits its monuments in three depth bands (`monuments-a/c/d`) rather than one
+chunk per monument, so every vertex is attributed **positionally**. Emitting one chunk per
+landmark would make G12-drawn, G14, G15 and G16 exact, and it would multiply the monument draw
+count by nine. **That is a draw-budget decision and it is phase 6's**, recorded here so it is not
+rediscovered.
+
+### 8.6 What was deleted, and one thing that was not
+
+Deleted from `layout.ts`: `resolveOverlaps`, `separation`, `confine`, `nearbyDrift`, `PLAN_SCALE`,
+and the solver constants `ORDER_FLOOR`, `HOLD_MARGIN`, `HOLD_WEIGHT`, `ORDER_WEIGHT`, `RELAX`,
+`SPRING`, `Z_AXIS_COST`. Deleted from `survey.ts`: `ROT_RATIO`.
+
+`idealX` and `idealZ` were **kept** and are now provably equal to `x` and `z`. Three instruments
+read them — `probe-fabric`, `city/preview.ts` and `city/plan.ts` — and a displacement reported as
+**0.0 m** by the instrument that was reporting 398.9 m is better evidence than a field that
+quietly stopped existing.
+
+**`TOPOLOGY` was kept, against §5's instruction, and the reason is worth writing down.** §5 lists
+it for deletion because it was the solver's constraint set — the adjacency facts were fed to
+`resolveOverlaps` as hard constraints, which is where its `holds` array came from. That use is
+gone with the solver. But `TOPOLOGY` is also an *independently written* statement of Rome's
+adjacency — the Circus in the Vallis Murcia between the Palatine and the Aventine, the Colosseum
+east of the Forum — and with every position frozen at `worldOf(e, n)` it becomes exactly what
+`MAP-METHOD.md` rule 6 asks for: a check on the survey whose reference is outside the survey.
+**It is the only thing in the tree that would have caught this pass mistyping one of the five
+corrected coordinates.** Deleting a check because a solver used to borrow it is the wrong reason
+to delete a check.
+
+`ROT_RATIO`'s deletion carries a small lesson of its own. The constant was 1.45 and the frame's
+true anisotropy is 1.266, and the gap was never an error: it was an **empirical** anisotropy,
+fitted to the plan *after* the resolver had spread it east–west, and it existed to correct for the
+solver rather than for the projection. With the solver gone the factor cancels inside the `atan2`
+entirely, so the correct correction is identity and the constant is removed rather than re-fitted.
+Worst bearing change: 3.78°, toward the surveyed value.
+
+### 8.7 The external gate: 7/21 → 5/21, and why that is not a two-check regression
+
+`tools/probe-fabric.mjs` at `d8eef08`, carried in this branch **byte-identical** — it was on
+neither `main` nor phase 1's branch, so it had to be brought in, and bringing it in unmodified is
+the point. Carthage is **12/21 before and after**: nothing in this pass touched it.
+
+| | phase 1 | phase 2 | |
+|---|---|---|---|
+| **G1** monument footprints intersect | PASS | **PASS** | |
+| **G2** building inside a monument | PASS | **PASS** | |
+| **G6** monument inside the curtain (plan) | PASS | **PASS** | 2,837 m² at one point in this pass; 0 now |
+| **G7** drawn wall stone inside a monument | PASS | **PASS** | 13,651 sampled vertices at one point; 0 now |
+| **G16** monument stone inside a building | 1,478 vertices, 24 buildings | **PASS, 0** | gained |
+| **G8** monument keeps its street | PASS, min 11.98 m | FAIL, min **0.66 m** | **the complexes** |
+| **G15** monument stone inside another monument | PASS | FAIL, 3,205 vertices / 11 pairs | **the complexes** |
+| **G9** monument keeps the *ambitus* | PASS, min 1.84 m | FAIL, min **0.69 m** | Ara Pacis / insula |
+| G4 monument in a carriageway (plan) | 23,806 m² / 57 / 18 | 21,815 m² / 60 / 19 | −8 % |
+| G5 drawn street under a monument | 9,153 of 123,138 vertices | **3,379 of 76,973** | **−63 %** |
+| G14 drawn stone outside its own box | 13 of 26, worst 34.8 m | **5 of 27**, worst 35.4 m | −62 % |
+| G12 published aspect ratio | 3 out of tolerance | **1** (`stadium-domitian`, drawn) | −67 % |
+| G13 one compression for the cohort | 1 out of tolerance | **7** | **by design** |
+| G11 every sourced monument present | FAIL | FAIL | unchanged, approved |
+| **verdict** | **7/21** | **5/21** | |
+
+**Three of the four losses are the gate encoding an assumption this phase was told to overturn,
+and they should be read as such rather than fixed.**
+
+- **G8 and G15 are the complexes.** G8 requires 7 m of clear ground between *every* pair of
+  monuments; G15 requires that no monument's stone stand inside another's plot. Both are correct
+  for free-standing monuments and both are false about Rome: the Basilica Ulpia stands **in**
+  Trajan's Forum, the Curia Pompeia's back wall **is** the Area Sacra's west boundary. The worst
+  figures are 0.66 m of clearance and 3,205 vertices, all of them inside a declared `complex` and
+  all of them within the 2.4 m the gate's own `ABUT_DEPTH_M` allows for a joint. **The gate has
+  the machinery already** — it excludes "same-owner joints" where `a.id === b.id` — and what it
+  needs is to read `RomeMonument.complex` and treat a complex as one owner.
+- **G13 is the per-monument authored footprint.** Its premise, in its own words, is that *"a map
+  may compress plan uniformly, but it may not compress one monument differently from another"* —
+  which is exactly what §4.5 instructed this phase to abolish, and with reasons. It will now fail
+  on every future Rome build. It should either gate the **declared** departure (does the built
+  extent match `draw × len` to 0.25 m?) or be retired for Rome.
+- **G9 is real and it is not mine to fix.** The Ara Pacis is 11.6 m across, is now drawn at full
+  published plan for the first time, and the insula generator has left it 0.69 m instead of the
+  1.5 m *ambitus* of the Twelve Tables. That is a keep-out margin in `planDistrict`, phase 5's, and
+  it is one of a family: G3, G10, G17–G21 are all the fabric layer and all unchanged by this pass.
+
+**Two changes the gate needs that this pass deliberately did not make**, on top of the two above —
+because a phase that edits its own gate cannot report a before and after:
+
+1. **G11 needs an "absent because off this map's frame" category.** It already has
+   `absentExpected` for "absent because anachronistic", used once for the Baths of Diocletian. The
+   Circus Maximus and the Baths of Caracalla are missing by an approved design decision.
+2. **There is no water check.** `heightAt` appears once in 2,006 lines, in G19's denominator. §7.9
+   measured 60 of 1,259 solids entirely below `WATER_LEVEL` and called the fix *"one line against
+   `heightAt`"*. The judge's own grader does have one, and it reports **two landmarks with their
+   centre in the modelled channel: the Tiber Island, which is `onRiver` by design, and the Theatre
+   of Marcellus, which is 16 world metres into the water after being moved 39 m to its plate
+   control.** Reported and not nudged, per the brief: the modelled channel is a fixed analytic
+   curve, `e/terrain/tiber-resurvey` is re-surveying it, and a monument should not be moved off
+   its plate position to satisfy a river that is about to move.
+
+### 8.8 What phase 3 inherits
+
+- **The plate is now an instrument, not just a picture.** `tools/scratch/rome-landmarks.mjs
+  --plate` draws any window of the survey onto the georeferenced Lanciani raster or the AGEA
+  orthophoto, in survey metres, with a metre grid, in about a second and with no browser and no
+  dev server. Every correction in §8.2 was found with it. `--realgaps`, `--floorsweep` and
+  `--audit` are its arithmetic halves; `--audit` exits non-zero on a fault and is the regression
+  gate for this phase.
+- **A limitation of that instrument, measured, and worth knowing before anyone trusts a reading.**
+  The plate resolves 1.709 m/px, which is fine for a footprint and not fine for a label: at the
+  zoom where a monument fills the frame, its inked name is illegible. Identification has to come
+  from a labelled plate — Shepherd 1923 — or from the building's shape. Only the geometry comes
+  from Lanciani.
+- **A second limitation, and this one nearly caused a wrong answer.** `--realgaps`' first version
+  had a sign error in the bearing convention that mirrored every box in `n`. It is invisible on an
+  axis-aligned building and silently inverts every rotated one: it reported the Basilica Ulpia and
+  Trajan's Column interpenetrating by 27.3 m when they are 8.2 m apart, and it reproduced §4.5's
+  independently-computed "49 real metres" for Octavia–Marcellus closely enough to look like
+  corroboration. It was caught by hand-computing one pair and comparing. **An instrument that
+  agrees with the document it is checking is not thereby correct.**
+- **Bearings can be measured off the plate, but not yet well enough to overturn a citation.**
+  `--grain` runs a structure tensor over the black ancient ink inside a monument's footprint,
+  masked away from Lanciani's red modern overlay so it measures Roman fabric rather than
+  Umbertine streets. It is translation-invariant, so it is immune to any residual georeference
+  offset — the one thing a *position* reading off this plate cannot be trusted about. It
+  corroborates eight bearings within 6° (the Porticus Octaviae to 0.6°, the Castra Praetoria to
+  2.6°, the Mausoleum of Hadrian to 3.6°), and its mean absolute error over 27 legible rows is
+  **16.4° against 22.5° for a random guess**. That is real signal and it is not enough: per row it
+  cannot tell a wrong bearing from a window full of the wrong ink. Masking to the monument's own
+  polygon rather than its bounding box is the cheapest remaining fidelity win on this map.
+- **The six missing Campus Martius monuments are still missing, deliberately.** Only
+  `porticus-pompei` was added, because it is the other half of a monument the survey already
+  claimed at 300 × 180 and because its position is measurable on the plate. §4.1's own rule is
+  that *"a row exists only if it carries a real coordinate, a real published plan dimension, and a
+  source; no row may be added from memory"*, and the Saepta Iulia, the Porticus Divorum, the
+  Diribitorium, the Circus Flaminius, the Theatre of Balbus and the Hadrianeum cannot yet meet it:
+  §7.5's back-conversion from `ROME.md` §6.3 inherits that gazetteer's own frame, and the plate
+  cannot be read at label resolution to check them. They should be added in phase 3 from digitised
+  control points — **and each one costs footprint the floor will have to pay for**, so add them
+  and re-run `--floorsweep` in the same commit.
+- **The digitising `MAP-METHOD.md` §3 asked for is now half done.** The five corrections in §8.2
+  are, in effect, five control points read off the raster. Writing the remaining twenty into a
+  table shaped like `probe-fabric`'s `PUBLISHED` turns position from a declared blind spot into a
+  gate, and it is the single highest-value thing left in the fabric rebuild.

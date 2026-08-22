@@ -16,6 +16,7 @@ import { BAY_COUNT, CURTAIN_T, MIN_LANE, WALL } from './section';
 import {
   LANDMARKS,
   PRECINCT,
+  STREET_GAP,
   TOPOLOGY,
   WAY_RANK,
   WAYS,
@@ -36,38 +37,71 @@ import { GATE_X, KX, KZ, ROME, worldOf } from './survey';
  */
 
 /**
- * Build-time proof that no two monuments interpenetrate.
+ * Build-time proof that the monument layout is correct **by construction**.
  *
- * Called from `CitySystem.init` and reported in `stats()`. `pad` is deliberately 0 here
- * — the resolver asks for a nine-metre street between footprints, and this asks only
- * that the masonry does not intersect, so a pair that ends up sharing a party wall is
- * reported as a warning rather than an error.
+ * Called from `CitySystem.init` and reported in `stats()`. Until phase 2 this was a check on a
+ * solver's output: `resolveOverlaps` pushed footprints apart until they cleared, and then this
+ * reported that they cleared. That is `MAP-METHOD.md` rule 6's forbidden shape — an instrument
+ * grading the thing it was built from — and it passed happily on a city whose monuments were a
+ * mean of 142 world metres from their surveyed positions. The solver is gone, so this now
+ * measures a layout that nothing has corrected, and it can therefore fail.
+ *
+ * Three populations, reported separately, because collapsing them is how a licensed abutment
+ * and a real fault come to look the same:
+ *
+ *  - **`pairs`** — two monuments in *different* complexes closer than `STREET_GAP`. Always a
+ *    fault: it means a monument is standing in another quarter's street.
+ *  - **`abutments`** — two monuments in the *same* complex, overlapping. Reported with the depth
+ *    and gated at `ABUT_DEPTH`, not exempt: a complex is a declaration that the city had
+ *    continuous fabric there, and continuous fabric shares a wall rather than a volume.
+ *    `survey.ts:RomeMonument.complex` carries the evidence for each.
+ *  - **`worstAbut`** — the deepest licensed overlap. Not gated here, but printed, because it is
+ *    the number that will grow silently if somebody adds a row to a complex without checking.
  */
 export function assertNoFootprintOverlaps(): {
   ok: boolean;
   count: number;
   worst: number;
   pairs: { a: string; b: string; depth: number }[];
+  abutments: { a: string; b: string; depth: number }[];
+  worstAbut: number;
 } {
   const pairs: { a: string; b: string; depth: number }[] = [];
+  const abutments: { a: string; b: string; depth: number }[] = [];
   let worst = 0;
+  let worstAbut = 0;
   for (let i = 0; i < LANDMARKS.length; i++) {
     for (let j = i + 1; j < LANDMARKS.length; j++) {
       const a = LANDMARKS[i];
       const b = LANDMARKS[j];
       // Gardens, hills and the island are landscape, not masonry.
       if (a.soft || b.soft) continue;
-      // Divide the precinct margin back out: two precincts may touch, two buildings
-      // may not.
+      // Divide the precinct margin back out: two precincts may touch, two buildings may not.
       const ab: Obb = { x: a.x, z: a.z, hw: a.hw / PRECINCT, hd: a.hd / PRECINCT, rot: a.rot };
       const bb: Obb = { x: b.x, z: b.z, hw: b.hw / PRECINCT, hd: b.hd / PRECINCT, rot: b.rot };
-      const hit = obbOverlap(ab, bb, 0);
+      const together = a.complex !== undefined && a.complex === b.complex;
+      if (together) {
+        const hit = obbOverlap(ab, bb, 0);
+        if (!hit) continue;
+        abutments.push({ a: a.id, b: b.id, depth: +hit.depth.toFixed(2) });
+        worstAbut = Math.max(worstAbut, hit.depth);
+        continue;
+      }
+      // Different complexes: the seven-metre street is owed, not merely non-intersection.
+      const hit = obbOverlap(ab, bb, STREET_GAP);
       if (!hit) continue;
       pairs.push({ a: a.id, b: b.id, depth: +hit.depth.toFixed(2) });
       worst = Math.max(worst, hit.depth);
     }
   }
-  return { ok: pairs.length === 0, count: pairs.length, worst: +worst.toFixed(2), pairs };
+  return {
+    ok: pairs.length === 0,
+    count: pairs.length,
+    worst: +worst.toFixed(2),
+    pairs,
+    abutments,
+    worstAbut: +worstAbut.toFixed(2),
+  };
 }
 
 
@@ -758,7 +792,10 @@ export function assertRomeFrame(): RomeFrame {
   );
 
   // ---- 5. every monument stands where the survey puts it ----------------
-  // §4.1 check 5, and the check that proves the resolver is gone. It is not gone yet.
+  // §4.1 check 5, and the check that proves the resolver is gone. **It is gone**, so this is no
+  // longer PENDING and it is no longer a measurement of anything but a typo: with `place()`
+  // returning `worldOf(e, n)` unmodified, the only way this can be non-zero is the z clamp,
+  // which check 8 below reports separately. It was 398.9 m at phase 1.
   let worstDrift = 0;
   let worstDriftId = '';
   for (const l of LANDMARKS) {
@@ -778,8 +815,7 @@ export function assertRomeFrame(): RomeFrame {
     worstDrift,
     '<= 0.5 m',
     worstDrift <= 0.5,
-    `worst ${worstDrift.toFixed(1)} m (${worstDriftId || 'none'}) — this is resolveOverlaps' own displacement`,
-    'phase 2: delete resolveOverlaps, merge the five complexes, author footprints per monument'
+    `worst ${worstDrift.toFixed(1)} m (${worstDriftId || 'none'}) — was 398.9 m before resolveOverlaps was deleted`
   );
 
   // ---- 6. nothing solid intersects anything solid -----------------------
@@ -789,13 +825,13 @@ export function assertRomeFrame(): RomeFrame {
   // phase 2; this row exists so the target is written down before there is anything to grade.
   const fp = assertNoFootprintOverlaps();
   add(
-    'zero intersecting solids, min clear gap 7.0 m',
+    'monuments in different complexes keep the 7 m street',
     fp.count,
-    '0 pairs over EVERY solid, monuments and insulae together',
-    false,
-    `${fp.count} monument/monument pair(s) intersect, worst ${fp.worst.toFixed(1)} m; ` +
-      'insulae are not in this population at all',
-    'phase 2 (landmarks) and phase 5 (fabric), graded by tools/probe-fabric.mjs'
+    '0 pairs; insulae are phase 5 and are not in this population',
+    fp.ok,
+    `${fp.count} pair(s) short of the street, worst ${fp.worst.toFixed(1)} m; ` +
+      `${fp.abutments.length} licensed abutment(s) inside a complex, deepest ${fp.worstAbut.toFixed(1)} m`,
+    fp.ok ? null : 'phase 5 (fabric) still owes the whole-population version, graded by tools/probe-fabric.mjs'
   );
 
   // ---- 7. the fabric's own two numbers ----------------------------------
