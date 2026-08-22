@@ -1247,6 +1247,36 @@ I kept 100, recorded the measurement at the site, and wrote down the condition t
 number matter again. **Resolving a conflict by measuring sometimes tells you the conflict was not
 one; that is still the cheapest possible answer and you only get it by measuring.**
 
+**Surprise 4: the control appeared to fail, and the instrument was wrong, not the subject.**
+`qa-determinism` on Carthage — the control, the map none of this work touches — came back
+**12 failing checks across 7 checkpoints**, drifting from t+30 onward. That is the alarm you least
+want to be real, because a Rome change that moves Carthage means something shared moved and every
+number on both maps is in question. It was not real. Runs A and B were identical to each other, so the sim was deterministic; the disagreement
+was with the **pinned file**. Comparing that file against `main`'s: the assembled tree measures
+`a4fa4050` at t+30 and **`main`'s pin is `a4fa4050`** — all seven checkpoints and all seven
+survivor counts match `main` exactly. The pin that disagreed was the one this branch had
+inherited from `e/terrain/tiber-resurvey`, whose Carthage entry reproduces on neither tree.
+**Carthage is byte-identical across the whole assembly and the control holds**; what failed was a
+baseline row that had been re-recorded when nothing had moved. The lesson is the one the file's
+own header states and this pass nearly mis-read: *re-record only in the same commit as the change
+that moved it* — a gratuitous re-record does not just add noise, it manufactures a failing control
+and points it at innocent work.
+
+The other two battles moved, and one of them moved further than either parent. **The field
+battle's t+30 hash is `3a315656` on this tree, against `dc3fa068` pinned on `main` and `5903c5e0`
+pinned on the Tiber branch** — a third value, not either input. The likely reading is that
+`campus-martius` builds the city in *both* scenarios, so `default` sees the re-surveyed channel
+**and** the landmark rework, and neither parent had both; but I did not run the experiment that
+would establish it, so that is an inference and is marked as one. The **Rome assault** re-records
+at **3,072 men in 32 units**. All three battles are now pinned to what this tree measures.
+
+A trap worth naming for whoever reads these logs: **`--record` does not compare.** It writes and
+prints `✓ deterministic and unchanged across 7 checkpoints`, and that sentence is about run A
+versus run B and across the four quality tiers — *not* about the baseline, which it has just
+overwritten. I nearly wrote "the field battle matched the Tiber pin" on the strength of it. If you
+want to know whether a battle moved, you have to run it **without** `--record` first, which is why
+the Carthage control above was run that way and why the finding exists at all.
+
 **The numbers, before and after, on the same instrument.**
 
 | | `main` 2409ed8 | assembled | Carthage control |
@@ -1257,6 +1287,18 @@ one; that is still the cheapest possible answer and you only get it by measuring
 | monument ambitus (G9) | 1.02 m | **3.18 m** | — |
 | monument displacement | 65 / 168 m (142 / 399 m with phase 1 alone) | **0.0 mean, 0.0 worst** on 25 affine rows; 5 overrides printed by name | — |
 | gate axis inside masonry | 32 % | **20.6 %** | — |
+
+**The rest of the standing gate, on the assembled tree.** `tsc --noEmit` clean; `npm run lint`
+**3/3** (and the browser-budget allowlist shrinks 92 → 91, because `probe-tiber.mjs` was written
+before the cap landed on `main` and had to be converted); `qa-deploy` **33/33**; `probe-seams`
+**PASS on both maps**; `probe-ground` clean — **0 deployment cells under water** on either side
+(15,626 attacker, 11,791 defender), 0 men in the channel, 0 on the far bank, 0 trees inside the
+wall keep-out; `probe-wall` **18/19**, every substantive wall assertion passing — continuity,
+one polyline, the gate shut, the tunnel real, obstacles matching stone, stairs climbable, no
+scaffolding on the field side — with the single failure a 404 for a static resource under the
+probe's own `dist/` server, which is a serving artefact and not a wall fault. Note for the next
+person: `probe-wall` serves `dist/` when no dev server answers its port, so it needs a build
+first or it times out; that cost a run.
 
 Checks gained: G9, G11, G12, G16, G22. **G8c and G8d went from `n/a` to FAIL**, which is the
 point of them: `main` declares no complexes, so the two checks written to grade complexes were
@@ -1270,8 +1312,15 @@ quoting it.**
   `complex` exists and G8c/G8d are applicable. On `main` those two rows are `n/a` and five checks
   pass, not seven. The brief's number was right about a tree that is not the one it named. Quoting
   a score without the tree it was measured on is quoting a number without its units.
-- **Rome's determinism headcount is 3,074, not 3,072.** `qa-determinism.mjs`'s own usage text and
-  the recorded baseline both say 3,074.
+- ~~**Rome's determinism headcount is 3,074, not 3,072.**~~ **I was wrong, and the way I was
+  wrong is the point.** `qa-determinism.mjs`'s usage text and the pin I had inherited both say
+  3,074, so I wrote the brief's 3,072 up as an error before measuring it. Then I ran the battle:
+  **3,072 men in 32 units.** 3,074 is the phase-1 tree's headcount; the assembled tree is two men
+  lighter, because the landmark rework changes the city and Rome's defender count is derived from
+  the city's own garrison bays. **Two documents agreeing is not a measurement — they can share an
+  ancestor.** The brief was right and both of my sources were stale, which is the same failure
+  mode as the check that compares a thing against itself, one level up: I corroborated a number
+  against a copy of itself.
 
 **What I would do differently.**
 

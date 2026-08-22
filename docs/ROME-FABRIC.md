@@ -1166,7 +1166,21 @@ second port, so "unchanged" is a measurement rather than an argument.
 
 | | base, `KZ` 0.222 | phase 1, `KZ` 0.35 | §5's acceptance |
 |---|---|---|---|
-| Tiber worst survey error | 0.1 world m | **0.1 world m** | ≤ 25 m |
+| ~~Tiber worst survey error~~ | ~~0.1 world m~~ | ~~0.1 world m~~ | ~~≤ 25 m~~ |
+
+**RETRACTED, 22 Aug 2026, by the branch that assembled this tree.** The row above is the
+number `e/terrain/tiber-resurvey` was called into existence to argue against, and leaving it
+in a table headed *"stated acceptance"* is the fault this whole document warns about. It was
+honest and useless: `probe-rometransect --only=tiber` compared the transcribed world-metre
+table against `worldOf` of **the same twelve latitudes and longitudes**, so it measured the
+projection's arithmetic and could not see whether a knot was in the river. Measured against
+the plate, **one of the twelve control points stood on water**, the median knot was **115 real
+metres** from the channel and the worst was **1,166 m**. A residual against your own control
+points is not an accuracy figure — see `MAP-METHOD.md` rule 19. The live figures on this tree
+are median departure **2.4 real m** over the assaulted front, swing ratio **0.990**, and **0**
+inverted-curvature stations, from `tools/probe-tiber.mjs`, which grades against sixteen WGS84
+bridge midpoints and a 4,476-node plate trace rather than against the survey it is checking.
+
 | bays / west end / east end | 36 / x 2.006 / x 1334.55 | **36 / x 2.006 / x 1334.55** | byte-identical |
 | bay pitch | 37.01511 m | **37.01511 m** | unchanged |
 | worst pitch deviation | 0.0 % | **0.0 %** | — |
