@@ -330,6 +330,70 @@ Raising `BREAK_IN` is not the fix — it moves the number without changing the s
 changes when men inside the walls have to *stay* there: exclude routers from the break-in census,
 and the sixty men who take Rome have to be sixty men still fighting.
 
+### P2-11 — SPECTACLE. The moment that decides every Rome battle is two conga lines walking into a park.
+
+Framed with `tools/film.mjs` rather than by projecting a unit anchor, because a scripted camera
+pointed at a centroid is not a player's camera and grading spectacle off one would be unfair.
+Shot script: `tools/judge/shots/judge-moments.shot.mjs`, cued on the events themselves
+(`climbing(140)`, `routing(90)`, `melee(400)`). Frames in `screenshots/judge/moments/`.
+
+- **`over-the-parapet-00090.jpg`** — t+28, 221 men climbing, 39 fighting. The Aurelian Wall in
+  raking morning light with twelve ladders against it and the files on them legible as a shape.
+  **This is the best the game looks and it is genuinely good.** But the men are 3–8 px tall and
+  there is no close version of this moment: the walk is 34.5 m up and 7 m wide, so the only
+  camera that frames the escalade frames it as landscape.
+- **`the-break-in-00179.jpg`** — t+67, the moment that decides the battle. Behind the wall:
+  **empty parkland.** Trees, grass, two isolated brick towers, and the city proper a distant
+  band on the horizon. The men who take Rome come down the inside in **two dead-straight single
+  files**, hundreds long, and walk into a void. Nothing is defended, nothing is fought over,
+  nothing is reached. The card calls this "the ground that mattered".
+  *My first attempt at this shot put the eye 70 m inside at eye 14 and ended up **inside the
+  Pincian** — the hill behind the Muro Torto rises above the wall's own footing, which is worth
+  knowing about the ground a break-in happens on.*
+- **`the-clash-00179.jpg`** — Pydna, ~1,000 men in melee. The Pierian plain, Olympus in haze,
+  evening light and dust. Handsome.
+
+### P2-12 — FLAT. A Juthungi warband is four to eight times looser than a cohort, and stops reading as a body of men.
+
+I looked at the clash frame and wrote down "the fighting line is one man deep, like a picket
+fence". **That impression was half wrong and the measurement is better than the impression**, so
+both are recorded. Extent of each unit's living men along and across its own facing, Pydna:
+
+| unit | frontage | depth | density |
+|---|---|---|---|
+| `legio-cohort` at t+5 | 34.4 m | 7.1 m (≈10 ranks) | **1.30 men/m²** |
+| `legio-cohort` in the melee, t+144 | 30.8 m | 5.5–8.4 m | **1.30–1.52 men/m²** |
+| `juthungi-warband` at t+5 | 40.7 m | **29.1 m** | **0.303 men/m²** |
+| `juthungi-warband` 19 at t+205 | 58.3 m | **41.1 m** | **0.150 men/m²** |
+
+The Roman cohorts are a proper block and hold their ranks through the fight — that is good and
+it is what the frame shows on the left. The warbands are not: 360 men spread over 2,400 m² is
+one man per 6.7 m², about 2.6 m apart, and at any camera height that reads as scattered
+individuals rather than a warband. Half of every field battle in this game is drawn as a crowd
+leaving a stadium. Whether a Germanic host *should* fight loose is a design call; 0.15 men/m² is
+not "loose", it is "not a formation".
+
+*Repro:* `jg-ranks.mjs --port=P`
+
+### P2-13 — the second shape baseline, and what it says about the seed.
+
+Carthage assault, 8 seeds, hands-off, same tree:
+
+```
+outcomes           Victory/objective, 8 of 8
+decided at         165.9-381.6   mean 249.3
+contested window   133.8-349.4   mean 217.2
+contact            32.03-32.20   mean 32.1     <-- 0.17 s of spread across eight seeds
+my first break     42.30-42.47   mean 42.4     <-- 0.17 s of spread across eight seeds
+advantage flips    0 0 0 0 0 0 0 0
+```
+
+**The first storming party breaks at t+42.4 on every seed, within a sixth of a second.** Rome's
+twelve seeds put the first man on the parapet at t+52.3–52.6, the same. The seed changes who
+dies; it does not change what happens or when. That is the strongest single statement I can make
+about why the sieges do not bear replaying: they are not twelve battles, they are one battle
+twelve times with different casualty lists.
+
 ---
 
 ## The incoming change: baseline, and the noise floor it has to clear
