@@ -1288,6 +1288,19 @@ the Carthage control above was run that way and why the finding exists at all.
 | monument displacement | 65 / 168 m (142 / 399 m with phase 1 alone) | **0.0 mean, 0.0 worst** on 25 affine rows; 5 overrides printed by name | — |
 | gate axis inside masonry | 32 % | **20.6 %** | — |
 
+**Against the plate, which is the ruler that is not ours.** `tools/probe-plan.mjs` renders the
+map into the georeferenced Lanciani frame and compares: **6/9, one skipped.** The result that
+matters is **P3, monuments stand where the survey put them: mean 0 / worst 0 real metres** —
+`ROME-PLAN-RUBRIC.md`'s single largest loss (P6, 0/20, median 227 m and worst 1,031 m) measured
+to zero by an instrument that reads the plate and not our survey. The river takes five of six:
+the bend goes the same way (−727 m against the plate's −732.4), turns in the same place (apex 40 m
+apart), keeps the plate's curvature sign, moves **0.00 %** of built footprint across the channel,
+and is **102.1 real metres wide against the plate's 100.8, a ratio of 1.01**. The three failures
+are all named and all inherited: 2 of 1,124 solids on wet ground with **none fully submerged**;
+544 solids in a carriageway of which **529 are district lanes** and 15 monuments; and 4 of 21
+river bands over 47 m, the worst at n −100 inside the northern reach `tiberSurvey.ts` itself
+declares a fabrication.
+
 **The rest of the standing gate, on the assembled tree.** `tsc --noEmit` clean; `npm run lint`
 **3/3** (and the browser-budget allowlist shrinks 92 → 91, because `probe-tiber.mjs` was written
 before the cap landed on `main` and had to be converted); `qa-deploy` **33/33**; `probe-seams`

@@ -43,6 +43,42 @@ node tools/film.mjs tools/shots/rome-assembled.shot.mjs --stills --nooverlay \
 | weather | clear |
 | unit size | ultra (3,072 men in 32 units, measured) |
 
+## The plan against the Lanciani plate
+
+`tools/probe-plan.mjs` (branch `e/tools/probe-plan`) renders the map into the georeferenced
+plate's own frame and compares. It writes five PNGs at **1.709 real m/px with a 500 m scale bar**:
+
+```
+screenshots/probe-plan/A-plate-rome-assembled.png        the plate alone
+screenshots/probe-plan/B-render-rome-assembled.png       the built city alone, north up
+screenshots/probe-plan/C-overlay-rome-assembled.png      <- the one to look at
+screenshots/probe-plan/D-faults-rome-assembled.png       the ranked divergences, marked
+screenshots/probe-plan/E-drawn-on-plate-rome-assembled.png
+screenshots/probe-plan/report-rome-assembled.json
+```
+
+**`C-overlay` is the picture the brief asked for**: grey is the engine's built fabric, yellow is
+its monuments, blue is its Tiber, all laid on Lanciani's 1901 *Forma Urbis Romae*. Re-run with
+
+```
+node <probe-plan worktree>/tools/probe-plan.mjs --root=<this worktree> --port=5983 --tag=<tag>
+```
+
+**Verdict 6/9, one skipped.**
+
+| | |
+|---|---|
+| **P3 monuments stand where the survey put them** | **PASS — mean 0 / worst 0 real metres.** The rubric's largest single loss (median 227 m, worst 1,031 m) is now zero. |
+| P5 the great bend goes the same way | PASS — plate bows −732.4 m west, engine −727 m |
+| P6 the bend turns in the same place | PASS — apex 40 m of latitude apart, 5.9 m of easting |
+| P7 local curvature has the plate's sign | PASS — 1 of 14 bands disagree, no run of 2 |
+| P8 nothing changes bank between plate and engine | PASS — 0.00 % of 535,757 m² |
+| P10 the channel is the plate's width | PASS — 102.1 real m against 100.8, ratio **1.01** |
+| P1 no solid stands in the river | FAIL — 2 of 1,124 solids on wet ground, **0 fully submerged**, 3,465 m² |
+| P2 no solid stands in a carriageway | FAIL — 544 of 1,124, but **529 are district lanes and only 15 are monuments** on the named armature |
+| P4 the centreline agrees over the city | FAIL — 4 of 21 bands over 47 m; worst 392 m at n −100, which is inside the northern reach `tiberSurvey.ts` names as a fabrication and puts out of scope |
+| P9 gate way-counts | SKIP — no machine ruler on the plate side |
+
 ## The pictures worth looking at first
 
 | look at | what it shows |
