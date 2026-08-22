@@ -18,6 +18,7 @@
  */
 
 import type { EngineContext } from '../core/Engine';
+import type { WallRefusal, WallVerb } from '../core/events';
 import type { BattleSystem } from '../sim/BattleSystem';
 import {
   BREAK_IN, INSIDE_MARGIN, STORM_STALL_SECONDS, WALL_FOOTHOLD, WALL_HOLD_SECONDS,
@@ -88,6 +89,48 @@ export interface FlowView {
 }
 
 const pct = (n: number, of: number): number => (of > 0 ? Math.max(0, Math.min(1, n / of)) : 0);
+
+/**
+ * Why the wall will not take this order, in the words the player reads.
+ *
+ * The best writing in this product is its refusals — *"No way along the wall to bay 5 — the
+ * walk is broken in between"* teaches a player the map in one sentence — and until now there
+ * was exactly one of them, wired to one of `traverseOfferAt`'s four answers. Every other
+ * refused wall order was dropped in silence: a judge issued four the cursor had offered and
+ * closed 0 m of all four, `goal` never leaving `none`.
+ *
+ * Two callers, and that is the point of putting it here. `SelectionController` reads it on
+ * hover, where a refusal can still stop the player committing; `EventFeed` reads it on
+ * `orderRefused`, for the refusals only the simulation can see, a tick after the click. One
+ * vocabulary, one set of words, so the two answers cannot contradict each other.
+ *
+ * A `Record<WallRefusal, …>`: a new reason does not compile until it has a sentence.
+ */
+export const WALL_REFUSAL: Record<WallRefusal, (bay: number, verb: WallVerb) => string> = {
+  notOnWall: () => 'These men are not on the wall — send them up it first',
+  noWall: () => 'There is no walk there to send them along',
+  noRoute: (bay) =>
+    `No way along the wall to ${where(bay)} — the walk is broken in between`,
+  noStair: (bay, verb) => NO_STAIR[verb](where(bay)),
+  busy: () => 'They are already on their way — let them finish it',
+};
+
+/**
+ * `noStair` reads two ways and the verb decides which.
+ *
+ * The first cut of this printed the *descent* sentence — "no steps join bay 1 to the ground" —
+ * over three cohorts standing in the street who had been told to climb onto it. True of the
+ * masonry, wrong about the order, which is precisely the fault this pass exists to remove.
+ * A `Record<WallVerb, …>`, so a fourth verb cannot skip its wording.
+ */
+const NO_STAIR: Record<WallVerb, (w: string) => string> = {
+  ascend: (w) => `No steps reach ${w} from the ground — there is no way up here`,
+  descend: (w) => `No steps join ${w} to the ground — they cannot get down here`,
+  traverse: (w) => `No steps reach ${w} — the walk cannot be joined here`,
+};
+
+/** "bay 5", or "that stretch" when the order did not land on one. */
+const where = (bay: number): string => (bay >= 0 ? `bay ${bay}` : 'that stretch');
 
 /**
  * Agreement for the counts these lines are built from, which start at one and pass through it
