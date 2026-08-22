@@ -487,6 +487,83 @@ produced. The aqueduct's piers have no imposts and its arches no mouldings, so i
 concrete flyover rather than an Aqua; and the ground inside the gate is a shapeless apron of
 grass and cobble with no kerb and no carriageway, which is G6 again.*
 
+### 5.2 The landmark rework, graded before it lands — because the timing matters
+
+**Nothing on `e/city/rome-landmarks` is committed yet.** So this section is not a re-grade of
+landed work; it is a read of that branch's *uncommitted* diff, applied to a scratch checkout at
+`bc2e0f2` and shot from the same eye, **so that one finding reaches the builder before the
+survey rows are written rather than after.** Treat every judgement here as provisional: the tree
+is mid-edit and everything in it may change, and one thing I saw in it (grey conical mounds with
+paving draped over them, near the old Pantheon coordinates) I could not diagnose and am not
+calling a fault.
+
+**First, and it is the biggest single visible improvement of the day:**
+
+![Thirty metres inside the Porta Flaminia — bc2e0f2, and the landmark branch's working tree](images/judge-ground/pair-landmarks-wip.jpg)
+
+*Left `bc2e0f2`, right the landmark branch uncommitted. Same camera, same seed, same hour.* The
+Via Lata now runs as a broad basalt carriageway **dead straight to a terminus**, porticoed both
+sides, with painted insulae behind. That is H4 going from 1 to 3 in one branch, and it is the
+frame the player sees first after a breach.
+
+![The Campus Martius on the landmark branch, from 55 m](images/judge-ground/lm-wip-campus-martius.jpg)
+
+*And the quarter behind it is now three to five storeys of painted, tiled, windowed insulae in
+continuous rows, with an aqueduct through them. This is the best picture of Rome's fabric this
+project has produced.*
+
+**Second — and this is the reason this section exists — the rework is about to make G4 worse for
+the monuments that matter most, and it is one field away from fixing it instead.**
+
+`PLAN_SCALE` is abolished, which `ROME-FABRIC.md` §4.5 asked for and which is right. In its place
+`place()` reads `drawScaleOf(m) = m.draw ?? 1`, and 22 of the survey's rows now carry a `draw`.
+**But the rule that heights are unscaled is not merely preserved, it is restated in the new
+comment**: *"Monuments are authored at true scale and compressed **in plan only** by the
+placement matrix: heights pass through at 1:1, so the Colosseum keeps its 48 m attic."* So the
+anisotropy stops being one global constant and becomes twenty-two of them, each authored by hand
+into a survey row — which is exactly the form that is hardest to reverse later.
+
+The numbers, read off the branch's own `survey.ts` comments:
+
+| monument | new `draw` | drawn plan | real height | h/w real | h/w drawn | anisotropy |
+|---|---:|---|---:|---:|---:|---:|
+| **Pantheon** | **0.445** | 37 × 26 m | c. 43 m | 0.74 | **1.65** | **2.25×** |
+| **Temple of Jupiter OM** | **0.445** | 28 × 24 m | — | — | — | **2.25×** |
+| **Theatre of Marcellus** | **0.445** | 58 × 51 m | 32.6 m façade | 0.25 | **0.56** | **2.25×** |
+| Flavian Amphitheatre | 0.548 | 104 × 85 m | 48.5 m | 0.26 | **0.47** | 1.82× |
+| Baths of Nero | 0.445 | 85 × 62 m | — | — | — | 2.25× |
+| Trajan's Column | 0.445 | 8 × 8 m base | c. 30 m | — | — | 2.25× |
+| **Mausoleum of Augustus** | *(none — 1.0)* | 87 × 87 m | c. 45 m | 0.52 | **0.52** | **1.00× ✓** |
+
+Read the last two rows together, because they are the whole argument. **The Mausoleum, which no
+longer carries a scale at all, is now drawn at true plan and true height and is therefore
+*correct* — the rework has already fixed G4 for every monument it did not have to shrink.** The
+twelve-odd rows with no `draw` are a real win and nobody should undo them. It is the twenty-two
+with one that are the problem, and the floor has fallen from the old global 0.65 to **0.445**, so
+for those the proportion error has gone from 1.54× to **2.25×**.
+
+A 26-metre Pantheon at its full height is 1.65 times as tall as it is wide. The building whose
+defining property is that its interior is a sphere becomes a chimney, and it is one of the three
+silhouettes a person uses to recognise Rome without a caption (`VISUAL-RUBRIC.md` D3).
+
+**The change I am asking for is one field and one multiply**, and it can be made before the
+branch commits:
+
+- add `drawY` alongside `draw` in `RomeMonument`, **defaulting to `draw` rather than to 1**, so
+  that isotropy is what you get unless a row says otherwise;
+- apply it in `buildLandmark`'s placement matrix, which already takes a non-uniform scale safely
+  (its own comment says so — normals are recomputed from transformed edges in
+  `GeoStream.prepare`);
+- and where a row wants its full height anyway, it writes `drawY: 1` **with the reason beside
+  it**, which is the same discipline the `draw` column already has and the reason that column is
+  an improvement on `PLAN_SCALE`.
+
+At `draw: 0.445` the Pantheon would then stand 19 m to its crown instead of 43. That is a real
+loss and it is smaller than the one being taken: a 19 m Pantheon still reads as the Pantheon, and
+a 26 m one at 43 m does not read as anything. **If a monument cannot survive its own scale in
+three axes, the honest answer is that it should not be shrunk that far — which is a placement
+question, and §4.5's merges and §G4b's bendable streets are where it should be answered.**
+
 ---
 
 ## 6. Scores, against `VISUAL-RUBRIC.md` §H
