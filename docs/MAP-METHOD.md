@@ -457,4 +457,83 @@ question into a gate — and the rebuild is placing every monument from those pl
 somebody will read those coordinates regardless. Write them into a file instead of into a commit
 message.
 
+### 21 Aug 2026 — a judge from above, a weighted rubric, and the blind spot closed by hand
+
+**What we did.** Stood up an independent judge for Rome *from above only* — position, footprint,
+orientation, and the shape of the river and the circuit — with no stake in any branch and no source
+changes. Wrote `docs/ROME-PLAN-RUBRIC.md`: fourteen weighted criteria, each with a measurable test,
+a threshold and a plate it is traceable to, three of them vetoes. Then closed `probe-fabric.mjs`'s
+stated blind spot the way the previous entry said to: by **digitising control points off the
+georeferenced Lanciani raster by hand** — nine monuments, six circuit gates, five river stations —
+into `tools/judge/control.mjs`, with a method and an error bar per row. Graded
+`e/city/rome-fabric-p1` @ `bc2e0f2`. Result in `docs/ROME-PLAN-GRADE.md`.
+
+**What we expected.** That the resolver's displacement would dominate, that the survey table would
+come out well, and that the plates would mostly confirm what `ROME-FABRIC.md` already said.
+
+**What happened. 18/100, FAIL, all three vetoes at zero — and three findings nothing in the repo
+had.**
+
+1. **The circuit has never been checked against a plan of Rome, and its eastern half is 165–361 real
+   metres out.** The `porta-salaria` waypoint sits **235 real metres south of Lanciani's inked
+   wall**, in open ground inside the Horti Sallustiani, while the plate's own labelled
+   `PORTA SALARIA` is up the hill. Four consecutive waypoints carry `n = 1784–1789`, so the survey
+   draws that stretch dead east–west and **flattens the Vallis Sallustiana crossing out of
+   existence**. The structural reason it survived: `ROME_CIRCUIT_SURVEY` is `{ id, e, n }` — **no
+   `cite` on any of the fourteen rows.** It is the only survey on this map with no source per row,
+   and it is the line the whole battle is fought on. Rule 2, on the one table nobody applied it to.
+2. **The Tiber's fault is its *shape*, not its offset, and the two need separate criteria.** Over
+   the 842 metres of northing beside the assaulted front, the plate's channel swings **189 m east**
+   and the engine's swings **40** — the engine reproduces **21 %** of the real bend. A rubric that
+   graded only centreline distance would have called this a 78-world-metre problem. It is a
+   different-river problem, and it is what the owner saw in under a minute.
+3. **18 of 184 spatial relations the plate asserts are inverted in the build** — the Pantheon is no
+   longer north of the Theatre of Pompey; the Baths of Agrippa are no longer west of the Capitol.
+   `assertTopology` exists and passes: it grades forty-odd authored pairs, not the plate.
+
+**Verdict — the missing instrument was never hard, it was never budgeted.** The previous entry said
+*"budget the digitising… twenty monuments' corner coordinates read off the georeferenced Lanciani
+raster turns the whole position question into a gate"*, and estimated it correctly. Nine monuments
+and six gates took about two hours and produced all three findings above. **The gate is 2,006 lines
+and cannot see any of them; the control table is 120 lines and can.** Budget the digitising.
+
+**What we would do differently, all of it earned this pass.**
+
+- **A plate reading taken at the wrong scale is not a measurement.** My first Castra Praetoria and
+  Porta Salaria readings came off a contact sheet at 3.1 m/px, and one was 200 m adrift of the same
+  feature read at 0.64 m/px on a drawn 50 m grid. **Proposed as rule 12: read at the scale of the
+  thing being measured, and record the scale beside the number.**
+- **I nearly published a check that compared the survey against itself — inside the instrument
+  written to enforce rule 6.** Nine of my control rows were WGS84 positions I believed I was
+  supplying independently, and every one reproduced `survey.ts`'s own `cite` to four decimals. They
+  scored 0–23 m and would have moved the survey criterion from 3.3 to 4.7 out of 6 on nothing at
+  all. They are kept, labelled `how: 'restated'`, printed in the report, and excluded from every
+  score. **Proposed as rule 13: a control table needs a provenance field per row, and "I remembered
+  it" and "I read it off the plate" are different provenances with different error bars.**
+- **A control recalled from memory has a *shape* error, not just a position error, and that is the
+  dangerous kind.** Sixteen Tiber bridge midpoints recalled from memory put two of them at the same
+  longitude, which made the control **too straight** — and a control that is too straight cannot
+  grade a river for being too straight. It reported the worst departure as 297 m where the plate
+  says 177. My recalled longitudes were good to a metre; my recalled latitudes were 130–200 m out,
+  consistently, and only the plate caught it.
+- **Two automated digitising attempts failed, and are committed with their failure.** Lanciani's
+  channel ink is a grey-teal within 20 levels of the cream page, and the georeferenced mosaic has
+  pure-white sheet seams straight across the reach that matters (e −1000 to −875 at n 1900 is
+  white); the AGEA orthophoto is too dark and mottled to threshold. `tools/judge/digitise-river.mjs`
+  prints median run width 0 and is kept as the negative. Do not repeat either without a better
+  classifier.
+- **The review plates show a city the game does not build.** `src/city/plan.ts` — the plan-view
+  diagnostic the owner's screenshots come from — reserves only `STREETS` at `width/2 + 2.5`, while
+  `src/city/rome/plan.ts` reserves all 43 `WAYS` at `WAY_FRONTAGE`. The diagnostic builds **1,344**
+  insulae and the game builds **1,160**; the extra 184 stand in roads the diagnostic did not
+  reserve. **A diagnostic that does not build the game's keep-out is a picture of a different
+  city**, and it is the picture the owner was asked to review.
+- **Say what is good, and mean it.** The projection arithmetic passes cleanly — `GATE_X`/`GATE_Z`
+  re-derived independently agree to the digit, the front is 1,332.5 world m between its two anchors,
+  and footprint compression measures **0.696 uniform to three figures** across twelve sourced
+  monuments. `KX`, `KZ` and `PLAN_SCALE` are not the fault and moving them further will not help.
+  Bearings pass at a 2.4° median. Zero of 1,160 insulae stand in a carriageway, because the fabric
+  generator reserves the ways before it plans — that part of the method works and should be copied,
+  not touched.
+
 <!-- Append new entries above this line. -->
