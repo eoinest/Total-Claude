@@ -1198,4 +1198,110 @@ Four rules this pass paid for, offered for §1 in the numbering that follows the
 > separation. **A geometric convention that fails silently on the symmetric case needs its
 > failure mode written at the site, not its correctness asserted.**
 
+### 22 Aug 2026 — four branches assembled into one Rome, and what a merge can delete without failing
+
+**What I did.** Took `e/city/rome-fabric-p1`, `e/terrain/tiber-resurvey`, `e/city/rome-landmarks`
+and `e/city/rome-landmarks-p3` — built in parallel against a moving base, none of them landed —
+and assembled them on `e/city/rome-assembled`. Then re-measured with the judges' own instruments
+and filmed the result, because the owner asked to *see* the city and not to read about it.
+
+**What I expected.** A hard three-way merge in `layout.ts`, a stale determinism pin, and a
+fabric score somewhere in the low teens. Two of three were right. I did not expect the merge to
+be an ancestry problem before it was a content problem, and I did not expect it to silently
+delete every street in the city.
+
+**Surprise 1: two of the four branches were already ancestors of `main`, with none of their
+content in it.** `bc2e0f2` (phase 1) and `6c975e8` (landmarks) both reached `main` through the
+accidental `de43bed` merge and were then backed out by `44951ad`, which restored `src/` wholesale.
+So `git merge e/city/rome-landmarks` is a **no-op that reports success**: git sees the commit in
+the history and the revert as the later word. Nothing warns you. The only thing that restores the
+content is `git revert` of the revert, and the check that it worked is not "the merge said OK" —
+it is `git diff 6c975e8 -- src/city/rome` coming back empty, which I ran. **A branch being an
+ancestor of `main` is not the same as its work being in `main`, and the distinction is invisible
+to every command that would normally tell you.**
+
+**Surprise 2: the merge deleted every district street in Rome and nothing failed.**
+`e/terrain/tiber-resurvey` added `out.plots = dry;` inside `buildDistricts`, on the line
+`for (const l of out.lanes) lanes.push(l);` occupied. Git took the deletion as a clean
+non-conflicting hunk. The consequence: `lanes` stayed `[]`, so `nearLane` returned false for every
+tree, `buildWays` was handed an empty list, and every quarter in the city lost its internal street
+network. **`tsc` passed, `lint` passed, and the two water gates the very same commit introduced
+passed too** — because a quarter with no streets in it is invisible to a gate that grades solids
+against solids. I found it by diffing the branch against its own base and reading the hunk, not by
+running anything. **This is rule 6 from the other end: the missing instrument is not always a
+check that compares a thing against itself, it is sometimes a check that has no opinion about the
+thing at all.** The proposed rule is at the bottom.
+
+**Surprise 3: the two branches that had to fight had already agreed.** The one real content
+conflict — `place()`'s `farBank` override — was written *the same way* by both branches from
+opposite motives. The landmark branch reached `Math.min(w.x, FAR_BANK(z, 90))` because the old
+`x = FAR_BANK(z, 90)` was deleting the Janiculum's survey row (404 m east, 715 m of movement
+between two phases under a headline of "0.0 m by construction"). The Tiber branch reached
+`Math.min(w.x, FAR_BANK(z, 100))` because the same rule was discarding the Mausoleum of Hadrian's
+surveyed easting and coupling every far-bank monument to a channel that was being re-surveyed
+underneath it. The landmark branch's comment names the other branch and says *"`100` against `90`
+is the only thing left to reconcile."* **It was less than that: both are inert.** `assertRomeFrame`
+check 5 prints `mausoleum-hadrian (farBank) dx 0 dz 0; janiculum (farBank) dx 0 dz -8` — dx 0 on
+both rows, at either constant, because the re-surveyed west bank is more than 100 m east of both.
+I kept 100, recorded the measurement at the site, and wrote down the condition that would make the
+number matter again. **Resolving a conflict by measuring sometimes tells you the conflict was not
+one; that is still the cheapest possible answer and you only get it by measuring.**
+
+**The numbers, before and after, on the same instrument.**
+
+| | `main` 2409ed8 | assembled | Carthage control |
+|---|---|---|---|
+| `probe-fabric` | **5 / 23** (18 failing, 2 n/a) | **10 / 25** (15 failing, **0 n/a**) | 13/22 both, byte-identical verdict |
+| solids under water | 78 (77 insulae + Theatre of Marcellus) | **0 of 1,207** centre-wet; 3 corner-wet, named | — |
+| buried quarters | 6 | **1** (forum-boarium) | — |
+| monument ambitus (G9) | 1.02 m | **3.18 m** | — |
+| monument displacement | 65 / 168 m (142 / 399 m with phase 1 alone) | **0.0 mean, 0.0 worst** on 25 affine rows; 5 overrides printed by name | — |
+| gate axis inside masonry | 32 % | **20.6 %** | — |
+
+Checks gained: G9, G11, G12, G16, G22. **G8c and G8d went from `n/a` to FAIL**, which is the
+point of them: `main` declares no complexes, so the two checks written to grade complexes were
+vacuous there, and a vacuous pass is indistinguishable from a real one. The assembled tree can
+now fail for reasons `main` could not.
+
+**Two corrections to figures I was handed, both found by running the instrument rather than
+quoting it.**
+
+- **`probe-fabric` on `main` is 5/23, not 7/25.** 7/25 is the score on the *landmark* tree, where
+  `complex` exists and G8c/G8d are applicable. On `main` those two rows are `n/a` and five checks
+  pass, not seven. The brief's number was right about a tree that is not the one it named. Quoting
+  a score without the tree it was measured on is quoting a number without its units.
+- **Rome's determinism headcount is 3,074, not 3,072.** `qa-determinism.mjs`'s own usage text and
+  the recorded baseline both say 3,074.
+
+**What I would do differently.**
+
+- **Re-record the pin at the endpoint, and say so in every commit that moved geometry without
+  re-recording it.** Three tree-moving steps in a row (revert-the-revert, two merges) would have
+  cost nine `qa-determinism` runs to honour "re-record in the same commit that moved it"
+  literally, and an intermediate merge state is not a tree anyone runs. I took the endpoint and
+  wrote the departure into the first commit's message. It is still a departure, and the next
+  person assembling branches should decide it deliberately at the start rather than at the second
+  merge.
+- **Look at the pictures before writing the second batch of cameras, not after.** Half my first
+  film pass was unusable for reasons arithmetic would have predicted: `eye` is measured from the
+  terrain **under the focus**, so a 1.75 m camera with a 70 m `dist` across ground that falls 8 m
+  stands ten metres up; and a level lens needs `aim = eye + 1.55` exactly, which no shot in the
+  repo had ever set. The judge's own eye-level stations were copied forward from a pass taken
+  before `KZ` moved 0.222 → 0.35, so they no longer land on the street they were chosen for.
+  **A camera position is a measurement against a frame, and it goes stale when the frame moves —
+  exactly like a survey row, and nothing marks it.**
+- **The plan view came back upside down** and I did not predict it. `yaw: 0` looks `+Z`, and `+Z`
+  on this map is south, so a top-down at yaw 0 puts south at the top of the frame — unusable
+  beside a north-up plate until you know to pass `yaw: PI`. `dist: 0` for a true plan works and
+  had never been used in this repo.
+
+**Proposed rule, earned by surprise 2.** *A merge can delete a mechanism without deleting a
+symbol, and no gate in this project can see that.* The lanes deletion left `lanes` declared,
+typed, passed to three consumers and returned — a live variable that is always empty. Every
+instrument stayed green. The cheap general defence is not another probe: it is that **any
+collection accumulated in a loop and consumed later should be gated on being non-empty at the
+point of consumption when empty is not a legal state**, and that **a merge touching a file no
+conflict was reported in still needs its own diff read**. The second half is the one that would
+have caught this in ten seconds, and it is a habit rather than a tool.
+
 <!-- Append new entries above this line. -->

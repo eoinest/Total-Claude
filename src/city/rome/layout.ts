@@ -258,16 +258,23 @@ function place(m: RomeMonument): LandmarkPlacement {
    * **So the override is a bound and not a position: it may pull a row west, never east.**
    *
    * The two branches differed only in the clearance — 90 m against 100 m — and the assembly
-   * resolved it by measuring rather than by choosing. Against the re-surveyed channel both are
-   * **inert**: the west bank at the Mausoleum of Hadrian's row is at x MEASURED_BANK and its
-   * survey x is MEASURED_MH, so the row sits MEASURED_SLACK m west of even the 100 m line, and
-   * the Janiculum is further west again. `Math.min` therefore returns the survey x for both
-   * rows at either constant, and there is no far-bank row on this map that the number can move.
-   * 100 is kept because it is the more conservative of two values that currently cost nothing,
-   * and because it was the one measured against the channel this tree actually ships. **What
-   * would change this: a third far-bank row east of the clearance line.** At that point the
-   * constant stops being inert and has to be measured against that row's drawn footprint
-   * half-width, not against its centre.
+   * resolved it by measuring rather than by choosing. **Against the re-surveyed channel both
+   * values are inert, and the tree says so out loud at every boot.** `assertRomeFrame` check 5
+   * prints the override rows by name with their displacement, and on this tree it reads
+   * `mausoleum-hadrian (farBank) dx 0 dz 0; janiculum (farBank) dx 0 dz -8` — **dx 0 on both**.
+   * There are only two far-bank rows on this map: the Mausoleum of Hadrian at survey x −295.3
+   * and the Janiculum at −416.2, and the re-surveyed west bank has moved far enough east that
+   * neither is within 100 m of it. `Math.min` therefore returns the survey x in both cases at
+   * either constant, and the Janiculum's remaining −8 is the `CITY_Z_MAX` clamp in z, not this
+   * override in x. 100 is kept because it is the more conservative of two numbers that
+   * currently cost nothing, and because it is the one that was measured against the channel
+   * this tree actually ships.
+   *
+   * **What would change this: a third far-bank row east of the clearance line, or a channel
+   * re-survey that moves the west bank west.** At that point the constant stops being inert,
+   * the two branches' 10 m disagreement becomes a real one, and it has to be settled against
+   * the row's drawn footprint half-width rather than against its centre — a 100 m centre
+   * clearance is not 100 m of clearance for an 89 m podium.
    */
   if (m.farBank) x = Math.min(w.x, FAR_BANK(z, 100));
   /**

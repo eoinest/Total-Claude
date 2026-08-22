@@ -1,0 +1,131 @@
+# Rome, as assembled — the renders, and where every camera stood
+
+Pictures of the city on `e/city/rome-assembled`, the first tree in which Rome's re-projected
+frame (`KZ` 0.222 → 0.35), its re-surveyed Tiber (451 stations, polyline + signed distance field)
+and its re-placed landmarks (`resolveOverlaps` deleted, every monument on its survey row) all
+exist together.
+
+**These are photographs of the city, not probe illustrations.** Nothing here is a diagnostic
+overlay. If a fault is visible in one of these frames it is visible because the city has it.
+
+## Where the files are
+
+```
+screenshots/rome-assembled/rome-assembled/stills/<shot-id>-00000.jpg
+```
+
+Absolute, on this worktree:
+
+```
+/Users/ernestmccarter/Documents/dev/Total-Claude/.claude/worktrees/agent-aa1ea2e71531566ea/screenshots/rome-assembled/rome-assembled/stills/
+```
+
+1920 × 1080 JPEG q94, `quality: ultra`. Three frames per shot (`-00000`, `-00001`, `-00002`) —
+they are the same picture, so **use `-00000`**. `screenshots/**` is gitignored by design; these
+are build output and are not committed. `stills.json` beside them carries per-frame provenance:
+eye position, FOV, `sunAngle`, `sunElev`, draw calls, head counts.
+
+To regenerate the whole set, one browser slot, one page load:
+
+```
+node tools/film.mjs tools/shots/rome-assembled.shot.mjs --stills --nooverlay \
+     --port=5957 --out=screenshots/rome-assembled
+```
+
+## The scene every camera is in
+
+| | |
+|---|---|
+| map | `campus-martius` (this is Rome's id; there is no `rome`) |
+| scenario | `assault` — the Juthungi outside the Aurelian Wall |
+| seed | `4265438264`, the shipped battle everything in `docs/` is measured from |
+| hour | 9.5 |
+| weather | clear |
+| unit size | ultra (3,074 men) |
+
+## The pictures worth looking at first
+
+| look at | what it shows |
+|---|---|
+| **`oblique-wall-00000.jpg`** | The establishing shot. The Aurelian Wall with its towers and the Porta Flaminia, the Via Flaminia running out through the fields the assault arrives down, the Tiber, and the city behind the curtain — all in one frame. |
+| **`oblique-campus-00000.jpg`** | Rome as a city. Dense tiled insulae, the Tiber and its bridges, the Mausoleum of Hadrian's drum on the far bank, the Pantheon's dome, a theatre, aqueduct arcades. |
+| **`plan-topdown-00000.jpg`** | The plan, north up, for setting beside the Lanciani plate. |
+| **`oblique-north-00000.jpg`** | The Stadium of Domitian, the Mausoleum of Augustus with its cypresses, the Pantheon, and the wall closing the top right. |
+| **`eye-quarter-east-00000.jpg`** | The honest one. A true 1.75 m eye-level frame in the ordinary fabric — and it shows the ground judge's standing faults: blank ground floors (H7) and grass growing at the street edge (H9). |
+
+## Every camera, by coordinate
+
+`track` is an anchor resolved against the live world; the camera sits `dist` metres from it
+horizontally, at `eye` metres above **the terrain under the focus**. The `gate` anchor resolves
+at world **(72.0, 532.4)** with outward normal **(−0.1143, −0.9934)**; `stand: S` moves the focus
+by `n·S`, so negative `stand` walks into the city down the Via Lata. The **focus (x, z)** column
+below is that arithmetic already done, so a judge can stand in the same place without resolving
+an anchor.
+
+`yaw` 0 looks **+Z**, which on this map is **south** — into the city, away from the wall.
+`yaw: π` looks north at the wall.
+
+### The plan
+
+| shot | focus (x, z) | eye | aim | dist | fov | yaw | note |
+|---|---|---|---|---|---|---|---|
+| `plan-topdown` | 450, 950 | 2400 | 0 | **0** | 40 | π | Straight down, north up. **1 px = 1.617 m**; frame covers 1,746 m N–S × 3,104 m E–W. |
+| `plan-campus` | 100, 950 | 900 | 0 | **0** | 40 | π | Campus Martius alone. **1 px = 0.606 m**; 655 m × 1,164 m. |
+| `plan-topdown-safe` | 450, 950 | 2400 | 0 | 200 | 40 | 0 | Near-vertical fallback (85.2° from horizontal), shot before `dist: 0` was known to work. South-up. Superseded. |
+
+`dist: 0` gives `pitch = atan2(rise, 0) = π/2`, a true plan. **No shot file in this repo had used
+it before this one**; it works.
+
+### The obliques
+
+| shot | focus (x, z) | eye | aim | dist | fov | yaw |
+|---|---|---|---|---|---|---|
+| `oblique-wall` | **42.3, 274.1** (`gate`, stand +260) | 220 | 20 | 420 | 44 | `in` |
+| `oblique-campus` | 120, 900 | 420 | 30 | 620 | 42 | 3.9270 (1.25 π) |
+| `oblique-north` | 110, 850 | 380 | 25 | 600 | 42 | 3.1416 |
+| `oblique-river` | −60, 1050 | 300 | 20 | 520 | 44 | 4.7124 (1.5 π) |
+
+### The Via Lata
+
+| shot | focus (x, z) | eye | aim | dist | fov | yaw |
+|---|---|---|---|---|---|---|
+| `vialata-gate` | **76.6, 572.1** (stand −40) | 1.75 | 8 | 40 | 42 | `out` |
+| `vialata-long` | **93.7, 721.1** (stand −190) | 1.75 | 18 | 300 | 32 | `in` |
+| `vialata-terminus` | **117.7, 929.8** (stand −400) | 1.75 | 14 | 110 | 40 | `in` |
+
+### Eye level, 1.75 m
+
+The second batch (`eye-*`) is the corrected one. **`aim = eye + 1.55 = 3.3` makes `rise` exactly
+zero and the lens exactly level**, which is the condition `docs/VISUAL-RUBRIC.md` §H attaches to
+being scorable at all. The first batch (`street-*`) guessed at `aim` and is 6–9° off level.
+
+| shot | focus (x, z) | eye | aim | dist | fov | yaw | level? |
+|---|---|---|---|---|---|---|---|
+| `eye-gate-back` | **80.0, 601.9** (stand −70) | 1.75 | 3.3 | 30 | 50 | `out` | **0.0°** |
+| `eye-vialata-250` | **100.6, 780.7** (stand −250) | 1.75 | 3.3 | 26 | 50 | `in` | **0.0°** |
+| `eye-vialata-500` | **129.2, 1029.1** (stand −500) | 1.75 | 3.3 | 26 | 50 | `in` | **0.0°** |
+| `eye-quarter-east` | 300, 900 | 1.75 | 3.3 | 24 | 50 | 3.1416 | **0.0°** |
+| `eye-quarter-south` | 520, 1010 | 1.75 | 3.3 | 24 | 50 | 0 | **0.0°** |
+| `eye-colosseum` | 671, 1042 | 1.75 | 3.3 | 28 | 50 | 3.1416 | **0.0°** |
+| `street-eye` | **106.3, 830.4** (stand −300) | 1.75 | 1.55 | 10 | 46 | `in` +90° | −10.0° |
+| `street-eye-quarter` | 102, 843 | 1.75 | 12 | 70 | 46 | 0.7854 | −8.7° |
+| `street-eye-marcellus` | 181, 1277 | 1.75 | 16 | 90 | 46 | 3.1416 | −8.1° |
+
+## Three things these frames establish that no probe reported
+
+1. **The camera's own height datum is the terrain under the *focus*, not under the eye.** A
+   1.75 m camera looking at something 70 m away across ground that falls 8 m stands ten metres
+   up. Half the first batch is a picture taken from a first-floor window because of it. `dist`
+   is not a framing choice at eye level; it is what makes `eye` mean what it says.
+
+2. **The Campus Martius has terrain relief in it that a floodplain should not have.** It is
+   plainly visible in `eye-vialata-250` and `vialata-terminus` as rounded masses between the
+   camera and the monuments, and it is the single biggest thing standing between these frames and
+   a street. Nothing in `probe-fabric` looks at terrain under the fabric; `probe-ground` does, but
+   it is a reporter and not a gate.
+
+3. **A camera position is a measurement against a frame, and it goes stale when the frame
+   moves.** `vialata-terminus` is `judge-city-eye3`'s `r3-pompey` verbatim — a station chosen
+   because a probe reported it as the one enclosed stretch of the Via Lata. That was measured
+   before `KZ` went 0.222 → 0.35. It no longer lands on the street. Survey rows are versioned
+   against the projection; camera stations are not, and nothing marks them.
