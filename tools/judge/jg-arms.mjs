@@ -107,8 +107,21 @@ const HELPERS = () => {
   };
 };
 
+/**
+ * How long before the same cohort may be pointed at the same lodgement again, in sim seconds.
+ *
+ * Not zero and not infinity, and both extremes are wrong in a way that shows up in the
+ * numbers. Infinity — the first version, a `Set` — meant every pairing was ordered once and
+ * the whole battle got **two orders**, which measures the first thirty seconds of a
+ * four-minute fight. Zero would re-issue every cadence, and on the tree without the fix that
+ * resets a live traverse plan every twenty seconds, so the played arm would be worse than
+ * passive for a reason the script invented rather than found. A minute is what a player does
+ * when he has told a cohort to do something and it has not happened yet.
+ */
+const REORDER_S = 60;
+
 /** One command cycle: send whoever of mine is nearest at the biggest lodgement. */
-async function commandCycle(page, seen) {
+async function commandCycle(page, seen, now) {
   const roll = await page.evaluate(() => window.__wallRoll());
   const lodge = roll.theirs.filter((t) => t.onWall >= 5).sort((a, b) => b.onWall - a.onWall)[0];
   if (!lodge) return 0;
@@ -127,18 +140,18 @@ async function commandCycle(page, seen) {
   }
   cands.sort((a, b) => a.d - b.d);
   let issued = 0;
-  for (const c of cands.slice(0, 2)) {
-    // Do not re-order the same pairing every cadence: a player gives an order once and
-    // watches it, and re-clicking would reset the plan every twenty seconds.
+  for (const c of cands.slice(0, 3)) {
+    // A player gives an order and watches it; he does not re-click every twenty seconds,
+    // and he does not walk away either. See `REORDER_S`.
     const key = `${c.id}:${lodge.id}`;
-    if (seen.has(key)) continue;
+    if (now - (seen.get(key) ?? -1e9) < REORDER_S) continue;
     const p = await page.evaluate(([x, y, z]) => window.__P(x, y, z), [c.x, c.y + 1.0, c.z]);
     if (!p || p.x < 20 || p.x > 1580 || p.y < 120 || p.y > 750) continue;
     await leftClick(page, p);
     const sel = await page.evaluate(() => window.__sel());
     if (!sel || !sel.includes(c.id)) continue;
     await rightClick(page, tp, { hold: 260 });
-    seen.add(key);
+    seen.set(key, now);
     issued++;
   }
   return issued;
@@ -158,7 +171,7 @@ for (const seed of SEEDS) {
     await page.evaluate((src) => { (0, eval)(`(${src})`)(); }, HELPERS.toString());
 
     let t = 0, wallSeconds = 0, worstLodge = 0, issued = 0, next = CADENCE;
-    const seen = new Set();
+    const seen = new Map();
     let fin = null;
     while (t < UNTIL) {
       await ff(page, STEP); t += STEP;
@@ -170,7 +183,7 @@ for (const seed of SEEDS) {
       if (fin) break;
       if (ARM === 'played' && t >= next) {
         next += CADENCE;
-        issued += await commandCycle(page, seen);
+        issued += await commandCycle(page, seen, t);
       }
     }
     const hud = await page.evaluate(() => window.__HUD());
