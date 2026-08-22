@@ -610,11 +610,17 @@ export class BattleFlowSystem implements Subsystem {
     const stormRun = new Map<number, number>();
     const garrisonRun = new Map<number, number>();
     /**
-     * Storm units that have broken, by id. See the passage above on routers.
+     * Storm units that have broken, by id — read by **both** halves of this function.
      *
-     * Collected in the same walk that bins the parapet rather than tested inside the pool
-     * loop below, because that loop runs over every slot in the pool and `unitById` is a
-     * search. Thirty-five entries against nine thousand lookups.
+     * Collected in the walk that bins the parapet rather than tested inside the pool loop
+     * below, because that loop runs over every slot in the pool and `unitById` is a search.
+     * Thirty-five entries against nine thousand lookups.
+     *
+     * It was written here and read nowhere for one commit, so the exclusion reached condition
+     * A — where it changes nothing, because `stormHolding` has never been non-zero — and not
+     * condition B, which is the condition that decides every siege in this game. A set with
+     * one writer and no reader is the exact shape of a fix that was designed and not wired,
+     * and the compiler cannot see it because the write is legal on its own.
      */
     const routed = new Set<number>();
     for (const u of b.units) {
@@ -624,7 +630,8 @@ export class BattleFlowSystem implements Subsystem {
       if (u.faction === w.storm && isBroken(u)) {
         routed.add(u.id);
         // Still counted where he stands — `stormOnWall` is a description of the parapet and
-        // a man running along it is on it — but he takes no part in a lodgement.
+        // a man running along it is on it — but he takes no part in a lodgement, and the
+        // pool walk below will not count him as having got inside either.
         out.stormOnWall += st.onWall;
         continue;
       }
@@ -661,6 +668,16 @@ export class BattleFlowSystem implements Subsystem {
     const last = w.mx.length - 1;
     for (let i = 0; i < p.count; i++) {
       if (p.faction[i] !== w.storm || b.elevated[i] !== 0 || !p.aliveAt(i)) continue;
+      /*
+       * The rout test, on the condition that actually decides both sieges.
+       *
+       * `pool.unitId` is the canonical owner of a man — `BattleSystem` writes it at spawn and
+       * `unitOfSoldier`, `Combat`, `Projectiles` and `Siege` all read it — so this needs no
+       * new index and costs one set lookup per living man of the storm. That is the whole
+       * price of asking the question at all, which is worth stating because the first cut of
+       * this walked units instead and could not, having no unit in hand.
+       */
+      if (routed.has(p.unitId[i])) continue;
       const k = Math.max(0, Math.min(last, Math.round((p.x[i] - w.x0) / w.pitch)));
       // Negative is cityward: a bay's normal points away from the city by contract.
       const depth = (p.x[i] - w.mx[k]) * w.nx[k] + (p.z[i] - w.mz[k]) * w.nz[k];

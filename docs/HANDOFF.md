@@ -2133,18 +2133,63 @@ about it.
   and alive; `UnitOrder.Rout` was not in it. `Siege.broken` — the predicate that already served
   the ram crew, the tower gang and the escalade party — moved to `types.ts` as **`isBroken`**
   rather than gaining a fourth private copy, and the census now excludes broken storm units from
-  both `stormInside` (condition B) and the run bins behind `stormHolding` (condition A).
-  `stormOnWall` deliberately still counts them: it is a description of the parapet, and a man
-  running along it is on it.
-  **Rome does not move.** 8 seeds, hands-off, `jg-seeds`: `Defeat/objective` 8 of 8, decided at
-  55/56/57/58 s, median 56, before and after, identically. `jg-whoisinside` says why — at the
-  deciding census **0 of 132 men inside belong to a routing unit** on `main`. The judge measured
-  46 of 46 routing at t+200.9 on the integration tree, where the battle lasts long enough for the
-  escalade to break; on `main` it is over at t+56, before anybody has broken. *The finding is real
-  in the code and does not reproduce on `main` for Rome.*
-  **Carthage moves 3.3 s.** Decided t+130.8 → **t+134.1**, and 21 → 24 of the men inside are now
-  excluded from the count that ends it. `stormHolding` was 0 before and is 0 after: condition A
-  has still never fired, and this makes it strictly harder, which is the honest direction.
+  the run bins behind `stormHolding` (condition A) **and** from the pool walk behind `stormInside`
+  (condition B). `stormOnWall` deliberately still counts them: it is a description of the parapet,
+  and a man running along it is on it.
+
+  > **This shipped half-wired at `85d6b7d` and the correction is `d61ef85`.** The `Set` of broken
+  > unit ids was written and read nowhere: the exclusion was achieved by a `continue` that skipped
+  > the lodgement binning, so it reached condition A — where it changes nothing, because
+  > `stormHolding` has never been non-zero anywhere — and **not condition B, which is the
+  > condition that decides every siege in this game.** The first write-up asserted the behaviour
+  > intended rather than the behaviour shipped, which is worse than understating it, because the
+  > next reader stops looking. A set with one writer and no reader is the shape of a fix that was
+  > designed and not wired, and no compiler can see it: the write is legal on its own. The
+  > implementation was not a one-liner *at the site* — the break-in walk iterates the soldier pool
+  > and has no unit in hand — but it needed no new index either: `pool.unitId` is the canonical
+  > owner of a man, written by `BattleSystem` at spawn and read by `unitOfSoldier`, `Combat`,
+  > `Projectiles` and `Siege`, so the whole cost is one set lookup per living man of the storm.
+
+  **Rome does not move, and this survives the wiring.** 8 seeds, hands-off, `jg-seeds`:
+  `Defeat/objective` 8 of 8, decided 55/56/57/58 s, median 56, before, half-wired and wired — and
+  `peak stormInside` is identical seed for seed (92, 68, 65, 81, 64, 71, 80, 69), which says the
+  filter removed **zero** men at any point before the verdict. `jg-whoisinside` says why: at the
+  deciding census **0 of 102 men inside belong to a routing unit**. The judge measured 46 of 46
+  routing at t+200.9 on the integration tree, where the battle lasts long enough for the escalade
+  to break; on `main` it is over at t+56, before anybody has broken. *The defect was real in the
+  code and its Rome attribution does not hold on this tree.*
+
+  **Carthage moves a great deal, and in the direction the rubric asks for.** 8 seeds, hands-off,
+  same seeds, `main` against this branch:
+
+  | | before | after |
+  |---|---|---|
+  | outcomes | Victory/objective 7, Victory/rout 1 | Victory/objective 6, Victory/rout 1, **Defeat/repulsed 1** |
+  | decided at | 133-308, median **271** | 244-800, median **331** |
+  | **first man inside** | t+92.8-95.6 | **t+236-262** |
+  | gate opened | 7 of 8 | **8 of 8** |
+
+  Seven of eight seeds land later and one is unmoved; none lands earlier, so it is a translation
+  rather than a reshuffle. The line that matters is the third: the break-in used to happen at
+  t+93, **123 seconds before the gate ram finishes at t+216**, and now happens after it. That is
+  the judge's own "make the battle last long enough for its own machinery to arrive", arriving as
+  a side effect of an honesty fix rather than of a balance knob — and the outcome mix goes from two
+  values to three, with one seed now *losing* a siege that was won 8 of 8 before.
+  `stormHolding` was 0 in every sample before and is 0 after: condition A has still never fired,
+  and this makes it strictly harder, which is the honest direction.
+
+  **Withdrawn: "Carthage moves 3.3 s."** That was measured on the half-wired tree, where the
+  break-in count was untouched, so it cannot have been the census. The judge is isolating it at
+  commit granularity; the likeliest cause is the 69-line order-refusal change in `78c164e`, which
+  alters `interceptOrders` and can change what the AI does. Not re-derived here on purpose — two
+  agents measuring one thing is how a number gets averaged instead of explained.
+
+  **What would change my mind about the fix itself.** If `pool.unitId` were ever stale for a man
+  whose unit had been rebuilt mid-battle, this would exclude the wrong men; `unitOfSoldier`
+  guards against exactly that with an `id` check on its cache, and nothing else in the sim guards
+  it, so if a unit-rebuild path is ever added the census is a site to re-check. And if a future
+  pass makes `stormHolding` reachable, the condition-A half of this becomes load-bearing for the
+  first time and wants its own measurement rather than inheriting this one.
 - **The card no longer contradicts its own numbers.** `reason === 'objective'` covers two
   conditions and `wallBlock` named the one that never fires. `BattleFlowSystem.result.condition`
   now publishes which fired (`'parapet' | 'breakIn'`), and the sentence comes from a total map.
@@ -2197,24 +2242,32 @@ about it.
   `tools/judge/jg-lib.mjs` — **when `tools/judge/` lands, delete this rig rather than keeping two
   drivers for one menu.**
 
-### The gate, and the pins that did not move
+### The gate, and the one pin that moved
 
 Green on this branch: `tsc` clean, `lint` 2/2, **`qa-deploy` 33/33**, **`probe-seams` PASS both
-maps**, **`qa-replay` 21/21**, and **all three determinism arms UNCHANGED at all seven
-checkpoints** — headcounts 8,632 / 3,074 / 3,440, ports 5903-5907 in this worktree.
+maps**, **`qa-replay` 21/21**, and all three determinism arms deterministic and green — headcounts
+8,632 / 3,074 / 3,440, ports 5903-5907 in this worktree.
 
-**No re-record was needed, and that is a measurement rather than a relief.** The pass was
-expected to move Rome's and Carthage's pins, because `censusWall` decides both sieges. It moved
-neither, for two different reasons, and both are worth knowing:
+**One arm was re-recorded, in the commit that moved it: `map=carthage&scenario=assault`, t+400
+only.** Pool `286731a8` -> `0c561598`, alive 2193 -> 2201, `uctl` `820eb4ff` -> `1ee7fd48`. A
+`uctl` move is a real change in what the battle decided, not a portability drift. t+0 through
+t+250 are unchanged to the bit on all three hashes, which locates the cause precisely: the storm
+does not reach `BREAK_IN` until somewhere between t+250 and t+400, so nothing before that
+checkpoint can depend on the count. Both loads of the recording run were bit-identical at all
+seven checkpoints and the plain gate was re-run against the new pin afterwards — four independent
+loads agreeing. The reason is written into the baseline's own `note`, as the standing rule
+requires.
 
-- Rome's assault is decided at t+56 by men who are not routing, so excluding routers changes
-  nothing there (8 of 8 seeds identical, before and after).
-- The **pinned** Carthage battle is not the one the menu plays. It is still being fought at t+400
-  with 2,193 of 3,440 alive, where a hands-off menu run of the same map ends at t+130. The
-  objective never fires inside the pinned window, so a change to the census that decides it is
-  invisible to that arm. *The Carthage determinism arm is not a detector for anything about the
-  break-in condition,* which is worth writing down before somebody quotes its silence as
-  evidence.
+The other two arms are **UNCHANGED at all seven checkpoints** and were not re-recorded: the field
+battle has no wall at all, and Rome's assault is decided at t+56 by men who are not routing.
+
+**What these arms are worth as detectors, stated because their silence was nearly quoted as
+evidence.** Only the Carthage arm can see a change to the break-in condition at all, and it can
+only see it at **t+400** — the pinned Carthage battle is not the one the menu plays; it is still
+being fought at t+400 with 2,201 of 3,440 alive, where a hands-off menu run of the same map ends
+between t+244 and t+800. So "the pins did not move" was true of the half-wired commit for two
+quite different reasons and would have been read as one. A pin is evidence about the battle it
+pins and about nothing else.
 
 ### The replay's t+0 divergence, handed over rather than fixed
 
@@ -2257,6 +2310,15 @@ neither, for two different reasons, and both are worth knowing:
   "both cities fall to men who are running away" was sampled at t+200.9 in a battle `main` ends
   at t+56. The defect in the code was real; the attribution was not, on this tree. Read the
   decided-at before quoting a census.
+- **A collection with one writer and no reader is a fix that was designed and not wired.** The
+  rout exclusion shipped reaching condition A, which has never fired anywhere, and not condition
+  B, which decides every siege in the game — and the give-away was a `Set` written once and read
+  nowhere, which no compiler flags because the write is legal on its own. **Grep your own diff for
+  every name you introduced and count the reads.** The same test would have caught it in ten
+  seconds and it took a second reader of the file instead.
+- **Assert the behaviour you shipped, not the behaviour you intended.** The first write-up of that
+  fix said it covered both conditions. A commit message that overstates a fix is worse than one
+  that understates it: the next reader stops looking.
 - **A refusal the compiler cannot see is a refusal that will not be written.** Three of
   `traverseOfferAt`'s four answers had no sentence for months because the call site tested
   `refusal !== 'noRoute'` instead of exhausting a union.
@@ -2273,6 +2335,12 @@ neither, for two different reasons, and both are worth knowing:
   gate never struck and `stormHolding` at 0 in every sample. That is the owner's balance call and
   it is untouched here; the census is now honest about *who* does it, which is all this pass
   claims.
+- **Carthage is now losable, and that is a balance consequence of an honesty fix.** One of eight
+  seeds turns from `Victory/objective` at t+221 into `Defeat/repulsed` at t+800 — the storm gets
+  45 men inside and cannot hold 60 there in order. **Reserved for the owner**: whether a siege the
+  player attacks should be winnable on every seed. Nothing here was tuned to produce it; it falls
+  out of requiring the sixty men to still be fighting, and the same change is what finally makes
+  the gate ram matter (break-in t+93 -> t+245, against a gate that opens at t+216).
 - Condition A has still never been non-zero anywhere. This change makes it harder, not easier.
 - `jg-pydna` still reports `brief: null` on a field battle and first contact announced nowhere —
   both the judge's, both unowned.
