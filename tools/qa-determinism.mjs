@@ -181,6 +181,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { ownDevServer } from './lib/devtree.mjs';
+import { simTimeFault, stopClockOnReady } from './lib/simclock.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -321,10 +322,31 @@ async function run(label) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto(`${base}/?harness=1&quality=high&w=960&h=540${EXTRA}`, { waitUntil: 'domcontentloaded' });
+  /*
+   * Stop the clock inside the page, on the assignment that announces readiness.
+   *
+   * The `page.evaluate(stop)` below is still here and is still correct, and it was never
+   * sufficient. `main.ts` calls `engine.start()` at the end of `boot()` and then sets
+   * `__game.ready = true`; a harness that waits for the flag and *then* evaluates a stop has a
+   * driver round trip in between, and on a loaded machine that is tens or hundreds of
+   * milliseconds of rAF, every frame of which carries ticks. Two runs need not lose the same
+   * number, which is the "t+0 rAF race" this file's history already names — and
+   * `tools/qa-xengine.mjs` caught the cross-engine version of it reporting a `uctl` difference
+   * at t+0, which is a shape rounding cannot produce.
+   *
+   * `addInitScript` runs before the page's own scripts, so this intercepts the assignment: the
+   * stop happens synchronously in the same microtask as the start, before the first frame.
+   * (Blocking `requestAnimationFrame` outright hangs the boot — something on that path needs a
+   * frame — so the hook is on the flag.) `simTime` is printed on every line below; it should
+   * read exactly the checkpoint, and a value that does not is this race rather than the sim.
+   */
+  await stopClockOnReady(page);
+  // 180 s, not Playwright's 30 s default: at load average 47 a cold boot exceeds it and the
+  // run dies on navigation rather than on anything this file is about.
+  await page.goto(`${base}/?harness=1&quality=high&w=960&h=540${EXTRA}`,
+    { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 180000 });
-  // Stop the rAF loop: otherwise wall-clock time between Playwright calls advances one run
-  // more than the other and every hash diverges for an uninteresting reason.
+  // Belt as well as braces: the hook above should already have stopped it.
   await page.evaluate(() => window.__game.engine.stop());
   await page.evaluate(HASH_FN);
 
@@ -393,7 +415,18 @@ for (let i = 0; i < CHECKPOINTS.length; i++) {
    * is the reproducibility gate and nothing about it is negotiable.
    */
   const unitSame = a.uf64 === b.uf64 && a.uctl === b.uctl && a.units === b.units;
-  const same = poolSame && unitSame;
+  /*
+   * And the precondition for either comparison meaning anything: the two runs are at the same
+   * point in the battle. This file has printed `simTime` since it was written and never compared
+   * it, which is the difference between a number a human might notice and a check.
+   */
+  const timeFault = simTimeFault([a.simTime, b.simTime], a.at, ['A', 'B']);
+  const same = poolSame && unitSame && !timeFault;
+  if (timeFault) {
+    console.log(`  SIM TIME FAULT  ${timeFault}`);
+    console.log('    Unequal tick counts are not comparable. This is the rAF race in');
+    console.log('    tools/lib/simclock.mjs, not the simulation.');
+  }
   console.log(`  t+${String(a.at).padStart(3)}  A ${a.hash} (${a.alive}/${a.count})   ` +
     `B ${b.hash} (${b.alive}/${b.count})   ${poolSame ? 'IDENTICAL' : 'DIVERGED'}`);
   console.log(`         units  A ${a.uf64}/${a.uctl}   B ${b.uf64}/${b.uctl}   `

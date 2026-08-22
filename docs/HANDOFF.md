@@ -40,6 +40,17 @@ hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (dis
 > browser update rather than a commit, and a gate nobody wants to run measures nothing. All three
 > battles are currently **bit-identical in all three engines at all seven checkpoints**.
 >
+> **`stop()` after `ready` was never enough, and both determinism tools now close the window.**
+> `engine.start()` runs at the end of `boot()` and `ready` is set after it, so a harness that
+> waits for the flag and *then* evaluates a stop has a driver round trip of rAF in between and
+> loses an unequal number of ticks per run. Under nine concurrent agents that made `qa-xengine`
+> report a `uctl` difference at t+0 — a control-flow difference before a tick had run, which is
+> not a shape rounding can take, which is why it was investigated instead of published. The fix
+> is a four-line `page.addInitScript` that stops the clock on the `ready` assignment itself;
+> `simTime` is now a *compared* mark in both tools rather than a printed one. See
+> `docs/tech/TOOLING.md`, "the shape of every harness here". **Any harness here that hashes
+> anything needs this.**
+>
 > **Every harness now refuses a port it cannot prove is serving this tree.** `tools/lib/devtree.mjs`
 > asks the listener for every `.ts` under `src/` through Vite's `?raw` route and exits 2 naming the
 > differences. It caught another agent's worktree on port 5901 within an hour of being written.
@@ -85,6 +96,14 @@ and the balance note in the reserved list.)
 - **Never grade an A/B deck its author has not declared frozen.**
 - **A self-consistent instrument can never fail.** Compare against something outside the thing
   being checked.
+- **Printing a diagnostic is not checking it.** `qa-determinism.mjs` named the "t+0 rAF race" in
+  its own header, printed `simTime` on every line it emitted, and never compared it — the number
+  that would have caught the bug sat next to the bug for as long as the bug existed, and it took a
+  loaded machine and a `uctl` difference at t+0 to find. Every probe here prints a second line
+  under each assertion saying what was observed. Ask of each one: *would anything fail if that
+  number were wrong?*
+- **A prevention you have not verified is a hope.** Fixing a race is half the work; the other half
+  is a compared mark that voids the run when the fix did not hold.
 - Worktrees need an isolated vite `cacheDir`. **Port 5173 is the owner's.**
 - Unattended agents carry: *where you would normally ask, make the call, write down what you chose
   and why, and name what would change your mind.*

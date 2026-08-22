@@ -120,6 +120,24 @@ it is.
 > true of a quantised one. `qa-determinism.mjs` now hard-fails on it by default and `--soft-units`
 > is the escape. **A `uf64` drift on an unchanged tree is now a finding, not a browser update.**
 >
+> **And one instrument defect worth more than any number here, because it is the kind that
+> publishes.** Re-verifying the committed tree while nine agents were running, the arm reported
+> the Carthage assault **diverging in Firefox at t+0 with a different `uctl`** — a control-flow
+> difference before a tick was supposed to have run. That is not a shape a rounding difference can
+> take, which is the only reason it was investigated rather than written up. The cause is a race
+> every browser harness in this repository has: `main.ts` calls `engine.start()` at the end of
+> `boot()` and *then* sets `__game.ready = true`, so a tool that waits for the flag and **then**
+> evaluates `engine.stop()` has a driver round trip of rAF in between, and every frame carries
+> ticks. Unequal tick counts, compared as if equal, on a loaded machine. `qa-determinism.mjs` has
+> named this race in its own header since it was written, printed `simTime` on every line, and
+> never compared it.
+>
+> Both tools now stop the clock **inside the page**, on the `ready` assignment itself, and both
+> now *compare* `simTime` rather than printing it — in `qa-xengine` as a seventh vacuity assertion
+> that voids the run. Every number in this block was taken with `simTime` reading exactly the
+> checkpoint, which the logs confirm; they were taken before the check existed, which is worth
+> knowing when reading them.
+>
 > **The gate's port hazard is closed and it was real.** `qa-determinism.mjs` reused any listener
 > that answered on its port, which in a checkout with eighty worktrees on a handful of default
 > ports means it could measure another agent's branch against this tree's baseline and report the

@@ -27,7 +27,7 @@
  * This project's most expensive recurring failure is a check that compares something against
  * itself. The most recent instance was in the sibling of this file: `--battle=rome` appended a
  * meaningless query parameter, loaded the field battle, looked up a baseline key that did not
- * exist and exited 0. Five of the six assertions below exist only so that the sixth means
+ * exist and exited 0. Six of the seven assertions below exist only so that the seventh means
  * something, and each one can fail on its own:
  *
  *   1. **`--battle` names a battle.** Every segment must be `key=value` and every key must be
@@ -56,7 +56,12 @@
  *      correctly rounded and JavaScript has no fused multiply-add. If a control moves, the
  *      inputs were not identical and assertion 4's disagreement is the instrument, not the
  *      engine.
- *   6. **A repeat load of the reference engine is bit-identical to itself.** Chromium is loaded
+ *   6. **Every run is at the same simulated time at every checkpoint**, and at the time it
+ *      claims. The page ticks from boot until this tool stops it, and on a loaded machine one
+ *      engine gets more frames in first — so a checkpoint labelled t+0 can be t+0.1 in one
+ *      engine and the hashes differ for a reason that is not the engine. This was found the hard
+ *      way: it reported a `uctl` difference at t+0, which is a shape libm divergence cannot take.
+ *   7. **A repeat load of the reference engine is bit-identical to itself.** Chromium is loaded
  *      twice and the second run is a control, not a datum. Without it, any cross-engine
  *      difference reported here could be run-to-run noise in the harness — and it has been
  *      before: a rAF race made t+0 unstable in the sibling tool. If the control run diverges,
@@ -94,6 +99,22 @@
  * Quote the `--battle` value or the shell backgrounds on the `&`. Confirm every run by
  * headcount: **field battle 8,632 / Rome 3,074 / Carthage 3,440.**
  *
+ * **Pass `--port`.** The default is 5901 and the 5900s are heavily contended — nine agents were
+ * running the day this was written and three separate collisions were caught. A collision is now
+ * a refusal with the differing files named rather than a wrong number, which is the property that
+ * matters, but you will still want a port nobody else has. `lsof -nP -iTCP -sTCP:LISTEN` is the
+ * quick way to find one.
+ *
+ * ## What it currently reports, so a future red light has something to be red against
+ *
+ * At the tip of `e/tools/xengine-arm`: **all three battles bit-identical in Chromium 151,
+ * Firefox 153 and WebKit 26.5 at all seven checkpoints on all three marks**, plus four extra
+ * seeds of the field battle at t+0/200/400. That is the product of two changes — the last 27
+ * `Math.hypot` calls out of world generation, which closed the boot, and `src/sim/quantise.ts`,
+ * which gave `UnitGroupState` the float32 firewall the soldier pool always had and closed the
+ * battle. With `quantise.ts` reverted, the field battle forks between t+200 and t+250 and the
+ * Carthage assault forks at t+0. If this file goes red, that is the first thing to check.
+ *
  * Exit 0 identical, 1 divergent, 2 instrument fault (a vacuity assertion failed).
  */
 
@@ -103,6 +124,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { ownDevServer } from './lib/devtree.mjs';
+import { simTimeFault, stopClockOnReady } from './lib/simclock.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -530,8 +552,38 @@ async function run(engine, label) {
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
+  /*
+   * Stop the clock **inside the page, on the assignment that announces readiness**, and not on a
+   * round trip afterwards.
+   *
+   * `main.ts` calls `engine.start()` at the end of `boot()` and then sets `__game.ready = true`.
+   * Every harness in this repository waits for that flag and *then* calls
+   * `page.evaluate(() => engine.stop())` — which is a driver round trip, and on a loaded machine
+   * that is tens or hundreds of milliseconds during which the rAF loop is running and every
+   * frame carries ticks. So a checkpoint labelled t+0 is t+0.0 in one engine and t+0.1 in
+   * whichever one was unluckiest. Measured: under nine concurrent agents it produced a **`uctl`
+   * difference at t+0 on the Carthage assault** — a control-flow difference before a tick was
+   * supposed to have run, which is not a shape a rounding difference can take, and is how it was
+   * caught rather than published.
+   *
+   * `addInitScript` runs before the page's own scripts, so this intercepts the assignment itself:
+   * `ready = true` calls `engine.stop()` synchronously, in the same microtask as
+   * `engine.start()`, before the first frame can fire. Blocking `requestAnimationFrame` outright
+   * was tried first and hangs the boot — something on that path does need a frame — so the hook
+   * is on the flag rather than on the clock.
+   *
+   * Assertion 6 still compares the simulated times afterwards. A prevention you have not
+   * verified is a hope.
+   */
+  await stopClockOnReady(page);
+  /*
+    * A generous navigation timeout, because Playwright's default is 30 s and this machine is not
+    * quiet. Measured: at load average 47 Firefox took longer than that to reach
+    * `domcontentloaded` and the run was refused as an instrument fault — correct behaviour, and
+    * still an hour of wall clock spent on a number nobody needed. A slow boot is not a finding.
+    */
   await page.goto(`${base}/?harness=1&quality=${QUALITY}&w=960&h=540${EXTRA}`,
-    { waitUntil: 'domcontentloaded' });
+    { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
   await page.evaluate(() => window.__game.engine.stop());
   await page.evaluate(PROBES);
@@ -552,7 +604,23 @@ async function run(engine, label) {
       prev = at;
     }
     const m = await page.evaluate(() => window.__marks ? window.__marks() : window.__game.hashes());
-    marks.push({ at, hash: m.hash, count: m.count, alive: m.alive, uf64: m.uf64, uctl: m.uctl, units: m.units });
+    /*
+     * `simTime` is a mark, not a log line, and leaving it out cost a false positive that looked
+     * exactly like a real finding.
+     *
+     * The page starts its own rAF loop at boot and this run stops it as soon as `ready` goes
+     * true — but on a loaded machine some frames get in first, and every frame carries ticks. So
+     * "t+0" can be t+0.1 in one engine and t+0.0 in another, and then the hashes differ for a
+     * reason that has nothing to do with the engine. It happened: under nine concurrent agents,
+     * Firefox reported a *different `uctl`* on the Carthage assault at t+0 — a control-flow
+     * difference before a tick was supposed to have run, which is not a shape libm divergence
+     * can even take. Two earlier runs of the same tree on a quiet machine said identical.
+     *
+     * So `simTime` is carried and compared, and a mismatch is an instrument fault rather than a
+     * finding. An arm that can report the harness as a divergence is worse than no arm.
+     */
+    const simTime = await page.evaluate(() => +window.__game.simTime().toFixed(4));
+    marks.push({ at, simTime, hash: m.hash, count: m.count, alive: m.alive, uf64: m.uf64, uctl: m.uctl, units: m.units });
     /*
      * The localiser's dumps are taken **here**, at the first checkpoint, and not at the end of
      * the run.
@@ -570,7 +638,8 @@ async function run(engine, label) {
       dumps.pool = await page.evaluate(() => window.__poolXYZ());
       dumps.units = await page.evaluate(() => window.__unitDump());
     }
-    console.log(`  ${label.padEnd(11)} t+${String(at).padStart(3)}  count ${m.count}  alive ${m.alive}`
+    console.log(`  ${label.padEnd(11)} t+${String(at).padStart(3)}  sim ${simTime.toFixed(3)}`
+      + `  count ${m.count}  alive ${m.alive}`
       + `  hash ${m.hash}  uf64 ${m.uf64}  uctl ${m.uctl}`);
   }
   return { engine, label, page, browser, id, libm, marks, errors, dumps };
@@ -679,6 +748,39 @@ if (controlDrift.length) {
   fatal++;
 } else {
   console.log(`  IDENTICAL at all ${CHECKPOINTS.length} checkpoints. Any difference below is the engine.`);
+}
+
+// ---------------------------------------------------------------------------
+// Assertion 7 — every run is at the same point in the battle
+// ---------------------------------------------------------------------------
+/*
+ * Equal simulated time is the precondition for comparing anything at all, and it is not free:
+ * the page runs its own rAF loop from boot until this tool stops it, and on a busy machine one
+ * engine gets more frames in than another before that happens. Every frame carries ticks. So a
+ * checkpoint labelled t+0 can be t+0.1 in one engine, and the resulting hash difference is the
+ * harness rather than the libm — reported here once, as a `uctl` difference at t+0, which is a
+ * shape a rounding difference cannot produce and which is exactly how it was caught.
+ *
+ * A mismatch here voids everything below it, like the control run does, and for the same reason.
+ */
+console.log('\n--- every run is at the same point in the battle (simulated seconds) ---');
+const timeBad = [];
+for (let i = 0; i < CHECKPOINTS.length; i++) {
+  const fault = simTimeFault(runs.map((r) => r.marks[i].simTime), CHECKPOINTS[i],
+    runs.map((r) => r.label));
+  if (fault) timeBad.push(fault);
+}
+if (timeBad.length) {
+  console.log(`  FAIL: ${timeBad.length} checkpoint(s) are not at the same simulated time in`
+    + ' every run, or not at the time they claim.');
+  for (const t of timeBad) console.log(`    ${t}`);
+  console.log('    The page ticks from boot until this tool stops it, and a loaded machine lets');
+  console.log('    one engine get more frames in than another. Unequal tick counts are not');
+  console.log('    comparable, so everything below is VOID. Re-run on a quieter machine.');
+  fatal++;
+} else {
+  console.log(`  all ${runs.length} runs at t+${CHECKPOINTS.map((c) => c).join(', t+')}`
+    + ' exactly, to the tick.');
 }
 
 // ---------------------------------------------------------------------------

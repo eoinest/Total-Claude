@@ -97,14 +97,16 @@ const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
     '--ignore-gpu-blocklist', '--hide-scrollbars'],
 });
-// 3. Boot, wait for the game's own ready flag — with `null` in the arg position.
+// 3. Close the rAF race BEFORE navigating, then boot and wait for the game's own ready
+//    flag — with `null` in the arg position.
+await page.addInitScript(() => { /* stop the clock when `ready` is set — see below */ });
 await page.waitForFunction(() => window.__game?.ready === true, null, { timeout: 180000 });
 // 4. Drive it with real events, assert on state read back out of `window.__game`.
 // 5. record(name, pass, what, changed, note) → console, and optionally --json.
 // 6. process.exit(failed === 0 ? 0 : 1)
 ```
 
-Five conventions follow from that, and breaking any of them has cost this project a day.
+Six conventions follow from that, and breaking any of them has cost this project a day.
 
 **`TC_NO_HMR=1` is not optional.** `vite.config.ts` disables HMR when it sees that variable.
 Without it, an agent editing a file mid-run reloads the page and destroys the execution
@@ -171,6 +173,66 @@ and the dev server keeps running and keeps the port. Every harness in this direc
 shape. `spawnVite` from the same module is a drop-in — `spawn('npx', ['vite', ...args], opts)`
 becomes `spawnVite(args, opts)` — and it registers an `exit` hook, so a probe that throws or is
 Ctrl-C'd still takes its server with it. It is applied to all 79 sites that spawned one.
+
+**`stop()` after `ready` is not enough, and every tool here did exactly that.** `src/main.ts`
+calls `engine.start()` at the end of `boot()` and *then* sets `__game.ready = true`. A harness
+that waits for the flag and **then** calls `page.evaluate(() => engine.stop())` has a driver
+round trip in between, and on a loaded machine that is tens or hundreds of milliseconds of rAF —
+**every frame of which carries ticks.** So a checkpoint labelled t+0 is t+0.0 in one run and
+t+0.1 in whichever was unluckiest, and any hash comparison then reports the load average as a
+finding. `qa-determinism.mjs` has named "the t+0 rAF race" in its own header since it was
+written, printed `simTime` on every line, and never compared it.
+
+It cost a scare worth repeating: on a machine running nine agents, `qa-xengine.mjs` reported the
+Carthage assault **diverging in Firefox at t+0 with a different `uctl`** — a control-flow
+difference before a tick was supposed to have run, which is not a shape a rounding difference can
+take. That implausibility is the only reason it was investigated rather than published.
+
+The fix is four lines and it goes **before** `page.goto`, because `addInitScript` runs before the
+page's own scripts:
+
+```js
+await page.addInitScript(() => {
+  let game;
+  Object.defineProperty(window, '__game', {
+    configurable: true,
+    get() { return game; },
+    set(v) {
+      game = v;
+      let ready = false;
+      Object.defineProperty(v, 'ready', {
+        configurable: true, get() { return ready; },
+        set(r) { ready = r; if (r) { try { v.engine.stop(); } catch {} } },
+      });
+    },
+  });
+});
+```
+
+That intercepts the assignment itself, so the stop runs synchronously in the same microtask as
+the start, before the first frame. **Blocking `requestAnimationFrame` outright does not work** —
+it hangs the boot, because something on that path needs a frame — so the hook is on the flag and
+not on the clock.
+
+It lives in **`tools/lib/simclock.mjs`** as `stopClockOnReady(page)`, so do not paste it: `import`
+it, call it **before `page.goto`**, and keep the `page.evaluate(stop)` afterwards as belt as well
+as braces. `bootThroughMenu` in `tools/lib/menu-boot.mjs` takes `stopClock: true` for the same
+thing, and it is **opt-in and off by default** because that function's other callers are the
+playability rigs, which drive a battle in real time and need the clock they were given. The rule
+is: *if your tool hashes anything at a fixed checkpoint, pass it; if your tool watches a battle
+happen, do not.*
+
+And then assert it anyway, because **a prevention you have not verified is a hope.** The same
+module exports `simTimeFault(times, expected, labels)`, and `simTime` is now a *compared* mark in
+both determinism tools rather than a printed one — a mismatch voids the run instead of sitting in
+the log for someone to notice.
+
+**That last sentence is the real lesson and it is bigger than this bug.** `qa-determinism.mjs`
+named this race in its own header, printed `simTime` on every line it emitted, and never compared
+it. The number that would have caught the bug was displayed next to the bug for as long as the bug
+existed. **Printing a diagnostic is not checking it.** Every probe here prints a second line under
+each assertion saying what was observed; ask of each one whether anything would fail if that
+number were wrong.
 
 **Never touch port 5173.** `vite.config.ts` pins the game's interactive dev server there and
 it belongs to whoever is playtesting. Every harness carries its own default in the 5199–5847
