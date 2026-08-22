@@ -168,12 +168,10 @@ const GULF_OF_TUNIS: WaterProfile = {
  * Lake of Tunis is −X with the Taenia running along it, the Sebkhet Ariana is +X, and **both
  * ends of the land wall die on water.** There is no flank march on this map.
  *
- * Positions come through the survey projection at `KN = 0.45` and `KE = 0.22`. **`KE` used to
- * be exactly Rome's `KZ` and is not any more** — Rome's is 0.35, so Rome is now the less
- * compressed map at 1.27× anisotropy against this one's 2.05×. See `carthage/topography.ts:KE`
- * for why that was chosen rather than suffered. What still transfers is the *tempo*: the
- * attacker's line at z −190 is 640 m from the ditch lip against Rome's 726, and neither
- * distance depends on either map's depth scale.
+ * Positions come through the survey projection at `KN = 0.45` and `KE = 0.22` — the latter
+ * exactly Rome's `KZ`, so the two maps compress depth identically and a player's sense of
+ * distance transfers. The attacker's line at z −190 is 640 m from the ditch lip against
+ * Rome's 620: the two maps read at the same tempo.
  *
  * ## What is different about the ground
  *

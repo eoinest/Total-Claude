@@ -64,21 +64,7 @@ const sstepLocal = (edge0: number, edge1: number, v: number): number => {
 
 /** Metres north per world x. §2.3. */
 export const KN = 0.45;
-/**
- * Metres east per world z. §2.3 — *"the largest value that fits the whole city between the
- * wall and the sea inside the map"*, which is Carthage's own constraint and still holds.
- *
- * **It used to be the same value as Rome's `KZ` and is not any more.** Rome's is **0.35**;
- * `ROME-FABRIC.md` §4.5 argument 2 overrode the shared-anisotropy property deliberately and
- * says why: the transfer bought a player's intuition about distance, and the anisotropy cost
- * a Campus Martius that could not be laid out. Carthage stays at 0.22 (anisotropy 2.05×) and
- * Rome is now the *less* compressed of the two maps at 1.27×, which is the defensible
- * direction — Carthage's compression is paid for by a city that is mostly wall, hill, water
- * and market gardens, and Rome's would have been paid for by the quarter the assault fights
- * through. **Nothing here should be changed to chase Rome.** If the two maps ever have to
- * read alike again, the measurement to take is a player's estimate of a distance on each,
- * not the equality of two constants.
- */
+/** Metres east per world z. §2.3 — the same value as Rome's `KZ`, so depth reads alike. */
 export const KE = 0.22;
 /** World z of the survey origin: the summit of the Byrsa. */
 export const Z0 = 945;
