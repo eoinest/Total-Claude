@@ -16,9 +16,9 @@
  *   node tools/probe-budget.mjs --port=5477 --lod --scenario=assault
  */
 
-import { chromium } from 'playwright';
 import path from 'node:path';
 import process from 'node:process';
+import { launchBrowser } from './lib/browser-budget.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 void ROOT;
@@ -68,7 +68,13 @@ const r = await fetch(base, { signal: AbortSignal.timeout(4000) }).catch(() => n
 if (!r?.ok) throw new Error(`no dev server on ${base} — start your own, do not borrow one`);
 console.log(`source: ${base} (my server; confirmed 200)`);
 
-const browser = await chromium.launch({
+/*
+ * `launchBrowser` — 22 Aug 2026. This file already refuses to start or borrow a server; the
+ * one thing it did without asking anybody was open a browser, and twelve agents doing that at
+ * once is what took the machine down. The slot is released by `browser.close()` below.
+ */
+const browser = await launchBrowser({
+  label: 'probe-budget', port: PORT, root: ROOT,
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });

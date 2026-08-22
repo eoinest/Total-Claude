@@ -34,11 +34,12 @@
  *      one `src/` actually reads. `--battle=carthage` exits 2 rather than measuring the field
  *      battle under Carthage's name. (Duplicated from `qa-determinism.mjs` deliberately — see
  *      the note on `PARAM_KEYS`.)
- *   2. **The dev server serves *this* tree.** `tools/lib/devtree.mjs` verifies every `.ts`
- *      under `src/` against the listener before reusing it. Eighty worktrees in this checkout
- *      all default to the same few ports; a harness that measures another agent's branch and
- *      reports the answer as this one's is the same defect class as an arm pointed at the wrong
- *      battle.
+ *   2. **The dev server serves *this* tree.** `startVite` asks the listener which worktree it
+ *      is serving (`/__tc/tree`) and refuses a foreign one, and this file sets
+ *      **`TC_STRICT_TREE=1`** so that a listener too old to answer is also a refusal rather
+ *      than a warning. Eighty worktrees in this checkout all default to the same few ports; a
+ *      harness that measures another agent's branch and reports the answer as this one's is the
+ *      same defect class as an arm pointed at the wrong battle.
  *   3. **Each page is the engine it was asked for**, established by *feature detection rather
  *      than the user-agent string* — Gecko exposes `mozInnerScreenX`, JavaScriptCore exposes
  *      `webkitConvertPointFromNodeToPage`, and Blink is the one that is neither and reports
@@ -118,12 +119,11 @@
  * Exit 0 identical, 1 divergent, 2 instrument fault (a vacuity assertion failed).
  */
 
-import { chromium, firefox, webkit } from 'playwright';
 import { writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { ownDevServer } from './lib/devtree.mjs';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 import { simTimeFault, stopClockOnReady } from './lib/simclock.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -141,7 +141,6 @@ const CHECKPOINTS = (args.get('at') ?? '0,30,90,150,200,250,400')
 const JSON_OUT = args.get('json') ?? null;
 const QUALITY = args.get('quality') ?? 'high';
 
-const ENGINE_TYPES = { chromium, firefox, webkit };
 const ENGINES = (args.get('engines') ?? 'chromium,firefox,webkit').split(',').map((s) => s.trim());
 /** The engine everything else is compared against, and the one loaded twice as a control. */
 const REFERENCE = ENGINES[0];
@@ -187,9 +186,11 @@ if (!CHECKPOINTS.length) {
   console.error('--at is empty. There is nothing to compare and a green light would be a lie.');
   process.exit(2);
 }
+/** The three Playwright drivers `launchBrowser` will accept as an `engine`. */
+const KNOWN_ENGINES = ['chromium', 'firefox', 'webkit'];
 for (const e of ENGINES) {
-  if (!ENGINE_TYPES[e]) {
-    console.error(`unknown engine '${e}'. Known: ${Object.keys(ENGINE_TYPES).join(', ')}.`);
+  if (!KNOWN_ENGINES.includes(e)) {
+    console.error(`unknown engine '${e}'. Known: ${KNOWN_ENGINES.join(', ')}.`);
     process.exit(2);
   }
 }
@@ -386,8 +387,8 @@ if (LIBM_ONLY) {
   const cache = process.env.PLAYWRIGHT_BROWSERS_PATH
     ?? path.join(process.env.HOME ?? '', 'Library/Caches/ms-playwright');
   const targets = [
-    { label: 'firefox', type: firefox },
-    { label: 'webkit', type: webkit },
+    { label: 'firefox', engine: 'firefox' },
+    { label: 'webkit', engine: 'webkit' },
   ];
   let revs = [];
   try {
@@ -421,7 +422,7 @@ if (LIBM_ONLY) {
       if (!exe && existsSync(linux)) exe = linux;
       if (exe) break;
     }
-    if (exe) targets.push({ label: `chromium-${rev}`, type: chromium, exe, arch });
+    if (exe) targets.push({ label: `chromium-${rev}`, engine: 'chromium', exe, arch });
     else console.log(`  chromium-${rev}: no executable found under ${dir}`);
   }
   if (targets.length < 3) {
@@ -435,7 +436,10 @@ if (LIBM_ONLY) {
   const rows = [];
   for (const t of targets) {
     try {
-      const b = await t.type.launch(t.exe ? { executablePath: t.exe } : {});
+      const b = await launchBrowser({
+        label: `qa-xengine:libm:${t.label}`, engine: t.engine, root: ROOT,
+        ...(t.exe ? { executablePath: t.exe } : {}),
+      });
       const pg = await b.newPage();
       await pg.goto('about:blank');
       await pg.evaluate(PROBES);
@@ -530,10 +534,22 @@ if (LIBM_ONLY) {
 // ---------------------------------------------------------------------------
 // Assertion 2 — the dev server serves this tree
 // ---------------------------------------------------------------------------
-const { base, kill } = await ownDevServer({
-  root: ROOT,
+/*
+ * `startVite` from `tools/lib/browser-budget.mjs`, and `TC_STRICT_TREE=1` is not optional here.
+ *
+ * The default behaviour on finding an *unidentified* listener — one that predates
+ * `tools/lib/vite-runner.mjs` and so cannot say which worktree it serves — is a warning and a
+ * reuse. That is a reasonable default for a probe that photographs one geometry. It is the
+ * wrong default for this file: eighty worktrees in this checkout default to a handful of ports,
+ * and an arm that measures another agent's branch in three browser engines and reports
+ * cross-engine agreement about *this* tree is worse than no arm. A refusal costs a rerun on a
+ * different port; a wrong green costs the multiplayer claim.
+ */
+process.env.TC_STRICT_TREE = '1';
+const { base, close: kill } = await startVite({
   port: PORT,
-  cacheDir: process.env.TC_VITE_CACHE_DIR ?? null,
+  root: ROOT,
+  cacheDir: process.env.TC_VITE_CACHE_DIR ?? undefined,
   label: 'qa-xengine',
 });
 
@@ -546,7 +562,19 @@ async function run(engine, label) {
     // Chromium number there are the same measurement.
     ? { args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] }
     : {};
-  const browser = await ENGINE_TYPES[engine].launch(launchArgs);
+  /*
+   * One slot at a time, and the browser is closed at the bottom of this function rather than
+   * after every run has finished.
+   *
+   * There is a machine-wide cap of four concurrent headless browsers
+   * (`tools/lib/browser-budget.mjs`); this arm wants three engines plus a control, which is the
+   * whole machine. Holding all four open until the end would block every other agent for the
+   * length of a t+400 run, and this arm has no use for a page once its marks and dumps are
+   * taken — the localiser reads `dumps`, which is materialised inside this function.
+   */
+  const browser = await launchBrowser({
+    label: `qa-xengine:${label}`, engine, port: PORT, root: ROOT, ...launchArgs,
+  });
   const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -642,7 +670,14 @@ async function run(engine, label) {
       + `  count ${m.count}  alive ${m.alive}`
       + `  hash ${m.hash}  uf64 ${m.uf64}  uctl ${m.uctl}`);
   }
-  return { engine, label, page, browser, id, libm, marks, errors, dumps };
+  /*
+   * The slot goes back now. Everything downstream reads `marks`, `dumps`, `id`, `libm` and
+   * `errors`, all of which are plain data by this point; nothing touches the page again. See
+   * the note above `launchBrowser` for why holding four browsers to the end was not an option.
+   */
+  await page.close().catch(() => {});
+  await browser.close().catch(() => {});
+  return { engine, label, id, libm, marks, errors, dumps };
 }
 
 // ---------------------------------------------------------------------------
@@ -661,8 +696,10 @@ try {
   runs.push(await run(REFERENCE, `${REFERENCE}#2`));
 } catch (e) {
   console.error(`\n✗ a run failed to complete: ${e.message}`);
-  for (const r of runs) { await r.browser.close().catch(() => {}); }
-  kill();
+  // Each completed run has already closed its own browser and released its slot; a run that
+  // threw part-way had its slot released by `launchBrowser`'s own failure path or by the
+  // process-exit hook in `tools/lib/browser-budget.mjs`.
+  await kill();
   process.exit(2);
 }
 
@@ -976,8 +1013,8 @@ if (JSON_OUT) {
   console.log(`\n• wrote ${JSON_OUT}`);
 }
 
-for (const r of runs) await r.browser.close().catch(() => {});
-kill();
+// Browsers were closed as each run finished; only the dev server is still ours.
+await kill();
 
 console.log('');
 if (fatal) {

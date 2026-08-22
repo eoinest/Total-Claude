@@ -20,7 +20,7 @@
  *   node tools/probe-siege.mjs --port=5353 --shots=walkway,tower --out=screenshots/x
  */
 
-import { chromium } from 'playwright';
+import { launchBrowser } from './lib/browser-budget.mjs';
 import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
@@ -270,9 +270,14 @@ let browser = null;
 let srv = null;
 try {
   srv = await ensureServer();
-  browser = await chromium.launch({
-    args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
-      '--ignore-gpu-blocklist', '--disable-dev-shm-usage'],
+  /*
+   * `launchBrowser` — 22 Aug 2026. This file's own `ensureServer` is a `node:http` static
+   * server, which dies with the process and never orphaned anything; the browser is the part
+   * that needed counting. The GPU flags are `GPU_ARGS` now and are supplied by default.
+   */
+  browser = await launchBrowser({
+    label: 'probe-siege', port: PORT, root: ROOT,
+    args: ['--disable-dev-shm-usage'],
   });
   const VW = SHOT_MODE ? SHOT_W : 1280;
   const VH = SHOT_MODE ? SHOT_H : 720;
@@ -881,11 +886,34 @@ try {
     const g = window.__game;
     const b = g.battle;
     const s = b.siege;
-    // Aim at a stretch of wall near the gate. `wallTargetAt` is the same query the UI would
-    // use to decide the click meant the parapet.
+    /*
+     * Aim at a stretch of wall near the gate — **a stretch that has a wall on it.**
+     *
+     * This was `bays[gi + 3]`, written when the Porta Flaminia was bay 19 of 33 and every
+     * neighbour was finished curtain. On the redesigned circuit the gate is bay 1 and
+     * `gi + 3` is bay **4**, one of §4.8's bare `footing` bays: no walkway, no stations, and
+     * `wallTargetAt` correctly answers -1. That is why "a click on the parapet resolves to a
+     * wall station" has been red since `0372fc2` — the probe was clicking on a construction
+     * site — and why the three assertions downstream of it were measuring whatever
+     * `stationNear` happened to return for a point with no masonry under it. Same defect as
+     * the `gi - 6` great-ram search below, in the same file, from the same change.
+     *
+     * Third garrisonable bay out, either way, so the intent — near the gate, not the gate —
+     * survives a circuit whose gate sits one bay from the end of the line.
+     */
     const bays = g.engine.context.get('city').getGarrisonBays();
     const gi = bays.findIndex((x) => x.isGate);
-    const bay = bays[gi + 3] ?? bays[gi];
+    let bay = bays[gi];
+    let seen = 0;
+    for (let d = 1; d < bays.length && seen < 3; d++) {
+      for (const sgn of [1, -1]) {
+        const k = gi + sgn * d;
+        if (k < 0 || k >= bays.length || !bays[k].garrisonable) continue;
+        seen++;
+        bay = bays[k];
+        if (seen >= 3) break;
+      }
+    }
     const tx = (bay.x0 + bay.x1) * 0.5;
     const tz = (bay.z0 + bay.z1) * 0.5;
 
@@ -1329,12 +1357,28 @@ try {
     const g = window.__game;
     const b = g.battle;
     const s = b.siege;
-    // A bay well away from the gate, so a breach cannot be confused with the gateway.
+    /*
+     * A bay well away from the gate, so a breach cannot be confused with the gateway —
+     * **searched in both directions**, which it was not.
+     *
+     * This walked `gi - 6` down to 0 and nothing else. On the circuit before §15 task 3 the
+     * Porta Flaminia was bay 19 of 33 and there were always six bays to its west; on the
+     * redesigned circuit it is bay **1** of 36, so the loop started at -5, never ran, and
+     * every great-ram and breach assertion in this file has been reporting *"no garrisonable
+     * bay clear of the gate"* since `0372fc2`. That is a probe measuring its own arithmetic:
+     * the six assertions it guards were not failing, they were not being taken.
+     *
+     * Outward from the gate in both directions, nearest first, which is also the rule
+     * `deployAssault` uses to aim the machine it now deploys.
+     */
     const bays = g.engine.context.get('city').getGarrisonBays();
     const gi = bays.findIndex((x) => x.isGate);
     let bay = null;
-    for (let k = gi - 6; k >= 0; k--) {
-      if (bays[k] && bays[k].garrisonable) { bay = bays[k]; break; }
+    for (let d = 6; d < bays.length && !bay; d++) {
+      for (const s2 of [-1, 1]) {
+        const k = gi + s2 * d;
+        if (k >= 0 && k < bays.length && bays[k].garrisonable) { bay = bays[k]; break; }
+      }
     }
     if (!bay) return { ok: false, why: 'no garrisonable bay clear of the gate' };
     const tx = (bay.x0 + bay.x1) * 0.5;
@@ -1433,8 +1477,11 @@ try {
   }
 
   if (great.ok) {
-    // Top up whatever the traversal tests did not already advance. 74 blows at 7 s is over
-    // eight minutes of battering and the test waits rather than shortening the machine.
+    // Top up whatever the traversal tests did not already advance. `WALL_BLOWS` at
+    // `GREAT_RAM_PERIOD` is five minutes of battering and the test waits rather than
+    // shortening the machine. Note the scenario now deploys a great ram of its own at the
+    // first holdable bay, so the breach that ends this loop may be *that* machine's; both
+    // assertions below are about a great ram and a bay and neither cares which.
     const broke = await page.evaluate(async () => {
       const g = window.__game;
       const s = g.battle.siege;

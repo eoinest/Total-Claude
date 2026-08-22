@@ -592,6 +592,9 @@ export const gardenField = (x: number, z: number): number =>
  * The wall crest at mid-span is z 527, so the attacker has **~640 m of approach** from his own
  * line to the ditch lip — against Rome's ~620. The two maps read at the same tempo.
  */
+/** Soft edge on every deployment box, in metres. Published on the box; see `DeployBox`. */
+const DEPLOY_FEATHER = 80;
+
 const rectMask = (
   x: number, z: number, cx: number, cz: number, hx: number, hz: number, feather: number,
 ): number => {
@@ -610,19 +613,24 @@ const rectMask = (
  *
  * Note the naming: `romanDeployMask` is the **northern** box on this map, because Rome is the
  * besieger here. `DeployGround` keys on the ground rather than on the army for that reason.
+ *
+ * `feather` is published on the box because `standOnDeploymentGround` insets by it. Nothing
+ * about Carthage changes: at 490 m half-width against a line 342 m wide either side of the
+ * axis, the west rule was already slack by 148 m and the inset only spends 80 of it, so the
+ * shift here is still exactly 0.
  */
 export const DEPLOY_GROUND = {
   axisX: 0,
-  north: { cx: 0, cz: -196, hx: 490, hz: 130 },
-  south: { cx: 0, cz: 150, hx: 490, hz: 120 },
+  north: { cx: 0, cz: -196, hx: 490, hz: 130, feather: DEPLOY_FEATHER },
+  south: { cx: 0, cz: 150, hx: 490, hz: 120, feather: DEPLOY_FEATHER },
 } as const satisfies DeployGround;
 
 export const romanDeployMask = (x: number, z: number): number =>
   rectMask(x, z, DEPLOY_GROUND.north.cx, DEPLOY_GROUND.north.cz,
-    DEPLOY_GROUND.north.hx, DEPLOY_GROUND.north.hz, 80);
+    DEPLOY_GROUND.north.hx, DEPLOY_GROUND.north.hz, DEPLOY_GROUND.north.feather);
 export const punicDeployMask = (x: number, z: number): number =>
   rectMask(x, z, DEPLOY_GROUND.south.cx, DEPLOY_GROUND.south.cz,
-    DEPLOY_GROUND.south.hx, DEPLOY_GROUND.south.hz, 80);
+    DEPLOY_GROUND.south.hx, DEPLOY_GROUND.south.hz, DEPLOY_GROUND.south.feather);
 
 /** The fighting corridor: high-frequency relief damped, broad form kept. */
 export const battleCoreMask = (x: number, z: number): number =>

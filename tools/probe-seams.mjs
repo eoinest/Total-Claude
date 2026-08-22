@@ -17,11 +17,10 @@
  *                                   [--scenario=assault] [--json=path]
  */
 
-import { chromium } from 'playwright';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { ownDevServer } from './lib/devtree.mjs';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(process.argv.slice(2).map((a) => {
@@ -45,22 +44,33 @@ const BASE_CONFIG = {
 const encodeConfig = (c) => Buffer.from(JSON.stringify(c)).toString('base64')
   .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-/*
- * "Something answers on this port" was never the claim this needed. In a checkout with eighty
- * worktrees all defaulting to the same few ports, reusing an unverified listener means both
- * maps can be declared seam-free on another agent's branch. `ownDevServer` proves the listener
- * serves *this* tree before reusing it, and refuses rather than guessing a port.
- */
-const { base, kill: killServer } = await ownDevServer({
-  root: ROOT,
-  port: PORT,
-  cacheDir: process.env.TC_VITE_CACHE_DIR ?? null,
-  label: 'probe-seams',
-});
+const waitForServer = async (b, ms) => {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    try { const r = await fetch(b, { signal: AbortSignal.timeout(1000) }); if (r.ok) return true; }
+    catch { /* not up */ }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
+};
 
-const browser = await chromium.launch({
+/*
+ * Server and browser via `tools/lib/browser-budget.mjs` — 22 Aug 2026.
+ *
+ * The browser slot is taken **first** and the server started second, so a run that has to
+ * queue queues holding nothing. `startVite` replaces `spawn('npx', ['vite', …])`, whose
+ * handle was the npx wrapper rather than Vite and so left the server on the port when it was
+ * killed; it also refuses to reuse a listener that is serving a different worktree, which
+ * this file used to do silently.
+ */
+const browser = await launchBrowser({
+  label: 'probe-seams', port: PORT, root: ROOT,
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
+const { base, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, label: 'probe-seams', slot: browser.budgetSlot,
+});
+
 
 const results = [];
 let bad = 0;
@@ -115,6 +125,6 @@ if (JSON_OUT) {
 }
 
 await browser.close();
-killServer();
+await closeServer();
 console.log(bad === 0 ? '\nPASS — every seam agrees on every map' : `\nFAIL — ${bad} map(s) with faults`);
 process.exit(bad === 0 ? 0 : 1);

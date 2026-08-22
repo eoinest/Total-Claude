@@ -156,6 +156,32 @@ export class HudModel {
 
     if (this.staleViews(battle)) this.rebuild(battle);
 
+    /**
+     * The army the battle *began* with — re-counted for as long as the roster can still
+     * change, and frozen the moment it cannot.
+     *
+     * This used to latch inside `rebuild`, on the first frame that had any views at all,
+     * which is the shipped order of battle before the player has touched the deployment
+     * screen. Press ADD UNITS — which is precisely what a player who is losing does; Rome's
+     * brief offers 12 of 20 units and 8,928 men free — and the baseline stayed at the
+     * original 1,154 while the live count was 1,894. `TopBar` prints
+     * `max(0, initialStrength - alive)`, so the subtraction went negative and the clamp
+     * printed **`−0` at every one of thirteen samples across 267 seconds** while the arbiter
+     * recorded 244 dead. The end card was unaffected because it prefers the arbiter's own
+     * tally, so the lie lived only in the number the player watches during the fight.
+     *
+     * `simTime` is the gate rather than a count or a generation, and that is the honest
+     * reading: the deployment phase does not run `fixedUpdate`, so the clock stands at zero
+     * for the whole of it and the first tick is the first instant the order of battle is
+     * settled. Re-summing until then also gets *removals* right, which a high-water mark
+     * would not.
+     */
+    if (!this.labelled && this.views.length > 0) {
+      for (const f of ALL_FACTIONS) this.initialStrength[f] = 0;
+      for (const v of this.views) this.initialStrength[v.faction] += v.initial;
+      if (simTime > 0) this.labelled = true;
+    }
+
     for (const f of ALL_FACTIONS) {
       this.strength[f] = 0;
       this.routing[f] = 0;
@@ -321,12 +347,6 @@ export class HudModel {
       };
       this.views.push(v);
       this.byId.set(u.id, v);
-    }
-
-    if (!this.labelled && this.views.length > 0) {
-      for (const f of ALL_FACTIONS) this.initialStrength[f] = 0;
-      for (const v of this.views) this.initialStrength[v.faction] += v.initial;
-      this.labelled = true;
     }
 
     /*

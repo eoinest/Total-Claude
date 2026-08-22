@@ -1,19 +1,26 @@
-/** RUN C — storm Carthage properly: every cohort committed, by hand, to the verdict. */
-import { argsOf, boot, shot, dump, fast, hover, rightClick, cam, aim, wallPixel, installDiag, selectHard, ROOT } from './pl-lib-emc.mjs';
+/**
+ * RUN C — storm Carthage properly: every cohort committed, by hand, to the verdict.
+ *
+ * Asserts, now. This was the only one of the three whose end-detection could ever have
+ * matched (`.rs-verdict` was in its list), and it still never said whether it had.
+ */
+import { argsOf, boot, shot, dump, fast, hover, rightClick, cam, aim, wallPixel, installDiag,
+  selectHard, ledger, mustEnd, ended, ROOT } from './pl-lib-emc.mjs';
 import path from 'node:path';
 const A = argsOf();
 const OUT = path.join(ROOT, 'screenshots/playability');
-const L = 'runC';
-const log = [];
-const say = (...a) => { const s = a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '); console.log(s); log.push(s); };
-const { browser, page, errs } = await boot({ port: Number(A.get('port') ?? 5431), map: 'carthage', out: OUT, label: L });
+const L_ = 'runC';
+const L = ledger('run C — Carthage stormed by hand');
+const log = L.log;
+const say = L.say;
+const { browser, page, errs } = await boot({ port: Number(A.get('port') ?? 5431), map: 'carthage', out: OUT, label: L_ });
 await installDiag(page);
-const flush = () => dump(OUT, `${L}-log`, { log, errs });
+const flush = () => dump(OUT, `${L_}-log`, { log, errs, rows: L.rows });
 await page.mouse.move(800, 700); await page.waitForTimeout(300);
 say('deployment help line:', await page.evaluate(() => document.querySelector('.dep-help')?.textContent.replace(/\s+/g, ' ')));
 await page.click('.dep-add'); await page.waitForTimeout(300);
 say('ADD UNITS palette:', await page.evaluate(() => Array.from(document.querySelectorAll('.dep-row')).map(r => `${r.dataset.unit}=${r.querySelector('.dep-count').textContent}${r.querySelector('[data-d="1"]').disabled ? '[+off]' : '[+on]'}`)));
-await shot(page, OUT, `${L}-0-palette`);
+await shot(page, OUT, `${L_}-0-palette`);
 await page.click('.dep-add'); await page.waitForTimeout(200);
 await page.click('.dep-begin'); await page.waitForTimeout(500);
 await fast(page, 4);
@@ -45,7 +52,7 @@ for (let i = 0; i < cohCards.length; i++) {
   const d = await rightClick(page, wp.p, { hold: 300 });
   say(`  cohort ${id} -> bay ${b.i} (x ${b.cx}): hint ${JSON.stringify(d.hint)} cursor ${d.cursor}`);
 }
-await shot(page, OUT, `${L}-1-committed`);
+await shot(page, OUT, `${L_}-1-committed`);
 await flush();
 
 say('\n=== the storm');
@@ -56,9 +63,9 @@ for (let k = 0; k < 40; k++) {
   up = await page.evaluate(() => window.__units(0).filter(u => u.elevated > 2).map(u => ({ id: u.id, t: u.type.replace('legio-', ''), e: u.elevated, a: u.alive })));
   const foeUp = await page.evaluate(() => window.__units(2).reduce((n, u) => n + u.elevated, 0));
   say(`t+${r.t}  R=${r.strength[0]} C=${r.strength[2]}  gate=${r.engines.gateHp.toFixed(2)} breachBays=${r.breach.bays.length} ladders=${r.engines.laddersCrossed} towers=${r.towers.map(t => t.crossed).join('/')}  mineUp=${JSON.stringify(up)} foeUp=${foeUp}`);
-  if (k === 8 || k === 20) await shot(page, OUT, `${L}-2-${Math.round(r.t)}s`);
-  const done = await page.evaluate(() => { const e = document.querySelector('.results.open, .endcard, .rs-verdict'); return e ? e.textContent.replace(/\s+/g, ' ').slice(0, 300) : null; });
-  if (done) { say(`RESULT at t+${r.t}: ${done}`); break; }
+  if (k === 8 || k === 20) await shot(page, OUT, `${L_}-2-${Math.round(r.t)}s`);
+  const done = await ended(page);
+  if (done) { say(`RESULT at t+${r.t}: ${done.verdict} — ${done.reason}`); break; }
   if (k > 6 && up.length >= 2 && k % 8 === 0) {
     // take a stretch with whoever is up, and fight for it
     const m = up.sort((a, b) => b.e - a.e)[0];
@@ -74,10 +81,13 @@ for (let k = 0; k < 40; k++) {
   await flush();
 }
 await page.waitForTimeout(600);
-await shot(page, OUT, `${L}-3-end`);
+// A run that has not seen a verdict has not seen the thing it is about.
+await mustEnd(page, L, { until: 1600, step: 25, label: 'the storm of Carthage' });
+await shot(page, OUT, `${L_}-3-end`);
 say('final:', await page.evaluate(() => window.__hud()).then(h => h.top.slice(0, 200)));
-say('results element:', await page.evaluate(() => { const e = document.querySelector('.results'); return e ? `${e.className}: ${e.textContent.replace(/\s+/g, ' ').slice(0, 500)}` : 'none'; }));
-} catch (e) { say('!! THREW', String(e).slice(0, 300)); }
+say('the card:', await page.evaluate(() => window.__hud().banner));
+} catch (e) { L.ck('the session ran without throwing', false, 'no throw', String(e).slice(0, 300)); }
+L.ck('no page errors', errs.length === 0, 0, errs.length);
 await flush();
-say('errs', errs.length);
 await browser.close();
+process.exitCode = L.summary() > 0 ? 1 : 0;

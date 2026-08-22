@@ -226,10 +226,25 @@ export const roadCentreX = (z: number): number =>
  * Where the toe of the city slope sits, per x. Wobbling it produces spurs and
  * re-entrants along the hill front.
  *
- * The base and amplitudes are chosen so the minimum is z = 252, which keeps the slope
- * clear of the Roman deployment box (which reaches z = 255 and holds the bolt-throwers
- * at z = 246). An earlier version bottomed out at z = 156 and put a 45° hillside inside
- * the parade ground.
+ * The base and amplitudes were chosen so the global minimum is z = 252 — still true, at
+ * x −343 — which keeps the slope clear of the Roman deployment box. An earlier version
+ * bottomed out at z = 156 and put a 45° hillside inside the parade ground.
+ *
+ * **The clearance is now 3.1 m and it used to be 74.9, and the reason is §15 task 14.** The
+ * sentence above said the box "reaches z 255 and holds the bolt-throwers at z 246"; it reaches
+ * **z 270** and holds them at **z 262.5**, and it has done for two passes. What matters is not
+ * the global minimum but the minimum *over the box's own x range*, and task 14 widened that
+ * range east: over x −45…455 the toe never came below **z 344.9**, and over x −45…805 it reaches
+ * **z 273.1 at x 805**, the box's new south-east corner. Nothing is over
+ * `ROUGH_SLOPE_IMPASSABLE` there — the worst slope measured anywhere across that edge is 0.285,
+ * the worst under any Roman man is 0.074, and at z 270 the rise itself has not started — but the
+ * margin is now 3 m of x-wobble rather than seventy.
+ *
+ * **So this is the constraint on ever deepening the defender's box**, which §15 task 14 wants
+ * (`hz` 120 → 150, for the twelve-man scorpio battery standing at mask 0.024). At `hz` 150 the
+ * south edge is z 300, which is **26.9 m past the toe** at x 805: a corner of parade ground
+ * flattened into the side of the Pincian. Deepening the box and widening it east are not
+ * independent decisions, and this expression is where they meet.
  */
 export const riseToeZ = (x: number): number =>
   330 + 52 * Math.sin(x * 0.00476) + 26 * Math.sin(x * 0.01053 + 2.1);
@@ -526,7 +541,13 @@ const rectMask = (
 };
 
 /**
- * Centre of both deployment grounds in x, and how far they reach either side of it.
+ * The axis the two lines face each other along, and the west edge both boxes are solved from.
+ *
+ * **It is no longer either box's centre.** It was, while both boxes were ±h about it; §15
+ * task 14 widened them east and left their west edges alone, so each box now carries its own
+ * `cx` and this is what `DeployGround.axisX` has always meant — the battle's axis, not a
+ * rectangle's midpoint. Everything below is about where the *west* edges came from, and none
+ * of it has changed: `−175` north and `−45` south are still `205 − 380` and `205 − 250`.
  *
  * **Both boxes had to move east, and the distance is measured rather than chosen.** §3.2:
  * *"`germanDeployMask`'s 490 m half-width no longer fits between the corrected river and the
@@ -563,7 +584,12 @@ const rectMask = (
  */
 export const DEPLOY_AXIS_X = 205;
 
-/** Soft edge on every deployment box, in metres. */
+/**
+ * Soft edge on every deployment box, in metres.
+ *
+ * Published on each box as `DeployBox.feather` rather than kept private here, because
+ * `sim/scenario.ts` insets by it — see `DEPLOY_GROUND` and `standOnDeploymentGround`.
+ */
 const DEPLOY_FEATHER = 80;
 
 /**
@@ -574,38 +600,91 @@ const DEPLOY_FEATHER = 80;
  *
  * Half-widths were 490 m, sized against a Roman line of eight cohorts on 70 m centres with
  * urban cohorts refusing both flanks at ±320 m and the cavalry wings out at ±450. §3.2
- * takes the attacker's to 380; the defender's is 250 because it stands where the funnel has
+ * takes the attacker's to 380; the defender's was 250 because it stands where the funnel has
  * already closed. See `DEPLOY_AXIS_X`.
  *
  * **This is now data, and the masks are derived from it**, because `sim/scenario.ts` reads it
  * too — see `maps/types.ts`'s `DeployGround`. The paragraph above about the field order of
  * battle knowing nothing about these boxes was true when it was written and is not any more.
  *
- * **The line is wider than the ground, and that is a real finding rather than a rounding.**
- * At `DEFAULT_CONFIG` and the `high` tier the Roman line measures **684 m** across its own
- * men and the box is **500 m**; the Juthungi host measures 783 m against 760 m. Rome's box was
- * narrowed to ±250 to clear the funnel, and nothing checked it against the army that has to
- * stand in it. Whoever sizes §15 task 14 has to choose between a narrower Roman frontage and a
- * box that reaches further east — the east is open plain out to x 700 and dry — and it is a
- * change to the shipped battle either way. Until then the line overhangs its ground to the
- * east, which is grass, rather than to the west, which is the Tiber.
+ * ---
+ *
+ * **§15 task 14's reserved half, decided: the boxes are widened east and the frontages are
+ * not touched.** The finding that opened it stands and is worth keeping in front of whoever
+ * reads this next — at `DEFAULT_CONFIG` on the `high` tier the Roman line measures **684 m**
+ * across its own men against a **500 m** box and the Juthungi host **783 m** against 760, and
+ * **562 Roman and 182 Juthungi men stood outside their own box**, all but 14 of them east. The
+ * owner's decision was *"battle lines should fit their deployment boxes. I would recommend
+ * widening boxes east."*
+ *
+ * **Three numbers moved and each one is derived rather than chosen.**
+ *
+ *  1. **Neither west edge moves**, and that is the constraint everything else is solved
+ *     against. `cx − hx` is still −175 north and −45 south, the two lines task 1 measured
+ *     against the funnel's standing water: at their worst rows the boxes clear it by 23 m,
+ *     and a box that grew symmetrically would take the defender's edge from −45 to −225 and
+ *     put a quarter of the parade ground in the Tiber. Widening east is not a preference here,
+ *     it is the only direction with ground in it.
+ *  2. **Each east edge stands one feather beyond the outermost man**, so the whole line is
+ *     inside the mask's full-strength core rather than on its soft edge — the band the
+ *     heightfield only fractionally flattens and the scatter does not clear at all (its own
+ *     threshold is 0.12, which the feather does not reach until 17 m in). With the placement
+ *     rule below insetting by the same feather, the outermost men stand at x 719.3 (Rome) and
+ *     770.9 (the host), so the cores must reach 725 and 775 and the rectangles 805 and 855.
+ *     Rounding the half-widths to 425 and 515 lands them there with 5.7 m and 4.1 m to spare.
+ *  3. **The battle stands 80 m further east than it did** — one feather — because
+ *     `standOnDeploymentGround` anchors the line's west end to the box and now insets by the
+ *     feather when it does. That is where the 14 men outside to the *west* came from: the rule
+ *     used to park the outermost file exactly on the contour where the mask reaches zero.
+ *
+ * Measured on the built heightfield by `tools/probe-ground.mjs --quality=high`: men outside
+ * their own box 562/182 → **0/0**, in water 0 → 0, on the far bank 0 → 0, over
+ * `ROUGH_SLOPE_IMPASSABLE` 0 → 0, trees within 4 m of a man 1/4 → 0/0.
+ *
+ * **What is *not* fixed, with its number, because it will otherwise be rediscovered.** The
+ * defender's box is under-sized in **depth**, not only in width: at `hz` 120 about z 150 its
+ * full-strength core is z 110…190 and the Roman line is 141 m deep, so the twelve-man scorpio
+ * battery at z 262.5 stands where the mask reads **0.024** — inside the box by the arithmetic
+ * and on ground that is 2 % flattened and never cleared of trees. It passes the acceptance
+ * (the threshold is 0.02) by 22 %, and it is the weakest reading under any man on the map.
+ * The fix is `hz` 120 → about 150, which is 30 m of box at each end in z, and it was left alone
+ * deliberately — because deepening the box and widening it east are not independent decisions,
+ * and widening it east is the one that was made. See `riseToeZ`: over the box's old x range the
+ * hill toe never came below z 344.9, over the new one it reaches **z 273.1 at x 805**, so the
+ * z 270 south edge now clears it by 3.1 m and at `hz` 150 would stand 26.9 m *past* it. It would
+ * also bring the south edge within 17 m of the quarry at (724, 328).
  */
 export const DEPLOY_GROUND = {
   axisX: DEPLOY_AXIS_X,
-  north: { cx: DEPLOY_AXIS_X, cz: -196, hx: 380, hz: 130 },
-  south: { cx: DEPLOY_AXIS_X, cz: 150, hx: 250, hz: 120 },
+  north: { cx: 340, cz: -196, hx: 515, hz: 130, feather: DEPLOY_FEATHER },
+  south: { cx: 380, cz: 150, hx: 425, hz: 120, feather: DEPLOY_FEATHER },
 } as const satisfies DeployGround;
 
 export const germanDeployMask = (x: number, z: number): number =>
   rectMask(x, z, DEPLOY_GROUND.north.cx, DEPLOY_GROUND.north.cz,
-    DEPLOY_GROUND.north.hx, DEPLOY_GROUND.north.hz, DEPLOY_FEATHER);
+    DEPLOY_GROUND.north.hx, DEPLOY_GROUND.north.hz, DEPLOY_GROUND.north.feather);
 export const romanDeployMask = (x: number, z: number): number =>
   rectMask(x, z, DEPLOY_GROUND.south.cx, DEPLOY_GROUND.south.cz,
-    DEPLOY_GROUND.south.hx, DEPLOY_GROUND.south.hz, DEPLOY_FEATHER);
+    DEPLOY_GROUND.south.hx, DEPLOY_GROUND.south.hz, DEPLOY_GROUND.south.feather);
 
-/** The whole fighting corridor. High-frequency relief is damped here, swells are kept. */
+/**
+ * The whole fighting corridor. High-frequency relief is damped here, swells are kept.
+ *
+ * **Moved east with the boxes, and it had to be.** It was `(0, −30, 540, 360)` — centred on
+ * x 0 with a 540 m half-width, which was right while the battle formed up about the road and
+ * wrong from the moment task 1 pushed the deployment 271 m east. At `5338249` the host's right
+ * wing stood at x 691 and the corridor ended at 540, so the wing that decides the flank was
+ * outside the fighting corridor entirely and fighting over undamped 46 m and 150 m relief.
+ *
+ * The west edge stays at −540: it covers the river angle, the Porta Flaminia and the west end
+ * of the circuit, and nothing about the army asks it to move. The east edge is the outermost
+ * man plus one feather — 770.9 + 170 = 941 — rounded to a half-width of 745 about the
+ * deployment axis, which puts the rectangle at −540 … 950 and the fully-damped core at
+ * −370 … 780. The corridor is the one number here that is *not* a deployment box, so it is
+ * written against the axis rather than against either box's edge.
+ */
 export const battleCoreMask = (x: number, z: number): number =>
-  rectMask(x, z, 0, -30, 540, 360, 170);
+  rectMask(x, z, DEPLOY_AXIS_X, -30, 745, 360, 170);
 
 /** Quarry workings: tufa and travertine were cut from the hill flanks outside the city. */
 export const QUARRIES: readonly { x: number; z: number; radius: number; depth: number }[] = [

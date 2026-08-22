@@ -417,6 +417,11 @@ export class CitySystem implements Subsystem {
   /** Gates whose leaves the ram has brought down. See `setGateDoorBroken`. */
   private brokenGates = new Set<string>();
   /**
+   * Holes the great ram has beaten in the curtain, in world x/z with a half-width **along**
+   * the wall. Read by `pushWallBox`, written only by `breachWall`.
+   */
+  private breaches: { x: number; z: number; halfW: number }[] = [];
+  /**
    * Bay index by x, for the O(1) masonry lookup a projectile needs. Bays are on a fixed
    * `WALL.towerSpacing` pitch from `WALL_X_MIN`, so the index is arithmetic, not a search:
    * a search over fifty segments per arrow per tick, at two thousand arrows, is not free.
@@ -963,25 +968,46 @@ export class CitySystem implements Subsystem {
       });
     };
 
+    /**
+     * Every hole that crosses this run, not just the first one.
+     *
+     * It used to find one gate and `break`, which was exactly right while a gate was the
+     * only thing that could open a curtain. The great ram can now bring a bay down
+     * (`breachWall`), and a bay is 37 m of run that can carry a gate *and* a breach — Rome's
+     * gate bay is one — so a single cut would have emitted a solid box straight back across
+     * whichever hole it did not find. With one gate and no breaches this produces the same
+     * two boxes it always did, to the metre.
+     */
+    const cuts: [number, number][] = [];
+    const addCut = (px: number, pz: number, halfW: number): void => {
+      const t = ((px - x1) * dx + (pz - z1) * dz) / (len * len);
+      const dt = halfW / len;
+      if (t + dt <= 0 || t - dt >= 1) return;
+      cuts.push([Math.max(0, t - dt), Math.min(1, t + dt)]);
+    };
     // Clear width plus a body radius either side, so a column can actually enter.
     const half = this.plan.gateOpenWidth * 0.5 + 0.5;
-    let cut: [number, number] | null = null;
     for (const gate of this.gateList) {
       // `unpierced` is a gate that says it is open and whose stone is not cut. Punching the
       // box anyway is a hole in a wall the player can see standing. See `assertGatePassages`.
       if (!gate.open || this.unpierced.has(gate.id)) continue;
-      const t = ((gate.x - x1) * dx + (gate.z - z1) * dz) / (len * len);
-      const dt = half / len;
-      if (t + dt <= 0 || t - dt >= 1) continue;
-      cut = [Math.max(0, t - dt), Math.min(1, t + dt)];
-      break;
+      addCut(gate.x, gate.z, half);
     }
-    if (!cut) {
+    // A breach is *not* subject to `unpierced`: the stone over it is not cut either, and
+    // that is the same trade `setGateOpen` already makes for a ram that has earned its hole.
+    // See `breachWall` for what is and is not modelled.
+    for (const b of this.breaches) addCut(b.x, b.z, b.halfW + 0.5);
+    if (cuts.length === 0) {
       emit(0, 1);
       return;
     }
-    emit(0, cut[0]);
-    emit(cut[1], 1);
+    cuts.sort((a, b) => a[0] - b[0]);
+    let at = 0;
+    for (const [c0, c1] of cuts) {
+      if (c0 > at) emit(at, c0);
+      if (c1 > at) at = c1;
+    }
+    emit(at, 1);
   }
 
   /** Build every detail level of one chunk and register it for LOD swapping. */
@@ -1497,6 +1523,57 @@ export class CitySystem implements Subsystem {
   /** True once `setGateDoorBroken` has been called for this gate. */
   isGateDoorBroken(id: string): boolean {
     return this.brokenGates.has(id);
+  }
+
+  /**
+   * The great ram has brought a bay down. Cut the passage, in the raster and in the boxes.
+   *
+   * `Siege.breachBay` has called `this.city?.breachWall?.(…)` since the siege pass and
+   * `CitySystem` had no such method, so the optional call was a no-op and a breach was five
+   * `Crossing` lanes over a wall that every other consumer still thought was solid. That is
+   * the fourth of the four seams the great ram was missing, and it is the one that decides
+   * whether a man who has climbed the rubble can *stand* on the other side of it: the
+   * occupancy raster is what the pathfinder reads and the oriented boxes are what
+   * `Obstacles` pushes bodies out of.
+   *
+   * Exactly the arrangement `setGateOpen(id, true)` uses, and deliberately so — the two are
+   * one piece of stone stopping being in the way, and deriving that twice is the bug this
+   * file keeps producing. Two differences, both forced:
+   *
+   *  - the cut runs on the **bay's own outward normal** rather than along z. Rome's curtain
+   *    is very nearly east-west so the gate's `z ± 20` is right there and wrong in general;
+   *    a breach can land on any bay of a bowed circuit.
+   *  - `unpierced` does not gate it. That flag exists to stop the collision being cut where
+   *    a gate stands open with solid stone drawn across it; a breach's stone is *never*
+   *    cut, because nothing rebuilds a baked chunk. See below.
+   *
+   * **What this does not do: the curtain is still drawn standing over the hole.** The
+   * mechanic is complete — the lanes exist, the stations are dead, the garrison is rehoused,
+   * the raster is open and the boxes are split — and the geometry is not, because a bay's
+   * masonry is baked into one of five `wall-N` chunks at load and there is no path to
+   * re-bake one. The seam for it is `rome/apertures.ts curtainSpans`, which is already the
+   * one place that decides where curtain is *not* laid: give it the breach list and re-bake
+   * the affected chunk and the hole appears. That is a city-workstream change and it is
+   * written down rather than half-done here.
+   */
+  breachWall(x: number, z: number, halfWidth: number): void {
+    // Idempotent. `Siege.breachBay` guards on `breachedBays`, but two great rams working
+    // adjacent stations of one bay must not stack two identical cuts in the raster.
+    for (const b of this.breaches) {
+      if (Math.abs(b.x - x) < 1 && Math.abs(b.z - z) < 1) return;
+    }
+    this.breaches.push({ x, z, halfW: halfWidth });
+    const bay = this.bayAt(x);
+    // Fall back to the circuit's own convention — a bay's normal points away from the city —
+    // rather than to nothing, so a breach off the end of the bay list still cuts something.
+    const nx = bay ? bay.nx : 0;
+    const nz = bay ? bay.nz : 1;
+    // Far enough either side to clear the curtain's thickness, the parapet's overhang and
+    // the flight standing against the inner face, and no further: this paints *open*, and
+    // painting open through a building behind the wall would be a hole in the city.
+    const reach = (bay?.halfThickness ?? 3) + 9;
+    this.clearSegment(x - nx * reach, z - nz * reach, x + nx * reach, z + nz * reach, halfWidth);
+    this.recutWallObstacles();
   }
 
   /**

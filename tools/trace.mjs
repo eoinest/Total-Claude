@@ -7,10 +7,9 @@
  * Usage: node tools/trace.mjs [--port=5250] [--until=300] [--every=15]
  */
 
-import { chromium } from 'playwright';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnVite } from './lib/devtree.mjs';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -35,20 +34,21 @@ const waitForServer = async (url, ms) => {
   return false;
 };
 
-const base = `http://127.0.0.1:${PORT}`;
-let server = null;
-if (!(await waitForServer(base, 1000))) {
-  server = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' },
-  });
-  if (!(await waitForServer(base, 60000))) {
-    console.error('vite did not start');
-    process.exit(1);
-  }
-}
 
-const browser = await chromium.launch({
+
+/*
+ * Server and browser through `tools/lib/browser-budget.mjs` — 22 Aug 2026, after load average
+ * 160 on 16 cores took the machine down. The slot is taken before the server is started so a
+ * queued run holds nothing, and `startVite` cannot leave an orphan on the port the way
+ * `spawn('npx', ['vite', …])` did: the handle it returns is Vite itself, and the server exits
+ * on its own within two seconds of losing this process.
+ */
+const browser = await launchBrowser({
+  label: 'trace', port: PORT, root: ROOT,
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+});
+const { base, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, label: 'trace', slot: browser.budgetSlot,
 });
 const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
 const errors = [];
@@ -132,5 +132,5 @@ if (errors.length) {
 }
 
 await browser.close();
-if (server) server.kill('SIGTERM');
+await closeServer();
 process.exit(errors.length ? 1 : 0);

@@ -1,5 +1,5 @@
 /** Where on the screen does a unit's crowd actually answer to the mouse? */
-import { argsOf, boot, cam, shot, ROOT } from './pl-lib-emc.mjs';
+import { argsOf, boot, cam, fast, shot, ROOT } from './pl-lib-emc.mjs';
 import path from 'node:path';
 const A = argsOf();
 const OUT = path.join(ROOT, 'screenshots/playability');
@@ -46,7 +46,7 @@ async function scan(id, label) {
   console.log(`  ${label}: ${hits}/${tot} sampled pixels answer to this unit`);
 }
 
-if (A.get('begin')) { await page.click('.dep-begin'); await page.waitForTimeout(500); await page.evaluate(() => window.__game.engine.advance(3, 166)); await page.waitForTimeout(300); console.log('battle begun, t=', await page.evaluate(() => window.__game.simTime())); }
+if (A.get('begin')) { await page.click('.dep-begin'); await page.waitForTimeout(500); await fast(page, 3); await page.waitForTimeout(300); console.log('battle begun, t=', await page.evaluate(() => window.__game.simTime())); }
 const own = await page.evaluate(() => window.__units(0));
 const coh = own.filter(u => u.type === 'legio-cohort')[2];
 for (const z of [0.42, 0.55]) { await cam(page, coh.x, coh.z - 12, z, 0); await page.waitForTimeout(700); await scan(coh.id, `own cohort zoom ${z}`); }

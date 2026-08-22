@@ -30,13 +30,12 @@
  * agents can use it as a build gate.
  */
 
-import { chromium } from 'playwright';
-import { execFileSync } from 'node:child_process';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
+import { spawn, execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnVite } from './lib/devtree.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -361,16 +360,20 @@ const SHOTS = {
    *              picture of what most players are actually looking at, and a tier nobody
    *              photographs is a tier nobody fixes.
    *
-   *              It is `high` rather than `low`, and the reason is worth recording because
-   *              `low` was tried first and was wrong. The tiers do not only change render
-   *              settings: `maxSoldiers` is 1,600 at low and 3,200 at medium against an
-   *              order of battle of 8,632. A low-tier frame therefore photographs a
-   *              different battle — the shot came back with 1,189 men where ultra has
-   *              8,632 — and headcount, not filtering, is what a grader would sort on. That
-   *              is a confound dressed up as honesty. `high` caps at 10,000, so every man
-   *              stays on the field, and it still turns the dial down properly: shadow maps
-   *              at a quarter the area, grass density 1 against 1.5, and the pixel ratio at
-   *              1.5 rather than 2.
+   *              It is `high` rather than `low`, and the reason is worth recording even
+   *              though it has since been fixed at the source. `low` was tried first and was
+   *              wrong: the tiers did not only change render settings, because
+   *              `quality.maxSoldiers` was 1,600 at low and 3,200 at medium against an order
+   *              of battle of 8,632, so a low-tier frame photographed a *different battle* —
+   *              the shot came back with 1,189 men where ultra has 8,632 — and headcount,
+   *              not filtering, is what a grader sorts on. That was a confound dressed up as
+   *              honesty. The soldier pool is now `SOLDIER_POOL_CAPACITY`, one number at every
+   *              tier, so every tier photographs the same 8,632 men and `low` is a legitimate
+   *              deck tier for the first time. `high` is kept because the deck's numbers were
+   *              measured there and a graded set should not move under a change that is not
+   *              about grading; it still turns the dial down properly — shadow maps at a
+   *              quarter the area, grass density 1 against 1.5, the pixel ratio 1.5 rather
+   *              than 2.
    *   subject    one frame per scene family. No two frames here share a follow target.
    *
    * Anything with a `map` or `hour` costs a page load — see the grouping note below. Ten
@@ -1502,32 +1505,26 @@ async function waitForServer(url, timeoutMs = 60000) {
   return false;
 }
 
+/*
+ * `startVite` — `tools/lib/browser-budget.mjs`, 22 Aug 2026.
+ *
+ * What was here spawned `npx vite`, and `server.kill('SIGTERM')` in `stopServer` therefore
+ * signalled the npx wrapper while Vite kept the port. Nineteen servers were swept off this
+ * machine in one morning for that reason. `startVite` runs Vite under `node` directly, so the
+ * handle is the server, and the server also polls this process and exits within two seconds
+ * of losing it — which is the part that survives a SIGKILL or a machine that falls over.
+ */
 let server = null;
-async function startServer() {
-  const base = `http://127.0.0.1:${PORT}`;
-  if (await waitForServer(base, 1200)) {
-    console.log(`• reusing dev server already on ${PORT}`);
-    return base;
-  }
-  console.log(`• starting vite on ${PORT}`);
-  server = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, FORCE_COLOR: '0', TC_NO_HMR: '1' },
-  });
-  let serverLog = '';
-  server.stdout.on('data', (d) => { serverLog += d.toString(); });
-  server.stderr.on('data', (d) => { serverLog += d.toString(); });
-  if (!(await waitForServer(base, 60000))) {
-    console.error('vite failed to start:\n' + serverLog.slice(-4000));
-    throw new Error('dev server did not come up');
-  }
-  return base;
+async function startServer(slot = null) {
+  const r = await startVite({ port: PORT, root: ROOT, label: 'shoot', slot });
+  console.log(r.started ? `• started vite on ${PORT}` : `• reusing dev server already on ${PORT}`);
+  server = r.started ? r : null;
+  return r.base;
 }
 
 function stopServer() {
   if (server && !KEEP_SERVER) {
-    server.kill('SIGTERM');
+    void server.close();
     server = null;
   }
 }
@@ -1543,10 +1540,9 @@ let browser = null;
 let overlayHidden = 'n/a';
 
 try {
-  const base = await startServer();
-  await mkdir(OUT, { recursive: true });
-
-  browser = await chromium.launch({
+  // The slot before the server: a run that has to queue should not queue holding a port.
+  browser = await launchBrowser({
+    label: 'shoot', port: PORT, root: ROOT,
     args: [
       // Software rasterisation still gives a real GL context; SwiftShader is
       // deterministic across machines, which matters for A/B comparison.
@@ -1559,6 +1555,8 @@ try {
       '--hide-scrollbars',
     ],
   });
+  const base = await startServer(browser.budgetSlot);
+  await mkdir(OUT, { recursive: true });
 
   /*
    * Device pixel ratio, and the reason this is a flag rather than a constant.

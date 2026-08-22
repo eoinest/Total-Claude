@@ -19,7 +19,7 @@
 
 import path from 'node:path';
 import process from 'node:process';
-import { ownDevServer } from './devtree.mjs';
+import { startVite } from './browser-budget.mjs';
 import { stopClockOnReady } from './simclock.mjs';
 
 export const waitForServer = async (url, ms) => {
@@ -43,32 +43,40 @@ export const waitForServer = async (url, ms) => {
  * the shared checkout, so vite's default `node_modules/.vite` is one dependency cache being
  * written by as many vite processes as there are agents running a gate.
  */
-export async function ensureServer({ port, root, cacheDir }) {
+export async function ensureServer({ port, root, cacheDir, label = 'menu-boot', slot = null }) {
   /*
-   * Delegated to `tools/lib/devtree.mjs`, and the delegation is the point rather than tidiness.
+   * ## 22 Aug 2026 — this now goes through `startVite` in `tools/lib/browser-budget.mjs`
    *
-   * This used to be "if something answers on the port, use it", which is not the same claim as
-   * "this tree is on the port". Eighty git worktrees in this checkout default to the same
-   * handful of ports, so the playability rig and `qa-replay` could both boot another agent's
-   * branch and report on it as this one's. `ownDevServer` asks the listener for every `.ts`
-   * under `src/` through Vite's `?raw` route and exits 2 naming the differences.
+   * The body used to be `spawn('npx', ['vite', …])` plus `unref` plus an exit hook, and the
+   * hook was the best cleanup in the repository. It still leaked, and the reason is in the
+   * first word: **`server` was npx, not Vite.** `npx` execs a shell which execs
+   * `node …/vite.js`, so `server.kill('SIGTERM')` signalled a wrapper two processes above the
+   * one holding the port. You can watch it happen — `ps` on this machine shows the pair,
+   * `npm exec vite --port 5934` and `node …/.bin/vite --port 5934`, every time.
    *
-   * It also spawns Vite's own binary rather than `npx vite`. `npx` is a wrapper *process*, so
-   * the `SIGTERM` below reached the wrapper and left the server holding the port — which is
-   * where the orphan sweeps came from, and the reason the exit hook this function already had
-   * was not enough.
+   * Nineteen dev servers were swept off this box in one morning, several more than a day old.
+   * And an exit hook does nothing at all when the harness is SIGKILLed or the machine falls
+   * over, which is what happened at load 160.
    *
-   * The `{ base, server }` shape is unchanged, including `server: null` on a reused server, so
-   * every caller's `if (server) server.kill('SIGTERM')` still reads correctly.
+   * `startVite` spawns `tools/lib/vite-runner.mjs` under `node` directly — the PID the caller
+   * holds is the PID holding the port — in its own process group, and the runner polls its
+   * parent and exits within two seconds of losing it. It also refuses to reuse a listener that
+   * turns out to be serving a *different worktree*, which this function did silently and which
+   * is how a probe measures another branch and reports it as yours.
+   *
+   * The return shape is unchanged: `{ base, server }`, `server` null when a server was reused,
+   * so `if (server) server.kill('SIGTERM')` at the end of two dozen callers still works. There
+   * is now also `close()`, which is safe to call in either case and is what new code should use.
    */
-  const { base, spawned, kill } = await ownDevServer({
-    root,
+  const r = await startVite({
     port,
+    root,
     cacheDir: cacheDir ?? process.env.TC_VITE_CACHE_DIR
       ?? path.join('/tmp', `tc-vite-${path.basename(root)}`),
-    label: 'menu-boot',
+    label,
+    slot,
   });
-  return { base, server: spawned ? { kill: () => kill() } : null };
+  return { base: r.base, server: r.server, started: r.started, close: r.close };
 }
 
 /**

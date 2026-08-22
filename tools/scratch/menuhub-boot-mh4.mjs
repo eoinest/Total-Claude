@@ -10,7 +10,7 @@
  * `?harness=1` must still reach a running battle with no menu built at all.
  */
 import { chromium } from 'playwright';
-import { spawnVite } from '../lib/devtree.mjs';
+import { spawn } from 'node:child_process';
 
 const PORT = Number(process.argv.find((a) => a.startsWith('--port='))?.slice(7) ?? 5399);
 const base = `http://127.0.0.1:${PORT}`;
@@ -27,7 +27,7 @@ const up = async (ms) => {
 let server = null;
 if (!(await up(1200))) {
   console.log(`• starting vite on ${PORT}`);
-  server = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'],
+  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'],
     { cwd: process.cwd(), stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } });
   if (!(await up(60000))) { console.error('vite did not start'); process.exit(1); }
 }

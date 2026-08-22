@@ -141,13 +141,15 @@ it is.
 > **The gate's port hazard is closed and it was real.** `qa-determinism.mjs` reused any listener
 > that answered on its port, which in a checkout with eighty worktrees on a handful of default
 > ports means it could measure another agent's branch against this tree's baseline and report the
-> verdict confidently. `tools/lib/devtree.mjs` now proves the listener serves this tree — every
-> `.ts` under `src/`, through Vite's `?raw` route, about 200 ms — and exits 2 naming the differing
-> files if it does not. **It caught a live collision on its first outing**: another agent's
-> worktree on port 5901, ten files different. The same module also found the orphan mechanism
-> behind nineteen stranded Vite processes and a load average of 72 — harnesses spawned `npx vite`,
-> and SIGTERM kills the `npx` wrapper while the server keeps the port. All 79 spawn sites now
-> spawn Vite itself, in its own process group, with an `exit` hook.
+> verdict confidently. It caught a live collision the day it was investigated: another agent's
+> worktree on port 5901, ten files different. Both determinism tools now go through `startVite`
+> in `tools/lib/browser-budget.mjs`, which asks the listener which worktree it is serving
+> (`/__tc/tree`) and refuses a foreign one; `qa-xengine.mjs` sets **`TC_STRICT_TREE=1`**, which
+> also refuses a listener too old to answer at all. The same investigation found the orphan
+> mechanism behind nineteen stranded Vite processes and a load average of 72 — harnesses spawned
+> `npx vite`, and SIGTERM kills the `npx` wrapper while the server keeps the port.
+> `tools/lib/vite-runner.mjs` is Vite in its own process, in its own process group, polling its
+> parent, and it is what `startVite` spawns.
 
 ### 1.1 Everyone who stopped at t+200 said IDENTICAL. Everyone who went past it said DIVERGENT
 
@@ -523,9 +525,17 @@ Worth stating, because it is the reason any of this is tractable:
   "deterministic save-scumming and replays". **[V]**
 - **Per-unit randomness is keyed on id, not on draw order.** `this.rng.fork("unit" + u.id)`
   at `BattleSystem.ts:1005`. **[V]**
-- **`maxSoldiers` is frozen at Engine construction** and excluded from `AdaptiveQuality`'s patch
+- ~~**`maxSoldiers` is frozen at Engine construction** and excluded from `AdaptiveQuality`'s patch
   list, so a mid-battle quality change cannot resize the army. Each peer can run its own render
-  tier. **[M×2, V]**
+  tier.~~ **[M×2, V]** **Half right, and the wrong half was the conclusion.** The freeze was
+  real and it prevented exactly one failure: a settings-menu press resizing an army already
+  deployed. It said nothing about two peers *booting* at different tiers, which is the case that
+  matters here, and "each peer can run its own render tier" was false for as long as the tier
+  chose the army — see §1.10 and §7.7bis. It is true now, and for a different reason: the field
+  is gone. `SOLDIER_POOL_CAPACITY` (`src/sim/types.ts`) is one number at every tier, so
+  `QualitySettings = RenderQuality` with no intersection, there is no simulation half to freeze,
+  and the invariant is enforced by `tools/qa-determinism.mjs`'s cross-tier arm rather than by a
+  private field and two re-assertions. Branch `e/core/quality-sim-split`.
 - **Deployment already pauses the clock** (`deployment.ts:187`) and the zones are non-overlapping
   by construction. **[V]**
 - **One input path is already correct.** `Siege.requestMachineOrder` queues to `machineOrders`
@@ -562,11 +572,31 @@ Worth stating, because it is the reason any of this is tractable:
 - **`Time` sheds sim time.** `maxStepsPerFrame = 5` plus a 0.25 s `frameDt` clamp; measured, five
   300 ms stalls over 11.2 s of wall clock permanently lose 9 ticks. **[M: orders, V on source]**
   `time.tick` is a per-machine quantity and cannot serve as a shared clock unchanged.
-- **The quality tier silently changes the army.** `fittedUnitScale` fits the army to
-  `maxSoldiers`: the field battle boots 8,632 men at `high` and 1,515 at `low`. **[M×2]** `high`
-  and `ultra` are bit-identical — `Math.min` binds on the asked scale long before the pool cap —
-  so ultra buys 2,000 pool slots and not one more soldier. Any pairing must pin the *effective*
-  `unitSizeScale`, not the tier.
+- ~~**The quality tier silently changes the army.**~~ **Fixed, `e/core/quality-sim-split`.**
+  `fittedUnitScale` fitted the army to `maxSoldiers`, so the field battle booted 8,632 men at
+  `high` and 1,515 at `low` **[M×2]**, and the Campus Martius assault at one seed was 3,074 men
+  at `ultra` against 3,009 at `medium` — with the ram crew dead 16 m short of the door at one
+  tier and the Porta Flaminia open by t+240 at the other. **[M: video]** The owner's ruling:
+  graphics settings must not change the outcome of a battle. The soldier pool is now
+  `SOLDIER_POOL_CAPACITY = 12000`, one number at every tier, and `SimQuality` no longer exists.
+  Measured across the change: `low` and `medium` grow to the `high`/`ultra` battle on all three
+  pinned battles, `high` and `ultra` do not move at all, and **all 21 pinned checkpoints are
+  bit-identical** — because `high` and `ultra` were already bit-identical (`Math.min` binds on
+  the asked unit size long before the pool cap did) and the new ceiling is the old `ultra` one.
+  Headcounts before → after, by tier:
+
+  | battle | low | medium | high | ultra |
+  |---|---|---|---|---|
+  | field battle | 1,515 → 8,632 | 3,012 → 8,632 | 8,632 → 8,632 | 8,632 → 8,632 |
+  | Rome assault | 1,533 → 3,074 | 3,009 → 3,074 | 3,074 → 3,074 | 3,074 → 3,074 |
+  | Carthage assault | 1,538 → 3,440 | 3,014 → 3,440 | 3,440 → 3,440 | 3,440 → 3,440 |
+
+  A pairing still cannot pin the *tier* name and call it done — it must exchange the effective
+  `unitSizeScale` and `pool.count`, because the **build** can still move them (a roster strength
+  edited, a `UNIT_SIZES` multiplier retuned) and because the battle-size row of the menu is a
+  real and deliberate `BattleConfig` choice. What has changed is that the tier is no longer one
+  of the things that can move them, so a lobby handshake is now about *builds and configs*
+  rather than about hardware.
 - **The gate's hash lives in the harness, not the product.** `window.__poolHash` is a string
   injected by `tools/qa-determinism.mjs`. **[V]** No FNV constants appear anywhere in `src/`.
   This is the project's recurring failure mode: the capability is in the instrument.
@@ -733,6 +763,39 @@ Nothing in this stage is speculative and none of it is wasted if multiplayer is 
 5. **Add a cross-engine arm.** `firefox` and `webkit` are already in the Playwright cache and the
    harness already launches Playwright. Roughly twenty lines. It will go red on the Carthage
    assault immediately, which is the point.
+6. **Add a cross-tier arm.** *Not in the original plan, and it should have been ahead of item 5.*
+   **Built, `e/core/quality-sim-split`.** The same battle at `low`, `medium`, `high` and `ultra`,
+   asserting the pool hash, `uf64`, `uctl`, headcount and unit count are identical at every
+   checkpoint. On by default in `tools/qa-determinism.mjs`; `--tiers=off` skips it and says so.
+
+   > **Why this belongs in front of the cross-engine arm.** Item 5 exists because two players on
+   > two browsers compute `Math.sin` differently. This one exists because two players pick
+   > different *tiers*, and until this pass the tier chose the size of the armies — so a match
+   > desynced **at t+0, on army size, with both engines computing identically**, before a single
+   > `Math` call had the chance to disagree. Note the mechanism precisely: there is no hardware
+   > auto-detection in this game, the default is `ultra` for everybody, so the divergent tier
+   > comes from a stored preference or from somebody on a weak machine turning it down — which is
+   > exactly the player most likely to be invited into a match rather than hosting one. A
+   > cross-engine arm run at one tier per machine would have reported that as a libm difference
+   > and sent the next pass to Stage 3, which is priced at three to five weeks. It is also far
+   > cheaper than item 5: one browser, three extra page loads, and the coupling is visible at t+0
+   > before a tick has run.
+   >
+   > It is built so it cannot pass vacuously, which was the whole risk. Three of its four
+   > assertions exist only to make the fourth mean something: the page must report the tier it was
+   > asked for (read off `engine.quality.tier`, not assumed from the URL); at least one render
+   > field must actually differ from the gate tier's, so four identically-configured runs agreeing
+   > on a hash is not mistaken for tier independence; and `pool.capacity` and the effective
+   > `unitSizeScale` are compared separately from the hashes, which is what caught `ultra`
+   > carrying a 12,000-slot pool against `high`'s 10,000 while every hash matched. Only then does
+   > the hash equality count for anything.
+   >
+   > While in the file: `--battle` is now **validated** rather than merely documented as a trap.
+   > `--battle=rome` appended a meaningless `&rome`, loaded the default field battle, looked up a
+   > baseline key nobody had recorded, printed "no baseline for this battle" and exited 0 — a
+   > passing run that asserted nothing, with the headcount as the only tell. Every segment must
+   > now be `key=value` with a key `src/` actually reads, or the run exits 2 with the three real
+   > invocations printed.
 
    > **Built, 21 August 2026 — `tools/qa-xengine.mjs`, and it is not twenty lines.** It went red
    > on the Carthage assault immediately, exactly as promised, and then the sweep in item 1 turned
@@ -874,11 +937,25 @@ to cross-engine play and should be priced before anything realtime is started.
 > decoded and the record's answer overwrites it; and a token claiming an army this run cannot
 > field is refused by name. Two arms of the gate check exactly that.
 >
+> **[Annotated by `e/core/quality-sim-split`.** Every sentence of the paragraph above was true
+> when written and its *scope finding* was independently re-verified — nothing on the settings
+> path except `maxSoldiers` reached the simulation, plus two near-misses that look like leaks and
+> are not: `Ragdoll.claimSlot` reads the camera inside a fixed step but is write-isolated from the
+> pool, and `roughDrag` comes from `ObstacleField`, not from `grassDensity`. What has changed is
+> the one field. `SimQuality` is deleted, `QualitySettings = RenderQuality`, and the pool is
+> `SOLDIER_POOL_CAPACITY = 12000` at every tier, so the tier reaches the simulation through
+> **no** field. The record still carries `quality`, `unitScale` and `count0`; the tier is now
+> provenance and the `unitScale` refusal fires only on a *build* difference. One thing this
+> paragraph did not find, and the cross-tier arm did: `pool.capacity` was a second leak, because
+> `DeploymentSystem.headroom` gates every add during the deployment phase on
+> `pool.capacity - pool.count`.**]**
+>
 > **What Stage 1 does *not* fix, and inherits.** `PLAYER_FACTION` is still a compile-time
 > constant, so every record commands Rome. Pause and speed are still raw writes to the clock —
 > harmless here, because a record is driven by tick index and a pause cannot displace an order,
-> but still true. And §7.5 stands unchanged: a record made at `high` is refused at `low` rather
-> than silently fitted to a smaller army, which is the right behaviour and still a bad outcome.
+> but still true. ~~And §7.5 stands unchanged: a record made at `high` is refused at `low` rather
+> than silently fitted to a smaller army, which is the right behaviour and still a bad outcome.~~
+> §7.5 is closed: a record plays at any tier, because no tier changes the army.
 
 
 1. **Add provenance to `orderIssued`** — a `source: 'local' | 'ai' | 'deploy'` field, set at all
@@ -1251,29 +1328,51 @@ six-month-old challenge plays a six-month-old game and any ranking resets whenev
 — which, judging by this file's own history, is often. This weakens the "Stage 1 ships value
 regardless" argument, though not fatally: watching your *own* battle back is unaffected.
 
-**7.5 A laptop is excluded from the thing being shared.** Until army size is separated from
-render tier in the menu's model, a record made at `high` cannot be watched at `low` without
-becoming a different battle — so the people most likely to be watching rather than playing are
-the ones locked out. An explicit refusal is the right behaviour and is still a bad outcome.
+**7.5 A laptop is excluded from the thing being shared. — CLOSED, `e/core/quality-sim-split`.**
+The risk was that until army size was separated from render tier in the menu's model, a record
+made at `high` could not be watched at `low` without becoming a different battle, so the people
+most likely to be watching rather than playing were the ones locked out. Army size is now
+separated from render tier: the soldier pool is `SOLDIER_POOL_CAPACITY`, the tier buys resolution,
+shadows, post-effects and LOD distance and nothing else, and a record plays identically at any
+tier. `ReplaySystem.play`'s refusal is kept and is now unreachable by a tier mismatch — it fires
+only when the *build* fits a different scale for the same config, which is the case where a
+silent substitution would be worst. `qa-replay.mjs`'s `tier-in-record` arm asserts the new
+behaviour and its `tier-refused` arm still proves the refusal fires, using a tampered token.
+
+What is *not* closed: a laptop that cannot render 8,632 men now renders 8,632 men badly rather
+than 1,515 men smoothly. That is the correct trade — a smaller battle is a battle-size decision
+and belongs to the player, not to a shadow-quality dropdown — and the lever for it is the menu's
+battle-size row, which is a `BattleConfig` field, travels in the `?battle=` token and is carried
+by every record. It is a worse *default* on weak hardware than the accident it replaces, and that
+is a defaults question for the owner rather than something to fix by putting the coupling back.
 
 **7.6 Stage 3 may not be worth its own price.** Vendoring transcendentals moves every tuned
 number in the game and might double the tick cost. It is the only road to cross-engine play, and
 if the performance measurement comes back badly, the honest answer is that this game does not get
 cross-browser multiplayer, and Stages 0–2 are what it gets instead.
 
-**7.7bis The tier is a second portability firewall, and it is not made of floating point.**
-§7.1 frames the pairing risk as libm: Chrome-on-Alice against Chrome-on-Bob, same version,
-possibly different CPUs. There is a larger and much cruder breach in front of it. The graphics
-tier fixes `quality.maxSoldiers`, `fittedUnitScale` fits the army to it, and the field battle
-therefore boots 8,632 men at `high` and 1,515 at `low` **[M×2]** — and the Campus Martius
-assault at one seed is 3,074 men at ultra against 3,009 at medium, with the ram crew dead 16 m
-short of the gate at one tier and the gate open by t+240 at the other. **[M: video]** Two
-players who accept their own defaults on different hardware are simulating different armies
-before a single `Math` call has had the chance to disagree, and no amount of Stage 3 fixes it.
-Any realtime pairing must exchange and pin the **effective `unitSizeScale` and `pool.count`**,
-not the tier name — §1.10 says the same thing about `high` and `ultra` being identical, which
-is true and is not the general case. The replay record does this already and refuses a mismatch
-by name; a lobby would have to do the same in its handshake.
+**7.7bis The tier was a second portability firewall, and it was not made of floating point. —
+CLOSED, `e/core/quality-sim-split`.** §7.1 frames the pairing risk as libm: Chrome-on-Alice
+against Chrome-on-Bob, same version, possibly different CPUs. There was a larger and much cruder
+breach in front of it. The graphics tier fixed `quality.maxSoldiers`, `fittedUnitScale` fitted the
+army to it, and the field battle therefore booted 8,632 men at `high` and 1,515 at `low`
+**[M×2]** — and the Campus Martius assault at one seed was 3,074 men at ultra against 3,009 at
+medium, with the ram crew dead 16 m short of the gate at one tier and the gate open by t+240 at
+the other. **[M: video]** Two players who accepted their own defaults on different hardware were
+simulating different armies before a single `Math` call had the chance to disagree, and no amount
+of Stage 3 would have fixed it.
+
+The owner ruled on it — *"definitely graphics settings should not change outcome of battle"* — and
+it is fixed at the source rather than papered over in a handshake: `SOLDIER_POOL_CAPACITY = 12000`
+in `src/sim/types.ts`, one number at every tier on every machine, `SimQuality` deleted,
+`QualitySettings = RenderQuality`. `low` and `medium` now field the `high`/`ultra` battle; `high`
+and `ultra` did not move, and all 21 pinned baseline checkpoints are bit-identical across the
+change. The invariant is held by a gate arm rather than by this paragraph: Stage 0 item 6.
+
+Two things survive the fix and a lobby still owes them a handshake. A pairing must exchange the
+**effective `unitSizeScale` and `pool.count`** rather than the tier name, because the *build* and
+the *battle-size config* can still move them even though the tier cannot. And §7.1's libm risk is
+untouched — it was always the smaller of the two and it is now the only one left.
 
 **7.7 The social modes are a population bet with no evidence behind them.** Stage 1 has real
 single-player value and I have leaned on that deliberately. Stages 2 and 4 are worth nothing at

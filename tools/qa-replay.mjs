@@ -51,12 +51,12 @@
  * 5245, and never 5173, which belongs to whoever is playing the game.
  */
 
-import { chromium } from 'playwright';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { bootThroughMenu, ensureServer } from './lib/menu-boot.mjs';
+import { launchBrowser } from './lib/browser-budget.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
@@ -121,14 +121,24 @@ const wanted = (name) => !ONLY || ONLY.split(',').includes(name);
 // Server and browser
 // ---------------------------------------------------------------------------
 
-const { base, server } = await ensureServer({ port: PORT, root: ROOT });
-console.log(`server ${base}${server ? ' (started here)' : ' (already up)'}`);
-if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
-
-const browser = await chromium.launch({
+/*
+ * The browser first, then the server — 22 Aug 2026, `tools/lib/browser-budget.mjs`.
+ *
+ * `launchBrowser` takes one of a small number of machine-wide slots and queues if they are all
+ * held, which is the whole point: every agent runs this in its own worktree and no copy of it
+ * could see any other. Taking the slot *before* `ensureServer` means a run that has to wait in
+ * the queue is not sitting on a dev server and a port while it waits.
+ */
+const browser = await launchBrowser({
+  label: 'qa-replay', port: PORT, root: ROOT,
   args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
     '--ignore-gpu-blocklist', '--hide-scrollbars'],
 });
+const { base, server, close: closeServer } = await ensureServer({
+  port: PORT, root: ROOT, label: 'qa-replay', slot: browser.budgetSlot,
+});
+console.log(`server ${base}${server ? ' (started here)' : ' (already up)'}`);
+if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
 
 const settle = (page, ms = 320) => page.waitForTimeout(ms);
 const shot = async (page, name) => {
@@ -624,26 +634,34 @@ if (wanted('coarse')) {
 }
 
 if (wanted('tier')) {
-  console.log('\n=== the graphics tier is a simulation input ===');
+  console.log('\n=== the graphics tier is not a simulation input ===');
   /*
-   * Measured elsewhere, on the Campus Martius assault at one seed: **ultra fields 3,074 men
-   * and medium 3,009**, the ram crew dies 16 m short of the door at ultra and lands 26 blows
-   * at medium, and the Porta Flaminia opens at one tier and never at the other. Same map,
-   * same scenario, same seed. The chain is one field — `quality.maxSoldiers` sizes the pool,
-   * `fittedUnitScale` fits the army to it, `scenario.ts` writes `battle.unitSizeScale`. A
-   * "graphics setting" is a simulation input.
+   * It was one, and this arm's name is the history. Measured on the Campus Martius assault at
+   * one seed: **ultra fielded 3,074 men and medium 3,009**, the ram crew died 16 m short of the
+   * door at ultra and landed 26 blows at medium, and the Porta Flaminia opened at one tier and
+   * never at the other. Same map, same scenario, same seed. The chain was one field —
+   * `quality.maxSoldiers` sized the pool, `fittedUnitScale` fitted the army to it, `scenario.ts`
+   * wrote `battle.unitSizeScale` — and the owner ruled that a graphics setting must not change
+   * the outcome of a battle. The pool is `SOLDIER_POOL_CAPACITY` now, one number at every tier.
    *
-   * So a record has to carry the tier and a replay has to honour it, and both halves are
-   * checked here rather than assumed. The second one uses a tampered token instead of a real
-   * tier change, because whether `low` actually clamps *this* army is arithmetic that could
-   * change; whether the refusal fires when the recorded army differs from the fitted one
-   * must not depend on that.
+   * So the first check has changed meaning and is worth more than it was. It used to say "the
+   * record's tier beats the URL's, so a replay cannot be watched at another army size", which
+   * was true and was a workaround. It now says the stronger thing: `?quality=low` over a record
+   * made at any tier replays the identical battle, because there is no army size to watch it at.
+   * A regression that reintroduced the coupling would fail it here as well as in
+   * `qa-determinism.mjs`'s cross-tier arm, which is the instrument that owns the ruling.
+   *
+   * The second check is untouched and is the one that keeps this arm honest. It tampers with the
+   * token's `us` field rather than changing a tier, because whether some tier clamps *this* army
+   * is arithmetic that can change; whether the refusal fires when the recorded army differs from
+   * the fitted one must not depend on that. It is now the only way the refusal can fire at all,
+   * and it still fires.
    */
   const forced = await playback(R.token, { stepMs: 1000 / 60, ticks: rec.ticks, quality: 'low' });
   const d = markDiff(rec.marks, forced.rec.marks);
   measured.tier = { urlTier: 'low', recordedTier: rec.quality, count0: forced.rec.count0, diff: d };
   record('tier-in-record', d === null && forced.rec.count0 === rec.count0,
-    "the record's tier beats the URL's, so a replay cannot be watched at another army size",
+    'a record replays identically at another graphics tier — the tier is not an army size',
     `?quality=low over a record made at '${rec.quality}': `
       + `${forced.rec.count0} men against ${rec.count0} recorded, `
       + (d === null ? 'every checkpoint identical' : `diverged at ${d.at}: ${d.why}`));
@@ -832,7 +850,7 @@ if (wanted('command')) {
 // ---------------------------------------------------------------------------
 
 await browser.close();
-if (server) server.kill('SIGTERM');
+await closeServer();
 
 console.log(`\nrecord size: ${measured.record.gzipBytes} B gzipped `
   + `(${measured.record.rawJsonBytes} B raw, ${measured.record.tokenChars}-char token) for `

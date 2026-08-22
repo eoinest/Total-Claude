@@ -1,8 +1,8 @@
 // Scratch: park the camera on a standard and photograph it big, for the round-2 cloth work.
 import { chromium } from 'playwright';
+import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { spawnVite } from '../lib/devtree.mjs';
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const PORT = Number(process.argv.find((a) => a.startsWith('--port='))?.slice(7) ?? 5417);
 const HOUR = Number(process.argv.find((a) => a.startsWith('--hour='))?.slice(7) ?? 15.5);
@@ -13,7 +13,7 @@ const wait = async (u, ms) => { const d = Date.now() + ms; while (Date.now() < d
 const base = `http://127.0.0.1:${PORT}`;
 let srv = null;
 if (!(await wait(base, 1000))) {
-  srv = spawnVite(['--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], { cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } });
+  srv = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], { cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' } });
   if (!(await wait(base, 90000))) throw new Error('no vite');
 }
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=metal', '--ignore-gpu-blocklist', '--hide-scrollbars'] });

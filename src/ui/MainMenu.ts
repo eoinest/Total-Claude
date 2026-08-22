@@ -49,9 +49,8 @@ import {
   storeConfig,
   summarise, unitCount, unitSizePreset,
 } from '../sim/battleConfig';
-import { QUALITY_PRESETS } from '../core/Engine';
 import { MAPS, getMap, isMapId, setActiveMap, type MapId } from '../maps';
-import { Faction, setOpposingFaction, type UnitClass } from '../sim/types';
+import { Faction, SOLDIER_POOL_CAPACITY, setOpposingFaction, type UnitClass } from '../sim/types';
 
 /** CSS class suffix per faction, so `menu.css` can theme each army panel. */
 const FACTION_CLASS: Record<Faction, string> = {
@@ -963,7 +962,6 @@ export class MainMenu {
       ? 'Multiplies every unit’s establishment'
       : 'Not used in a storm — the wall holds what it holds');
 
-    const pool = QUALITY_PRESETS[this.cfg.quality].maxSoldiers;
     const tod = this.q<HTMLInputElement>('.tod');
     tod.value = String(this.cfg.timeOfDay);
     setText(this.q('.tod-val'), `${String(this.cfg.timeOfDay).padStart(2, '0')}:00`);
@@ -972,7 +970,7 @@ export class MainMenu {
     let grand = 0;
     for (const f of belligerents(this.cfg)) {
       const comp = compositionFor(this.cfg, f);
-      const s = summarise(this.cfg, f, pool);
+      const s = summarise(this.cfg, f);
       grand += s.men;
       for (const id of rosterFor(f, sc, this.cfg.map)) {
         const cell = this.countCells.get(`${f}:${id}`);
@@ -1000,20 +998,29 @@ export class MainMenu {
         : cur >= MAX_PER_TYPE || total >= MAX_UNITS_PER_SIDE;
     }
 
-    // Two independent notes, either or both of which can apply: the pool forced a smaller
-    // battle than asked for, and/or the battle is bigger than the frame budget was measured
-    // to survive. They are different problems with different answers, so they are not merged.
+    // Two independent notes, either or both of which can apply: the battle is larger than the
+    // engine will hold, and/or it is bigger than the frame budget was measured to survive. They
+    // are different problems with different answers, so they are not merged.
+    //
+    // The first note used to blame the Graphics row — "Battle size limited by the low detail
+    // tier. Raise Graphics" — because the pool was `QUALITY_PRESETS[tier].maxSoldiers` and that
+    // advice was true. It is now false and the pool is one number everywhere, so the note names
+    // the engine's own ceiling and points at the two rows that can actually answer it: battle
+    // size, and how many units each side fields.
     const notes: string[] = [];
-    if (isScaleClamped(this.cfg, pool)) {
+    if (isScaleClamped(this.cfg)) {
       const asked = unitSizePreset(this.cfg.unitSize);
-      const got = fittedUnitScale(this.cfg, pool);
+      const got = fittedUnitScale(this.cfg);
       const wanted = Math.round(asked.scale * baseStrength(this.cfg));
       notes.push(`<p class="note-clamp">
-        <b>Battle size limited by the ${this.cfg.quality} detail tier.</b>
-        ${asked.label} wants ${fmt(wanted)} men but the pool holds ${fmt(pool)}, so every unit
-        is scaled to &times;${got.toFixed(2)} instead of &times;${asked.scale.toFixed(2)} —
-        ${fmt(grand)} men, all units still present. Raise Graphics, or field fewer units, for
-        the size you asked for.</p>`);
+        <b>Battle size limited by the engine’s ${fmt(SOLDIER_POOL_CAPACITY)}-place soldier
+        pool.</b> ${asked.label} wants ${fmt(wanted)} men and the pool fits about
+        ${fmt(Math.floor(SOLDIER_POOL_CAPACITY * 0.94))} once the artillery crews are allowed
+        for, so every unit is scaled to &times;${got.toFixed(2)} instead of
+        &times;${asked.scale.toFixed(2)} — ${fmt(grand)} men, all units still present. Field
+        fewer units, or a smaller battle size, for the size you asked for. The Graphics row does
+        not affect this: the detail tier changes how the battle is drawn and never how large it
+        is.</p>`);
     }
     if (grand > PERF_VALIDATED_MEN) {
       notes.push(`<p class="note-perf">
