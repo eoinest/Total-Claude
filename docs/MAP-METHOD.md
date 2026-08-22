@@ -125,6 +125,18 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    - *Print the sample size and the spread next to every figure derived from them,* so the next
      reader can see the collapse without re-deriving it.
 
+   **And the companion case, which is the same failure in the time axis: a checkpoint must lie
+   inside the window in which the thing it measures exists, and that window is a property of the
+   tree and the map, not of the metric.** Three faces, all measured here: sampling *after* the
+   window closes and noticing (t+400 against a field battle whose median verdict is t+367 — only
+   2 of 8 seeds still being fought); sampling after it closes and *not* noticing (t+200 against a
+   siege that ends at **t+56**, which produced a true finding about one tree and a false
+   generalisation to another); and sampling *coarser* than the window (a 10 s grid over a ~3 s
+   spread, reported as **"sd 0.15 s, a range of 63 to 63 seconds"** when the real answer was
+   55–58 s — the statistic lost its *resolution*, not its sample, and returned a confident number
+   anyway). Print the window beside the checkpoint: *"still being fought in 2 of 8 seeds"* is the
+   sentence that stops all three.
+
    And the generalisation that reaches past instruments into the product: **a derived number must
    be derived once.** `src/ui/siege.ts` exists because three panels each deciding for itself what
    "the breach" meant came to disagree; the result card prints *"The wall was carried"* over a

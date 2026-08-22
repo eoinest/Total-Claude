@@ -68,7 +68,7 @@ for (const seed of SEEDS) {
     const curve = [], hashes = {};
     let contactAt = null, firstBreakUs = null, firstBreakThem = null;
     let lastSign = 0, flips = 0, maxLead = 0, minGapAfterContact = 1;
-    let verdict = null, tEnd = null, reason = null, victor = null;
+    let verdict = null, tEnd = null, reason = null, victor = null, seenAt = null;
     let markI = 0;
 
     for (let t = 0; t <= UNTIL; t += STEP) {
@@ -105,9 +105,30 @@ for (const seed of SEEDS) {
       if (sign !== 0) lastSign = sign;
 
       const e = await ended(page);
-      if (e) { verdict = e.verdict; tEnd = s.t; reason = s.res?.reason; victor = s.res?.victor; break; }
+      if (e) {
+        verdict = e.verdict; reason = s.res?.reason; victor = s.res?.victor;
+        /*
+         * The arbiter's own `at`, not the sample clock.
+         *
+         * This recorded `tEnd = s.t` — the time of the sample on which the result panel was
+         * first *seen* — and the loop samples every `STEP` seconds. So every verdict was
+         * reported up to STEP late, and worse, twelve seeds that truly finish at 55-58 s all
+         * landed in one 10 s bucket and came out as "t+62.85, sd 0.15 s". I quoted that sd as
+         * evidence the battle was identical on every seed. **It was the sampling grid, not the
+         * battle.** The true spread is about 3 s, which is still extraordinary and is not what
+         * I said.
+         *
+         * MAP-METHOD rule 12 in a third costume: the statistic did not lose its sample or its
+         * spread, it lost its *resolution*, and returned a confident number anyway. A before/
+         * after comparison survives it because both arms share the grid; an absolute claim does
+         * not, and the absolute claim is the one I put in front of people.
+         */
+        tEnd = s.res?.at != null ? Math.round(s.res.at * 100) / 100 : s.t;
+        seenAt = s.t;
+        break;
+      }
     }
-    const row = { seed, verdict, reason, victor, at: tEnd, contactAt, firstBreakUs, firstBreakThem,
+    const row = { seed, verdict, reason, victor, at: tEnd, seenAt, contactAt, firstBreakUs, firstBreakThem,
       contestWindow: tEnd !== null && contactAt !== null ? +(tEnd - contactAt).toFixed(1) : null,
       flips, maxLead: +maxLead.toFixed(3), minGapAfterContact: +minGapAfterContact.toFixed(3),
       n0, curve, hashes };

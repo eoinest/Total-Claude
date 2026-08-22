@@ -539,3 +539,79 @@ them — see MAP-METHOD rule 12; the percentages are the honest reading there, n
 serves — the Rome assault is decided at **t+62.9 on 12 of 12 seeds with sd 0.15 s.** The range is
 63 to 63 seconds. The integration tree doubles it to t+116.8, which is the right direction and
 still catastrophic.
+
+---
+
+## CORRECTION to P0-2/P0-3 — "both cities fall to men who are running away" was one city, and I sampled outside the window
+
+Accepted, and worth scoping precisely rather than withdrawing wholesale, because two different
+things are tangled in it.
+
+**What I measured, and it stands.** Integration tree `940383a`, Rome, at **t+200.9**: of the men
+in the deciding census, **every one** belonged to a unit at `order=5`, `morale=0`, rout timers
+60–78 s, standing 154–201 m inside the city. That is a true statement about that tree.
+
+**What was wrong.** I let the headline generalise to *both cities* without checking that the
+window I sampled in existed on the tree that ships. **`main` ends that battle at t+56** — before
+anybody has broken — so there are no routers to find, and the re-measurement finds **0 routing
+men of 132** in the deciding census, identical before and after the fix.
+
+**What survives.** Carthage, where the finding holds and the fix moves it: **t+130.8 → t+134.1**,
+21 → 24 men excluded. And Rome on the integration tree, where the battle lasts long enough for the
+escalade to break.
+
+**The corrected sentence, which is the one to carry forward:** *Rome's siege on `main` is decided
+at t+56, before anyone has broken, and routers are not the cause. Rome's siege on the integration
+tree lasts long enough to be decided by routers. Carthage is decided by a mix of both and moves
+3.3 s when they are excluded.* Any explanation of `main`'s t+56 has to look elsewhere — and the
+same report says where it cannot look: gate never struck, `stormHolding` 0 in every sample,
+decided by condition B.
+
+### The rule this is an instance of, and it has three faces
+
+**A checkpoint must lie inside the window in which the thing it measures exists, and that window
+is a property of the tree and the map, not of the metric.** All three faces below returned a
+confident number and none of them raised anything, which puts them in MAP-METHOD rule 12's
+family.
+
+1. **Sampling after the window closes, and noticing.** t+400 against a field battle whose median
+   verdict is t+367: only 2 of 8 seeds are still being fought there. I caught this one and
+   declined to grade it, and it is why the −18.2 % headline needs a caveat.
+2. **Sampling after the window closes, and not noticing.** t+200.9 against a Rome siege that ends
+   at t+56 on `main`. Same shape, opposite outcome: it produced a *true* finding about a tree where
+   the window existed and a *false* generalisation to one where it did not. The tell I should have
+   looked for was already in my own data — my `main` baseline says that battle is over at t+63.
+3. **Sampling coarser than the window.** Mine, and it is in a number I made a headline of. See
+   below.
+
+### And my own third instance, in the sentence I put in front of the coordinator
+
+I reported **"`main` decides the Rome siege at t+62.9 on 12 of 12 seeds with sd 0.15 s — a range
+of 63 to 63 seconds."** The independent measurement is **55–58 s, median 56**.
+
+`jg-shape` recorded `at = s.t`, the time of the *sample on which the result panel was first seen*,
+and it samples every 10 s. So every verdict was up to 10 s late, and twelve seeds that truly
+finish across a ~3 s spread all landed in one bucket and came out as **sd 0.15 s**. I then quoted
+that sd as evidence the battle was identical on every seed.
+
+**It was the sampling grid, not the battle.** The statistic did not lose its sample or its spread
+— it lost its *resolution*, and returned a confident number anyway. Fixed to read the arbiter's
+own `result.at`, with the sample time kept beside it as `seenAt` so the two can never be confused
+again.
+
+**What survives and what does not.** The *comparison* survives — both arms share the grid, so
+before-vs-after is apples to apples. The *absolute claim* does not: the honest sentence is **"main
+decides the Rome siege at t+56, on 12 of 12 seeds, with about three seconds between the fastest
+and the slowest."** Still the most damning number available, and now the right one.
+
+### Two instruments this correction explains
+
+- **`qa-replay.mjs` records only `campus-martius / field / high / small`.** No siege record has
+  ever been through it. That is why it reports 21/21 while every siege replay I ran showed
+  **DIVERGED** — it is not a contradiction, it is a gate that never looks at the failing case.
+  It is the third instrument this week that passes for that reason, after `--battle=rome` and the
+  six playability scripts.
+- **The pinned Carthage determinism arm cannot detect a break-in change**: that battle is still
+  being fought at t+400 with 2,193 of 3,440 alive, so its checkpoints sit before the thing they
+  would have to see. **Its silence is not evidence** — which is face 1 of the rule above, in a
+  gate rather than in a probe.
