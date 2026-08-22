@@ -501,3 +501,41 @@ and compare distribution against distribution. I will not compare seed 7 before 
 after and call the difference a regression: if discrete decisions land differently then those
 are simply two different battles, exactly as seed 7 and seed 8 are, and treating one as the
 "corrupted" version of the other is the single easiest way to manufacture a false positive here.
+
+---
+
+## Addendum — the baseline set is complete on both trees, and it says one more thing
+
+Six campaigns now: three on `main` (`mainbase`) and three on the integration tree (`before`),
+each with the product's own state hashes at fixed ticks. Comparing them is not the grading job —
+it is a positive control for `jg-compare.mjs` — but the control found a pattern worth reporting
+on its own, because nobody was grading these 29 commits.
+
+**Outcome variety fell on two of three campaigns and the third was already at one.**
+
+| campaign | `main` | integration tree |
+|---|---|---|
+| campus-martius field | **{Victory/rout 2, Defeat/rout 6}** | **{Defeat/rout 8}** |
+| carthage assault | **{Victory/objective 7, Victory/rout 1}** | **{Victory/objective 8}** |
+| campus-martius assault | {Defeat/objective 12} | {Defeat/objective 12} |
+
+Two of three moved toward a single outcome and none moved away from one. On its own each is a
+seed or two flipping; together, in one direction, on a change nobody measured for it, it is a
+pattern.
+
+The field battle is the sharp case and the accompanying numbers are what make it a finding
+rather than a shrug: Rome breaks **later** (`my first break` 93.99 → 106.77 s, **+13.6%**, beyond
+its own spread) and the enemy breaks **earlier** (`their first break` 114.75 → 108.06 s,
+**−5.8%**, beyond its own spread) — **and Rome wins less often.** Later break, earlier enemy
+break, fewer wins. Those three do not sit together under a tuning drift.
+
+The sieges moved the other way on length and in opposite directions from each other, which is
+its own oddity: Rome's assault went **t+62.9 → t+116.8** (longer, better) while Carthage's went
+**t+293 → t+249** and its contested window **263 → 217 s** (shorter). Both flagged "inside its
+own spread" only because those columns carry an sd of ~150 s, so the spread cannot threshold
+them — see MAP-METHOD rule 12; the percentages are the honest reading there, not the sigma.
+
+**And the number that should not stay inside a comparison table.** On `main` — what the live site
+serves — the Rome assault is decided at **t+62.9 on 12 of 12 seeds with sd 0.15 s.** The range is
+63 to 63 seconds. The integration tree doubles it to t+116.8, which is the right direction and
+still catastrophic.
