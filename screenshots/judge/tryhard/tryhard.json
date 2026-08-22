@@ -1,0 +1,92 @@
+{
+ "seed": 4265438264,
+ "added": 8,
+ "men": 1894,
+ "units": 20,
+ "peak": {
+  "onWall": 104,
+  "holding": 58,
+  "inside": 50
+ },
+ "result": {
+  "victor": 1,
+  "reason": "objective",
+  "casualties": {
+   "0": 244,
+   "1": 443
+  },
+  "survivors": {
+   "0": 1650,
+   "1": 1475
+  },
+  "unitsLost": {
+   "0": 2,
+   "1": 4
+  },
+  "unitsTotal": {
+   "0": 20,
+   "1": 20
+  },
+  "at": 249.3999999999884
+ },
+ "rows": [
+  {
+   "name": "the eight spare unit slots can be spent",
+   "ok": true,
+   "expected": ">=6 units added",
+   "actual": 8
+  },
+  {
+   "name": "the reinforced garrison is materially bigger",
+   "ok": true,
+   "expected": ">1500 men",
+   "actual": 1894
+  },
+  {
+   "name": "a reinforced Rome survives past the point the shipped one dies (t+121)",
+   "ok": true,
+   "expected": ">t+121",
+   "actual": 249
+  },
+  {
+   "name": "a reinforced Rome holds the city",
+   "ok": false,
+   "expected": "victor Rome (0)",
+   "actual": 1
+  },
+  {
+   "name": "a bigger garrison makes the storm hold less parapet",
+   "ok": false,
+   "expected": "stormHolding still 0 (so garrison size is not what blocks condition A)",
+   "actual": 58
+  }
+ ],
+ "log": [
+  "shipped: 12/20 units 3,072 men 8,928 free  rows [\"ballistarii=5\",\"wall-slingers=3\",\"carroballista=2\",\"legio-cohort=2\"]",
+  "palette after ADD UNITS: [{\"unit\":\"ballistarii\",\"count\":\"5\",\"addOff\":false},{\"unit\":\"wall-slingers\",\"count\":\"3\",\"addOff\":false},{\"unit\":\"carroballista\",\"count\":\"2\",\"addOff\":false},{\"unit\":\"legio-cohort\",\"count\":\"2\",\"addOff\":false}]",
+  "after adding 8: 20/20 units 3,812 men 8,188 free  rows [\"ballistarii=7\",\"wall-slingers=5\",\"carroballista=4\",\"legio-cohort=4\"]",
+  "the note the panel gives: \"\"",
+  "  [PASS] the eight spare unit slots can be spent  expected=\">=6 units added\" actual=8",
+  "my garrison is now 20 units / 1894 men (shipped: 12 / 1154)",
+  "  [PASS] the reinforced garrison is materially bigger  expected=\">1500 men\" actual=1894",
+  "  t+21.3 [The Wall Reached] adv=\"0 of 60 inside — hold\" onWall=0 holding=0 garr=802 inside=0 gate=0 ROME 1 886 −0 | JUTHUNGI 1 871 −47",
+  "  t+41.6 [In the Streets] adv=\"6 of 60 inside — hold\" onWall=30 holding=0 garr=795 inside=6 gate=0 ROME 1 876 −0 | JUTHUNGI 1 829 −89",
+  "  t+62.13 [In the Streets] adv=\"10 of 60 inside — hold\" onWall=104 holding=0 garr=740 inside=7 gate=0 ROME 1 811 −0 | JUTHUNGI 1 700 −218",
+  "  t+82.6 [In the Streets] adv=\"19 of 60 inside — hold\" onWall=34 holding=0 garr=698 inside=19 gate=0 ROME 1 762 −0 | JUTHUNGI 1 615 −303",
+  "  t+103.03 [In the Streets] adv=\"16 of 60 inside — hold\" onWall=3 holding=0 garr=686 inside=16 gate=1 ROME 1 751 −0 | JUTHUNGI 1 568 −350",
+  "  t+123.6 [In the Streets] adv=\"32 of 60 inside — hold\" onWall=2 holding=0 garr=667 inside=32 gate=5 ROME 1 727 −0 | JUTHUNGI 1 544 −374",
+  "  t+144.17 [In the Streets] adv=\"50 of 60 inside — hold\" onWall=1 holding=0 garr=660 inside=50 gate=10 ROME 1 715 −0 | JUTHUNGI 1 531 −387",
+  "  t+164.6 [In the Streets] adv=\"15 of 60 inside — hold\" onWall=0 holding=0 garr=649 inside=15 gate=14 ROME 1 703 −0 | JUTHUNGI 1 521 −397",
+  "  t+185.17 [In the Streets] adv=\"31 of 60 inside — hold\" onWall=0 holding=0 garr=631 inside=31 gate=19 ROME 1 685 −0 | JUTHUNGI 1 505 −413",
+  "  t+205.63 [In the Streets] adv=\"5 of 60 inside — hold\" onWall=9 holding=0 garr=622 inside=5 gate=24 ROME 1 676 −0 | JUTHUNGI 1 491 −427",
+  "  t+226.1 [In the Streets] adv=\"26 of 60 inside — hold\" onWall=19 holding=0 garr=611 inside=26 gate=26 ROME 1 665 −0 | JUTHUNGI 1 481 −437",
+  "  t+246.53 [In the Streets] adv=\"55 men hold a stretch of ours — 3 s to clear it\" onWall=55 holding=55 garr=602 inside=15 gate=26 ROME 1 652 −0 | JUTHUNGI 1 475 −443",
+  "  t+267.1 [Aftermath] adv=\"ROME advantage 5%\" onWall=58 holding=58 garr=601 inside=15 gate=26 ROME 1 621 −0 | JUTHUNGI 1 474 −444",
+  "\n*** RESULT at t+267.1: {\"verdict\":\"Defeat\",\"reason\":\"By objective — the ground that mattered has been lost\"} ***",
+  "arbiter: {\"victor\":1,\"reason\":\"objective\",\"casualties\":{\"0\":244,\"1\":443},\"survivors\":{\"0\":1650,\"1\":1475},\"unitsLost\":{\"0\":2,\"1\":4},\"unitsTotal\":{\"0\":20,\"1\":20},\"at\":249.3999999999884}",
+  "peaks: {\"onWall\":104,\"holding\":58,\"inside\":50}",
+  "  [PASS] a reinforced Rome survives past the point the shipped one dies (t+121)  expected=\">t+121\" actual=249",
+  "  [FAIL] a reinforced Rome holds the city  expected=\"victor Rome (0)\" actual=1",
+  "  [FAIL] a bigger garrison makes the storm hold less parapet  expected=\"stormHolding still 0 (so garrison size is not what blocks condition A)\" actual=58"
+ ]
+}

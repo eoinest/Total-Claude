@@ -99,6 +99,61 @@ and the *experience* is not: you lose Rome to three broken ladder parties runnin
 Caveat: my reproduction of the census reads 46 where the arbiter reads 60 on Rome (it excludes
 `stage === 'gap'` bays). The *attribution* is unambiguous; the absolute count is ±14.
 
+### P0-3b — THE DIAGNOSIS IS BACKWARDS. Condition A does not fire because the garrison is too **weak**.
+
+The standing explanation is *"condition A never fires because the garrison is too strong"*, and
+it is reserved as a balance question. I tested it by doing the obvious thing a player who wants
+to survive does: the deployment says **12 of 20 units, 8,928 men free**, so I pressed ADD UNITS
+and spent the slots. Nothing else — no hand placement, no orders, same seed.
+
+| | shipped garrison | reinforced |
+|---|---|---|
+| garrison | 12 units, 1 154 men | **20 units, 1 894 men** |
+| decided at | t+103–121 (12 of 12 seeds) | **t+249** |
+| gate blows | 0–4 of 26 | **26 of 26, at t+226 — the gate opens** |
+| peak `stormOnWall` | 123–145 | 104 |
+| peak **`stormHolding`** | **0** | **58** |
+| plaque, t+246 | never | **"55 men hold a stretch of ours — 3 s to clear it"** |
+
+**Condition A fired.** Making the garrison *bigger* is what made it reachable, and the mechanism
+is visible in the numbers: A requires the storm to stand still on a run, and the storm only
+stands still when there is something to fight. Against the shipped thin garrison the escalade
+crosses an undefended parapet and walks straight down the inside — `stormHolding` never leaves
+zero because nobody stops to hold anything. Against a thick one it gets stuck on the walkway,
+and getting stuck *is* holding.
+
+So the explanation is inverted, and the inversion is worth more than the finding: the same
+change — more garrison — **doubles the battle's length, opens the gate route for the first time
+in anything I have played, and unlocks the win condition that has never fired.** All three of
+the top-ranked problems in this document move together, and they move the way nobody expected.
+
+I still lost, at t+249, by condition B. So Rome may well be unwinnable. But it is not
+unwinnable for the stated reason.
+
+*Repro:* `jg-tryhard.mjs --port=P --seed=4265438264`
+
+### P1-4b — BROKEN. Reinforce your army and the game tells you that you have taken zero casualties.
+
+Same run. The top bar's Roman loss figure read **`−0` at every one of thirteen samples across
+267 seconds**, while the men count fell 1 894 → 1 621 and the arbiter recorded **244 casualties**.
+
+```
+t+21.3   ROME 1 886  −0      t+144.2  ROME 1 715  −0
+t+82.6   ROME 1 762  −0      t+267.1  ROME 1 621  −0     arbiter: casualties {0: 244}
+```
+
+`TopBar.update` computes `Math.max(0, m.initialStrength[PLAYER_FACTION] - r)`, and
+`model.ts` l.326 latches `initialStrength` behind `if (!this.labelled)` on the **first frame
+that has any views** — which is the shipped 12 units, before the player has added anything.
+`labelled` is never reset. So the baseline stays 1 154, the live count is larger, the
+subtraction goes negative and the clamp prints zero for the rest of the battle.
+
+It only appears if you use ADD UNITS, which is precisely what a player trying not to lose does.
+The end-of-battle card is unaffected — it prefers the arbiter's own tally — so the lie is
+confined to the number the player is watching *during* the fight, which is the worse place for
+it. The same latch is the card's fallback path, so the card would inherit it if the tally were
+ever absent.
+
 ### P0-4 — BROKEN. The result card contradicts its own numbers, 40 pixels apart.
 
 `screenshots/judge/rome-4265438264/r-99-result.png`. One panel, read top to bottom:
