@@ -35,6 +35,55 @@ const after = JSON.parse(await readFile(B, 'utf8'));
 
 const mean = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
 const sd = (a) => a.length > 1 ? Math.sqrt(a.reduce((s, x) => s + (x - mean(a)) ** 2, 0) / (a.length - 1)) : 0;
+const median = (a) => { const b = [...a].sort((x, y) => x - y); const h = b.length >> 1;
+  return b.length ? (b.length % 2 ? b[h] : (b[h - 1] + b[h]) / 2) : null; };
+
+/**
+ * A dispersion test beside every location test, because this game's regressions live in the spread.
+ *
+ * Every location test in this file said RESHUFFLE on a change whose real effect was **half the
+ * spread** in decided-at, contested window and peak routing (F p = 0.016-0.018). A comparator
+ * that only asks "did the mean move" is blind to "the battles all became the same battle", which
+ * is the more damaging of the two: a shifted mean is a different balance, a collapsed spread is a
+ * game that has stopped surprising anybody.
+ *
+ * Two-tailed F on the variance ratio. Regularised incomplete beta for the tail, which is enough
+ * precision to separate 0.02 from 0.2 and is all this decision needs.
+ */
+const lgamma = (x) => { // Lanczos
+  const g = [676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059,
+    12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - lgamma(1 - x);
+  x -= 1; let a = 0.99999999999980993, t = x + 7.5;
+  for (let i = 0; i < 8; i++) a += g[i] / (x + i + 1);
+  return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+};
+const betacf = (a, b, x) => { let qab = a + b, qap = a + 1, qam = a - 1, c = 1,
+  d = 1 - qab * x / qap; if (Math.abs(d) < 1e-30) d = 1e-30; d = 1 / d; let h = d;
+  for (let m = 1; m <= 200; m++) { const m2 = 2 * m;
+    let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+    d = 1 + aa * d; if (Math.abs(d) < 1e-30) d = 1e-30;
+    c = 1 + aa / c; if (Math.abs(c) < 1e-30) c = 1e-30; d = 1 / d; h *= d * c;
+    aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+    d = 1 + aa * d; if (Math.abs(d) < 1e-30) d = 1e-30;
+    c = 1 + aa / c; if (Math.abs(c) < 1e-30) c = 1e-30; d = 1 / d;
+    const del = d * c; h *= del; if (Math.abs(del - 1) < 3e-12) break; }
+  return h; };
+const betai = (a, b, x) => { if (x <= 0) return 0; if (x >= 1) return 1;
+  const bt = Math.exp(lgamma(a + b) - lgamma(a) - lgamma(b) + a * Math.log(x) + b * Math.log(1 - x));
+  return x < (a + 1) / (a + b + 2) ? bt * betacf(a, b, x) / a : 1 - bt * betacf(b, a, 1 - x) / b; };
+/** Two-tailed p for var(a) vs var(b). */
+const fTest = (a, b) => {
+  if (a.length < 3 || b.length < 3) return null;
+  const va = sd(a) ** 2, vb = sd(b) ** 2;
+  if (va === 0 && vb === 0) return { ratio: 1, p: 1 };
+  if (vb === 0 || va === 0) return { ratio: va === 0 ? 0 : Infinity, p: 0 };
+  const [hi, lo, dfh, dfl] = va > vb ? [va, vb, a.length - 1, b.length - 1]
+    : [vb, va, b.length - 1, a.length - 1];
+  const F = hi / lo;
+  const p = 2 * betai(dfl / 2, dfh / 2, dfl / (dfl + dfh * F));
+  return { ratio: va / vb, p: Math.min(1, p) };
+};
 const at = (r, t) => { const c = (r.curve ?? []).filter(x => x.t >= t); return c.length ? c[0].me + c[0].them : null; };
 const live = (r, t) => (r.at ?? 0) > t;   // was the battle still being fought at t?
 
@@ -105,6 +154,7 @@ const col = (rows, f) => rows.map(f).filter(x => x != null);
 const cmp = (name, f, unit = '') => {
   const b = col(before.rows, f), a = col(after.rows, f);
   if (!b.length || !a.length) return;
+  const F = fTest(b, a);
   const mb = mean(b), ma = mean(a), s = sd(b);
   /*
    * A near-zero spread cannot be a threshold on its own.
@@ -125,7 +175,10 @@ const cmp = (name, f, unit = '') => {
     : s < Math.abs(mb) * 0.01 ? 'inside the 1% floor (spread too small to threshold on)'
       : 'inside its own spread';
   const pct = mb !== 0 ? ((ma - mb) / Math.abs(mb) * 100) : 0;
-  console.log(`  ${name.padEnd(22)} ${mb.toFixed(2)}${unit} -> ${ma.toFixed(2)}${unit}  ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%   (sd ${s.toPrecision(2)}, floor ${floor.toPrecision(2)})  ${tag}`);
+  const mdb = median(b), mda = median(a);
+  const mdPct = mdb ? ((mda - mdb) / Math.abs(mdb) * 100) : 0;
+  console.log(`  ${name.padEnd(20)} mean ${mb.toFixed(1)}${unit} -> ${ma.toFixed(1)}${unit} ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%  |  median ${mdb.toFixed(1)} -> ${mda.toFixed(1)} ${mdPct >= 0 ? '+' : ''}${mdPct.toFixed(1)}%  |  sd ${s.toPrecision(2)} -> ${sd(a).toPrecision(2)}${F ? `  F=${F.ratio.toFixed(2)} p=${F.p.toFixed(3)}${F.p < 0.05 ? ' ** SPREAD CHANGED **' : ''}` : ''}`);
+  if (outside) console.log(`  ${' '.repeat(20)} ^ mean move beyond its own spread`);
 };
 console.log('shape:');
 cmp('contact', r => r.contactAt, ' s');
