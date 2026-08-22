@@ -89,6 +89,24 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    and it exposed a latent bug in the second that would have failed a correct build. Any check that
    can lose part of its population must separate "excluded by design" from "missing", count the
    exclusions, and print them by name.
+14. **Compress a *position* anisotropically if you must; compress a *building* isotropically or not
+   at all.** Rule 4 covers positions against cross-sections and misses the case that bit Rome: a
+   building's own plan scaled without its own height. `PLAN_SCALE = 0.65` applied to the plan with
+   height left at 1.0 multiplies the height-to-width ratio of **all 31** masonry monuments by
+   **1.538** — a 45 m tumulus 87 m across becomes a 45 m tower 57 m across, and a 189 m
+   amphitheatre becomes a 123 m one at its full 48.5 m. The eye has no ruler for absolute size and
+   an excellent one for shape, so this is the *first* thing wrong with a monument at eye level and
+   the last thing a plan view can show. Hold **one** scale per monument, applied to all three axes,
+   recorded in the survey row beside the real dimension it departs from. Where isotropy is
+   genuinely unaffordable, record the anisotropy as a named exception with the ratio printed —
+   never as a global constant that nothing states.
+15. **Grade a map from 1.75 m before grading it from 150 m.** Every visual instrument this project
+   had photographs the city from a tactical camera 30–150 m up, and at that altitude a monument
+   shrunk to fit, a street with a building standing in it and a quarter with no street at all all
+   look acceptable. One shot script and one scene probe at a standing man's eye scored the shipped
+   Rome **0.8 / 4** on the new `VISUAL-RUBRIC.md` §H, on a map that `probe-fabric`, the plan
+   diagnostic, `assertNoFootprintOverlaps` and `assertNoFabricOverlaps` had all passed. **The
+   altitude of the camera is part of the instrument and nobody had written it down.**
 
 ---
 
@@ -360,5 +378,68 @@ the frame.
   reachable, but only at a 0.36 floor and a 68 m Colosseum, and three pairs are unabsorbable at any
   floor because two of the three are east–west and `KX` cannot move. **A design that proposes an
   optimisation should run it once before recommending it.**
+
+---
+
+### 21 Aug 2026 — the city judged from a standing man's eye, on both maps
+
+**What we did.** An independent judge, changing no source. Two shot scripts (42 eye-level cameras,
+every Rome shot with a Carthage twin on identical rail numbers), one scene probe
+(`tools/scratch/judge-fabric.mjs`, which reads `CitySystem.getObstacles()` and raycasts the built
+scene graph and imports nothing from `src/city/**`), and a new `VISUAL-RUBRIC.md` §H of ten
+criteria that only score on frames taken at 1.75 m with a near-level lens. Measured `58bc584`
+(`main`) and `bc2e0f2` (the builders' base) and Carthage as the control. `docs/CITY-GROUND-JUDGE.md`.
+
+**What we expected.** From the brief: that the monuments would read *small* next to a man, and
+that the pass would end up arguing for a higher footprint floor.
+
+**What happened.** Three things, and the first two were not on anyone's list.
+
+1. **The monuments do not read small. They read 1.54× too tall for their width.** `place()` scales
+   every masonry footprint by `PLAN_SCALE = 0.65` and `layout.ts:139` says in as many words that
+   heights are not scaled; the plan diagnostic confirms 0.695 (0.65 × `PRECINCT`) for all 31 rows to
+   three decimals. So the pass ended up arguing the *opposite* of what it was sent to argue: not
+   "raise the floor" but "**use one scale for all three axes**". Rule 13.
+2. **Carthage is better urbanism and worse architecture, and the rebuild must not copy it
+   wholesale.** From the parapet, Rome is three painted blocks in a field and Carthage is an
+   unbroken mat running to a citadel — but at eight metres Carthage's blocks are untextured prisms
+   with no aperture of any kind, and Rome's have stucco, tile, windows, balconies and modelled
+   *tabernae*. **Take Carthage's grain, continuity, module and terminus; keep Rome's buildings.**
+3. **The two worst faults from the ground are both road faults, and both were already measured
+   from above without anyone noticing what they meant at eye level.** 29.0 % of ranked way inside a
+   monument means that a man walking in on the Porta Flaminia's own axis is **inside masonry for
+   34 % of the first 700 m** — the Mausoleum of Augustus at 95, the Baths of Nero at 220, and 105
+   unbroken metres of the Theatre of Pompey at 360. And a median `H/W` of **0.19** against an
+   ancient street's 1.0–3.0 means Rome does not have streets at all; the narrowest long corridor in
+   the whole walled city is 5 m wide, floored with turf, and stops after fifteen metres.
+
+**Phase 1 re-graded from the ground.** Ranked way in a monument 29.0 % → **10.3 %**, axis blocked
+34 % → **18 %**, p90 distance to the nearest built thing 48 m → **25 m**, buildings 789 → 1,150.
+Real and visible, and `pair-kz-before-after.jpg` shows it without a table. But the axis still
+carries 105 unbroken metres of monument, ranked way in a monument is still five times its own
+Phase 3 acceptance, and median `H/W` **fell** from 0.19 to 0.14 — more buildings in the same space
+narrowed the gaps without giving anything a taller frontage. **Enclosure is not a by-product of
+density. It is a by-product of blocks that address a line.**
+
+**Verdict — the altitude of the camera was the whole gap.** Nothing here needed a new idea; it
+needed a camera 148 metres lower. Five instruments passed this city and a person did not, and the
+difference was not rigour.
+
+**What we would do differently.**
+
+- **Write the camera height into the instrument.** `VISUAL-RUBRIC.md` A–G can all be scored from a
+  tactical camera and every graded frame this project has is one. §H now says explicitly what
+  height it scores at and refuses frames above it. An instrument that does not state where it
+  stands is not reproducible.
+- **Pair every finding with a control shot on the map that works.** Six of the ten findings only
+  became arguable when the same camera was pointed at Carthage; two of them *reversed* when it was.
+  Rome's `H/W` on the gate axis is 0.19 and Carthage's is 0.06 — Carthage is worse on that axis and
+  better everywhere else, and a pass without the control would have published the wrong cause.
+- **Aim eye-level cameras off a measured walk, not off round numbers.** Pass one parked the eye at
+  20, 120, 250 and 400 m inside each gate and four of twelve interior frames came back inside
+  masonry, partly because `stand` positions the *focus* and the eye sits `dist` further out. The
+  fix was to walk the axis with the probe first and shoot only clear stations. **Half an hour of
+  measurement bought back an hour of re-shooting, and the frames it threw away turned out to be
+  the headline finding.**
 
 <!-- Append new entries above this line. -->
