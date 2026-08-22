@@ -2137,7 +2137,7 @@ about it.
   (condition B). `stormOnWall` deliberately still counts them: it is a description of the parapet,
   and a man running along it is on it.
 
-  > **This shipped half-wired at `85d6b7d` and the correction is `d61ef85`.** The `Set` of broken
+  > **This shipped half-wired at `85d6b7d` and the correction is `adec57a`.** The `Set` of broken
   > unit ids was written and read nowhere: the exclusion was achieved by a `continue` that skipped
   > the lodgement binning, so it reached condition A — where it changes nothing, because
   > `stormHolding` has never been non-zero anywhere — and **not condition B, which is the
