@@ -222,4 +222,15 @@ L.ck('every seed reached a verdict', rows.every((r) => r.verdict && r.verdict !=
   `${rows.length} finished`, JSON.stringify(rows.map((r) => r.verdict)));
 await dump(OUT, `${MAP}-${ARM}-${TAG}`, { map: MAP, arm: ARM, tag: TAG, head, srcHash, wins, rows, log: L.log });
 L.say(`\nwritten: screenshots/judge/arms/${MAP}-${ARM}-${TAG}.json`);
-L.summary();
+const bad = L.summary();
+/*
+ * Exit rather than fall off the end, and this is not tidiness.
+ *
+ * `boot()` calls `ensureServer`, which spawns `tools/lib/vite-runner.mjs` as a child and
+ * hands back only the base URL — the handle is dropped, the child is not `unref`'d, and node
+ * therefore keeps the event loop alive after the last line of this file has printed. Measured:
+ * the passive arm printed its whole summary and its JSON and then **sat there**, so the
+ * played arm queued behind it in the shell never started at all. A run that has finished has
+ * to say so by exiting.
+ */
+process.exit(bad ? 1 : 0);
