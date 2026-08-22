@@ -130,10 +130,21 @@ async function commandCycle(page, seen, now) {
   const tp = await aim(page, ts.x, ts.y + 1.0, ts.z, { zoom: 0.55 });
   if (!tp) return 0;
 
-  // My nearest two on the stone that are neither routing nor already at it.
+  /*
+   * My nearest on the stone that are neither routing nor already on their way at it.
+   *
+   * **`assault` and `traverse` both, and that is not tidiness.** The first version skipped
+   * only `assault`, which is a plan the *fixed* tree can open and the base tree cannot — so
+   * on the base tree the filter never fired, the arm re-ordered cohorts that were already
+   * walking at the lodgement, and the two arms were not running the same player. A
+   * comparison whose two halves behave differently because of the thing being measured is
+   * measuring the script. Both trees can show `traverse`, both can show a unit already going,
+   * and a player does not re-click a cohort he can see is on its way.
+   */
   const cands = [];
   for (const m of roll.mine) {
-    if (m.routing || m.onWall < 10 || m.goal === 'assault') continue;
+    if (m.routing || m.onWall < 10) continue;
+    if (m.goal === 'assault' || m.goal === 'traverse') continue;
     const s = await page.evaluate((i) => window.__stone(i), m.id);
     if (!s || s.n === 0) continue;
     cands.push({ id: m.id, ...s, d: Math.hypot(s.x - ts.x, s.z - ts.z) });

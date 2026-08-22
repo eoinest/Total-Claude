@@ -2925,11 +2925,21 @@ export class Siege implements ElevationOwner {
      * produces is the true one and it names the next click: "These men are not on the wall —
      * send them up it first."
      */
-    if (!this.garrisons.has(unitId) || !this.standingOnWall(unitId)) {
+    const up = this.garrisons.has(unitId) && this.standingOnWall(unitId)
+      && this.unitWallState(unitId).onWall > this.unitWallState(unitId).onLink;
+    if (!up) {
+      /*
+       * From the field side this is not a refusal, it is a storm.
+       *
+       * "These men are not on the wall — send them up it first" is the right answer to a
+       * cohort in its own streets and the wrong one to a besieger at the foot of the ladders:
+       * he has no stairs to be sent up, and the order he actually means is `escalade`, which
+       * owns that click and refuses it in its own words when there is nothing to climb.
+       * `sideOf` is the same query `interceptOrders` uses to tell the two sides apart.
+       */
+      if (this.sideOf(u.x, u.z) === 1) return { ok: false, refusal: 'noWall', bay };
       return { ok: false, refusal: 'notOnWall', bay };
     }
-    const w = this.unitWallState(unitId);
-    if (w.onWall <= w.onLink) return { ok: false, refusal: 'notOnWall', bay };
     const here = this.stationNear(u.x, u.z);
     const fromRun = here >= 0 ? this.sRun[here] : -1;
     if (!this.runsConnected(fromRun, this.sRun[dest])) return { ok: false, refusal: 'noRoute', bay };
