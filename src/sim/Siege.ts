@@ -2558,13 +2558,21 @@ export class Siege implements ElevationOwner {
   wallFileOf(unitId: number): WallFile | null {
     if (!this.garrisons.has(unitId)) return null;
     /*
-     * Memoised on the tick, because the caller is a render loop.
+     * Memoised on the tick, and **only the interface may read the memo.**
      *
-     * `SelectionController.pickUnit` asks this of every view every *frame*, and the answer
-     * can only change in a fixed step: at 120 fps on a 30 Hz sim three reads in four are of
-     * a number that has not moved. The sweep below is one pass over a unit's members, which
-     * multiplied by twelve garrisons and four frames a tick is exactly the kind of cost that
-     * turns up a month later as a HUD budget overrun with nobody able to say what added it.
+     * `SelectionController.pickUnit` asks this of every view every *frame*, and the sweep
+     * below is one pass over a unit's members; at twelve garrisons and four frames a tick
+     * that is the kind of cost that turns up a month later as a HUD budget overrun with
+     * nobody able to say what added it. So it is cached.
+     *
+     * But a cache the *simulation* reads is a cache whose contents depend on whether a frame
+     * was drawn, and this file's every caller in `preSteer` runs before `integrate` while a
+     * render runs after it. Two page loads at different frame rates would then choose
+     * different destination stations from the same state, which is a determinism break of
+     * exactly the kind `tools/qa-determinism.mjs` exists to catch and
+     * `tools/check-determinism.mjs` cannot see — it scans for wall-clock and global random,
+     * not for "the answer depends on the renderer". So the sim's own callers go through
+     * `computeWallFile` directly and never touch this map. See `stationOfUnit`.
      */
     const now = this.ctx.time.tick;
     const memo = this.fileCache.get(unitId);
@@ -2853,7 +2861,9 @@ export class Siege implements ElevationOwner {
    * last four bugs of this shape in this file were two functions answering one question.
    */
   private stationOfUnit(unitId: number): number {
-    const f = this.wallFileOf(unitId);
+    // `computeWallFile`, not `wallFileOf`: the simulation must not read a cache the renderer
+    // can fill. See the note on the memo.
+    const f = this.computeWallFile(unitId);
     if (!f) return -1;
     const st = this.wallTargetAt(f.cx, f.cz);
     if (st >= 0) return st;
@@ -4169,7 +4179,7 @@ export class Siege implements ElevationOwner {
         // aimed at the stone they are standing on rather than at the unit's own anchor,
         // which for a lodgement with most of its men still on the rungs is out in the field
         // — and `refuse` names the bay it finds under the point it is given.
-        const f = this.wallFileOf(targetId);
+        const f = this.computeWallFile(targetId);
         if (!f) continue;
         /*
          * The same order twice is not a new order.
