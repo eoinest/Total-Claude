@@ -21,14 +21,16 @@ from `KZ` 0.222 to 0.35 and nothing else was rebuilt. No roads, no grid, no fabr
 
 ### Verdict: **18 / 100 — FAIL.** All three veto criteria score zero.
 
+*(Scored under rubric v1.0. Re-scored under v1.1, which adds P3 at weight 4 out of P1 and P12: **unchanged at 18**, because all three of those criteria score zero.)*
+
 | # | criterion | weight | score | measurement |
 |---|---|---:|---:|---|
 | P1 | Tiber centreline departure | 10 | **0.0** | worst **177 real m / 78 world m** at n 1414; 40 m allowed |
 | P2 | Tiber bend — the shape | 9 | **0.0** ⚠ | the engine reproduces **21 %** of the plate's bend; 80 % required |
 | P4 | circuit waypoints vs the inked wall | 7 | **0.0** | 0 of 6 measured gates inside 30 m; worst **361 real m** (Porta Salaria) |
 | P5 | the wall meets the water | 3 | **1.1** | **40.7 world m** of dry ground where the curtain should stand on the bank |
-| P6 | landmark position, as built | 20 | **0.0** ⚠ | median **414 real m** over the nine rows with plate evidence, worst **1,031 m** (Theatre of Pompey); 25 m allowed |
-| P7 | landmark position, as surveyed | 6 | **3.3** | 5 of 9 evidence rows inside 30 m; median **23 m**, worst 138 m |
+| P6 | landmark position, as built | 20 | **0.0** ⚠ | median **294 real m** over the fourteen rows with plate evidence, worst **1,031 m** (Theatre of Pompey); 25 m allowed |
+| P7 | landmark position, as surveyed | 6 | **3.4** | 8 of 14 evidence rows inside their own error bar; median **39 m**, worst 138 m |
 | P8 | bearing | 7 | **7.0** | median **2.4°**, worst 3.8° over 29 monuments; 5° allowed |
 | P9 | footprint vs published | 5 | **4.2** | 10 of 12 pass; compression **0.696 uniform** across the cohort |
 | P10 | topology vs the plate | 4 | **0.1** | **18 of 184** plate relations inverted |
@@ -37,7 +39,8 @@ from `KZ` 0.222 to 0.35 and nothing else was rebuilt. No roads, no grid, no fabr
 | P13 | nothing inside the curtain | 3 | **2.5** | 1 undeclared insula; the one monument north of the line declares `atWall` |
 | P14 | regions partition | 5 | **0.0** | 17 districts claim **2.66×** the walled ground over **79** overlapping pairs |
 | P15 | grain vs the street armature | 7 | **0.0** | median **21.3°**; a coin toss gives 22.5° |
-| | **total** | **100** | **18.2** | |
+| P3 | the channel's drawn width *(v1.0 weight 0; scored 0 under v1.1 too)* | 0 | **0.0** | the drawn channel reaches **385 world m** across in x where it declares 94 |
+| | **total** | **100** | **18.3** | |
 
 ⚠ = veto criterion at zero.
 
@@ -52,7 +55,7 @@ across twelve sourced monuments — **the projection arithmetic is honest and is
 
 Ranked by damage, with the cause named, because two of the top four share one.
 
-#### 1 — Every monument is in the wrong place, by a median of 414 real metres, and the cause is one function
+#### 1 — Every monument is in the wrong place, by a median of 294 real metres, and the cause is one function
 
 `resolveOverlaps` moves the twenty-nine placed monuments a **mean of 352 real metres** (median 238,
 worst **1,098**) off `worldOf(e, n)`. Measured independently of the resolver, by taking the built
@@ -129,6 +132,16 @@ way*.
 That is the owner's *"the Tiber bending the wrong way"*, quantified. **78 world metres is 83 % of
 the modelled channel's own width**, and it is 78 world metres of the western Campus Martius that
 the river is standing on and the city cannot use.
+
+**And the representation itself cannot hold the river's shape.** `riverCentreX` is `x = f(z)`.
+Where the channel runs at angle θ to the z axis its band measured along x is `94 / cos θ` wide.
+Measured on the shipped LUT: **the worst sample is 75.9° off the z axis at z 1265, where the
+channel is 385 world metres wide in x against the 94 it declares — 4.1×** — and **65 of 559 on-map
+samples exceed 45°.** `topography.ts` already concedes that *"no sum of sines in z can hold"* the
+66° and 78° segments; **a lookup table of x(z) cannot hold them either, it merely does not say
+so.** The fix is a polyline with a real distance field, not a finer table. *(One thing in phase 1's
+favour: raising `KZ` 0.222 → 0.35 stretches z and so reduces every one of these slopes by 1.58×.
+At `KZ` 0.222 the worst reach was about 81° and roughly 600 world metres wide in x.)*
 
 **Two corrections to my own working, recorded because they change what a builder should trust.**
 (a) I first measured this against sixteen modern bridge midpoints recalled from memory and got a
@@ -288,11 +301,16 @@ Stated rather than suppressed, per the rubric's rule 1.
    for a feature I cannot positively identify. **The coarse reading was wrong and the claim is
    retracted.** The same crop refines the Theatre of Marcellus: its cavea's centre of curvature is
    at plate (−252, −91), 39 m from the survey row, not the 0 m the contact sheet suggested.
-4. **Fourteen of twenty-nine placed monuments have no plate control at all** and their positions are
+4. **Fifteen of twenty-nine placed monuments have no plate control at all** and their positions are
    therefore ungraded, including the Imperial fora, the Basilica Ulpia, Trajan's Market, the
    Tabularium, the Temple of Serapis, the Baths of Titus and Trajan, the Ludus Magnus, the Ara
    Pacis, the Horologium and the Iseum. *Settles it:* about two hours of crops at 0.4–0.6 m/px, and
-   it should be done before the landmark rework lands, not after.
+   it should be done before the landmark rework lands, not after. **But note the ceiling:** Lanciani
+   was published 1893–1901 and cannot control the Ara Pacis (excavated 1937–8), the Ludus Magnus
+   (1937), the Area Sacra's full plan (1926–9), the Crypta Balbi or much of the Imperial fora. For
+   those rows there is no plate in `reference/rome-plans/` that is a ruler at all, and the survey's
+   own cited coordinates stand as the best evidence. That is a limit on how far this rubric can
+   ever grade Rome, and it should be written into the map's own docs rather than rediscovered.
 5. **Roof coverage against the AGEA orthophoto is not measured** — `ROME-FABRIC.md` §4.4 check 4
    asks for 60–70 % per region and no instrument exists. *Settles it:* a 6 m raster of built area
    between street lines, per region, against a sampled orthophoto.

@@ -19,11 +19,23 @@
  *   'gazetteer'  — WGS84 latitude and longitude, converted with the same origin and the same
  *                 local metre-per-degree constants the survey's own `cite` fields imply.
  *                 Independent of the repo but NOT confirmed on the plate this pass.
+ *   'plate-weak' — read off the plate but the feature could not be positively identified against
+ *                 its neighbours at the scale available. Reported, error bar 60-70 m, and it is
+ *                 the reader's job to say so rather than to round the doubt away.
  *   'survey'     — I could not better the survey's own value. **A row marked 'survey' is not
  *                 evidence and the position criterion is UNGRADED for it.** Never scored.
  *
  * Nothing here is read from `src/`. Where this table and `survey.ts` disagree the disagreement
  * is the measurement.
+ *
+ * **The limitation of the primary ruler, stated once.** Lanciani's plate was published 1893-1901.
+ * It cannot control anything excavated after it, and several of this map's monuments were: the
+ * **Area Sacra of Largo Argentina** (1926-9, though Lanciani drew the round temple), the **Ara
+ * Pacis** (1937-8), the **Ludus Magnus** (1937), the **Crypta Balbi** (1980s), and much of the
+ * **Imperial fora** (1930s and 1998-2000). For those rows no plate in `reference/rome-plans/`
+ * is a ruler — Kiepert 1911 and Shepherd 1911/1923 are no later — and the survey's own cited
+ * latitude and longitude is the best available evidence. **Saying that is better than digitising
+ * a blank patch of plate and calling it a control.**
  */
 export const CONTROL = [
   // --- read off the plate this pass -----------------------------------------
@@ -41,17 +53,24 @@ export const CONTROL = [
     note: 'island outline centre reads 39 m west and 18 m south of the survey row; 34 m of that is perpendicular to a 67 m wide island.' },
   { id: 'theatre-pompey', e: -700, n: 270, err: 45, how: 'plate',
     note: 'the cavea arc lies OUTSIDE the survey rectangle to the east. Cavea centre of curvature reads e -721 n +297; the whole complex (cavea west + quadriporticus east) centres near e -700. The survey row is ~136 m too far west.' },
-  { id: 'theatre-marcellus', e: -215, n: -78, err: 30, how: 'plate',
-    note: 'cavea sits inside the survey box; no measurable displacement at 30 m reading error.' },
+  { id: 'theatre-marcellus', e: -252, n: -91, err: 30, how: 'plate',
+    note: "cavea's centre of curvature, read at 0.46 m/px; 39 m from the survey row. A contact sheet at 1.0 m/px had said zero, which is the scale lesson." },
+  { id: 'mausoleum-hadrian', e: -1318, n: 1179, err: 15, how: 'plate',
+    note: 'the black square labelled MAVSOLEVM HADRIANI, read at 0.46 m/px. 8 m from the survey row — the best-placed monument on the map.' },
+  { id: 'largo-argentina', e: -452, n: 331, err: 25, how: 'plate',
+    note: 'the round Temple B and the podium north of it, read at 0.48 m/px. 12 m from the survey row. Lanciani drew what was visible before the 1926-9 excavation, so this row is confirmed but not complete.' },
+  { id: 'baths-agrippa', e: -424, n: 527, err: 30, how: 'plate',
+    note: 'the inked complex under the plate legend THERMAE AGRIPPIANAE, read at 0.48 m/px. 29 m from the survey row.' },
+  { id: 'baths-trajan', e: 1194, n: 53, err: 60, how: 'plate-weak',
+    note: 'the Oppian bath precinct with its two inked pools, read at 0.68 m/px; the precinct is 330 m across and I am centring a large irregular complex by eye. 109 m from the survey row, east.' },
+  { id: 'baths-titus', e: 1023, n: -53, err: 70, how: 'plate-weak',
+    note: 'the hatched block north-east of the Colosseum, read at 0.68 m/px and NOT positively identified against the Domus Aurea substructures beside it. 65 m from the survey row.' },
 
   // --- WGS84, not confirmed on the plate this pass ---------------------------
   // Only `baths-nero` is genuinely independent: the rest turned out to restate survey.ts's own
   // cite to four decimals, which is a check comparing a thing against itself.
   { id: 'baths-nero', lat: 41.8990, lon: 12.4758, err: 60, how: 'gazetteer',
     note: 'Thermae Neronianae/Alexandrinae ran from the Pantheon NORTH toward the Stadium (Palazzo Madama / S. Eustachio). The survey puts them 58 m SOUTH of the Pantheon; the gazetteer puts them 45 m NORTH.' },
-  { id: 'baths-agrippa', lat: 41.8977, lon: 12.4771, err: 40, how: 'restated' },
-  { id: 'largo-argentina', lat: 41.8955, lon: 12.4768, err: 30, how: 'restated' },
-  { id: 'mausoleum-hadrian', lat: 41.9031, lon: 12.4663, err: 25, how: 'restated' },
   { id: 'forum-romanum', lat: 41.8925, lon: 12.4853, err: 40, how: 'restated' },
   { id: 'temple-jupiter', lat: 41.8925, lon: 12.4823, err: 20, how: 'restated',
     note: 'the survey origin. Graded so that a build which moves the origin is caught.' },
@@ -62,7 +81,8 @@ export const CONTROL = [
   { id: 'baths-caracalla', lat: 41.8790, lon: 12.4925, err: 40, how: 'restated' },
 
   // --- not bettered this pass: position UNGRADED ----------------------------
-  { id: 'ara-pacis', how: 'survey' },
+  { id: 'ara-pacis', how: 'survey',
+    note: '**Lanciani cannot control this row.** The altar was excavated 1937-8.' },
   { id: 'horologium', how: 'survey' },
   { id: 'temple-isis', how: 'survey' },
   { id: 'porticus-octaviae', how: 'survey',
@@ -71,9 +91,8 @@ export const CONTROL = [
   { id: 'basilica-ulpia', how: 'survey' },
   { id: 'trajan-market', how: 'survey' },
   { id: 'imperial-fora', how: 'survey' },
-  { id: 'ludus-magnus', how: 'survey' },
-  { id: 'baths-titus', how: 'survey' },
-  { id: 'baths-trajan', how: 'survey' },
+  { id: 'ludus-magnus', how: 'survey',
+    note: '**Lanciani cannot control this row.** The Ludus Magnus was excavated in 1937, thirty-six years after the plate. Nothing is inked there.' },
   { id: 'temple-serapis', how: 'survey' },
   { id: 'gardens-sallust', how: 'survey' },
   { id: 'aventine-temples', how: 'survey' },

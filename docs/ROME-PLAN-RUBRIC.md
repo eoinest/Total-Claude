@@ -116,11 +116,33 @@ unambiguous.
 
 **Score.** `clamp((ratio − 0.30) / 0.50)`, then halved if any unambiguous sign inversion survives.
 
-#### P3 — *unassigned, held open* · weight 0
+#### P3 — the channel's drawn width · weight 0 in v1.0, **weight 4 from v1.1** · *see the amendment below*
 
-Channel width and bank line against the ancient shore rather than the embanked modern one. **No
-ruler exists for this yet** and I will not score a criterion I cannot measure. Named so it is on
-the record rather than forgotten.
+Held open in v1.0 as "no ruler exists". Pass 1 found one, and it is not the one I expected.
+
+**Test.** The modelled channel's width **measured along x**, everywhere on the map, against the
+94 world metres the model itself declares (`RIVER_HALF_WIDTH = 47`, which is a cross-section and so
+is uncompressed, and which matches the ancient Tiber's roughly 100 real metres at Rome).
+
+**Why it is not trivially 94.** `riverCentreX` parameterises the river as `x = f(z)`. Where the
+channel runs at an angle θ to the z axis its x-band is `94 / cos θ` wide, and the real Tiber at
+Rome turns nearly east–west twice — `topography.ts`'s own comment concedes *"two of these segments
+run at 66 and 78 degrees to the z axis… which no sum of sines in z can hold."* **A lookup table of
+`x(z)` cannot hold them either; it merely does not say so.** Consumers that take `x −
+riverCentreX(z)` as a cross-channel distance are wrong by the same factor, and `riverPerpScale`
+corrects only some of them.
+
+**Threshold.** Drawn x-width within **25 %** of 94 world metres at every on-map sample; ≤ 2 % of
+samples above 45° to the z axis.
+
+**Score.** `clamp(1 − (worstRatio − 1.25) / 1.5)`, halved if more than 10 % of samples exceed 45°.
+
+#### Amendment — rubric v1.1, effective from pass 2
+
+P3 takes **weight 4**, and it comes from **P1 (10 → 8)** and **P12 (6 → 4)**. Announced rather than
+applied silently, and pass 1 is re-scored under both: because P1, P3 and P12 all score zero at pass
+1, **the total is unchanged at 18.2 either way**, so the series stays comparable. Any later
+amendment must be recorded the same way and must re-score every earlier pass.
 
 ---
 
@@ -276,9 +298,9 @@ whatever the generator's comments say.**
 
 | # | criterion | weight | veto |
 |---|---|---:|:--:|
-| P1 | Tiber centreline departure | 10 | |
+| P1 | Tiber centreline departure | 10 → **8** (v1.1) | |
 | P2 | Tiber bend — the shape | 9 | **●** |
-| P3 | channel width / ancient bank *(no ruler yet)* | 0 | |
+| P3 | the channel's drawn width | 0 → **4** (v1.1) | |
 | P4 | circuit waypoints vs the inked wall | 7 | |
 | P5 | the wall meets the water | 3 | |
 | P6 | landmark position **as built** | 20 | **●** |
@@ -287,7 +309,7 @@ whatever the generator's comments say.**
 | P9 | footprint vs published | 5 | |
 | P10 | topology vs the plate | 4 | |
 | P11 | nothing in water | 8 | **●** |
-| P12 | nothing in a carriageway | 6 | |
+| P12 | nothing in a carriageway | 6 → **4** (v1.1) | |
 | P13 | nothing inside the curtain | 3 | |
 | P14 | regions partition | 5 | |
 | P15 | grain vs the street armature | 7 | |
@@ -313,8 +335,14 @@ whatever the generator's comments say.**
    (3.1 m/px in a contact sheet) were wrong by 100–200 m and its fine readings (0.6 m/px on a drawn
    50 m grid) agree with known-good rows to under 20 m. **A reading taken at the wrong scale is not
    a measurement and must not be published as one.** Earned the hard way this pass.
-4. **A gazetteer recalled from memory is not a plate.** This judge's recalled latitudes for the
+4. **The plate has a date, and it is not the map's date.** Lanciani was published 1893–1901 and
+   **cannot control anything excavated after it** — the Area Sacra (1926–9), the Ara Pacis
+   (1937–8), the Ludus Magnus (1937), the Crypta Balbi (1980s), much of the Imperial fora. Kiepert
+   and Shepherd are no later. For those rows there is no plate ruler in this repo and the survey's
+   own cited coordinates are the best evidence available. **Say so; do not digitise a blank patch
+   of plate and call it a control.**
+5. **A gazetteer recalled from memory is not a plate.** This judge's recalled latitudes for the
    northern gates were 130–200 m out while its recalled longitudes were good to a metre. Any control
    point not confirmed on a plate carries `how: 'gazetteer'` and its error bar is 60 m, not 20.
-5. **Grade the whole map every pass, including what nobody is working on**, so a fault that is
+6. **Grade the whole map every pass, including what nobody is working on**, so a fault that is
    nobody's job right now is still on the record and still ranked.
