@@ -10,7 +10,9 @@ import {
   assertHillRing,
   assertNoFootprintOverlaps,
   assertOneAmphitheatre,
+  assertRomeFrame,
   assertTopology,
+  assertGateAxisClear,
   assertWaysClearOfMonuments,
 } from './assertions';
 import { buildWall } from './circuit';
@@ -106,6 +108,45 @@ export const ROME_PLAN: CityPlan = {
      */
     const rome = cw ? null : (wall as ReturnType<typeof buildWall>).section;
     const romeAssertions: CityAssertion[] = [];
+    /**
+     * **`assertRomeFrame`, printed once at boot, beside the section.** `ROME-FABRIC.md` §4.1's
+     * closing list — *"sanity checks that must hold **after** the build"* — in
+     * `CARTHAGE.md` §2.5's format.
+     *
+     * It is printed for the whole map and not only for Rome-the-fortification, and it goes
+     * *before* the section line, because the section is one system inside a frame and the frame
+     * is what decides whether any of it can work. `ROME-FABRIC.md` §1.1 step 4's finding on
+     * Carthage is the reason it exists at all: Carthage wrote four whole-map numbers into its
+     * document and never instrumented one of them.
+     *
+     * Rows whose `pending` is set are printed with the phase that closes them and are excluded
+     * from the fault list. See `RomeFrameCheck` for why they are here before they can pass.
+     */
+    const frame = cw ? null : assertRomeFrame();
+    if (frame) {
+      console.info(
+        `[city:rome] frame: KX ${frame.kx} KZ ${frame.kz} (anisotropy ${frame.anisotropy.toFixed(2)}x), ` +
+          `gate at x ${frame.gateX.toFixed(1)} z ${frame.gateZ.toFixed(1)}; ` +
+          `${frame.offMap.length} survey row(s) past the +Z edge: ${frame.offMap.join(', ') || 'none'}`
+      );
+      for (const c of frame.checks) {
+        const mark = c.pending ? 'PENDING' : c.ok ? 'ok     ' : 'FAULT  ';
+        console.info(
+          `[city:rome]   ${mark} ${c.name}: ${c.detail}` +
+            `  [target ${c.target}]${c.pending ? `  <- ${c.pending}` : ''}`
+        );
+      }
+      for (const s of frame.faults) console.warn(`[city:rome] frame fault: ${s}`);
+      romeAssertions.push({
+        name: 'frame',
+        ok: frame.faults.length === 0,
+        detail:
+          `KX ${frame.kx} KZ ${frame.kz}; ` +
+          `${frame.checks.filter((c) => c.ok).length} of ${frame.checks.length} checks pass, ` +
+          `${frame.checks.filter((c) => c.pending).length} pending a later phase, ` +
+          `${frame.faults.length} fault(s)`,
+      });
+    }
     if (rome) {
       console.info(
         `[city:rome] circuit: ${rome.bays} bays at ${rome.pitch.toFixed(2)} m, ` +
@@ -152,8 +193,31 @@ export const ROME_PLAN: CityPlan = {
     // circle that used to stand in for it left five sixths of its footprint free for the
     // fabric to grow through — which is precisely what happened.
     const keepOut = new KeepOut();
+    /**
+     * **A monument gets a keep-out, not a non-intersection, and that margin is the whole point.**
+     *
+     * `l.hw`/`l.hd` are already the precinct box, but `PRECINCT` = 1.07 buys a monument 3.5 % of
+     * its own half-width — about 1.3 m on the Pantheon — and two separate instruments say that is
+     * not enough. `probe-fabric` G9 wants `CLEAR_MON_BLD` = 1.5 m, the *ambitus* of the XII
+     * Tables and the oldest surviving Roman rule on exactly this question, and it fails at
+     * **0.69 m** between the Ara Pacis and an insula. G16 wants no monument's drawn stone inside
+     * a building, and it fails wherever a builder's cornice or podium oversails its own box,
+     * which G14 measures separately and independently.
+     *
+     * Reserving the *ambitus* plus a metre of oversail here makes both pass **by construction**
+     * rather than by where an insula happened to fall — which is how they were passing, as this
+     * pass discovered by moving the Janiculum 404 m and watching an unrelated insula land on the
+     * Theatre of Pompey. A ground judge asked for this in as many words: *"a monument needs a
+     * keep-out, not a non-intersection… G9 is right and too weak."*
+     *
+     * It is deliberately small. The same judge also wants the Pantheon's 60 m paved forecourt,
+     * and that is a *plaza* — an authored piece of the plan with its own shape and paving — not a
+     * uniform margin, and it belongs to phase 5 with the rest of the fabric. This is the floor,
+     * not the answer.
+     */
+    const MON_AMBITUS = 2.5;
     for (const l of LANDMARKS) {
-      keepOut.addRect(l.x, l.z, l.hw, l.hd, l.rot);
+      keepOut.addRect(l.x, l.z, l.hw + MON_AMBITUS, l.hd + MON_AMBITUS, l.rot);
       // A mound is bigger in plan than the building on it.
       if (l.mound) keepOut.addCircle(l.x, l.z, (l.moundRadius ?? l.clear) * 1.02);
     }
@@ -193,6 +257,21 @@ export const ROME_PLAN: CityPlan = {
     if (!topology.ok) {
       console.warn(`[city] topology check failed: ${topology.failures.join('; ')}`);
     }
+    /**
+     * **The rules and ring members the frame ruled out, printed by name.**
+     *
+     * At `KZ` = 0.35 six survey rows are past the +Z edge, so eleven topology rules and three
+     * ring members cannot be checked. That is a real reduction in what the build proves about
+     * itself and it is printed rather than absorbed, because a check count that quietly falls
+     * is the shape of every fault `MAP-METHOD.md` rule 6 is about. `assertTopology` separates
+     * an off-map id from an unknown one so that a genuine typo is still a fault.
+     */
+    if (topo.offMapSkips > 0 || ring.offMapSkips > 0) {
+      console.info(
+        `[city:rome] frame: ${topo.offMapSkips} topology rule(s) and ${ring.offMapSkips} hill-ring ` +
+          `member(s) are off this map and not checked — ${[...topo.skipped, ...ring.skipped].join(', ')}`
+      );
+    }
     // Exactly one Flavian Amphitheatre. See `assertOneAmphitheatre`.
     const amphitheatres = assertOneAmphitheatre();
     if (!amphitheatres.ok) {
@@ -222,9 +301,27 @@ export const ROME_PLAN: CityPlan = {
     if (!wayClearance.ok) {
       console.warn(
         `[city] ${wayClearance.inside}/${wayClearance.samples} ranked-way samples ` +
-          `inside a monument; worst ${wayClearance.worst?.id} at ${wayClearance.worst?.pct}%`
+          `inside a monument; worst ${wayClearance.worst?.id} at ${wayClearance.worst?.pct}%` +
+          `; per way: ${wayClearance.byWay
+            .filter((w) => w.inside > 0)
+            .map((w) => `${w.id} ${w.pct}% (${w.inside}/${w.samples}: ${w.hit.join('+')})`)
+            .join(', ')}`
       );
     }
+    /**
+     * The gate axis, printed beside the carriageway rather than instead of it. A ground judge's
+     * headline is measured on this line and the record could not re-derive it; now it can, and
+     * the difference between the two numbers is visible in one place. See `assertGateAxisClear`.
+     */
+    const axis = assertGateAxisClear();
+    console.info(
+      `[city:rome] gate axis (the straight normal out of the Porta Flaminia, NOT the ` +
+        `carriageway, which deflect bends): ${axis.inside}/${axis.samples} = ${axis.pct}% ` +
+        `inside masonry over the first 700 m` +
+        (axis.blockers.length
+          ? `; blocked by ${axis.blockers.map((b) => `${b.id} ${b.from}-${b.to} m`).join(', ')}`
+          : '')
+    );
 
     const trees: TreeRequest[] = [...wall.trees, ...landmarks.trees, ...districts.trees];
     const chunks: CityChunkSpec[] = [
@@ -253,6 +350,9 @@ export const ROME_PLAN: CityPlan = {
       // The whole `assertRomeSection` record, so a probe reads the builder's own arithmetic
       // rather than re-deriving it from the bays. Absent under the `?fort=carthage` rig.
       romeSection: rome,
+      // The whole `assertRomeFrame` record. `tools/probe-fabric.mjs` reads this rather than
+      // re-deriving the projection, which is what stops a second, drifting copy of it.
+      romeFrame: frame,
       checks: {
         assertions: romeAssertions,
         footprintOverlaps: overlaps.count,

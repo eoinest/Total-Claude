@@ -294,6 +294,8 @@ function reserve(rows, scaleOf) {
         hd,
         scale: s,
         real: { len: r.len, wid: r.wid },
+        /** Carried so `sizeFaultsOn` can tell a crowded row from one the frame is holding down. */
+        drawMax: r.drawMax,
         /**
          * **Membership is the centre, and the edge is a separate constraint on `draw`.**
          *
@@ -386,7 +388,86 @@ function faultsAt(rows, scaleOf) {
       if (g < need) out.push({ a: on[i].id, b: on[j].id, gap: g, need, same, short: need - g });
     }
   }
+  for (const s of sizeFaultsOn(on)) out.push(s);
   return out.sort((p, q) => q.short - p.short);
+}
+
+/**
+ * **The size-order constraint, as a fault the allocation has to clear rather than a report.**
+ *
+ * `--audit`'s size block measures inversions after the fact. This is the same relation moved
+ * into `faultsAt`, so the max-min floor and the raise pass are both *bound* by it and cannot
+ * produce one. That placement is the whole point: a check that only reports is what let 52
+ * inversions ship under a headline of zero.
+ *
+ * **Why the constraint is local, and why that is not a threshold moved until Rome passes.**
+ * Global monotonicity — every pair in the city, at any separation — is the strongest form and it
+ * is not affordable, for a measured reason rather than a convenient one. Crowding is uncorrelated
+ * with real size, so the allocation holds three 120 m rows (`baths-agrippa`, `trajan-market`,
+ * `baths-titus`) at the 0.339 floor inside dense complexes where they cannot grow. Global order
+ * would then cap **every** shorter monument in Rome at their 41 m drawn length: the Pantheon
+ * falls 59 m -> 41 m and the Mausoleum of Augustus 87 -> 41. That trades the pass's single
+ * clearest architectural gain for a relation nobody can see, which is the same mistake in the
+ * opposite direction.
+ *
+ * So the gated relation is the one `VISUAL-RUBRIC.md` H8 actually names — *"pick two monuments
+ * **visible in one frame** and compare which is bigger against which really was"*. Two monuments
+ * 900 m apart never share a frame at 1.75 m and inverting them costs nothing a player can see;
+ * two 54 m apart share every frame. `FRAME_RANGE` is the separation at which the pair stops being
+ * one view, and the reference for it is the rubric, not this file.
+ *
+ * It passes the three tests a gate change owes:
+ *  1. **It fails today, loudly** — 19 of 192 pairs within 400 m, 10 of 98 within 250 m, 5 of 51
+ *     within 150 m, against zero under the uniform scale it replaced.
+ *  2. **Invoking it costs something.** It is a constraint on the raise pass, so a row can no
+ *     longer take room by growing past a bigger neighbour; it has to leave the order intact.
+ *  3. **The global count is still printed** — `--audit` reports every inversion at every range,
+ *     gated or not, so nothing is hidden by the locality. `MAP-METHOD.md` rule 16.
+ */
+const FRAME_RANGE = +arg('framerange', '400');
+const SIZE_DEADBAND_ALLOC = +arg('deadband', '0.20');
+const longOfBox = (b) => Math.max(b.real.len, b.real.wid);
+
+function sizeFaultsOn(on) {
+  const out = [];
+  for (let i = 0; i < on.length; i++) {
+    for (let j = i + 1; j < on.length; j++) {
+      const a = on[i];
+      const b = on[j];
+      /**
+       * A row whose `drawMax` binds is not competing for room; the frame or the curtain is
+       * holding it down, and shrinking a legitimate neighbour to preserve an order that a hard
+       * cap has already broken would spread one frame fault across the city. Counted and named
+       * by `--audit` instead — rule 16, an exclusion is a claim.
+       */
+      if (a.drawMax < 1 || b.drawMax < 1) continue;
+      const la = longOfBox(a);
+      const lb = longOfBox(b);
+      if (Math.abs(la - lb) <= SIZE_DEADBAND_ALLOC * Math.min(la, lb)) continue;
+      if (Math.hypot(a.x - b.x, a.z - b.z) > FRAME_RANGE) continue;
+      const da = la * a.scale;
+      const db = lb * b.scale;
+      /**
+       * **A tie is not an inversion.** Two rows compressed to the same drawn length have lost
+       * the relation, not reversed it, and `Math.sign(0)` is 0 — so testing sign equality
+       * faults on the one outcome the constraint is trying to reach. The Imperial Fora at 250 m
+       * and the Forum Romanum at 200 m both landing on 112 m drawn is the allocation working.
+       */
+      if (la > lb ? da < db : da > db) {
+        // `short` is expressed in metres of drawn length so it sorts against the gap faults.
+        out.push({
+          a: a.id,
+          b: b.id,
+          gap: 0,
+          need: 0,
+          same: false,
+          size: true,
+          short: Math.abs(da - db),
+        });
+      }
+    }
+  }
+  return out;
 }
 
 function absorb(rows, seed) {
@@ -623,6 +704,133 @@ if (argv.includes('--audit')) {
   }
   say(`\n  spatial relations the survey asserts between placed rows: ${relations}`);
   say(`  inverted by the placement: ${inverted}  (river-placed rows, counted apart: ${riverInverted})`);
+
+  /**
+   * **Inverted SIZE relations — the relation nobody counted, and the one a person can see.**
+   *
+   * The block above is a proof rather than a measurement: `worldOf` is strictly monotone in both
+   * axes, so with every centre frozen it *cannot* invert a position. Phase 2 published that zero
+   * as its headline and everybody, including two judges, read it as covering the ground. It does
+   * not. A survey row asserts two different things about a building, and the placement only
+   * preserves one of them:
+   *
+   *  - *where* it is — preserved by construction, counted above, and **invisible from 1.75 m**
+   *    to anyone without a map of Rome in his head; and
+   *  - *how big* it is — which the eye reads directly, because it has no ruler for absolute size
+   *    and an excellent one for comparison.
+   *
+   * A single global `PLAN_SCALE` preserved size order for free: a uniform scale is monotone, so
+   * the invariant held without anybody stating it. Replacing it with twenty-seven authored
+   * footprints threw that away silently, because the allocation's two passes are driven by
+   * **crowding**, which is uncorrelated with real size: the max-min floor holds a crowded 180 m
+   * porticus at 0.339 while the raise pass lifts an uncrowded 135 m temple to 0.863. The result
+   * is a city where the Castra Praetoria is drawn smaller than a tomb it is 4.6x the length of.
+   *
+   * So this counts the same kind of thing the block above counts, on the other axis of the row,
+   * against the same external reference — the published dimension the survey itself cites.
+   * `MAP-METHOD.md` rule 17: *enumerate the invariants a scalar makes free* before you replace it
+   * with a table.
+   *
+   * **The deadband is relative and the reason is that length is.** Twelve metres is the right
+   * deadband for a position because a monument's position is asserted to about that accuracy.
+   * For size it would call a 12 m difference between two 130 m buildings meaningful and a 12 m
+   * difference between two 18 m ones trivial, when it is the other way round. Two buildings
+   * within `SIZE_DEADBAND` of each other in published length are treated as asserting no order.
+   */
+  const SIZE_DEADBAND = 0.05;
+  const longOf = (r) => Math.max(r.len, r.wid);
+  const sized = ROME.filter((r) => !r.soft && !offMap(r));
+  let sizeRelations = 0;
+  let sizeInverted = 0;
+  let sizeCapped = 0;
+  const worstSize = [];
+  /**
+   * **The band table, printed whether or not the gate is green.**
+   *
+   * The constraint the allocation is *bound* by is local — `FRAME_RANGE` metres, 20 % deadband,
+   * because `VISUAL-RUBRIC.md` H8 grades *"two monuments visible in one frame"* and two monuments
+   * 900 m apart in a five-storey city are never in one. A locality is an exclusion, and rule 16
+   * says an exclusion is a claim that needs a count. So this prints the inversion count at every
+   * separation band and at the tighter 5 % deadband as well: if the locality is doing the work
+   * rather than the allocation, these columns say so.
+   */
+  const bands = [80, 150, 250, 400, Infinity];
+  const bandRel = bands.map(() => 0);
+  const bandInv = bands.map(() => 0);
+  for (let i = 0; i < sized.length; i++) {
+    for (let j = i + 1; j < sized.length; j++) {
+      const a = sized[i];
+      const b = sized[j];
+      const la = longOf(a);
+      const lb = longOf(b);
+      if (Math.abs(la - lb) <= SIZE_DEADBAND * Math.min(la, lb)) continue;
+      sizeRelations++;
+      {
+        const wa = worldOf(a.e, a.n);
+        const wb = worldOf(b.e, b.n);
+        const d = Math.hypot(wa.x - wb.x, wa.z - wb.z);
+        const da2 = la * (a.draw ?? 1);
+        const db2 = lb * (b.draw ?? 1);
+        const bad = la > lb ? da2 < db2 : da2 > db2;
+        for (let k = 0; k < bands.length; k++) {
+          if (d <= bands[k]) {
+            bandRel[k]++;
+            if (bad) bandInv[k]++;
+          }
+        }
+      }
+      const da = la * (a.draw ?? 1);
+      const db = lb * (b.draw ?? 1);
+      // A tie has lost the relation, not reversed it. See `sizeFaultsOn`.
+      if (la > lb ? da < db : da > db) {
+        /**
+         * A row whose `drawMax` binds is not competing for room with its neighbours; it is
+         * held down by the frame or the curtain. Counted apart rather than excluded, because
+         * `MAP-METHOD.md` rule 16 is that an exclusion is a claim and rule 18 is that an
+         * exemption is not a weaker check. The inversion is real either way and the reader is
+         * owed the split, not a smaller number.
+         */
+        if (a.drawMax < 1 || b.drawMax < 1) sizeCapped++;
+        else sizeInverted++;
+        const big = la > lb ? a : b;
+        const small = la > lb ? b : a;
+        worstSize.push({
+          big: big.id,
+          small: small.id,
+          real: Math.max(la, lb) / Math.min(la, lb),
+          drawn: (longOf(big) * (big.draw ?? 1)) / (longOf(small) * (small.draw ?? 1)),
+          capped: big.drawMax < 1 || small.drawMax < 1,
+        });
+      }
+    }
+  }
+  worstSize.sort((p, q) => q.real / q.drawn - p.real / p.drawn);
+  say(
+    `\n  size relations the survey asserts between drawn rows: ${sizeRelations}  (deadband ${(SIZE_DEADBAND * 100).toFixed(0)} % of the shorter)`
+  );
+  say(
+    `  inverted by the allocation: ${sizeInverted}  (rows held by a drawMax, counted apart: ${sizeCapped})`
+  );
+  say(
+    `  gated relation: no inversion inside ${FRAME_RANGE} m at a ${(SIZE_DEADBAND_ALLOC * 100).toFixed(0)} % deadband ` +
+      `(VISUAL-RUBRIC H8: two monuments visible in one frame)`
+  );
+  say('  by separation band, at the 5 % deadband — the locality is not hiding anything:');
+  for (let k = 0; k < bands.length; k++) {
+    const label = bands[k] === Infinity ? 'any' : `<= ${bands[k]} m`;
+    say(
+      `    ${label.padEnd(9)} ${bandInv[k].toString().padStart(3)} / ${bandRel[k].toString().padEnd(4)} ` +
+        `= ${bandRel[k] ? ((100 * bandInv[k]) / bandRel[k]).toFixed(1) : '0.0'} %`
+    );
+  }
+  if (worstSize.length) {
+    say('  worst, really-bigger vs really-smaller, real ratio -> drawn ratio:');
+    for (const w of worstSize.slice(0, 8)) {
+      say(
+        `    ${w.big.padEnd(20)} ${w.small.padEnd(20)} ${w.real.toFixed(2)}x -> ${w.drawn.toFixed(2)}x${w.capped ? '   [drawMax]' : ''}`
+      );
+    }
+  }
 
   let minGap = Infinity;
   let minPair = '';

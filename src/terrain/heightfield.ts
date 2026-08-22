@@ -1,6 +1,7 @@
 import { Rng } from '../util/rand';
 import { blurField, hydraulicErode } from './erosion';
 import { fbm, ridged, sstep, warpedFbm, gnoise } from './noise';
+import { TIBER_ISLAND } from './tiberSurvey';
 import {
   AGGER_HALF_WIDTH,
   DEPLOY_GROUND,
@@ -24,11 +25,14 @@ import {
   regionalPlain,
   riseAmplitude,
   riseToeZ,
+  ISLAND_TOP,
+  islandMask,
   riverCentreX,
   riverInfluence,
   riverOffset,
   riverPerpScale,
   riverProfile,
+  worldOf,
   roadCentreX,
   romanDeployMask,
   romeWallZ,
@@ -120,14 +124,18 @@ function baseHeight(x: number, z: number, seed: number): number {
   h += north * (ridged(x, z, 3, 1 / 420, seed + 13, 0.45) - 0.42) * 14;
 
   // --- Tiber valley -------------------------------------------------------
-  // Perpendicular, not horizontal: the surveyed channel runs at up to 78 degrees to the z
-  // axis and an offset measured along a row draws it a fifth of its width. See
-  // `riverPerpScale`.
+  // `riverOffset` is a true signed distance to the surveyed polyline, not an offset along a
+  // row scaled by the local bearing. The surveyed channel runs at up to 79 degrees to the z
+  // axis and the row-wise approximation put the far side of the Campus Martius "in the
+  // river". See the head of the river section in `topography.ts`.
   const d = riverOffset(x, z);
   const inf = riverInfluence(d, z);
   if (inf > 0.001) {
     h += (riverProfile(d, z, h) - h) * inf;
   }
+  // The Tiber Island is a travertine bar in the channel, not a building floating on it.
+  const isl = islandMask(x, z);
+  if (isl > 0.001) h += (ISLAND_TOP - h) * isl;
   return h;
 }
 
@@ -257,7 +265,10 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
     const cs = rowRiverS[j];
     for (let i = 0; i < res; i++) {
       const wx = -HALF_EXTENT + i * spacing;
-      const d = (wx - cx) * cs;
+      // The row-wise early-out survives as an early-out only: it is cheap and generous, and
+      // the distance it gates on is the field's, which is exact.
+      if (Math.abs((wx - cx) * cs) > 420) continue;
+      const d = riverOffset(wx, wz);
       if (Math.abs(d) > 270) continue;
       const inf = riverInfluence(d, wz);
       if (inf < 0.002) continue;
@@ -267,6 +278,27 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
       // the eroded relief is left so the banks are not glassy.
       const strength = Math.abs(d) < 62 ? 1 : 0.82;
       heights[row + i] = h + (prof - h) * inf * strength;
+    }
+  }
+
+  // -- 4a2. The Tiber Island: a travertine bar standing 6.5 m out of the channel, so that the
+  //         Insula Tiberina, the Pons Fabricius and the Pons Cestius stand on ground.
+  {
+    const w = worldOf(TIBER_ISLAND.e, TIBER_ISLAND.n);
+    const reach = TIBER_ISLAND.lengthM;
+    const i0 = Math.max(0, Math.floor((w.x - reach + HALF_EXTENT) / spacing));
+    const i1 = Math.min(res - 1, Math.ceil((w.x + reach + HALF_EXTENT) / spacing));
+    const j0 = Math.max(0, Math.floor((w.z - reach + HALF_EXTENT) / spacing));
+    const j1 = Math.min(res - 1, Math.ceil((w.z + reach + HALF_EXTENT) / spacing));
+    for (let j = j0; j <= j1; j++) {
+      const wz = -HALF_EXTENT + j * spacing;
+      for (let i = i0; i <= i1; i++) {
+        const wx = -HALF_EXTENT + i * spacing;
+        const m = islandMask(wx, wz);
+        if (m < 0.002) continue;
+        const k = j * res + i;
+        heights[k] += (ISLAND_TOP - heights[k]) * m;
+      }
     }
   }
 
@@ -307,7 +339,7 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
        * `DEPLOY_AXIS_X` keeps the boxes clear; this makes the failure impossible rather
        * than merely absent, and costs one lerp on ground the boxes should never cover.
        */
-      const inChannel = riverInfluence((wx - cx) * cs, wz);
+      const inChannel = riverInfluence(riverOffset(wx, wz), wz);
       const w = m * (1 - inChannel);
       if (w < 0.002) continue;
       const target = regionalPlain(wx, wz);

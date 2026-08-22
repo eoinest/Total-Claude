@@ -343,6 +343,11 @@ export interface CityBuild {
    * The same rule as the Punic one applies to generalising it: wait for a third circuit.
    */
   romeSection?: import('./rome/assertions').RomeSection | null;
+  /**
+   * `assertRomeFrame`'s whole record, or null off Rome. `ROME-FABRIC.md` §4.1's whole-map
+   * sanity checks — the equivalent of `CARTHAGE.md` §2.5's tail, which was never instrumented.
+   */
+  romeFrame?: import('./rome/assertions').RomeFrame | null;
 }
 
 /**

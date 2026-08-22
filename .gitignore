@@ -32,6 +32,17 @@ screenshots/**/*.avif
 screenshots/**/*.webm
 screenshots/**/*.mp4
 screenshots/**/report.json
+# ...and the tagged variants: probe-plan writes `report-<tag>.json`, which the bare name misses.
+screenshots/**/report-*.json
+# `tools/film.mjs --out=screenshots/<dir>` puts its isolated Vite optimiser cache and its
+# per-frame manifests inside the output directory, and neither is a raster so neither was
+# caught by the list above. A film run into the repo staged ~20 committable copies of three.js
+# before this line existed.
+screenshots/**/.vite-cache/
+screenshots/**/stills.json
+screenshots/**/film.json
+screenshots/**/cut.json
+screenshots/**/.metadata_never_index
 !screenshots/keep/**
 
 # Local-only visual reference material. Copyrighted third-party screenshots used

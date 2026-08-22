@@ -1,5 +1,6 @@
 // `terrain/topography`, not `terrain/TerrainSystem` — see the note in `circuit.ts`.
-import { HALF_EXTENT, riverCentreX } from '../../terrain/topography';
+import { HALF_EXTENT, worldOf as projectSurvey } from '../../terrain/topography';
+import { TIBER_ISLAND } from '../../terrain/tiberSurvey';
 import { clamp, lerp } from '../../util/math';
 import { hash2 } from '../../util/rand';
 import { AX, axisU, axisV, obbOverlap, obbRadius, type Obb, type WayClass } from '../layout';
@@ -14,7 +15,6 @@ import {
   FAR_BANK,
   GATE_Z,
   KX,
-  KZ,
   ROME,
   worldOf,
   worldRot,
@@ -64,7 +64,13 @@ export interface LandmarkPlacement {
   /** Half-extent across the local long axis. */
   hd: number;
   /**
-   * Plan compression applied to this monument's masonry — `PLAN_SCALE`, or 1 for landscape.
+   * Vertical scale applied to this monument's masonry. Equal to `planScale` unless the survey
+   * row overrides it: a monument is scaled isotropically, so it reads as a smaller model of the
+   * real building rather than a squashed one. See `RomeMonument.drawY`.
+   */
+  heightScale: number;
+  /**
+   * Plan compression applied to this monument's masonry — the row's authored `draw`, or 1.
    * `hw`, `hd`, `clear` and `moundRadius` are **world** extents and already carry it; the
    * geometry builders work in the monument's own frame and need them divided back out.
    */
@@ -79,6 +85,11 @@ export interface LandmarkPlacement {
   moundRadius?: number;
   /** Which hill or valley of Rome this stands on. */
   where: Terrain;
+  /**
+   * One piece of continuous built fabric. See `RomeMonument.complex` for the argument and the
+   * evidence. Two placements sharing this owe each other `PARTY_GAP`, not `STREET_GAP`.
+   */
+  complex?: string;
   /** Placed against the terrain's own river rather than by the affine map. */
   farBank?: boolean;
   /** Placed on the river centreline: Tiber Island. */
@@ -106,56 +117,245 @@ export interface LandmarkPlacement {
  */
 export const PRECINCT = 1.07;
 
-/** Extra metres of street between two reserved footprints. */
-const STREET_GAP = 7;
+/** Extra metres of street between two reserved footprints in different complexes. */
+export const STREET_GAP = 7;
 
 /**
- * Plan scale of monumental masonry, measured rather than chosen.
+ * Clearance owed **inside** a complex — a shared wall, not a street.
  *
- * **A monument at 1:1 does not fit in this plan, and that is arithmetic, not taste.** The
- * projection compresses position by `KX` = 0.443 east–west and `KZ` = 0.222 north–south —
- * a geometric mean of 0.314 — while a building keeps its true footprint, so every monument
- * covers `(1/0.314)² ≈ 10×` its real share of the ground. Summed over the survey, the 30
- * masonry monuments come to 727,000 m² of plan; the buildable city is about 1.7 M m². They
- * are 49 % of Rome at 1:1 against 5.3 % of the real walled area, before a single street or
- * insula. The overlap resolver then has no choice but to rearrange the city, and it did:
+ * `survey.ts:RomeMonument.complex` is the argument. A 7 m street between the Basilica Ulpia
+ * and the forum it stands in is a factual error about Rome as well as an arithmetic problem,
+ * and it is the arithmetic problem that made the monumental core unhostable: seven of the
+ * survey's pairs are structures whose published plans interpenetrate or abut **in real metres**,
+ * so no plan scale can put a street between them. Inside a complex they owe each other a party
+ * wall instead.
+ */
+export const PARTY_GAP = 0.35;
+
+/**
+ * **How much of a monument's real published plan is actually drawn.**
  *
- * | footprint scale | mean drift from the projected position | worst | insulae built |
- * |---|---|---|---|
- * | 1.00 (with 7 m streets) | **174 m** | 384 m | 1,428 |
- * | 1.00, precinct 1.0 and *zero* street gap | 125 m | 269 m | 1,157 |
- * | 0.80 | 85 m | 205 m | 1,827 |
- * | **0.65** | **43 m** | 130 m | 2,270 |
- * | 0.55 | 26 m | 88 m | 2,534 |
+ * There is no global plan scale any more, and there must not be one again. `PLAN_SCALE = 0.65`
+ * stood here for three passes and `ROME-FABRIC.md` §4.5 measured why no value of it can work:
+ * the projection compresses *position* by `KX` = 0.443 and `KZ` = 0.35 while a building keeps
+ * its true footprint, so every monument covers about 6.4x its real share of the ground, and the
+ * largest **uniform** scale with zero conflicting pairs is **0.232** — a 44 x 36 m Colosseum and
+ * a 19 x 13 m Pantheon. A single number is asked to be right for a 621 m circus wedged into a
+ * valley and for an 11.6 m altar with 60 m of clear ground round it, and it cannot be.
  *
- * The second row is the floor for 1:1 buildings: even packed with no street between them
- * the plan still has to move every monument 125 world metres on average, which is 560 real
- * metres of depth. That is a different city, and it is why the Circus Maximus, the Forum and
- * the Campus Martius were all in the wrong place however the solver was tuned.
+ * So the departure is authored per monument, in `survey.ts`, **beside the real dimension it
+ * departs from** (`RomeMonument.draw`). This function is only the default for a row that does
+ * not state one, and the default is **1.00: the full published plan.** That is a deliberate
+ * inversion. Under the old constant every monument was silently three-fifths of itself and a
+ * reader had to know about a constant in another file to discover it; now a monument is its
+ * real size unless its own row says otherwise and says why.
  *
- * 0.65 brings monumental coverage to 21 %, halves the residual four times over, and adds
- * 60 % more insulae because the fabric gets the ground back. It is also still monumental:
- * the Colosseum is 123 × 101 m in plan at its full 48 m height — heights are **not** scaled,
- * only the plan — so it remains six times the height of the curtain beside it.
- *
- * Landscape (`soft`) is exempt: gardens, a planted ridge and an island are *areas*, and an
+ * Landscape (`soft`) is always 1: gardens, a planted ridge and an island are *areas*, and an
  * area is already compressed by the map exactly as a district is.
  */
-export const PLAN_SCALE = 0.65;
+const drawScaleOf = (m: RomeMonument): number => (m.soft ? 1 : (m.draw ?? 1));
+
+/**
+ * Vertical scale. **Defaults to the plan scale, not to 1** — see `RomeMonument.drawY` for the
+ * measurement that changed it. A monument is a smaller model of itself, not a squashed one.
+ */
+const drawHeightOf = (m: RomeMonument): number => (m.soft ? 1 : (m.drawY ?? m.draw ?? 1));
+
+/**
+ * **Is this monument past the +Z edge, and therefore not on this map at all?**
+ *
+ * `ROME-FABRIC.md` §4.5's accepted cost: at `KZ` = 0.35 five monuments and one ridge project
+ * south of the heightfield — the Palatine, the Circus Maximus, the Aventine temples, the Baths
+ * of Caracalla, the Caelian villas and the Janiculum. All six are 700–800 world metres behind
+ * the wall in `ROME.md` §6.1's backdrop zone, none is fought over, and the owner took the cost
+ * knowingly. `ROME-FABRIC.md` §1.2 is the reason it is a cost worth taking: *"Carthage did not
+ * model Carthage"* — it modelled the front, the hill, the harbours and one excavated quarter,
+ * and trying to hold all of Rome is what produced a compression no grid could survive.
+ *
+ * **This predicate exists because the alternative was silent and much worse.** `place()` below
+ * clamps a monument's z into `[CITY_Z_MIN + 20, CITY_Z_MAX]`. Left alone, raising `KZ` would not
+ * have removed these six: it would have clamped all six onto z 1374 — one line of ground —
+ * where they would have stacked on each other and on the Colosseum, and the overlap resolver
+ * would then have shoved the pile north into the city. The measurement is in
+ * `assertRomeFrame`'s `offMap` list, which prints the names at every boot, so the cost is
+ * visible rather than implied.
+ *
+ * **The bound is `CITY_Z_MAX` and the test is on the centre, and this paragraph used to say the
+ * opposite.** It claimed the bound was `HALF_EXTENT` and the test was *"on the **footprint** and
+ * not the centre… what reproduces `ROME-FABRIC.md` §4.5's off-map sets at every swept `KZ`"*. The
+ * code below tests `worldOf(m.e, m.n).z > CITY_Z_MAX`. Both halves of the claim are wrong and the
+ * second is the dangerous one: `tools/scratch/rome-landmarks.mjs` records that the centre test and
+ * the footprint test agree **only at `KZ` = 0.35** and diverge at 0.30 and 0.38, so the file
+ * documents a test about the +Z edge, ships a test about the fabric inset, and the divergence is
+ * invisible at exactly the value in use.
+ *
+ * The centre test is the right one and `rome-landmarks.mjs:reserve` argues why: with `draw`
+ * authored per row, a footprint test is circular — membership would depend on a footprint chosen
+ * after membership, so a monument could be deleted from the map for the crime of being drawn at
+ * its real size. What the footprint test was protecting against, a building hanging over the edge
+ * of the ground, is `maxDrawAt` below, measured on the true oriented reach.
+ *
+ * **Phase 6, not now:** whether these six can come back as off-field silhouette geometry beyond
+ * the heightfield is tagged **[?]** in §4.5 and is measured by
+ * `tools/scratch/rome-frame.mjs --backdrop`. Do not add them back without that measurement.
+ */
+export const offMapSouth = (m: RomeMonument): boolean => {
+  if (m.farBank || m.onRiver) return false; // placed off the river, not by the affine map
+  return worldOf(m.e, m.n).z > CITY_Z_MAX;
+};
+
+/**
+ * **The largest authored footprint that still stands on the heightfield, at this position.**
+ *
+ * A monument's `draw` is chosen by the allocation in `tools/scratch/rome-landmarks.mjs` to clear
+ * its neighbours, and that is only half the constraint. The other half is the +Z edge: the
+ * heightfield stops at `HALF_EXTENT`, and a building whose corner hangs past it is standing on
+ * nothing. This is the cap, and it is asserted at boot rather than trusted.
+ *
+ * **It measures the true oriented reach, and that is the point.** `offMapSouth` used to test
+ * `w.z + wid/2·PRECINCT·scale`, which is the box's half-depth *in its own frame*. For a rotated
+ * monument that is not how far south it actually goes: the Colosseum's plan is 189 × 156 turned
+ * 115°, so its world +Z half-extent is `|hw·sin(rot)| + |hd·cos(rot)|` = **1.42× the local
+ * half-depth**. The consequence was measured and it had shipped: at the old `PLAN_SCALE` = 0.65
+ * the Colosseum's south corner stood at z **1412**, twelve metres past the edge of the ground,
+ * and no check in the tree looked at the quantity that would have said so.
+ */
+export const maxDrawAt = (m: RomeMonument): number => {
+  const w = worldOf(m.e, m.n);
+  const alongZ = (m.axis ?? 'x') === 'z';
+  const rot = worldRot(m.bearing, m.axis ?? 'x');
+  const hwUnit = (alongZ ? m.wid : m.len) * 0.5 * PRECINCT;
+  const hdUnit = (alongZ ? m.len : m.wid) * 0.5 * PRECINCT;
+  // makeRotationY maps local +X to (cos, −sin) and local +Z to (sin, cos): the z components.
+  const reachPerUnit = Math.abs(hwUnit * Math.sin(rot)) + Math.abs(hdUnit * Math.cos(rot));
+  if (reachPerUnit <= 0) return 1;
+  return Math.min(1, (HALF_EXTENT - w.z) / reachPerUnit);
+};
+
+/** The Tiber Island's projected centre. See `terrain/tiberSurvey.ts`. */
+const ISLAND_WORLD = projectSurvey(TIBER_ISLAND.e, TIBER_ISLAND.n);
 
 function place(m: RomeMonument): LandmarkPlacement {
   const w = worldOf(m.e, m.n);
   let x = w.x;
-  const z = clamp(w.z, CITY_Z_MIN(w.x) + 20, CITY_Z_MAX);
-  if (m.farBank) x = FAR_BANK(z, 90);
-  else if (m.onRiver) x = riverCentreX(z);
+  let z = clamp(w.z, CITY_Z_MIN(w.x) + 20, CITY_Z_MAX);
+  /**
+   * **The channel-relative overrides, and the one row they must not touch.**
+   *
+   * Two branches reached this hunk from opposite directions and wrote the same shape, which is
+   * why it is the only real conflict in the assembly. `e/city/rome-landmarks` got here from the
+   * displacement side: applied to **landscape**, `FAR_BANK` is not a clearance, it is a deletion
+   * of the survey. The Janiculum Ridge is a 520 x 240 m planted ridge that *is* the far bank's
+   * topography; overriding its x put it **404 world metres east of its own survey row**, and
+   * between phase 1 and phase 2 it moved **715 m** under a headline of *"displacement is 0.0 m
+   * by construction"*, because the check that would have caught it excluded exactly the rows
+   * this override applies to (`MAP-METHOD.md` rule 16). `e/terrain/tiber-resurvey` got here from
+   * the accuracy side: the judge's plate reading puts the Mausoleum of Hadrian's survey row 8 m
+   * from the inked mausoleum, *"the best-placed monument on the map"*, and the bank rule moved
+   * it off that; worse, it coupled every far-bank monument to the river, so re-surveying the
+   * channel moved them and the resolver cascaded it into monuments nowhere near the water.
+   *
+   * **So the override is a bound and not a position: it may pull a row west, never east.**
+   *
+   * The two branches differed only in the clearance — 90 m against 100 m — and the assembly
+   * resolved it by measuring rather than by choosing. **Against the re-surveyed channel both
+   * values are inert, and the tree says so out loud at every boot.** `assertRomeFrame` check 5
+   * prints the override rows by name with their displacement, and on this tree it reads
+   * `mausoleum-hadrian (farBank) dx 0 dz 0; janiculum (farBank) dx 0 dz -8` — **dx 0 on both**.
+   * There are only two far-bank rows on this map: the Mausoleum of Hadrian at survey x −295.3
+   * and the Janiculum at −416.2, and the re-surveyed west bank has moved far enough east that
+   * neither is within 100 m of it. `Math.min` therefore returns the survey x in both cases at
+   * either constant, and the Janiculum's remaining −8 is the `CITY_Z_MAX` clamp in z, not this
+   * override in x. 100 is kept because it is the more conservative of two numbers that
+   * currently cost nothing, and because it is the one that was measured against the channel
+   * this tree actually ships.
+   *
+   * **What would change this: a third far-bank row east of the clearance line, or a channel
+   * re-survey that moves the west bank west.** At that point the constant stops being inert,
+   * the two branches' 10 m disagreement becomes a real one, and it has to be settled against
+   * the row's drawn footprint half-width rather than against its centre — a 100 m centre
+   * clearance is not 100 m of clearance for an 89 m podium.
+   */
+  if (m.farBank) x = Math.min(w.x, FAR_BANK(z, 100));
+  /**
+   * `onRiver` means **on the Tiber Island**, and it now says so. It used to snap x to
+   * `riverCentreX(z)`, the channel's crossing of that *row* — and where the channel runs at
+   * 60 degrees to the z axis, as it does at the island, the row crossing is 50-150 m from the
+   * island's own position. The island is modelled ground now (`terrain/tiberSurvey.ts`), so a
+   * thing standing on it stands at its centre. This is `e/terrain/tiber-resurvey`'s correction
+   * and it is strictly better than the landmark branch's, which still snapped to the row.
+   */
+  else if (m.onRiver) x = ISLAND_WORLD.x;
   // `len` runs along whichever local axis the monument is built on: X for a circus or a
   // bath block, Z for a temple, a theatre or the Pantheon, whose axial plan runs from the
   // portico at −Z to the back wall at +Z.
   const alongZ = (m.axis ?? 'x') === 'z';
-  const planScale = m.soft ? 1 : PLAN_SCALE;
+  const planScale = drawScaleOf(m);
   const hw = (alongZ ? m.wid : m.len) * 0.5 * PRECINCT * planScale;
   const hd = (alongZ ? m.len : m.wid) * 0.5 * PRECINCT * planScale;
+  /**
+   * **`atWall`, implemented. It has been declared, documented and dead for two phases.**
+   *
+   * The field's docstring in `survey.ts` says it is the *"fraction of the footprint's depth that
+   * may sit north of the wall crest"*, because Aurelian took the Castra Praetoria's own north and
+   * east walls into the circuit. Nothing read it: `place` copied it onto the placement and no
+   * consumer ever looked, so the constraint it describes was enforced only by a hand-transcribed
+   * `draw` and by `probe-fabric` G6 noticing afterwards.
+   *
+   * That inertness had a measured cost, and it is the fault a ground judge named twice. With the
+   * centre pinned at `worldOf(e, n)` the camp stands **59 world metres** inside its own north
+   * wall while needing 260 m of half-depth to stand behind it, so the only footprint that keeps
+   * the barracks inside the city is `draw` 0.20 — a **437 m brick fortress drawn 76 x 72 m**,
+   * which reads as a walled farmyard and as *smaller than the stretch of curtain in front of it*.
+   * At full plan **223 m of barracks** stand on the attackers' side. The judge's diagnosis is the
+   * right one: *that is a frame problem stated as a footprint problem*, and the footprint is the
+   * wrong place to pay for it.
+   *
+   * Anchoring the north edge instead of the centre is not a licence, it is the archaeology: the
+   * camp's **north wall is the curtain**, which is a surveyed fact this row's own `cite` spends a
+   * paragraph establishing from three plate corners. What the survey pins precisely is that
+   * wall's line; the centre is a derived midpoint. So the row is placed by its north edge, it may
+   * keep `atWall` of its depth north of the crest, and the resulting southward shift of the
+   * centre is a **declared override reported by name** at every boot by `assertRomeFrame` check 5
+   * — the same treatment `farBank` gets, for the same reason (`MAP-METHOD.md` rule 16).
+   *
+   * The measured ceilings at this anchor, on the true oriented outline: **0.326** keeping the
+   * footprint west of the camp's own surveyed east return, 0.674 keeping it on the heightfield
+   * (which `offMapEast` licenses and which the east return does not yet contest, `circuit.ts`
+   * building only the west one), and 1.301 against `CITY_Z_MAX`. The row ships the conservative
+   * one.
+   */
+  if (m.atWall !== undefined) {
+    const rot = worldRot(m.bearing, m.axis ?? 'x');
+    // The box's true half-extent along world +Z — not `hd`, which is its depth in its own frame.
+    const zReach = Math.abs(hw * Math.sin(rot)) + Math.abs(hd * Math.cos(rot));
+    /**
+     * **Solved on the four corners, not at the centre's own x, and that distinction is the
+     * whole difficulty.** `wallCrestZ` slopes 0.249 world metres south per metre east across
+     * this run, and a box turned 115° has its northernmost corner some 17 m east of its centre,
+     * where the crest is already 4 m further south. Anchoring on `wallCrestZ(x_centre)`
+     * therefore leaves that corner *north* of the local curtain — measured, as
+     * `probe-fabric` G6, G7 and G16 all failing on the first attempt at this.
+     *
+     * So take the deepest incursion over the actual outline. Shifting `z` translates every
+     * corner equally and does not move any corner's x, so one pass is exact rather than
+     * iterative. `+3` clears the curtain's own 6 m of masonry from its centreline; `atWall`
+     * then buys back that fraction of the footprint's depth north of it, which is the licence
+     * the field is for — Aurelian's curtain runs *along* the camp's north wall, not outside it.
+     */
+    const cos = Math.cos(rot);
+    const sin = Math.sin(rot);
+    let worst = -Infinity;
+    for (const su of [-1, 1]) {
+      for (const sv of [-1, 1]) {
+        // makeRotationY maps local +X to (cos, −sin) and local +Z to (sin, cos).
+        const cx = x + su * hw * cos + sv * hd * sin;
+        const cz = z - su * hw * sin + sv * hd * cos;
+        worst = Math.max(worst, wallCrestZ(cx) + 3 - m.atWall * 2 * zReach - cz);
+      }
+    }
+    if (worst > 0) z += worst;
+  }
   return {
     id: m.id,
     name: m.name,
@@ -165,15 +365,30 @@ function place(m: RomeMonument): LandmarkPlacement {
     hw,
     hd,
     planScale,
+    heightScale: drawHeightOf(m),
     clear: Math.sqrt(hw * hw + hd * hd),
     mound: m.mound,
     moundRadius: m.moundRadius === undefined ? undefined : m.moundRadius * planScale,
     where: m.where,
+    complex: m.complex,
     farBank: m.farBank,
     onRiver: m.onRiver,
     soft: m.soft,
     atWall: m.atWall,
     offMapEast: m.offMapEast,
+    /**
+     * **These are now the same numbers as `x`/`z`, and that is the whole result of this phase.**
+     *
+     * They were the projected position *before* `resolveOverlaps` displaced the monument, and
+     * the distance between the two pairs was the fault the owner reported: a mean of 142 and a
+     * worst of 399 world metres, which is 351 and 1,098 real metres. The resolver is gone, so
+     * the distance is zero by construction and nothing here can make it otherwise.
+     *
+     * They are kept rather than deleted because three instruments read them —
+     * `tools/probe-fabric.mjs`, `city/preview.ts` and `city/plan.ts` — and a displacement
+     * reported as **0.0 m** by an instrument that was measuring 398.9 m is a far better piece
+     * of evidence than a field that quietly stopped existing.
+     */
     idealX: x,
     idealZ: z,
   };
@@ -259,269 +474,57 @@ export const TOPOLOGY: readonly (
 /**
  * Landmark placements. Order follows `ROME`, which runs north to south, so the depth
  * banding in `monuments.ts` groups neighbours together.
+ *
+ * **Filtered by `offMapSouth`.** The survey still carries all thirty-four rows — a monument
+ * that is off *this* map is not a monument we have stopped knowing about, and it comes back for
+ * free the moment the frame changes. What is dropped is its placement.
  */
-export const LANDMARKS: LandmarkPlacement[] = ROME.map(place);
+export const LANDMARKS: LandmarkPlacement[] = ROME.filter((m) => !offMapSouth(m)).map(place);
+
+/** The rows the frame put past the +Z edge. Printed at boot by `assertRomeFrame`. */
+export const OFF_MAP_SOUTH: readonly RomeMonument[] = ROME.filter(offMapSouth);
 
 /**
- * Pull interpenetrating footprints apart.
+ * ## `resolveOverlaps` was here, and deleting it is the point of this phase
  *
- * Rome's depth is compressed 4.5× and its buildings are not, so a projected plan has
- * genuine collisions in it — the Forum, the Palatine's north scarp and the Basilica
- * Ulpia are within 200 real metres of one another and become 45 world metres apart.
- * Rather than fudge the survey, separate the boxes here:
+ * It ran at boot, pushed every intersecting monument footprint apart along its minimum
+ * translation axis until nothing intersected, and it succeeded: the shipped city had **zero**
+ * intersecting monument pairs. The price was that nothing was where it belonged. Measured from
+ * each monument's own projected position, it displaced the survey by a **mean of 142 and a worst
+ * of 399 world metres** — 351 and 1,098 *real* metres — and drew the Theatre of Pompey nearly a
+ * kilometre north of itself, on top of a road. That displacement, not the overlap, is the fault
+ * the owner reported: *"the footprint of where the buildings are is completely wrong."*
  *
- *  - each colliding pair is pushed apart along its *minimum translation axis*, which is
- *    by construction the axis on which they already overlap least, so a push can never
- *    swap the pair's order and the survey's topology survives;
- *  - the push is split between the two in inverse proportion to footprint area, so the
- *    Circus Maximus and the Castra Praetoria stay put and a temple gets out of the way;
- *  - after each sweep everything is clamped back inside the buildable plateau, off the
- *    river, and behind the wall.
+ * Three things are worth keeping on the record, because each is a general lesson rather than a
+ * fact about this file.
  *
- * Deterministic: fixed iteration count, fixed order, no random numbers.
+ * **A solver given more room does more work, not less.** Raising `KZ` from 0.222 to 0.35 left it
+ * 13 projected conflicts to discharge instead of 22, and it moved everything **twice as far** —
+ * mean 65 to 142, worst 168 to 399. With the southern monuments off the map and the Campus
+ * Martius band 58 % deeper it had more space to push into and no reason not to use it. Anyone
+ * tempted to fix a layout by giving its solver more headroom should read that number twice.
+ *
+ * **It hid the fault from every instrument.** `assertNoFootprintOverlaps` passed, and
+ * `probe-fabric` G1 and G15 passed, on a city whose monuments were a third of a kilometre from
+ * their surveyed positions. The overlap check was measuring the resolver's output against the
+ * resolver's own goal. `MAP-METHOD.md` rule 5 is the general form: *a resolver that nudges
+ * overlapping buildings apart is evidence the layout step was wrong, and hiding it is not the
+ * worst of it.*
+ *
+ * **What replaced it is not a better solver.** Every centre is now exactly `worldOf(e, n)` and
+ * the conflicts are absorbed upstream, in three ways that are all statements about Rome rather
+ * than about geometry: seven **complexes** (`RomeMonument.complex`) declare where the city had a
+ * party wall instead of a street; five **survey corrections** put monuments where the plates
+ * actually have them, which removed more conflict than any amount of shrinking; and a
+ * per-monument **authored footprint** (`RomeMonument.draw`) records what is left, beside the
+ * real published dimension it departs from. `TOPOLOGY` below survives as an assertion, having
+ * previously doubled as this solver's constraint set.
+ *
+ * Deleted with it: `separation`, `confine`, `nearbyDrift`, `ORDER_FLOOR`, `HOLD_MARGIN`,
+ * `HOLD_WEIGHT`, `ORDER_WEIGHT`, `RELAX`, `SPRING` and `Z_AXIS_COST`. Do not bring any of them
+ * back. If a pair conflicts, the answer is a merge, a corrected coordinate, or an authored
+ * footprint with the reason written beside it — never a nudge at boot.
  */
-function resolveOverlaps(list: LandmarkPlacement[], sweeps = 9000): void {
-  const n = list.length;
-  const index = new Map(list.map((l, i) => [l.id, i]));
-  // The adjacency facts `assertTopology` checks, as hard constraints on the solver.
-  //
-  // This is the whole trick. A blanket per-cardinal-axis order lock over all 561 pairs
-  // deadlocks: the monumental Campus Martius packs six 100–190 m buildings into 400 real
-  // metres, and pinning the sign of every one of their mutual offsets on both axes leaves no
-  // packable arrangement — it settled at 23 residual overlaps with a perfect topology score,
-  // which is the wrong trade. Constraining only the relationships the build actually asserts
-  // leaves the tight clusters free to pack while the structure of Rome is held exactly.
-  const holds: { i: number; j: number; axis: 0 | 1; sign: 1 | -1 }[] = [];
-  for (const t of TOPOLOGY) {
-    if (t.rule === 'between') continue;
-    const i = index.get(t.a);
-    const j = index.get(t.b);
-    if (i === undefined || j === undefined) continue;
-    // b is the reference; push a to the required side of it.
-    const axis: 0 | 1 = t.rule === 'east' || t.rule === 'west' ? 0 : 1;
-    const sign: 1 | -1 = t.rule === 'east' || t.rule === 'south' ? 1 : -1;
-    holds.push({ i, j, axis, sign });
-  }
-  const dx = new Float64Array(n);
-  const dz = new Float64Array(n);
-  // Inertia: how hard a monument is to shove — its footprint area, so a 440 m camp moves
-  // a tenth as far as a temple in the same contact. Deliberately *not* boosted for the
-  // hills: pinning them made the north-east quadrant rigid, and the Colosseum could then
-  // be neither pushed west past the Palatine nor the Baths of Trajan east past the Castra
-  // Praetoria, which broke their east-west order. With area alone the whole monumental
-  // core is free to slide west into the 700 m of open Campus Martius between the Capitol
-  // and the Tiber, which is where the slack in this plan actually is.
-  const inertia = list.map((l) => l.hw * l.hd);
-
-  for (let s = 0; s < sweeps; s++) {
-    // Cosine anneal: hold the plan together while the big corrections happen, then let go.
-    const spring = SPRING * Math.max(0, Math.cos((Math.PI * 0.5 * s) / (sweeps * 0.55)));
-    dx.fill(0);
-    dz.fill(0);
-    let worst = 0;
-    for (let i = 0; i < n; i++) {
-      const a = list[i];
-      if (a.onRiver) continue;
-      for (let j = i + 1; j < n; j++) {
-        const b = list[j];
-        if (b.onRiver) continue;
-        const wa = inertia[j] / (inertia[i] + inertia[j]);
-        // 1. Ordering along the pair's ideal axis. Keeps b on the far side of a whether or
-        //    not they currently touch, because a pair already separated the wrong way round
-        //    is stable under a pure overlap solver and never gets corrected — that is how the
-        //    Baths of Trajan ended up west of the Colosseum. Only the *sign* is defended,
-        //    with a proportionate margin, so it never fights the separation constraint.
-        const ix = b.idealX - a.idealX;
-        const iz = b.idealZ - a.idealZ;
-        const ilen = Math.sqrt(ix * ix + iz * iz);
-        if (ilen > ORDER_FLOOR) {
-          const ux = ix / ilen;
-          const uz = iz / ilen;
-          const proj = (b.x - a.x) * ux + (b.z - a.z) * uz;
-          const want = Math.min(ilen * 0.2, 35);
-          if (proj < want) {
-            const fix = (want - proj) * ORDER_WEIGHT;
-            worst = Math.max(worst, fix);
-            dx[i] -= ux * fix * wa;
-            dz[i] -= uz * fix * wa;
-            dx[j] += ux * fix * (1 - wa);
-            dz[j] += uz * fix * (1 - wa);
-          }
-        }
-        // 2. Separation — masonry only. A temple standing in the middle of the Horti
-        //    Sallustiani, or a house on the shoulder of the Janiculum, is how Rome worked.
-        if (a.soft || b.soft) continue;
-        const sep = separation(a, b, STREET_GAP);
-        if (!sep) continue;
-        worst = Math.max(worst, Math.abs(sep.push));
-        dx[i] -= sep.ax * sep.push * wa;
-        dz[i] -= sep.az * sep.push * wa;
-        dx[j] += sep.ax * sep.push * (1 - wa);
-        dz[j] += sep.az * sep.push * (1 - wa);
-      }
-    }
-    // The asserted adjacencies, as one-sided constraints with a real margin: `a` must be on
-    // the stated side of `b` by at least `HOLD_MARGIN` metres.
-    for (const h of holds) {
-      const a = list[h.i];
-      const b = list[h.j];
-      const delta = (h.axis === 0 ? a.x - b.x : a.z - b.z) * h.sign;
-      if (delta >= HOLD_MARGIN) continue;
-      const wa = inertia[h.j] / (inertia[h.i] + inertia[h.j]);
-      const fix = (HOLD_MARGIN - delta) * h.sign * HOLD_WEIGHT;
-      worst = Math.max(worst, Math.abs(fix));
-      if (h.axis === 0) {
-        dx[h.i] += fix * wa;
-        dx[h.j] -= fix * (1 - wa);
-      } else {
-        dz[h.i] += fix * wa;
-        dz[h.j] -= fix * (1 - wa);
-      }
-    }
-
-    // Jacobi, not Gauss-Seidel: accumulate every contact's correction and apply once,
-    // damped. Applying each pair's full push the moment it is found — which an earlier
-    // revision did — makes a monument with five neighbours move five times as far as it
-    // should in one sweep, and the plan does not relax, it explodes. That version threw
-    // the Forum Romanum 400 m north into the Horti Sallustiani.
-    for (let i = 0; i < n; i++) {
-      const l = list[i];
-      // The island is pinned to the river's centreline and never moves.
-      if (l.onRiver) {
-        confine(l);
-        continue;
-      }
-      l.x += dx[i] * RELAX;
-      l.z += dz[i] * RELAX;
-      // Weak spring back to where the survey put it, so a chain of contacts cannot walk
-      // a monument across the city. This is what keeps the projection's topology: the
-      // separation is a local correction to the plan, not a new plan.
-      //
-      // Annealed to nothing over the run. A constant spring reaches equilibrium *while
-      // still overlapping* — the pull inward exactly cancels the push apart — so the
-      // solver has to be allowed to let go at the end and simply separate.
-      l.x += (l.idealX - l.x) * spring;
-      l.z += (l.idealZ - l.z) * spring;
-      confine(l);
-    }
-    if (worst < 0.05) break;
-  }
-
-}
-
-/**
- * The correction that pulls two footprints apart **on the side the survey put them**.
- *
- * This is the guarantee that the resolver cannot rewrite Rome. A plain minimum-translation
- * push loses the sign the moment two boxes have passed through each other, and then it
- * happily separates them the wrong way round: an earlier revision ended with the Baths of
- * Trajan west of the Colosseum and the Baths of Titus south of it, both of which are the
- * opposite of the truth. Here the target separation is `sign(ideal offset) × reach`, so the
- * pair's order along the chosen axis is fixed by the projection and the solver can only
- * decide *how far* apart they end up, never which side of which.
- *
- * The axis is the cheapest separating axis rather than the shortest one, weighted by
- * `Z_AXIS_COST`, because the plan has slack east–west and none in depth.
- */
-function separation(
-  a: LandmarkPlacement,
-  b: LandmarkPlacement,
-  pad: number
-): { ax: number; az: number; push: number } | null {
-  axisU(a.rot, AX[0]);
-  axisV(a.rot, AX[1]);
-  axisU(b.rot, AX[2]);
-  axisV(b.rot, AX[3]);
-  const dx = b.x - a.x;
-  const dz = b.z - a.z;
-  const ix = b.idealX - a.idealX;
-  const iz = b.idealZ - a.idealZ;
-  let bestCost = Infinity;
-  let bestPush = 0;
-  let bax = 0;
-  let baz = 0;
-  for (let i = 0; i < 4; i++) {
-    const ax = AX[i].x;
-    const az = AX[i].z;
-    const reach = obbRadius(a, ax, az) + obbRadius(b, ax, az) + pad;
-    const sep = dx * ax + dz * az;
-    // Standard separating-axis test for *detection*: if the boxes are clear on any axis
-    // they are clear, full stop. The ideal offset only decides which way to push, and it
-    // must not be allowed to turn a genuine gap into a phantom collision — on an axis
-    // perpendicular to the pair's ideal offset the sign is arbitrary, and testing
-    // `sep * sign >= reach` there reported every such pair as overlapping and then shoved
-    // it in a direction the survey never asked for.
-    if (Math.abs(sep) >= reach) return null;
-    const idealDot = ix * ax + iz * az;
-    const sign = Math.abs(idealDot) > 1e-6 ? (idealDot >= 0 ? 1 : -1) : sep >= 0 ? 1 : -1;
-    const push = sign * reach - sep;
-    const cost = Math.abs(push) * (1 + (Z_AXIS_COST - 1) * Math.abs(az));
-    if (cost < bestCost) {
-      bestCost = cost;
-      bestPush = push;
-      bax = ax;
-      baz = az;
-    }
-  }
-  return { ax: bax, az: baz, push: bestPush };
-}
-
-/**
- * Below this many world metres of separation on an axis, the survey's sign on that axis is
- * noise — two buildings a few metres apart in the compressed plan have no meaningful
- * north-south order — and defending it only fights the separation solver.
- */
-const ORDER_FLOOR = 45;
-/** Metres by which an asserted adjacency must hold, so it cannot settle on the knife edge. */
-const HOLD_MARGIN = 12;
-/** How much of an asserted-adjacency violation to correct per sweep. Stiff: these are facts. */
-const HOLD_WEIGHT = 0.85;
-/**
- * How much of the ordering violation to correct per sweep. Well under 1 because there are
- * 561 pairs and most of them are far apart and already correctly ordered; a stiff ordering
- * constraint inflates the whole plan outward rather than nudging the few pairs that need it.
- */
-const ORDER_WEIGHT = 0.5;
-/** Damping on the accumulated separation each sweep. */
-const RELAX = 0.28;
-/** Pull back toward the projected position each sweep. */
-const SPRING = 0.012;
-/**
- * Penalty for separating a pair along world Z rather than world X.
- *
- * Depth is compressed 4.5× and width only 2.2×, so the plan is starved of room north to
- * south and has slack east to west. Resolving a collision by sliding two buildings apart
- * sideways therefore costs the plan almost nothing, while pushing them apart in depth
- * runs straight into the wall at one end and the edge of the heightfield at the other.
- * Biasing the choice of separating axis is what lets 30-odd true-scale monuments fit.
- */
-const Z_AXIS_COST = 2.1;
-
-/** Keep a footprint inside the buildable city: behind the wall, on land, on the map. */
-function confine(l: LandmarkPlacement): void {
-  if (l.onRiver) {
-    l.x = riverCentreX(l.z);
-    return;
-  }
-  // Depth half-extent of the oriented box.
-  const zHalf = obbRadius(l, 0, 1);
-  const xHalf = obbRadius(l, 1, 0);
-  // Most things keep 26 m clear inside the curtain. Two do not: the Castra Praetoria's own
-  // north wall *is* the city wall, and the circuit was driven straight through the Horti
-  // Sallustiani — so both may cross the crest by a stated fraction of their depth.
-  const northMargin = 26 - (l.atWall ?? 0) * zHalf * 2;
-  const minZ = CITY_Z_MIN(l.x) - 24 + northMargin + zHalf;
-  l.z = clamp(l.z, minZ, CITY_Z_MAX - zHalf);
-  if (l.farBank) {
-    // Trans Tiberim: west of the water, and clear of the heightfield's edge.
-    l.x = clamp(l.x, -HALF_EXTENT + 40 + xHalf, FAR_BANK(l.z, 30) - xHalf);
-  } else {
-    const eastLimit = (l.offMapEast ? HALF_EXTENT - 4 : HALF_EXTENT - 40) - xHalf;
-    l.x = clamp(l.x, EAST_BANK(l.z) + 24 + xHalf, eastLimit);
-  }
-}
-
-resolveOverlaps(LANDMARKS);
 
 export interface AqueductRun {
   id: string;
@@ -720,8 +723,23 @@ export const DISTRICTS: DistrictSpec[] = DISTRICT_PLAN.map((d) => {
   // plot grid gives the ground to whichever quarter is planned first) and costs nothing where
   // it overlaps a monument or a street (the keep-out map rejects it), so over-covering is the
   // cheap error and under-covering is the expensive one.
+  //
+  // **The depth factor is a world scale now, not a multiple of `KZ`, and that is a hold rather
+  // than a fix.** `ROME-FABRIC.md` §2.3 measures this pair of lines as fault 2: the seventeen
+  // districts claim **266 %** of the ground inside the circuit, with 79 overlapping pairs and
+  // 5.18 km² double-claimed, and *"a district costs nothing where it overlaps a neighbour"* is
+  // the quilt in the file's own words. §4.3 deletes `DISTRICT_PLAN` outright in phase 5 and
+  // replaces it with the fourteen Augustan regions as a partition.
+  //
+  // Phase 1 raised `KZ` from 0.222 to 0.35. Written as `KZ * 3.5` this line would have made
+  // every district **57.7 % deeper** and pushed the over-claim past 350 % as a side effect of a
+  // projection change — growing a fault a later phase deletes, on a map the owner is about to
+  // review. `0.222 * 3.5 = 0.777` is the world scale it has actually had, so it is written as
+  // that and the districts do not move. **Do not re-couple this to `KZ` to make it look
+  // tidier**; the coupling was never meaningful, which is exactly why the number could be read
+  // off and pinned.
   const hw = Math.max(150, d.he * KX * 2.05);
-  const hd = Math.max(120, d.hn * KZ * 3.5);
+  const hd = Math.max(120, d.hn * 0.777);
   let x = w.x;
   let z = clamp(w.z, CITY_Z_MIN(w.x) + hd + 6, CITY_Z_MAX);
   const farBank = d.id === 'trastevere' || d.id === 'vaticanus';
@@ -730,12 +748,15 @@ export const DISTRICTS: DistrictSpec[] = DISTRICT_PLAN.map((d) => {
   } else if (d.eastBank) {
     x = EAST_BANK(z) + 16 + hw;
   } else {
-    // Follow the monuments. The resolver moves them by up to 500 m, and a district authored
-    // against the projected plan would sit in the wrong place relative to its own quarter —
-    // the Subura wants to be between the Fora and the Esquiline wherever those ended up.
-    const drift = nearbyDrift(w.x, w.z);
-    x = Math.max(w.x + drift.x, EAST_BANK(z) + 20 + hw);
-    z = w.z + drift.z;
+    // The projected position, full stop. This used to add `nearbyDrift` — the inverse-square
+    // mean displacement the overlap resolver had applied to the monuments nearest this point —
+    // so that a quarter followed the buildings it was named after wherever the solver had
+    // shoved them. With the resolver gone the monuments are at their surveyed positions, so a
+    // district authored against the projection is already beside its own quarter and the whole
+    // correction is identically zero. Deleted rather than left returning zero: a field whose
+    // only job was to track a solver is a second copy of that solver's error.
+    x = Math.max(w.x, EAST_BANK(z) + 20 + hw);
+    z = w.z;
   }
   // **Grain.** Measured on the orthophoto, Rome's street grain holds over patches of
   // 150–400 m and then rotates 15–40° across a street; a plan with one global orientation
@@ -759,28 +780,6 @@ export const DISTRICTS: DistrictSpec[] = DISTRICT_PLAN.map((d) => {
     fray: d.fray,
   };
 });
-
-/**
- * Mean displacement the overlap resolver applied to the monuments nearest a point.
- *
- * Inverse-square weighted over the whole set rather than a k-nearest search, so it is a
- * smooth field: two adjacent districts can never be dragged in opposite directions by a
- * tie-break.
- */
-function nearbyDrift(x: number, z: number): { x: number; z: number } {
-  let wx = 0;
-  let wz = 0;
-  let wt = 0;
-  for (const l of LANDMARKS) {
-    if (l.onRiver || l.farBank) continue;
-    const d2 = (x - l.idealX) * (x - l.idealX) + (z - l.idealZ) * (z - l.idealZ);
-    const w = 1 / Math.max(6400, d2);
-    wx += (l.x - l.idealX) * w;
-    wz += (l.z - l.idealZ) * w;
-    wt += w;
-  }
-  return wt > 0 ? { x: wx / wt, z: wz / wt } : { x: 0, z: 0 };
-}
 
 // ---------------------------------------------------------------------------
 // The street network. `WayClass` — the rank — is shared, in `city/layout.ts`;
@@ -880,9 +879,45 @@ const STREET_PLAN: {
 }[] = [
   {
     id: 'via-lata',
+    /**
+     * **The last two hundred metres now go round the Mausoleum of Augustus, because that is
+     * where the road went.**
+     *
+     * It used to run [-497, 2045] -> [-470, 1560] -> [-440, 1080], which passes **14 real metres
+     * from the centre of an 87 m tomb** — straight through it. With `resolveOverlaps` alive that
+     * was invisible, because the solver had shoved the Mausoleum 100-odd metres off its plate
+     * position and the road went through the hole. Phase 2 put the tomb back where the survey
+     * puts it and the road has run through masonry ever since: a ground judge measured **85
+     * unbroken metres of it across the carriageway**, and the same frame is the best view the map
+     * has produced, because the terminus and the obstruction are the same object.
+     *
+     * That tension does not have to be traded, and the judge named the fix: *"bend the last
+     * hundred metres of the carriageway round the tomb's eastern flank, as the real road did, and
+     * keep the tomb closing the view from further out. That is not deflecting a street around a
+     * solver's fiction; it is drawing the street where the street was."* The Via Flaminia ran
+     * along the Mausoleum's **eastern** side; the tomb's precinct was its west kerb.
+     *
+     * So the first 215 real metres out of the gate are dead straight — the frame a player sees
+     * first after a breach is 30 m in, and the tomb still closes it — and the swing east begins
+     * at n 1650, clearing the tomb's precinct by 5.4 world metres of carriageway edge at n 1500.
+     * `deflect` still runs afterwards and does the fine work; what it cannot do is invent a
+     * hundred-metre detour from a line that starts inside the building, which is why the armature
+     * has to state the bend and not merely permit it.
+     *
+     * **What this does and does not fix, stated because the two get conflated.** The
+     * *carriageway* clears the tomb, and the carriageway is what a column walks, because pathing
+     * follows the way graph. The **straight normal out of the gate** is still blocked 145-235 m
+     * in, and it always will be: the tomb stands on it, in reality and on the plate. That number
+     * is the one the judge's headline quotes, `assertGateAxisClear` now re-derives it at every
+     * boot beside this one, and clearing it would mean moving a surveyed monument — which is the
+     * thing this whole rebuild exists to stop doing.
+     */
     path: [
       [-497, 2045],
-      [-470, 1560],
+      [-487, 1830],
+      [-430, 1650],
+      [-375, 1500],
+      [-395, 1350],
       [-440, 1080],
       [-400, 620],
       [-340, 240],

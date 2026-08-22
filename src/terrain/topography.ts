@@ -26,6 +26,8 @@ import type { DeployGround } from '../maps/types';
 // `./noise` imports nothing at all, so this closes no cycle — see the note above `romeWallZ`
 // about which way the dependency between this file and `city/rome/` runs.
 import { sstep } from './noise';
+// The Tiber's own survey, in survey metres. Imports nothing, so this closes no cycle.
+import { TIBER_ISLAND, TIBER_SURVEY } from './tiberSurvey';
 
 /** Battlefield half-size in metres. Part of the public terrain contract. */
 export const HALF_EXTENT = 1400;
@@ -36,8 +38,29 @@ export const WATER_LEVEL = 5.0;
 /** Datum height of the flood plain at the origin, before the gentle regional tilt. */
 export const PLAIN_LEVEL = 12.2;
 
-/** Half-width of the open water. The Tiber at Rome runs 90–100 m between banks. */
-export const RIVER_HALF_WIDTH = 47;
+/**
+ * **Nominal** half-width of the open water, in world metres. The real thing is
+ * `riverHalfWidthAt(z)`, which is measured off Lanciani per reach and projected.
+ *
+ * It was **47**, and 47 was wrong in a way worth recording, because it is the same fault as
+ * `x = f(z)` wearing different clothes. The Tiber at Rome runs 90-100 real metres between banks
+ * and 47 was that half, in *world* metres, 1:1 — a cross-section held at true scale, which
+ * `MAP-METHOD.md` rule 4 endorses. But **a constant world half-width is a variable real width**,
+ * because `KX` = 0.443 and `KZ` = 0.35 are not equal: measured against the georeferenced plate,
+ * a 94-world-metre channel covers **212 real metres** where the Tiber runs north-south, **269**
+ * where it runs east-west, and 292.6 as the plan harness read it across the bend. Against a plate
+ * whose channel is 100.8 m. The representation could not express a river of one width.
+ *
+ * So the width is authored in real metres and projected like a position — see
+ * `realToWorldHalf` — and this constant is the median of the result, kept for the callers that
+ * want one number: the wall bench's water exclusion in `heightfield.ts` and `probe-ground`'s
+ * channel count. **Anything that cares about the channel's actual width must call
+ * `riverHalfWidthAt`.**
+ *
+ * 20.6 is the median; the range is 14.0 to 22.5, narrow where the channel runs east-west because
+ * that is where its perpendicular is compressed by `KZ` rather than `KX`.
+ */
+export const RIVER_HALF_WIDTH = 20.6;
 
 /** Carriageway half-width of a consular road: 4.6 m of paving between kerbs. */
 export const ROAD_HALF_WIDTH = 2.3;
@@ -51,168 +74,298 @@ export const FORD_Z = -520;
 export const FORD_SIGMA = 78;
 
 /**
- * The Tiber's course, as the survey gives it — `docs/ROME.md` §3.2 and §15 task 1.
+ * **The Tiber, as the plates give it. §15 task 1, re-surveyed.**
  *
- * Twelve points from above the Pons Milvius to below the Aventine, in world metres,
- * projected from latitude and longitude through the affine map in `city/rome/survey.ts`.
- * They are stored already projected because the dependency only runs one way: `survey.ts`
- * solves `GATE_X` as the fixed point of `roadCentreX(crestZAt(x))` and derives the
- * projection's origin from it, so `survey.ts` imports this file and this file cannot import
- * `survey.ts`. **`tools/scratch/probe-rometransect.mjs --only=tiber` is what stops that
- * transcription rotting**: it starts from the latitude and longitude, runs them through
- * `worldOf` in the running page, and fails if this table has drifted.
+ * The course is not held here. It is `src/terrain/tiberSurvey.ts` — 451 stations in *survey*
+ * metres at 25 m of course length, digitised off the AGEA 2012 orthophoto and cross-checked
+ * against Lanciani — and this file projects it through `worldOf`. That split is the point: what
+ * it replaces was twelve latitude/longitude knots transcribed into world metres *inside this
+ * file*, which had to be re-typed by hand every time `KZ` moved.
  *
- *     41.9450 12.4600   41.9352 12.4670   41.9270 12.4700   41.9200 12.4712
- *     41.9130 12.4718   41.9052 12.4723   41.9013 12.4665   41.8965 12.4640
- *     41.8930 12.4700   41.8905 12.4778   41.8820 12.4760   41.8700 12.4720
+ * ## What was wrong, in one number
  *
- * **What this replaces, and how wrong it was.** The channel was
- * `-760 + 130 sin(0.0023256 z) + 50 sin(0.0060606 z + 1.3)` — an almost-straight
- * north-south trench oscillating between x -620 and x -690 that fitted nothing. Measured
- * against these same twelve points at `66b220b` it was **250 to 776 world metres too far
- * west at every one of them**, and the six hundred and ninety metres between the modelled
- * bank and the real one are the invented ground the Aurelian curtain was standing on
- * (§3.2, §4.1). `rome.ts` already half-knew: `FAR_BANK` exists *because* "the terrain's
- * Tiber is a fixed two-term meander that does not agree with a scaled real one".
+ * The old table's error was reported as **0.1 world metres** and the report was honest. It
+ * measured the transcribed world-metre knots against `worldOf` of the same twelve latitudes and
+ * longitudes: the arithmetic of the projection, not the position of the river. Measured against
+ * the plate instead (`tools/scratch/tiber-knotcheck.mjs`), **one of the twelve control points
+ * stood on water.** Median distance from the traced channel 115 survey metres, worst 1 166.
  *
- * **It is not a sinusoid and must not be forced into one.** Two of these segments run at
- * 66 and 78 degrees to the z axis — the Pons Aelius bend and the great bend past the
- * Campus Martius to the Tiber Island — which no sum of sines in z can hold. §3.2 asks for
- * a spline through the points, sampled into a lookup, and says it is cheaper than three
- * sine terms as well as being the honest shape.
+ * And between the points it was worse than at the points. The spline was a Fritsch–Carlson
+ * limited cubic Hermite through knots 700 m apart. That limiter zeroes the tangent at a data
+ * extremum, which is right for monotone data and wrong for a meander sampled coarsely, because
+ * the real extremum lies *between* knots. Zeroing it flattens the curve at the knot and forces
+ * the curvature to reverse either side of it. **The curve passed through all twelve of its
+ * control points and bowed into the Campus Martius instead of around it**, which is what the
+ * owner saw and what no residual against those points could ever have shown.
+ *
+ * ## What is here now
+ *
+ * - `tiberPath()` — the survey projected, ~450 world-metre nodes. Curvature is carried by data at
+ *   25 m spacing; nothing is interpolated into existence.
+ * - `RIVER_FIELD` — a **signed distance field** to that polyline, 8 m over the map plus a 200 m
+ *   margin. `riverOffset` is a bilinear sample of it.
+ *
+ *   The field replaces `(x - riverCentreX(z)) * riverPerpScale(z)`, which is the perpendicular
+ *   distance to the *infinite straight line* tangent to the channel on that row. Exact for a
+ *   straight reach, badly wrong at a bend — and the Tiber at Rome is mostly bend. At the Tiber
+ *   Island the channel runs at 79 degrees to the z axis, so that expression scaled a 400 m
+ *   horizontal offset down to 78 m and called the far side of the Campus Martius "in the river".
+ *   **That is the mechanism behind buildings standing in water**, and a distance field removes it
+ *   by construction rather than by tuning a radius.
+ * - `riverHalfWidthAt` — the channel's half-width, which varies: 37 m in the Campus Martius bend,
+ *   50 m below the Capitol where the Ripa's harbour reach begins.
+ * - `islandMask` — the Tiber Island as a bar standing out of the channel, so the Insula Tiberina
+ *   stands on ground rather than in water.
+ *
+ * The tables are built lazily on first use rather than at module load, because building them
+ * needs `worldOf`, which is declared further down this file after `GATE_X`. Nothing calls a river
+ * function during module initialisation — `GATE_X` is the fixed point of
+ * `roadCentreX(crestZAt(x))`, and neither of those touches water — so "lazily" costs one branch
+ * and buys the survey being held in survey metres.
  */
-export const TIBER_PATH: readonly number[] = [
-  -526.37, -311.51,
-  -269.43, -69.73,
-  -159.31, 132.58,
-  -115.26, 305.27,
-  -93.24, 477.97,
-  -74.89, 670.41,
-  -287.78, 766.63,
-  -379.54, 885.05,
-  -159.31, 971.40,
-  127.00, 1033.08,
-  60.93, 1242.78,
-  -85.90, 1538.84,
-];
 
-/**
- * Mean bearing of the whole surveyed course, dx/dz, and the bearing the channel runs out
- * on past either end of the survey.
- *
- * The last surveyed segment at the north end runs at **1.063**, which is the Tor di Quinto
- * meander seen through a projection that compresses north-south twice as hard as
- * east-west. Extended at that bearing the Tiber leaves the *west* edge of the map at
- * z -1216 and the north-west quarter of the battlefield is dry, which is both wrong and
- * ugly; the ford at `FORD_Z = -520` would sit at x -747 with nothing north of it. Past the
- * last surveyed point the course is not surveyed, so it runs out on the mean bearing of
- * everything that is — 440 m of x over 1,851 m of z — eased in over `TIBER_RUNOUT_BLEND`
- * so there is no kink at the join.
- */
-const TIBER_MEAN_SLOPE = 0.238;
-const TIBER_RUNOUT_BLEND = 150;
+const RIVER_ROW_STEP = 4;
+const RIVER_ROW_LO = -(HALF_EXTENT + 220);
+const RIVER_ROW_HI = HALF_EXTENT + 220;
+const RIVER_ROW_N = Math.round((RIVER_ROW_HI - RIVER_ROW_LO) / RIVER_ROW_STEP) + 1;
 
-/**
- * The sampled lookup, and why the spline is evaluated once rather than per call.
- *
- * `riverCentreX` is asked for a value about four million times during a terrain build and
- * once per pixel of ground shader; a twelve-knot search plus a cubic is more than either
- * wants, and the shader mirror in `TOPO_GLSL` needs a table anyway. 4 m is a quarter of
- * the heightfield's own 1.37 m sample in the direction the channel is straightest and is
- * finer than the 15 m cut bank the profile draws.
- */
-const RIVER_LUT_STEP = 4;
-const RIVER_LUT_Z0 = -HALF_EXTENT - 200;
-const RIVER_LUT_N = Math.round((2 * HALF_EXTENT + 400) / RIVER_LUT_STEP) + 1;
+const FIELD_STEP = 8;
+const FIELD_HALF = HALF_EXTENT + 200;
+const FIELD_N = Math.round((2 * FIELD_HALF) / FIELD_STEP) + 1;
+/** Beyond this the field saturates. `riverInfluence` reaches 266 m, so 320 is clear of it. */
+const FIELD_REACH = 320;
 
-/**
- * Cubic Hermite through the survey, with Catmull-Rom tangents limited to the local secants.
- *
- * Plain Catmull-Rom overshoots where the bearing reverses, and this course reverses twice
- * inside 300 m of z — at the Pons Aelius bend the tangent flips from +0.095 to -2.213 — so
- * an unlimited spline puts the channel a hundred metres outside the survey between two
- * points that bracket it. The Fritsch-Carlson limiter is the standard cure: zero the
- * tangent at a reversal, and otherwise cap it at three times the smaller neighbouring
- * secant. The result passes through all twelve points and stays inside their hull.
- */
-function buildRiverLut(): { x: Float64Array; s: Float64Array } {
-  const n = TIBER_PATH.length / 2;
-  const kx = new Float64Array(n);
-  const kz = new Float64Array(n);
-  for (let i = 0; i < n; i++) { kx[i] = TIBER_PATH[i * 2]; kz[i] = TIBER_PATH[i * 2 + 1]; }
-  const sec = new Float64Array(n - 1);
-  for (let i = 0; i < n - 1; i++) sec[i] = (kx[i + 1] - kx[i]) / (kz[i + 1] - kz[i]);
-  const m = new Float64Array(n);
-  m[0] = sec[0];
-  m[n - 1] = sec[n - 2];
-  for (let i = 1; i < n - 1; i++) {
-    if (sec[i - 1] * sec[i] <= 0) { m[i] = 0; continue; }
-    const t = (kx[i + 1] - kx[i - 1]) / (kz[i + 1] - kz[i - 1]);
-    const cap = 3 * Math.min(Math.abs(sec[i - 1]), Math.abs(sec[i]));
-    m[i] = Math.sign(t) * Math.min(Math.abs(t), cap);
-  }
-
-  const x = new Float64Array(RIVER_LUT_N);
-  const s = new Float64Array(RIVER_LUT_N);
-  let seg = 0;
-  for (let k = 0; k < RIVER_LUT_N; k++) {
-    const z = RIVER_LUT_Z0 + k * RIVER_LUT_STEP;
-    if (z <= kz[0]) {
-      // Run-out north: integrate the eased bearing back from the first survey point.
-      let px = kx[0];
-      let slope = m[0];
-      for (let w = kz[0]; w > z; w -= 1) {
-        const e = Math.min(1, (kz[0] - w) / TIBER_RUNOUT_BLEND);
-        slope = m[0] + (TIBER_MEAN_SLOPE - m[0]) * (e * e * (3 - 2 * e));
-        px -= slope * Math.min(1, w - z);
-      }
-      x[k] = px;
-      s[k] = slope;
-      continue;
-    }
-    if (z >= kz[n - 1]) {
-      let px = kx[n - 1];
-      let slope = m[n - 1];
-      for (let w = kz[n - 1]; w < z; w += 1) {
-        const e = Math.min(1, (w - kz[n - 1]) / TIBER_RUNOUT_BLEND);
-        slope = m[n - 1] + (TIBER_MEAN_SLOPE - m[n - 1]) * (e * e * (3 - 2 * e));
-        px += slope * Math.min(1, z - w);
-      }
-      x[k] = px;
-      s[k] = slope;
-      continue;
-    }
-    while (seg < n - 2 && kz[seg + 1] < z) seg++;
-    const h = kz[seg + 1] - kz[seg];
-    const t = (z - kz[seg]) / h;
-    const t2 = t * t;
-    const t3 = t2 * t;
-    x[k] = (2 * t3 - 3 * t2 + 1) * kx[seg] + (t3 - 2 * t2 + t) * h * m[seg]
-      + (-2 * t3 + 3 * t2) * kx[seg + 1] + (t3 - t2) * h * m[seg + 1];
-    s[k] = ((6 * t2 - 6 * t) * kx[seg] + (3 * t2 - 4 * t + 1) * h * m[seg]
-      + (-6 * t2 + 6 * t) * kx[seg + 1] + (3 * t2 - 2 * t) * h * m[seg + 1]) / h;
-  }
-  return { x, s };
+interface RiverTables {
+  /** World-metre polyline, x and z interleaved, south (high z) to north (low z). */
+  path: Float64Array;
+  /** Channel centre x per 4 m row of z. */
+  centre: Float64Array;
+  /** dx/dz per row. */
+  slope: Float64Array;
+  /** Channel half-width per row, measured perpendicular to the flow. */
+  half: Float64Array;
+  /** x of the west and east banks per row, solved against the field. */
+  bankW: Float64Array;
+  bankE: Float64Array;
+  /**
+   * **Unsigned** perpendicular distance to the centreline, clamped at `FIELD_REACH`.
+   *
+   * It was signed, and that was a bug worth keeping the note for: unstamped cells hold the
+   * initial `+FIELD_REACH`, so on the west side of the river the stamped band ended at
+   * `-319.9` against an unstamped `+320` neighbour, and **bilinear interpolation across that
+   * pair crosses zero** — a phantom channel ring 320 m out. `tools/probe-tiber.mjs` found three
+   * buildings sitting in it, 578 m from the real water, with the model insisting the ground
+   * there was 12.5 m above the river. Storing the magnitude and taking the sign from
+   * `x - centreX(z)` cannot produce a spurious crossing, and the sign is exact wherever the
+   * channel is a function of z, which over this map it is by construction.
+   */
+  field: Float32Array;
 }
 
-const RIVER_LUT = buildRiverLut();
-
-const sampleRiver = (table: Float64Array, z: number): number => {
-  const f = (z - RIVER_LUT_Z0) / RIVER_LUT_STEP;
-  const i = f <= 0 ? 0 : f >= RIVER_LUT_N - 1 ? RIVER_LUT_N - 2 : Math.floor(f);
-  const t = f - i < 0 ? 0 : f - i > 1 ? 1 : f - i;
-  return table[i] + (table[i + 1] - table[i]) * t;
-};
-
-/** Centreline of the Tiber as a function of z, off the survey. §3.2. */
-export const riverCentreX = (z: number): number => sampleRiver(RIVER_LUT.x, z);
+let riverTables: RiverTables | null = null;
 
 /**
- * Local channel bearing as dx/dz, used to decide which bank is the cut bank and to turn a
- * horizontal offset into a perpendicular one. Kept under its old name because
- * `riverProfile` reads it for exactly the same purpose it always did.
+ * How much of a real-metre cross-section survives projection. 1 = the channel is exactly as wide,
+ * relative to the city around it, as the real Tiber. `1 / KX` = 2.257 restores the true-scale
+ * cross-section rule 4 asks for, at the cost of a channel that reads 2.26x wide on a plan.
  */
-export const riverCurvature = (z: number): number => sampleRiver(RIVER_LUT.s, z);
+const RIVER_WIDTH_SCALE = 1;
+
+function buildRiverTables(): RiverTables {
+  const m = TIBER_SURVEY.length;
+  /** Real half-width at survey row `i` -> perpendicular half-width in world metres. */
+  const realToWorldHalf = (rHalf: number, i: number): number => {
+    const a = TIBER_SURVEY[Math.max(0, i - 1)];
+    const b = TIBER_SURVEY[Math.min(TIBER_SURVEY.length - 1, i + 1)];
+    const de = b[0] - a[0];
+    const dn = b[1] - a[1];
+    const L = Math.hypot(de, dn) || 1;
+    const te = de / L;
+    const tn = dn / L;
+    return (rHalf * RIVER_WIDTH_SCALE * KX * KZ) / Math.hypot(KX * te, KZ * tn);
+  };
+  const path = new Float64Array(m * 2);
+  for (let i = 0; i < m; i++) {
+    const w = worldOf(TIBER_SURVEY[i][0], TIBER_SURVEY[i][1]);
+    path[i * 2] = w.x;
+    path[i * 2 + 1] = w.z;
+  }
+
+  // --- centre, half width and slope, per row of z ---------------------------------------
+  const centre = new Float64Array(RIVER_ROW_N);
+  const half = new Float64Array(RIVER_ROW_N);
+  const filled = new Uint8Array(RIVER_ROW_N);
+  const rowOf = (z: number): number => (z - RIVER_ROW_LO) / RIVER_ROW_STEP;
+  for (let i = 0; i + 1 < m; i++) {
+    const x0 = path[i * 2];
+    const z0 = path[i * 2 + 1];
+    const x1 = path[i * 2 + 2];
+    const z1 = path[i * 2 + 3];
+    if (z0 === z1) continue;
+    // **The width is authored in real metres and projected, not copied across.**
+    //
+    // A half-width stored in *world* metres is a *variable* real width, because the projection
+    // compresses x by `KX` and z by `KZ` and those are not equal: `RIVER_HALF_WIDTH = 47` world
+    // metres is 212 real metres of channel where the Tiber runs north-south and 269 where it
+    // runs east-west. Measured against the plate the drawn channel came out **292.6 real metres
+    // against 100.8**. The same class of fault as `x = f(z)`: the representation could not
+    // express the thing.
+    //
+    // For a real perpendicular offset `r` on a reach whose real unit tangent is `(te, tn)`, the
+    // perpendicular distance in world metres works out at `r·KX·KZ / hypot(KX·te, KZ·tn)`. It
+    // reduces to `r·KX` on a north-south reach and `r·KZ` on an east-west one, which is what it
+    // should: the perpendicular is east-west in the first case and north-south in the second.
+    //
+    // **This overrides `MAP-METHOD.md` rule 4 — "positions compress, cross-sections do not" —
+    // and the override is deliberate.** Rule 4 exists so that a 6 m wall is not drawn 2.7 m
+    // thick and a man does not step over a road. Nothing on this map crosses the Tiber: the
+    // assault is on the north front, no unit fords the channel, and the one crossing that exists
+    // is the shoal at `FORD_Z`, which `riverProfile` widens 1.85x and shallows to 0.65 m in its
+    // own right. What the Tiber's width *is* on this map is a plan-view feature graded against
+    // Lanciani. `RIVER_WIDTH_SCALE` is the one number to change if a scenario is ever written
+    // that crosses it; at `1 / KX` = 2.257 the channel is a true-scale cross-section again.
+    const h0 = realToWorldHalf(TIBER_SURVEY[i][2] * 0.5, i);
+    const h1 = realToWorldHalf(TIBER_SURVEY[i + 1][2] * 0.5, i + 1);
+    const a = Math.max(0, Math.ceil(rowOf(Math.min(z0, z1))));
+    const b = Math.min(RIVER_ROW_N - 1, Math.floor(rowOf(Math.max(z0, z1))));
+    for (let r = a; r <= b; r++) {
+      const t = (RIVER_ROW_LO + r * RIVER_ROW_STEP - z0) / (z1 - z0);
+      centre[r] = x0 + (x1 - x0) * t;
+      half[r] = h0 + (h1 - h0) * t;
+      filled[r] = 1;
+    }
+  }
+  // Rows past either end of the polyline hold the nearest end's values. The survey runs 120 m
+  // beyond both map edges, so this only ever fills the field's own margin.
+  for (let r = 1; r < RIVER_ROW_N; r++) {
+    if (!filled[r] && filled[r - 1]) { centre[r] = centre[r - 1]; half[r] = half[r - 1]; filled[r] = 2; }
+  }
+  for (let r = RIVER_ROW_N - 2; r >= 0; r--) {
+    if (!filled[r] && filled[r + 1]) { centre[r] = centre[r + 1]; half[r] = half[r + 1]; filled[r] = 2; }
+  }
+  const slope = new Float64Array(RIVER_ROW_N);
+  for (let r = 0; r < RIVER_ROW_N; r++) {
+    const a = Math.max(0, r - 1);
+    const b = Math.min(RIVER_ROW_N - 1, r + 1);
+    slope[r] = (centre[b] - centre[a]) / ((b - a) * RIVER_ROW_STEP);
+  }
+
+  // --- the signed distance field ---------------------------------------------------------
+  const field = new Float32Array(FIELD_N * FIELD_N).fill(FIELD_REACH);
+  const best = new Float32Array(FIELD_N * FIELD_N).fill(FIELD_REACH);
+  const cellOf = (v: number): number => (v + FIELD_HALF) / FIELD_STEP;
+  for (let i = 0; i + 1 < m; i++) {
+    const ax = path[i * 2];
+    const az = path[i * 2 + 1];
+    const dx = path[i * 2 + 2] - ax;
+    const dz = path[i * 2 + 3] - az;
+    const len2 = dx * dx + dz * dz;
+    if (len2 < 1e-12) continue;
+    const i0 = Math.max(0, Math.floor(cellOf(Math.min(ax, ax + dx) - FIELD_REACH)));
+    const i1 = Math.min(FIELD_N - 1, Math.ceil(cellOf(Math.max(ax, ax + dx) + FIELD_REACH)));
+    const j0 = Math.max(0, Math.floor(cellOf(Math.min(az, az + dz) - FIELD_REACH)));
+    const j1 = Math.min(FIELD_N - 1, Math.ceil(cellOf(Math.max(az, az + dz) + FIELD_REACH)));
+    for (let j = j0; j <= j1; j++) {
+      const pz = -FIELD_HALF + j * FIELD_STEP;
+      const row = j * FIELD_N;
+      for (let k = i0; k <= i1; k++) {
+        const px = -FIELD_HALF + k * FIELD_STEP;
+        let t = ((px - ax) * dx + (pz - az) * dz) / len2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const qx = px - (ax + dx * t);
+        const qz = pz - (az + dz * t);
+        const d = Math.sqrt(qx * qx + qz * qz);
+        if (d >= best[row + k]) continue;
+        best[row + k] = d;
+        field[row + k] = d;
+      }
+    }
+  }
+
+  // --- the banks, solved against the field ------------------------------------------------
+  const sampleF = (x: number, z: number, cx: number): number => {
+    let fx = (x + FIELD_HALF) / FIELD_STEP;
+    let fz = (z + FIELD_HALF) / FIELD_STEP;
+    fx = fx < 0 ? 0 : fx > FIELD_N - 1.001 ? FIELD_N - 1.001 : fx;
+    fz = fz < 0 ? 0 : fz > FIELD_N - 1.001 ? FIELD_N - 1.001 : fz;
+    const i = fx | 0;
+    const j = fz | 0;
+    const u = fx - i;
+    const v = fz - j;
+    const r0 = j * FIELD_N + i;
+    const r1 = r0 + FIELD_N;
+    const mag = (field[r0] * (1 - u) + field[r0 + 1] * u) * (1 - v)
+      + (field[r1] * (1 - u) + field[r1 + 1] * u) * v;
+    return x < cx ? -mag : mag;
+  };
+  const bankW = new Float64Array(RIVER_ROW_N);
+  const bankE = new Float64Array(RIVER_ROW_N);
+  for (let r = 0; r < RIVER_ROW_N; r++) {
+    const z = RIVER_ROW_LO + r * RIVER_ROW_STEP;
+    const cx = centre[r];
+    const want = half[r];
+    for (let s = 0; s < 2; s++) {
+      const side = s === 0 ? -1 : 1;
+      let x = cx;
+      let prev = sampleF(cx, z, cx) * side;
+      let hit = cx + side * want;
+      for (let d = FIELD_STEP; d <= 1000; d += FIELD_STEP) {
+        const nx = cx + side * d;
+        const cur = sampleF(nx, z, cx) * side;
+        if (cur >= want) {
+          hit = x + (nx - x) * ((want - prev) / (cur - prev || 1));
+          break;
+        }
+        x = nx;
+        prev = cur;
+        hit = nx;
+      }
+      if (side < 0) bankW[r] = hit; else bankE[r] = hit;
+    }
+  }
+
+  return { path, centre, slope, half, bankW, bankE, field };
+}
+
+const tables = (): RiverTables => (riverTables ??= buildRiverTables());
+
+/** The projected course, x and z interleaved. For probes and the plan view; not a hot path. */
+export const tiberPath = (): Float64Array => tables().path;
+
+const sampleRow = (table: Float64Array, z: number): number => {
+  let f = (z - RIVER_ROW_LO) / RIVER_ROW_STEP;
+  f = f < 0 ? 0 : f > RIVER_ROW_N - 1.001 ? RIVER_ROW_N - 1.001 : f;
+  const i = f | 0;
+  return table[i] + (table[i + 1] - table[i]) * (f - i);
+};
+
+/**
+ * Centreline of the Tiber as a function of z, off the survey.
+ *
+ * Well defined because the authored polyline is monotone in z over the whole map — and the
+ * northern cut at z −300 is placed where it is partly *because* the real river stops being a
+ * function of z 172 m further north, at the Pons Milvius. `tiber-author.mjs` prints the check.
+ */
+export const riverCentreX = (z: number): number => sampleRow(tables().centre, z);
+
+/**
+ * The channel's half-width at this z, in metres, measured perpendicular to the flow.
+ *
+ * Off Lanciani's inked channel, binned by northing in 400 m bins and Gaussian-smoothed. It is a
+ * **trend, not detail**: the two independent width measurements available — Lanciani's ink and
+ * the orthophoto's gated water — correlate at **r = 0.037** over 264 paired stations, so neither
+ * resolves the width at a station, and a station-by-station profile would be structure no source
+ * can see. What they agree on is the scale (median 86 m) and the long trend, which is what this
+ * carries: narrowest through the Campus Martius bend, widest below the Capitol.
+ */
+export const riverHalfWidthAt = (z: number): number => sampleRow(tables().half, z);
+
+/**
+ * Local channel bearing as dx/dz. Still used to decide which bank is the cut bank, and by callers
+ * that want a row-wise scale. **It is no longer used to compute a distance** — that was the fault
+ * (see the head of this section) and `riverOffset` now reads the field.
+ */
+export const riverCurvature = (z: number): number => sampleRow(tables().slope, z);
 
 /**
  * Centreline of the Via Flaminia. Roman surveyors drove long straight alignments but
@@ -387,12 +540,51 @@ const PORTA_FLAMINIA_N = 2045;
 export const KX = 0.443;
 
 /**
- * Depth scale. The heightfield ends at z = 1400 and the wall crest reaches z = 583, so
- * there are about 940 m of city depth for Rome's 3,545 m from the Porta Flaminia to the
- * Baths of Caracalla. 0.222 is the largest value that fits Caracalla inside the map with
- * its precinct clear of the edge.
+ * Depth scale. **0.35, and the constraint that produced it is a fabric, not a monument.**
+ *
+ * It was **0.222**, and that number was *"the largest value that fits Caracalla inside the map
+ * with its precinct clear of the edge"* — the Baths of Caracalla being 3,545 real metres south
+ * of the Porta Flaminia and the heightfield being 940 m deep behind the crest. That is a real
+ * constraint honestly stated, and it was the wrong constraint. `docs/ROME-FABRIC.md` §4.3 and
+ * §4.5 are the measurement that replaced it:
+ *
+ *  - Real cross-street pitch in the Campus Martius is **50–90 m**. At `KZ` = 0.222 that
+ *    projects to **11.1–20.0 world m**, and a true-depth insula needs `INSULA_DEPTH_MAX` 22 m
+ *    plus two frontages — about **30 m**. **A true-scale insula did not fit between two
+ *    projected cross-streets at any point in the range.** Any generator deriving blocks from
+ *    projected streets was therefore forced to drop two cross-streets in three and stand one
+ *    22 m building in a 60 m gap, which is the blobs-between-voids the owner objected to,
+ *    arrived at honestly. At 0.35 the pitch is **17.5–31.5 m** and a street front is possible.
+ *  - The Campus Martius — the 700 world metres behind the gate the assault comes through, where
+ *    the battle's second act happens — went from **450 world metres** of depth holding 2,117
+ *    real metres of the densest monumental quarter in the ancient world to **709**, +58 %.
+ *  - Anisotropy against `KX` falls from **2.00×** to **1.266×**.
+ *  - Conflicting monument pairs, footprints at 0.65 and the five §4.1 complexes merged, fall
+ *    from **22** to **13**, each one now a named authored exception rather than a solve.
+ *
+ * **What it costs, and the cost was accepted in writing before it was taken.** Five monuments
+ * and one ridge fall past the +Z edge and are not drawn: the Palatine, the Circus Maximus, the
+ * Aventine temples, the Baths of Caracalla, the Caelian villas, and the Janiculum ridge. All
+ * are 700–800 world metres behind the wall, in `ROME.md` §6.1's backdrop zone, and none is
+ * fought over. The Colosseum, the Ludus Magnus, the Oppian baths, the Forum Romanum, the
+ * Capitolium, the Theatre of Marcellus and the Tiber Island all survive. See
+ * `offMapSouth` in `city/rome/layout.ts` for the predicate that drops them, and
+ * `ROME-FABRIC.md` §1.2 for why holding all of Rome was the thing that could not work:
+ * *"Carthage did not model Carthage."*
+ *
+ * **`KX` is not changing and cannot.** The front runs from the Tiber angle at `e` −655 to the
+ * Castra's north-east angle at `e` +2353, and the east end lands at `72 + 2850·KX`: 1334.5 at
+ * 0.443, 1400.1 at 0.466. There is 65 m of headroom on a 2,800 m map and nothing to win.
+ *
+ * **Neither anchor moves with this.** `GATE_X` is the fixed point of
+ * `roadCentreX(crestZAt(x))` and `GATE_Z = crestZAt(GATE_X)`; both are functions of x and z
+ * alone and contain no `KZ`, so the 725.7 m approach from the attacker's box to the gate is
+ * unchanged, and so are the front's length, its 36 bays and their 37.015 m pitch.
+ *
+ * Reproduce every number above with `node tools/scratch/rome-frame.mjs`, which re-derives the
+ * projection from the two anchors rather than importing it from here.
  */
-export const KZ = 0.222;
+export const KZ = 0.35;
 
 const X0 = GATE_X - KX * PORTA_FLAMINIA_E;
 const Z0 = GATE_Z + KZ * PORTA_FLAMINIA_N;
@@ -724,38 +916,91 @@ export const streamDistance = (x: number, z: number): number => {
 /**
  * Horizontal-to-perpendicular scale for the channel at this z, in (0, 1].
  *
- * `riverProfile` and `riverInfluence` both take a *cross-channel* distance, and every
- * caller has one thing to hand: `x - riverCentreX(z)`, measured along a row of the
- * heightfield. Those are the same number only where the channel runs due north-south. The
- * old two-sine meander never exceeded 31 degrees off the z axis so the difference was under
- * a sixth and nobody noticed; the surveyed course runs at **78 degrees** through the great
- * bend past the Campus Martius, where an unscaled offset draws the Tiber **twenty metres
- * wide** instead of ninety-four — a ninety-four metre river crossed at 78 degrees really
- * does occupy 447 m of a constant-z row, and the Insula Tiberina, which `layout.ts` places
- * *on* the centreline at 270 m long, would have stuck out of both banks.
- *
- * For a locally straight reach this is exact: the perpendicular distance from a point to
- * the line `x = c + s·z` is `|x - c(z)| / hypot(1, s)`.
+ * **Kept, and no longer used for distance.** It is `1 / hypot(1, dx/dz)`: the factor that turns
+ * an offset measured along a row into a perpendicular one, *for the infinite straight line
+ * tangent to the channel at that row*. That approximation is exact on a straight reach and
+ * badly wrong at a bend, and it was the whole distance model until this pass. `riverOffset` now
+ * reads a signed distance field instead. This survives because `heightfield.ts` still wants a
+ * cheap per-row scale for its early-out, and because the number itself is meaningful.
  */
 export const riverPerpScale = (z: number): number => {
   const s = riverCurvature(z);
   return 1 / Math.sqrt(1 + s * s);
 };
 
-/** Signed cross-channel offset from the Tiber centreline, in metres (negative = west). */
-export const riverOffset = (x: number, z: number): number =>
-  (x - riverCentreX(z)) * riverPerpScale(z);
+/**
+ * **Signed perpendicular distance from the Tiber's centreline**, in metres, negative west.
+ *
+ * A bilinear sample of the signed distance field built at the head of this file: 8 m over the
+ * map plus a 200 m margin, saturating at +/-320 m, which is clear of `riverInfluence`'s 266 m
+ * reach. Exact everywhere including at bends, which the expression it replaces
+ * — `(x - riverCentreX(z)) * riverPerpScale(z)` — was not.
+ *
+ * How wrong the old one was, measured on the surveyed course: at the Tiber Island the channel
+ * runs at 79 degrees to the z axis, so `riverPerpScale` is 0.19 and a point 400 m east along
+ * that row was reported as 78 m from the water. **Sixty of 1 259 city solids stood under
+ * `WATER_LEVEL` and nothing in the engine could see why.**
+ */
+export const riverOffset = (x: number, z: number): number => {
+  const t = tables();
+  const f = t.field;
+  let fx = (x + FIELD_HALF) / FIELD_STEP;
+  let fz = (z + FIELD_HALF) / FIELD_STEP;
+  fx = fx < 0 ? 0 : fx > FIELD_N - 1.001 ? FIELD_N - 1.001 : fx;
+  fz = fz < 0 ? 0 : fz > FIELD_N - 1.001 ? FIELD_N - 1.001 : fz;
+  const i = fx | 0;
+  const j = fz | 0;
+  const u = fx - i;
+  const v = fz - j;
+  const r0 = j * FIELD_N + i;
+  const r1 = r0 + FIELD_N;
+  const mag = (f[r0] * (1 - u) + f[r0 + 1] * u) * (1 - v)
+    + (f[r1] * (1 - u) + f[r1 + 1] * u) * v;
+  // The magnitude comes from the field and the sign from the row table. See `RiverTables.field`.
+  return x < sampleRow(t.centre, z) ? -mag : mag;
+};
 
 /**
  * The channel's banks in *x* at a given z — what a caller working along a row needs.
  *
- * Not `riverCentreX(z) ± RIVER_HALF_WIDTH`: that is the half-width measured across the
- * channel, and a row of constant z cuts a slanted channel obliquely. `EAST_BANK`,
- * `FAR_BANK` and the wall's west anchor all ask this question and all three used to answer
- * it with the perpendicular half-width, which on the surveyed course is out by up to 4.7x.
+ * Solved against the distance field at build time, per 4 m row: march out from the centre until
+ * the field reaches the local half-width, and interpolate. `EAST_BANK`, `FAR_BANK`, the wall's
+ * west anchor and the plan view all ask this question, and they used to answer it with
+ * `centre ± half / perpScale`, which is the straight-line approximation and is out by up to 4.7x
+ * on this course.
  */
 export const riverBankX = (z: number, side: number): number =>
-  riverCentreX(z) + (side * RIVER_HALF_WIDTH) / riverPerpScale(z);
+  sampleRow(side < 0 ? tables().bankW : tables().bankE, z);
+
+/**
+ * **The Tiber Island, as a bar standing out of the channel.**
+ *
+ * Returns 1 on the island's crown, 0 in open water, with a smooth shoulder. The test is done in
+ * the *survey* frame, where the island is an ellipse of its published 270 x 67 m at bearing 121
+ * degrees; projecting an ellipse through an anisotropic map does not carry its axes across, so
+ * un-projecting the query point is both simpler and exact.
+ *
+ * The island's dimensions are `city/rome/survey.ts`'s cited row, checked against the plate this
+ * pass rather than trusted: measured length 308 m and width 108 m off the orthophoto, which
+ * become 273 and 73 once the 35 m the water gate erodes off a channel is subtracted — the same
+ * 35 m by which the main channel's two independent width measurements differ. Both within 10 %
+ * of the published 270 x 67.
+ */
+const ISLAND_RAD = (TIBER_ISLAND.bearingDeg * Math.PI) / 180;
+const ISLAND_SIN = Math.sin(ISLAND_RAD);
+const ISLAND_COS = Math.cos(ISLAND_RAD);
+export const islandMask = (x: number, z: number): number => {
+  const e = (x - X0) / KX;
+  const n = (Z0 - z) / KZ;
+  const de = e - TIBER_ISLAND.e;
+  const dn = n - TIBER_ISLAND.n;
+  const u = (de * ISLAND_SIN + dn * ISLAND_COS) / (TIBER_ISLAND.lengthM * 0.5);
+  const v = (de * ISLAND_COS - dn * ISLAND_SIN) / (TIBER_ISLAND.widthM * 0.5);
+  return 1 - sstep(0.74, 1.0, Math.hypot(u, v));
+};
+
+/** Height of the island's crown, metres. Travertine and tufa; it has never been flooded out. */
+export const ISLAND_TOP = WATER_LEVEL + TIBER_ISLAND.riseM;
 
 /**
  * Clear ground the wall's west end keeps between itself and the Tiber's east bank, metres.
@@ -929,7 +1174,10 @@ export const riverProfile = (d: number, z: number, plainH: number): number => {
   const side = riverCurvature(z) > 0 ? 1 : -1;
   const onCutBank = d * side > 0;
 
-  const half = RIVER_HALF_WIDTH * (1 + ford * 0.85); // the shoal is a wide, braided crossing
+  // The half-width is now measured off Lanciani per reach rather than being one constant:
+  // 37 m through the Campus Martius bend, 50 m below the Capitol. `RIVER_HALF_WIDTH` survives
+  // as the nominal figure for callers that want one number.
+  const half = riverHalfWidthAt(z) * (1 + ford * 0.85); // the shoal is a wide, braided crossing
   const depth = 4.6 - ford * 3.95; // 4.6 m in the reach, 0.65 m over the ford
   const thalweg = WATER_LEVEL - depth;
 

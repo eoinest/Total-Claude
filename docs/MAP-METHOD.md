@@ -156,6 +156,49 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    declared complexes fail the connected test at any threshold under 20 m — the Theatre of Pompey
    stands 17.4 m from its own *porticus post scaenam* — which is exactly the kind of thing an
    exemption would have hidden for ever.
+19. **A curve can pass through every one of its control points and still bend the wrong way, and a
+   residual against those points cannot tell you.** Rome's Tiber was a cubic Hermite through twelve
+   knots and its error was reported as **0.1 world metres**. The report was honest: it compared the
+   transcribed table against `worldOf` of *the same twelve latitudes and longitudes*, which measures
+   the projection's arithmetic. It cannot see the shape between two knots, and it cannot see whether
+   a knot is in the river. Measured against the plate, **one of the twelve stood on water** and the
+   median knot was 115 real metres from the channel. **Grade a shape against a source dense enough
+   to have a shape**, and grade it with: lateral departure at fixed intervals, the *swing* across a
+   named span, and the **sign of curvature** station by station. An inverted bend has a small mean
+   error and cannot have the right sign.
+20. **Sparse control interpolated into a shape is the same fault one level up, and it caught two
+   instruments in one afternoon.** A sixteen-bridge river control graded the engine against the
+   *chords* between bridges: over the 842 m band beside the assaulted front there are two bridges in
+   the list, so the "plate" being compared to was a straight line across the very bend at issue. It
+   reported a 75 m median departure and a 1.435 swing ratio on a channel within 2.4 m of a dense
+   trace. And a by-northing comparison of an **east–west** reach is degenerate: one northing has
+   several answers, and it inflated a **14.7 m** perpendicular error into **392 m**. Use a sparse
+   control as a *point* control — perpendicular distance from each point to the curve — and use a
+   dense one for shape.
+21. **A representation that cannot express the thing will not be fixed by better data.** Rome's
+   channel was `x = f(z)`, a single-valued function of northing. The Tiber turns, so where it ran at
+   76° off the z axis the drawn river reached 385 world metres across a row against the 94 it
+   declared, and the far side of the Campus Martius was reported as being *in the river*. No amount
+   of digitising fixes that: feed a thousand points into `x = f(z)` and it reproduces the fault.
+   **Change the representation first** — here, a polyline in the plane plus a signed distance field —
+   and then the data means something. The same question is worth asking of every survey the project
+   holds: can the type it is stored in say the thing it needs to say?
+22. **A constant in world metres is a variable in real metres, whenever the projection is
+   anisotropic.** `RIVER_HALF_WIDTH = 47` was a true-scale cross-section, which rule 4 endorses. At
+   `KX` 0.443 and `KZ` 0.35 it drew a channel **212 real metres** wide where the Tiber runs
+   north–south and **269** where it runs east–west — one number, two widths, against a plate whose
+   channel is 100.8 m. Cross-sections in an anisotropic frame need a *rule*, not a constant: author
+   in real metres, project, and name the scale. Rule 4's override is still available and is now one
+   named number (`RIVER_WIDTH_SCALE`) rather than a figure nobody could convert.
+23. **When a solver stands between your change and the output, your change is not what the gate
+   measures.** Re-surveying the river moved two monuments that are placed *off* the river —
+   `FAR_BANK` pins far-bank landmarks to the west bank and ignores their own surveyed easting — and
+   `resolveOverlaps` cascaded that into every monument on the map. `probe-fabric` lost G9 (a
+   monument-to-insula clearance of 1.34 m against a 1.5 m gate) and G15, both about monuments
+   nowhere near the water. The same pass, by placing far-bank monuments from their own survey and
+   only clamping them with the river, took the resolver's worst displacement from **690 m to 118 m**
+   — better than the frame change that preceded it managed. **A gate downstream of a solver reports
+   the solver.**
 
 ---
 
@@ -988,5 +1031,341 @@ use, where `complex-invent`'s expectation string listed G8 as needing to go red 
   solid at all — there was nothing to be wet. A licence can go unused two ways and only one of
   them means the list has rotted; conflating them made the probe report a fault in itself as a
   fault in the city, which is the most expensive kind of false positive a gate can produce.
+
+### 21 Aug 2026 — the Tiber, re-surveyed off the plates, and the representation changed under it
+
+**What we did.** Threw away the twelve-knot spline and re-digitised the Tiber: the centreline as a
+least-cost path through gated water on the AGEA 2012 orthophoto, cross-checked against Lanciani's
+inked channel; the width off Lanciani, binned and projected; the Tiber Island measured as the bar
+between its two arms. 451 stations at 25 m of course length, held in **survey metres** in a new file
+`src/terrain/tiberSurvey.ts` and projected by `topography.ts`. Replaced `riverCentreX`'s `x = f(z)`
+distance model with a polyline plus a **signed distance field**. Fetched three orthophoto tiles from
+the same WMS, layer, CRS and licence as `ASSETS.md` item 8 so the map's northern half stopped being
+an extrapolation. Wrote `tools/probe-tiber.mjs`: departure, swing, the sign of curvature, the drawn
+channel's width in *real* metres, and everything standing in water.
+
+**What we expected.** That the river was sound and only its *shape between the control points* was
+wrong — `ROME-FABRIC.md` §2.6 says *"The Tiber is sound… Keep the polyline"* — so a denser
+digitisation through the same twelve points would fix it in an afternoon.
+
+**What happened.** Four surprises, each bigger than the last.
+
+1. **The control points were not on the river.** Measured against the plate, **one of the twelve
+   stood on water**; the median knot was 115 real metres from the channel and the worst 1,166. The
+   0.1 m residual that had blessed them compared the transcribed table against `worldOf` of the same
+   twelve latitudes and longitudes. It was arithmetic, honestly reported, and it could not see the
+   river. Rule 14.
+
+2. **A denser table would not have fixed it, because the representation could not hold the answer.**
+   `x = f(z)` cannot describe a channel that turns: at the Tiber Island the course runs 76° off the
+   z axis, and the drawn river reached 385 world metres across a row against the 94 it declared. That
+   is the mechanism behind buildings standing in water, and it is why the count kept moving depending
+   on who measured it — 37, 60, 74, 71 — because the *declared* channel and the *drawn* channel
+   differed by nearly 3×. Rule 16. A separate judge pass found the same thing independently the same
+   afternoon and put it more sharply than we had: *"a denser table will not fix this."*
+
+3. **The width was one number and two answers.** `RIVER_HALF_WIDTH = 47` world metres is 212 real
+   metres of channel where the Tiber runs north–south and 269 where it runs east–west, against a
+   plate whose channel is 100.8 m. Rule 17. **This bug caught the grading harness as well**, which
+   compared 94 world metres against 100.8 real metres and reported agreement — so for one afternoon
+   two independent instruments held the same wrong number for the same reason.
+
+4. **The one thing we were told was out of scope turned out to be downstream of us.** `FAR_BANK`
+   pins far-bank monuments to the river's west bank and discards their own surveyed easting, so
+   moving the river moved them, and `resolveOverlaps` cascaded that into every monument on the map.
+   `probe-fabric` went **7/21 → 5/21**, losing G9 and G15, both about monuments nowhere near water.
+   Rule 18.
+
+**The numbers, after.** Against the dense plate trace: departure median **2.4 m** (1.1 world m) over
+the front, swing ratio **0.990**, **0 inverted curvature stations** on the front. Against the judge's
+own harness: the channel is **102.1 real metres** wide against the plate's 100.8 (**ratio 1.01**, was
+2.31); the bow turns at the same place (apex **−40 m** of northing, was −360); local curvature has
+the plate's sign everywhere in the city; **0.00 %** of built footprint changes bank between the
+plate's channel and the engine's. Water: **0 solids wholly submerged, 0 with their centre in water**,
+from 41 and 62. Four solids keep an edge in the wetted band and all four are named and attributed.
+Determinism re-recorded: 8,632 / **3,074** / 3,440 — Carthage byte-identical as the control.
+
+**Verdict — the brief was right about the fault and wrong about the layer, and the correction cost
+most of the pass.** We were sent to re-digitise a curve. The curve was the smallest of four faults,
+and three of the other three were *type* errors rather than data errors: a function of one variable
+standing in for a curve in the plane, a cross-section stored in the wrong frame, and a landmark rule
+that read the river when it should have read its own survey. **Density was necessary and nowhere near
+sufficient**, and the tell was available on day one: the thing being graded and the thing grading it
+were the same twelve numbers.
+
+**What we would do differently.**
+
+- **Before digitising anything, check that the existing control points are on the feature.** It cost
+  forty lines (`tools/scratch/tiber-knotcheck.mjs`) and it reframed the whole pass. Every survey in
+  this repository should get the same treatment: `ROME_CIRCUIT_SURVEY`'s fourteen waypoints carry no
+  citation at all, and a separate judge pass has since measured them 165–361 m off the inked wall.
+- **Ask what type the survey is stored in before asking whether its numbers are right.** Rule 16.
+  Three of this pass's four faults were visible from the type signature alone: `x = f(z)`,
+  `RIVER_HALF_WIDTH: number` in an anisotropic frame, and `FAR_BANK(z, offset)` for a thing that has
+  its own `e`.
+- **Two instruments agreeing is not two instruments.** The grading harness and this pass made the
+  identical world-versus-real-metres mistake within hours of each other, because both took the same
+  constant at face value. Agreement between instruments that share an assumption measures the
+  assumption.
+- **When a solver stands between the change and the gate, measure the solver.** `resolveOverlaps`'
+  worst displacement went 399 → 690 m when the river moved and 690 → 118 m when far-bank monuments
+  were given their own survey back. None of that is fabric work and all of it shows up as fabric
+  gates.
+- **The one fabrication is named and drawn.** North of world z −300 the plate-true course turns east
+  through the Pons Milvius reach, stops being a function of z at z −472, puts 0.76 km of channel
+  inside the attacker's deployment box and fords the Via Flaminia unbridged. The map continues north
+  on the measured local bearing instead, eased to due north — chosen over the *mean* bearing because
+  that one reverses the sign of the curvature at the join, which is the fault this pass was called to
+  fix, one level up, and which no residual would have shown.
+
+### 21 Aug 2026 — Rome fabric phase 3: the frame decision, and four mechanisms that were never wired up
+
+**What I did.** Took the ground judge's four-item list in its own priority order, on
+`e/city/rome-landmarks-p3` off `e/city/rome-landmarks` at `6c975e8`. `docs/ROME-FABRIC.md` §9 is
+the full write-up; this is what the method learned.
+
+**What I expected.** That item 1 — *"`KZ` = 0.30, or the reason it is impossible in writing"* —
+would be a half-day of sweeping and a judgement call about how much backdrop to trade for how
+much depth.
+
+**What happened.** `KZ` = 0.30 is *more* compression, not less. The judge's own diagnosis is
+"the frame is too small for the survey", and 0.30 makes the frame smaller: anisotropy 1.27× →
+1.48×, conflicting pairs 14 → 18, and a true-depth insula fits over **0 %** of the real
+cross-street range instead of 11 %, which is precisely the arithmetic impossibility rule 10 was
+written about and phase 1 existed to escape. Two independent readings of the same number reached
+the same wrong sign — the judge's, and my own first reading of the brief — because "raise `KZ`"
+and "raise compression" sound like the same direction and are opposites.
+
+Then the sweep said something nobody had asked for: **the feasible window is
+[0.3334, ~0.357] and it is 0.024 wide.** The floor is the insula module; the ceiling is the
+Colosseum leaving the heightfield between 0.355 and 0.360. `KZ` was never a lever. It had one
+notch of travel and phase 1 already used it.
+
+**Verdict: right to demand the measurement, wrong to expect a decision. The measurement closed
+the question instead of informing it, and that is the better outcome — four findings that were
+all "spend a pass on `KZ`" are now one finding that says "spend it on `HALF_EXTENT` or on the
+complexes".**
+
+**What I would do differently.** Bracket the constraint *window* before pricing any single value
+inside it. I swept the six points the tool shipped with, read the table, and only then thought to
+ask where the walls were; had I bisected the ceiling first — two runs, four minutes — the whole
+of item 1 would have been answered before I read the rest of the verdict, and it gates everything
+else.
+
+---
+
+Four rules this pass paid for, offered for §1 in the numbering that follows the judge's 14–18.
+
+> **19. A field that is declared, documented and never read is worse than a missing one, and the
+> way to find them is to grep for readers rather than for writers.** Rome's Castra Praetoria is
+> drawn at a fifth of its published plan because the camp stands 59 world metres inside a wall it
+> needs 260 m of half-depth to sit behind. The survey has carried `atWall` — *"fraction of the
+> footprint's depth that may sit north of the wall crest"* — for two phases, with a paragraph
+> explaining it; `place()` copied it onto the placement and **nothing ever read it**. Nor
+> `drawMax`, anywhere in `src/`. Nor `maxDrawAt`, which has no callers at all. Three mechanisms,
+> all documented as constraints, all inert, and the constraint they describe enforced instead by a
+> human transcribing an offline script's answer into a literal. Implementing one of them took the
+> fortress from 76 × 72 m to 130 × 123 m and removed seven of nine size inversions. **A grep for
+> the *definition* of a field finds it; only a grep for its *consumers* tells you whether the
+> mechanism exists.**
+
+> **20. A check whose failure sets its own "pending" cannot fail.** Rome's frame report filters
+> faults with `!ok && pending === null` and one row set `pending` as `ok ? null : '…'` — non-null
+> exactly when the check failed. So a genuine monument-in-a-street regression printed as PENDING
+> and left the fault list empty. The generalisation is worth more than the bug: **an escape hatch
+> whose condition is correlated with the failure it excuses is not an escape hatch, it is a
+> deletion.** Same shape as rule 16's born-dark exclusion, one level up — there the population was
+> chosen to exclude the fault, here the severity was.
+
+> **21. Reproduce the other instrument's headline inside the tree before arguing with it, because
+> the argument is usually about what was measured and not about the number.** A judge reported
+> *"the road the assault arrives on is 32 % solid"*, walking the gate's own straight normal. The
+> road is not straight — the layout has deflected ways round their monuments since phase 1 — and a
+> column follows the way graph, so "the road" and "a straight line out of the gate" are two
+> claims and only the second had ever been measured. Both now print at every boot, side by side,
+> and the carriageway is 13 % where the axis is 20.6 %. **Neither number is wrong; the name was.** A
+> claim in the record that no instrument in the tree can re-derive is a claim nobody can check,
+> and the act of re-deriving it is what surfaces the definition.
+
+> **22. When two independent agents make the same sign error in the same formula, the formula
+> needs a comment more than the agents need care.** `rot = atan2(cos θ, sin θ)` in an
+> `(x = e, z = −n)` frame: get the sign wrong and every box is mirrored about its own centre,
+> which is **invisible on an axis-aligned building and silently inverts every rotated one**. It
+> reported the Basilica Ulpia and Trajan's Column interpenetrating by 27.3 m, then 13.6 m, then
+> made all five of Rome's declared complexes read as detached including the two that genuinely
+> abut. Three independent occurrences: the offline allocator, a judge's own probe, and the first
+> draft of the check written to catch it — each caught only by disagreeing with a hand-computed
+> separation. **A geometric convention that fails silently on the symmetric case needs its
+> failure mode written at the site, not its correctness asserted.**
+
+### 22 Aug 2026 — four branches assembled into one Rome, and what a merge can delete without failing
+
+**What I did.** Took `e/city/rome-fabric-p1`, `e/terrain/tiber-resurvey`, `e/city/rome-landmarks`
+and `e/city/rome-landmarks-p3` — built in parallel against a moving base, none of them landed —
+and assembled them on `e/city/rome-assembled`. Then re-measured with the judges' own instruments
+and filmed the result, because the owner asked to *see* the city and not to read about it.
+
+**What I expected.** A hard three-way merge in `layout.ts`, a stale determinism pin, and a
+fabric score somewhere in the low teens. Two of three were right. I did not expect the merge to
+be an ancestry problem before it was a content problem, and I did not expect it to silently
+delete every street in the city.
+
+**Surprise 1: two of the four branches were already ancestors of `main`, with none of their
+content in it.** `bc2e0f2` (phase 1) and `6c975e8` (landmarks) both reached `main` through the
+accidental `de43bed` merge and were then backed out by `44951ad`, which restored `src/` wholesale.
+So `git merge e/city/rome-landmarks` is a **no-op that reports success**: git sees the commit in
+the history and the revert as the later word. Nothing warns you. The only thing that restores the
+content is `git revert` of the revert, and the check that it worked is not "the merge said OK" —
+it is `git diff 6c975e8 -- src/city/rome` coming back empty, which I ran. **A branch being an
+ancestor of `main` is not the same as its work being in `main`, and the distinction is invisible
+to every command that would normally tell you.**
+
+**Surprise 2: the merge deleted every district street in Rome and nothing failed.**
+`e/terrain/tiber-resurvey` added `out.plots = dry;` inside `buildDistricts`, on the line
+`for (const l of out.lanes) lanes.push(l);` occupied. Git took the deletion as a clean
+non-conflicting hunk. The consequence: `lanes` stayed `[]`, so `nearLane` returned false for every
+tree, `buildWays` was handed an empty list, and every quarter in the city lost its internal street
+network. **`tsc` passed, `lint` passed, and the two water gates the very same commit introduced
+passed too** — because a quarter with no streets in it is invisible to a gate that grades solids
+against solids. I found it by diffing the branch against its own base and reading the hunk, not by
+running anything. **This is rule 6 from the other end: the missing instrument is not always a
+check that compares a thing against itself, it is sometimes a check that has no opinion about the
+thing at all.** The proposed rule is at the bottom.
+
+**Surprise 3: the two branches that had to fight had already agreed.** The one real content
+conflict — `place()`'s `farBank` override — was written *the same way* by both branches from
+opposite motives. The landmark branch reached `Math.min(w.x, FAR_BANK(z, 90))` because the old
+`x = FAR_BANK(z, 90)` was deleting the Janiculum's survey row (404 m east, 715 m of movement
+between two phases under a headline of "0.0 m by construction"). The Tiber branch reached
+`Math.min(w.x, FAR_BANK(z, 100))` because the same rule was discarding the Mausoleum of Hadrian's
+surveyed easting and coupling every far-bank monument to a channel that was being re-surveyed
+underneath it. The landmark branch's comment names the other branch and says *"`100` against `90`
+is the only thing left to reconcile."* **It was less than that: both are inert.** `assertRomeFrame`
+check 5 prints `mausoleum-hadrian (farBank) dx 0 dz 0; janiculum (farBank) dx 0 dz -8` — dx 0 on
+both rows, at either constant, because the re-surveyed west bank is more than 100 m east of both.
+I kept 100, recorded the measurement at the site, and wrote down the condition that would make the
+number matter again. **Resolving a conflict by measuring sometimes tells you the conflict was not
+one; that is still the cheapest possible answer and you only get it by measuring.**
+
+**Surprise 4: the control appeared to fail, and the instrument was wrong, not the subject.**
+`qa-determinism` on Carthage — the control, the map none of this work touches — came back
+**12 failing checks across 7 checkpoints**, drifting from t+30 onward. That is the alarm you least
+want to be real, because a Rome change that moves Carthage means something shared moved and every
+number on both maps is in question. It was not real. Runs A and B were identical to each other, so the sim was deterministic; the disagreement
+was with the **pinned file**. Comparing that file against `main`'s: the assembled tree measures
+`a4fa4050` at t+30 and **`main`'s pin is `a4fa4050`** — all seven checkpoints and all seven
+survivor counts match `main` exactly. The pin that disagreed was the one this branch had
+inherited from `e/terrain/tiber-resurvey`, whose Carthage entry reproduces on neither tree.
+**Carthage is byte-identical across the whole assembly and the control holds**; what failed was a
+baseline row that had been re-recorded when nothing had moved. The lesson is the one the file's
+own header states and this pass nearly mis-read: *re-record only in the same commit as the change
+that moved it* — a gratuitous re-record does not just add noise, it manufactures a failing control
+and points it at innocent work.
+
+The other two battles moved, and one of them moved further than either parent. **The field
+battle's t+30 hash is `3a315656` on this tree, against `dc3fa068` pinned on `main` and `5903c5e0`
+pinned on the Tiber branch** — a third value, not either input. The likely reading is that
+`campus-martius` builds the city in *both* scenarios, so `default` sees the re-surveyed channel
+**and** the landmark rework, and neither parent had both; but I did not run the experiment that
+would establish it, so that is an inference and is marked as one. The **Rome assault** re-records
+at **3,072 men in 32 units**. All three battles are now pinned to what this tree measures.
+
+A trap worth naming for whoever reads these logs: **`--record` does not compare.** It writes and
+prints `✓ deterministic and unchanged across 7 checkpoints`, and that sentence is about run A
+versus run B and across the four quality tiers — *not* about the baseline, which it has just
+overwritten. I nearly wrote "the field battle matched the Tiber pin" on the strength of it. If you
+want to know whether a battle moved, you have to run it **without** `--record` first, which is why
+the Carthage control above was run that way and why the finding exists at all.
+
+**The numbers, before and after, on the same instrument.**
+
+| | `main` 2409ed8 | assembled | Carthage control |
+|---|---|---|---|
+| `probe-fabric` | **5 / 23** (18 failing, 2 n/a) | **10 / 25** (15 failing, **0 n/a**) | 13/22 both, byte-identical verdict |
+| solids under water | 78 (77 insulae + Theatre of Marcellus) | **0 of 1,207** centre-wet; 3 corner-wet, named | — |
+| buried quarters | 6 | **1** (forum-boarium) | — |
+| monument ambitus (G9) | 1.02 m | **3.18 m** | — |
+| monument displacement | 65 / 168 m (142 / 399 m with phase 1 alone) | **0.0 mean, 0.0 worst** on 25 affine rows; 5 overrides printed by name | — |
+| gate axis inside masonry | 32 % | **20.6 %** | — |
+
+**Against the plate, which is the ruler that is not ours.** `tools/probe-plan.mjs` renders the
+map into the georeferenced Lanciani frame and compares: **6/9, one skipped.** The result that
+matters is **P3, monuments stand where the survey put them: mean 0 / worst 0 real metres** —
+`ROME-PLAN-RUBRIC.md`'s single largest loss (P6, 0/20, median 227 m and worst 1,031 m) measured
+to zero by an instrument that reads the plate and not our survey. The river takes five of six:
+the bend goes the same way (−727 m against the plate's −732.4), turns in the same place (apex 40 m
+apart), keeps the plate's curvature sign, moves **0.00 %** of built footprint across the channel,
+and is **102.1 real metres wide against the plate's 100.8, a ratio of 1.01**. The three failures
+are all named and all inherited: 2 of 1,124 solids on wet ground with **none fully submerged**;
+544 solids in a carriageway of which **529 are district lanes** and 15 monuments; and 4 of 21
+river bands over 47 m, the worst at n −100 inside the northern reach `tiberSurvey.ts` itself
+declares a fabrication.
+
+**The rest of the standing gate, on the assembled tree.** `tsc --noEmit` clean; `npm run lint`
+**3/3** (and the browser-budget allowlist shrinks 92 → 91, because `probe-tiber.mjs` was written
+before the cap landed on `main` and had to be converted); `qa-deploy` **33/33**; `probe-seams`
+**PASS on both maps**; `probe-ground` clean — **0 deployment cells under water** on either side
+(15,626 attacker, 11,791 defender), 0 men in the channel, 0 on the far bank, 0 trees inside the
+wall keep-out; `probe-wall` **18/19**, every substantive wall assertion passing — continuity,
+one polyline, the gate shut, the tunnel real, obstacles matching stone, stairs climbable, no
+scaffolding on the field side — with the single failure a 404 for a static resource under the
+probe's own `dist/` server, which is a serving artefact and not a wall fault. Note for the next
+person: `probe-wall` serves `dist/` when no dev server answers its port, so it needs a build
+first or it times out; that cost a run.
+
+Checks gained: G9, G11, G12, G16, G22. **G8c and G8d went from `n/a` to FAIL**, which is the
+point of them: `main` declares no complexes, so the two checks written to grade complexes were
+vacuous there, and a vacuous pass is indistinguishable from a real one. The assembled tree can
+now fail for reasons `main` could not.
+
+**Two corrections to figures I was handed, both found by running the instrument rather than
+quoting it.**
+
+- **`probe-fabric` on `main` is 5/23, not 7/25.** 7/25 is the score on the *landmark* tree, where
+  `complex` exists and G8c/G8d are applicable. On `main` those two rows are `n/a` and five checks
+  pass, not seven. The brief's number was right about a tree that is not the one it named. Quoting
+  a score without the tree it was measured on is quoting a number without its units.
+- ~~**Rome's determinism headcount is 3,074, not 3,072.**~~ **I was wrong, and the way I was
+  wrong is the point.** `qa-determinism.mjs`'s usage text and the pin I had inherited both say
+  3,074, so I wrote the brief's 3,072 up as an error before measuring it. Then I ran the battle:
+  **3,072 men in 32 units.** 3,074 is the phase-1 tree's headcount; the assembled tree is two men
+  lighter, because the landmark rework changes the city and Rome's defender count is derived from
+  the city's own garrison bays. **Two documents agreeing is not a measurement — they can share an
+  ancestor.** The brief was right and both of my sources were stale, which is the same failure
+  mode as the check that compares a thing against itself, one level up: I corroborated a number
+  against a copy of itself.
+
+**What I would do differently.**
+
+- **Re-record the pin at the endpoint, and say so in every commit that moved geometry without
+  re-recording it.** Three tree-moving steps in a row (revert-the-revert, two merges) would have
+  cost nine `qa-determinism` runs to honour "re-record in the same commit that moved it"
+  literally, and an intermediate merge state is not a tree anyone runs. I took the endpoint and
+  wrote the departure into the first commit's message. It is still a departure, and the next
+  person assembling branches should decide it deliberately at the start rather than at the second
+  merge.
+- **Look at the pictures before writing the second batch of cameras, not after.** Half my first
+  film pass was unusable for reasons arithmetic would have predicted: `eye` is measured from the
+  terrain **under the focus**, so a 1.75 m camera with a 70 m `dist` across ground that falls 8 m
+  stands ten metres up; and a level lens needs `aim = eye + 1.55` exactly, which no shot in the
+  repo had ever set — `pitch = atan2(eye - aim + 1.55, dist)`, so pass one's cameras came out
+  5.6 and 7.1 degrees up and 9.9 down, all inside `VISUAL-RUBRIC` section H's 15-degree licence
+  and none of them the level frame the rubric is describing. The judge's own eye-level stations were copied forward from a pass taken
+  before `KZ` moved 0.222 → 0.35, so they no longer land on the street they were chosen for.
+  **A camera position is a measurement against a frame, and it goes stale when the frame moves —
+  exactly like a survey row, and nothing marks it.**
+- **The plan view came back upside down** and I did not predict it. `yaw: 0` looks `+Z`, and `+Z`
+  on this map is south, so a top-down at yaw 0 puts south at the top of the frame — unusable
+  beside a north-up plate until you know to pass `yaw: PI`. `dist: 0` for a true plan works and
+  had never been used in this repo.
+
+**Proposed rule, earned by surprise 2.** *A merge can delete a mechanism without deleting a
+symbol, and no gate in this project can see that.* The lanes deletion left `lanes` declared,
+typed, passed to three consumers and returned — a live variable that is always empty. Every
+instrument stayed green. The cheap general defence is not another probe: it is that **any
+collection accumulated in a loop and consumed later should be gated on being non-empty at the
+point of consumption when empty is not a legal state**, and that **a merge touching a file no
+conflict was reported in still needs its own diff read**. The second half is the one that would
+have caught this in ten seconds, and it is a habit rather than a tool.
 
 <!-- Append new entries above this line. -->
