@@ -88,6 +88,8 @@ it is.
 > **all three are apart at t+250 and t+400** — 5,849 / 5,560 / 5,886 survivors, Chromium against
 > Firefox 4.9% apart. The escape at t+205.5 is exactly where it was. Two different problems were
 > being conflated: map generation decides the *boot*, and the tick loop decides the *battle*.
+> (**The battle half is closed too, three paragraphs down, and by something else entirely.** Read
+> to the end of this block before quoting any of it.)
 >
 > **The leading indicator, which is the most useful operational number here.** On that same run
 > `uf64` — the float64 unit layer — was already apart at **t+30**, one hundred and seventy
@@ -101,6 +103,22 @@ it is.
 > and **one in `src/city/rome/circuit.ts` that was a regression** — `tools/check-determinism.mjs`
 > was already reporting it, because `hypot` had been cleared out of `src/city` deliberately and
 > a hit there is new code putting it back. The linter's `hypot` row now says so.
+>
+> **And then the thing this document said was a 3–5 week project turned out to be one file.**
+> §1.4 already had the whole argument written down: the soldier pool round-trips through float32
+> every tick and holds for six thousand ticks, and `UnitGroupState` is plain float64 integrated
+> in place with no quantisation step anywhere. §3 Stage 3 names the fix — `Math.fround` on the
+> integrated fields — and then prices it inside a vendored-libm project at 3–5 weeks. It is
+> `src/sim/quantise.ts`, it is about a hundred lines of which ninety are the comment, and with it
+> **all three battles are bit-identical in Chromium 151, Firefox 153 and WebKit 26.5 at all seven
+> checkpoints, t+0 through t+400** — pool hash, `uf64` and `uctl`, 8,632 / 3,440 / 3,074 men.
+> The t+205.5 escape is closed. Five seeds, a control, the cost and the caveats are in the
+> Stage 3 rewrite.
+>
+> **`uf64` is therefore no longer a warning.** This document says it cannot be a gate because a
+> Chromium point release moves it on its own; that was true of an unquantised layer and is not
+> true of a quantised one. `qa-determinism.mjs` now hard-fails on it by default and `--soft-units`
+> is the escape. **A `uf64` drift on an unchanged tree is now a finding, not a browser update.**
 >
 > **The gate's port hazard is closed and it was real.** `qa-determinism.mjs` reused any listener
 > that answered on its port, which in a checkout with eighty worktrees on a handful of default
@@ -539,6 +557,40 @@ Worth stating, because it is the reason any of this is tractable:
 
 ## 2. The recommendation
 
+> **Amended 21 August 2026 — `e/tools/xengine-arm`. Step one of the four below is no longer
+> true, and it was the step the other three rested on.**
+>
+> §2 says realtime needs cross-machine determinism and "this codebase does not have it across
+> browsers". As of `src/sim/quantise.ts` it does, on this tree, for all three shipped battles and
+> for five seeds of the field battle: **Chromium 151, Firefox 153 and WebKit 26.5 bit-identical on
+> the pool hash, `uf64` and `uctl` at t+0, 30, 90, 150, 200, 250 and 400.** Measured by a standing
+> arm with six vacuity assertions and an off-switch control, not by a pass that has gone home.
+> Steps two, three and four are unchanged and all three have since happened: the `hypot`
+> substitution landed at 249 sites, the replay record shipped, and a relay is still the right
+> transport for the total-order reasons in §4.1.
+>
+> **What this does and does not license.** It licenses *pricing* realtime honestly, and it
+> removes the worst thing in the product §2 describes — "your friend, on your browser, on your
+> patch version, this week". It does **not** license skipping §4's list, and it does not make the
+> desync tail in §5 shorter. Two things are unchanged and are now the binding risks rather than
+> the second-order ones:
+>
+> - **§7.1 is still open and is now the whole premise.** Every number here is one machine.
+>   Chrome-on-Alice against Chrome-on-Bob, two CPUs, two patch builds, is untested and cannot be
+>   tested here — and the cross-architecture shortcut this document offers does not exist (see
+>   §7.1's own correction). Three engines agreeing on one machine is strong evidence about libm
+>   and no evidence at all about two machines.
+> - **The firewall is a firewall, not a proof.** It reduces the straddle probability to about
+>   2e-9 per field per tick. Long battles and unlucky seeds will still fork. The consequence for a
+>   design is concrete: **a lockstep peer must exchange `uf64` every turn and have a policy for a
+>   mismatch**, because mismatches are now rare rather than impossible. §4's "decide what a hash
+>   mismatch means and be consistent" is still right — any mismatch is a fork — but a fork is now
+>   a once-in-a-long-while event rather than a certainty, which changes what the UI should say.
+>
+> And one thing that got *cheaper* rather than merely possible: **`uf64` is the desync detector.**
+> It saw the field battle's pre-firewall fork at t+30 while the pool hash held to t+200. It costs
+> 0.08–0.12 ms, it is already in the product, and it is 8 bytes on the wire.
+
 **Do not build realtime multiplayer yet. Build the determinism fix and the replay record, in that
 order, and re-decide afterwards with better evidence than anyone has now.**
 
@@ -855,6 +907,120 @@ and there is no evidence anyone but the owner wants it.
 
 ### Stage 3 — Vendored transcendentals. 3–5 weeks, and unpriced by every design in this pass.
 
+> **Repriced 21 August 2026, from measurement. The two halves of this stage are separable, the
+> cheap half is a single file, and on this tree the cheap half was sufficient.**
+>
+> This section bundles two things and prices them together: vendoring a software libm, and
+> `Math.fround` on `UnitGroupState`'s integrated fields. Only the first is weeks. The second is
+> `src/sim/quantise.ts` — quantise every float64 field `uf64` hashes to its nearest float32, at
+> birth in `spawnUnit` and at the end of every tick from a system at order 60 — and it was
+> written, measured and documented inside one session.
+>
+> **What it buys, measured with `tools/qa-xengine.mjs` on Chromium 151, Firefox 153 and
+> WebKit 26.5, arm64 macOS, at `quality=high`, seven checkpoints to t+400:**
+>
+> | battle | men | before the firewall | after |
+> |---|---|---|---|
+> | default field | 8,632 | identical to t+200; apart at t+250 and t+400 — **5,849 / 5,560 / 5,886** survivors | **identical at all seven, all three engines** |
+> | Carthage assault | 3,440 | identical t+30 onward; **t+0 `uf64` apart** — 26 float64 fields, all `facing`/`targetFacing`, 1 ULP, Firefox | **identical at all seven, all three engines** |
+> | Rome assault | 3,074 | identical t+30 onward; t+0 `uf64` apart in *both* other engines | **identical at all seven, all three engines** |
+>
+> `hash`, `uf64` and `uctl` all three, exact bits, with the arm's own controls green: 13 of 14
+> approximated `Math` functions measurably disagree between those engines on the same run, the
+> probe's `inputs`/`sqrt`/`a*b+c` controls are identical everywhere, and a second Chromium load is
+> bit-identical to the first so nothing above is harness noise.
+>
+> **Two things had to be right and only one of them is obvious.**
+>
+> *Order 60.* The firewall has to run after every writer of `UnitGroupState` in a tick. The two
+> AIs sit at 42 and 45 and emit `orderIssued` **synchronously**, so their orders land through
+> `BattleSystem`'s handler after `BattleSystem` itself has run. A firewall at order 15 would exist
+> and do nothing, and the pool hash would hide that for thousands of ticks.
+>
+> *Birth.* `deployBattle` is called from `boot()` **after** `engine.initAll` returns, so a
+> firewall that lives only in `fixedUpdate` — or in this system's own `init` — leaves the entire
+> deployed order of battle unquantised at t+0. That was tried and measured: it left the Carthage
+> assault's 26-field `facing` residual exactly where it was, because those values come from
+> thirteen boot-time `Math.atan2(m.nx, m.nz)` calls in `deployAssault` and t+0 is hashed before a
+> tick has run. Quantising inside `spawnUnit` closes it wherever a unit comes from. **t+0 is the
+> checkpoint a lobby handshake and the replay record's refusal both key on, so getting the boot
+> half wrong would have failed exactly the case a product needs.**
+>
+> **The intermediate measurement, which is the one that explains the mechanism.** With the
+> firewall in `fixedUpdate` only and not at birth, the field battle still forked between t+200 and
+> t+250 — but the divergence at t+400 fell from **289 men to 8**, and `uf64` went from differing
+> at t+30 to agreeing through t+200. That is §1.4's amplifier being removed: `dx = tx - p.x[i]`
+> differences a float64 unit target against a float32 soldier position and was measured at ~2,400×,
+> and once `tx` is quantised it has no input difference to amplify. What was left was the
+> un-amplified straddle rate, which is the same ~2e-9-per-write bound the pool has always had.
+>
+> **Five seeds, not one, because §7.2 cuts both ways.** An escape time is a sample; so is a
+> *non*-escape, and one battle running identically in three engines could be a battle that was
+> never going to fork. `tools/scratch/xe-seeds.mjs` builds a config token per seed
+> (`sanitiseConfig` fills everything it is not given, so `{"seed": N}` is the default field battle
+> with one thing changed) and runs the arm on each. Four extra seeds at 8,632 men, all three
+> engines, t+0 / t+200 / t+400:
+>
+> ```
+>   seed 11   4,586 survivors at t+400   identical in all three
+>   seed 22   4,982                      identical in all three
+>   seed 33   5,042                      identical in all three
+>   seed 44   4,364                      identical in all three
+>   shipped   4,785                      identical in all three, at all seven checkpoints
+> ```
+>
+> **And the control is what makes that mean anything.** With the firewall switched off and nothing
+> else changed, the shipped seed and seeds 11 and 22 all three go red between Chromium and Firefox
+> — same seeds, same tree, one system removed. Without that arm, five seeds holding would be
+> consistent with five seeds that were never going to fork. The control is **three of the five**,
+> not all of them: the run covering 33 and 44 was started and then invalidated when the tree
+> changed under it, and it refused rather than reporting a number — which is the second time the
+> arm's own second-load control has caught me doing that in one session, and the reason it exists.
+>
+> **Those five seeds also price the cost better than the cost does.** Every pinned checkpoint on
+> all three battles moves, re-recorded in the same commit as the change that moved them. The field
+> battle's survivor curve, Chromium, before and after:
+>
+> ```
+>          t+0    t+30   t+90   t+150  t+200  t+250  t+400
+> before   8632   8632   8270   7528   7061   6676   5849
+> after    8632   8632   8233   7207   6358   5980   4785
+>                        −0.4%  −4.3%  −10.0% −10.4% −18.2%
+> ```
+>
+> §3's one prior measurement of this put it at −1.1% at t+200. That was the tick-only half, on a
+> different tree; the full firewall including the boot pass is **−10.0% at t+200 and −18.2% at
+> t+400** on this one. **That is a change a player could notice and it must not be buried.** For
+> scale: survivors at t+400 across the five seeds above span **4,364 to 5,042 — 678 men, 14.2% of
+> the mean.** The change this makes to the outcome is the same order as changing the seed. That is
+> not an argument that it does not matter — a battle is tuned at one seed — but it is the right
+> frame, and it is a frame nobody had because nobody had run one battle at five seeds.
+>
+> The mechanism is still the small one. The quanta are far below anything visible — **0.12 mm** on
+> a position against a 0.72 m rank pitch, **1.2e-7 rad** on a bearing, **6e-8** on a morale value
+> in 0..1 — so this is **not "units move differently", it is "a few discrete decisions land the
+> other way and the battle takes a different branch"**, and then twelve thousand ticks of a
+> chaotic system amplify the branch. Someone reading this in six weeks needs to know it is a
+> branch change and not a nerf. What it is *not* is evidence that the battle got worse, and
+> nothing here measures that.
+>
+> **It is a firewall, not a proof.** Quantising reduces the probability that two engines' answers
+> straddle a rounding boundary to about 2e-9 per field per tick; it does not make it zero. The
+> pool has always had exactly this bound and it held the pool for six thousand ticks. A battle
+> long enough, or a seed unlucky enough, will still fork — and when it does, `uf64` now sees it,
+> which is the second half of why this matters.
+>
+> **What would still change my mind.** A seed that forks with the firewall on; a fork appearing
+> past t+400 on a longer run; or a human saying the battle plays worse. A 30-seed sweep, as this
+> section already demands, is now cheap and is the obvious next measurement.
+>
+> **So the honest reprice.** The `fround` half: **one file, one session, measured, done.** The
+> vendored-libm half: still 3–5 weeks, still carries all three unpriced costs this section names,
+> and **is not needed for cross-engine play on this tree**. Reach for it only if a seed sweep finds
+> forks the firewall cannot close, and then reach for the *cheapest subset* — the portability table
+> ranks the functions, `hypot` is already gone from every scanned directory, and the 15
+> `Math.pow(x, 2)` and `Math.pow(x, 3)` calls are the next free removal.
+
 One module implementing `sin`, `cos`, `tan`, `exp`, `log`, `atan`, `atan2`, `asin`, `acos`,
 `cbrt` over exactly-specified operations, or a libm compiled to WASM so the transcendentals ship
 in the bundle rather than coming from the engine. Plus `Math.fround` on `UnitGroupState`'s
@@ -1098,6 +1264,19 @@ population one, and nothing in this pass measured whether anyone besides the own
 ---
 
 ## 8. One-paragraph summary
+
+> **Amended 21 August 2026.** Two of the three sentences that open this paragraph are no longer
+> true of the tree. Three engines run **all three** battles bit-identically through **every**
+> checkpoint including t+400, on five seeds, and the shipped battle that used to be a different
+> battle in three engines before a tick ran now boots identically in all of them. What did it was
+> not the vendored transcendental library this document budgets three to five weeks for: it was
+> removing the last 27 `Math.hypot` calls from map generation, which closed the boot, and giving
+> `UnitGroupState` the float32 quantisation firewall the soldier pool has always had, which closed
+> the battle — one file, one session, at a cost of −10.0% survivors at t+200 that the owner has to
+> ratify. What has *not* changed: this is still one machine (§7.1), and a firewall still only makes
+> a fork rare rather than impossible. The Chrome-update risk is also smaller than §1.5 said and
+> differently shaped — the unit is a libm *generation*, `{130} {143,147,149} {151,152}`, so a
+> pairing handshake should exchange a fingerprint rather than a version string.
 
 Three engines run the default battle bit-identically through every checkpoint this project pins,
 and diverge 5.5 seconds after the last one; one shipped battle is a different battle in three

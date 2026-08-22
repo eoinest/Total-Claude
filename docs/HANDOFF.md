@@ -28,6 +28,12 @@ The full gate is green on this tree: tsc clean, lint 2/2, qa-deploy 33/33, seams
 Determinism is pinned in `tools/determinism-baseline.json` at **t+0/30/90/150/200/250/400**, three
 hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (discrete state).
 
+> **21 Aug 2026 — `uf64` is a hard failure now.** `uf64` was a warning because an unquantised
+> float64 layer moves on a browser update alone. `src/sim/quantise.ts` snaps that layer to float32
+> at birth and at the end of every tick, and three browser engines now agree on it for six
+> thousand ticks, so it is pinned like the other two. `--soft-units` restores the warning; needing
+> it on an unchanged tree is itself a finding.
+>
 > **`node tools/qa-xengine.mjs` is the new arm and it is *not* in the every-commit gate.** It runs
 > the same battle in Chromium, Firefox and WebKit. Run it deliberately — after anything in
 > `src/sim`, `src/terrain`, `src/maps` or `src/city` — because the thing that moves it is usually a
@@ -56,7 +62,10 @@ does not go red. It asserts nothing. Those three spellings above are the only th
 baseline holds.
 
 Confirm every run by headcount, always: **field battle 8,632 / Rome 3,074 / Carthage 3,440.** A
-Carthage run reporting 8,632 measured something else.
+Carthage run reporting 8,632 measured something else. (Headcounts are unchanged by the float32
+firewall — it moves the *survivor* curve, not the order of battle. Field battle survivors at t+200
+went 7,061 → 6,358 and at t+400 5,849 → 4,785 when it landed; see `docs/MULTIPLAYER.md` §3 Stage 3
+and the balance note in the reserved list.)
 
 > This table itself printed `--battle=<default|rome|carthage>` for a day, two thousand lines above
 > the passage explaining why that is wrong, and three agents were dispatched with it. **A summary
@@ -82,6 +91,14 @@ Carthage run reporting 8,632 measured something else.
 
 ### Reserved for the owner — do not decide these
 
+- **The float32 firewall's balance cost.** `src/sim/quantise.ts` is what makes all three battles
+  run identically in three browser engines, which is the whole of cross-machine multiplayer, and
+  it costs **−10.0% survivors at t+200 and −18.2% at t+400** on the default field battle. For
+  scale, five seeds of that same battle span 14.2% at t+400, so it is the same order as changing
+  the seed. The quanta are invisible (0.12 mm on a position against a 0.72 m rank pitch); the
+  mechanism is that a few discrete decisions land the other way and twelve thousand ticks amplify
+  the branch. It is **one commit and one `git revert`**. Ratify it or revert it; do not let it sit
+  unnoticed.
 - Whether battle lines should **fit** their deployment boxes rather than merely be dry. Rome's line
   is 684 m across in a 500 m box; the host is 783 m in a 760 m one. Written into `ROME.md` §15
   task 14 so it gets decided rather than rediscovered.

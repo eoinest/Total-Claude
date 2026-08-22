@@ -14,7 +14,7 @@
  * Usage: node tools/qa-determinism.mjs [--port=5226] [--at=0,30,90,150,200,250,400]
  *                                       [--json=path] [--render] [--record]
  *                                       [--battle=map=carthage&scenario=assault]
- *                                       [--strict-units]
+ *                                       [--strict-units] [--soft-units]
  *
  * `--battle` appends extra query parameters, so the gate can be run against a battle other
  * than the default one. It matters now that there are two besiegeable cities: an assault
@@ -99,6 +99,12 @@
  *             move it through no fault of the tree: this is the portability signal, and
  *             portability is not what an every-commit gate can afford to fail on. `--strict-units`
  *             promotes it to a failure for anyone deliberately testing portability.
+ *
+ *             **Amended 21 August 2026.** That reasoning was correct about an *unquantised*
+ *             float64 layer and `src/sim/quantise.ts` quantised it. Three browser engines now
+ *             agree on `uf64` for six thousand ticks, so it is hard-failing by default like the
+ *             other two marks, and `--soft-units` is the escape rather than `--strict-units`
+ *             being the promotion. See the flag's own comment below.
  *
  *   `uctl`  — the discrete half of `UnitGroupState`: order, target, formation, width, alive,
  *             kills, membership, and the flags. This is what the battle *decided*, and it is
@@ -192,13 +198,29 @@ const RENDER = args.get('render') === 'true';
 /** Overwrite this battle's entry in the baseline instead of asserting against it. */
 const RECORD = args.get('record') === 'true';
 /**
- * Make a float64 unit-layer drift against the *baseline* a failure rather than a warning.
+ * Whether a float64 unit-layer drift against the *baseline* is a failure or a warning.
  *
- * Off by default. `uf64` is exact-bit and the measurement says a Chromium point release moves
- * it on its own, so defaulting this on would red the gate for every agent every time the
- * browser updated. On, this file becomes a portability gate rather than a reproducibility one.
+ * **This defaulted to a warning for a measured reason, and that reason has expired.** `uf64`
+ * was exact-bit over a layer with no quantisation step anywhere, so one libm call rounding
+ * differently moved it within a second of simulated time and a Chromium point release moved it
+ * with no change to this tree at all. Defaulting it to a failure would have redded the gate for
+ * every agent every time a browser updated. So it was a warning, and `--strict-units` promoted
+ * it for anyone deliberately testing portability.
+ *
+ * `src/sim/quantise.ts` closed that. The unit layer is now snapped to float32 at birth and at
+ * the end of every tick — the same firewall the soldier pool has always had — and the
+ * consequence, measured with `tools/qa-xengine.mjs` across Chromium 151, Firefox 153 and
+ * WebKit 26.5: `uf64` used to differ at **t+30** on the field battle and now agrees through
+ * **t+200**, and on both sieges it agrees at every one of the seven checkpoints. A mark that
+ * three browser engines agree on for six thousand ticks is not a noise source. It is a gate.
+ *
+ * So the default is now a hard failure, like `hash` and `uctl`. `--soft-units` restores the
+ * warning for whoever needs it; `--strict-units` is still accepted and is now what happens
+ * anyway. **If you find yourself reaching for `--soft-units` on an unchanged tree, that is a
+ * finding — the firewall has a hole in it and `qa-xengine.mjs` will tell you which field.**
  */
-const STRICT_UNITS = args.get('strict-units') === 'true';
+const SOFT_UNITS = args.get('soft-units') === 'true';
+const STRICT_UNITS = !SOFT_UNITS;
 
 /**
  * The battle, as a stable key.
@@ -506,7 +528,7 @@ if (RECORD) {
       const ctlSame = want.uctl === m.uctl && (want.units === undefined || want.units === m.units);
       const verdict = f64Same && ctlSame ? 'UNCHANGED'
         : !ctlSame ? 'DRIFTED (control flow — hard)'
-          : STRICT_UNITS ? 'DRIFTED (float64 — hard, --strict-units)' : 'DRIFTED (float64 only — warning)';
+          : STRICT_UNITS ? 'DRIFTED (float64 — hard)' : 'DRIFTED (float64 only — warning, --soft-units)';
       console.log(`         units  pinned ${want.uf64}/${want.uctl}   now ${m.uf64}/${m.uctl}   ${verdict}`);
       if (!ctlSame) hardDrift++;
       else if (!f64Same) { if (STRICT_UNITS) hardDrift++; else softDrift++; }
@@ -525,7 +547,8 @@ if (RECORD) {
       console.log('  uf64/uctl. Nothing is being checked on the float64 layer at those. Re-record.');
     }
     if (softDrift) {
-      console.log(`\n  ${softDrift} checkpoint(s) drifted on uf64 only, with the pool hash and the`);
+      console.log(`\n  ${softDrift} checkpoint(s) drifted on uf64 only (warning: --soft-units),`);
+      console.log('  with the pool hash and the');
       console.log('  control hash both unchanged. That is a PORTABILITY finding, not a reproducibility');
       console.log('  one, and it is a warning rather than a failure for a reason:');
       console.log('    · UnitGroupState is float64 integrated in place with no quantisation firewall,');
@@ -536,8 +559,12 @@ if (RECORD) {
       console.log('    · the float32 pool round-trip hides it from `hash` for thousands of ticks.');
       console.log('  So: if you changed no simulation code, this is your browser and the battle still');
       console.log('  replays. If you did, you have moved the sim in a way the pool hash cannot yet see,');
-      console.log('  and it will surface later as a real divergence. Re-record deliberately, or run');
-      console.log('  --strict-units to make it a failure while you investigate.');
+      console.log('  and it will surface later as a real divergence. Re-record deliberately.');
+      console.log('  NOTE: uf64 is a hard failure by default since src/sim/quantise.ts landed —');
+      console.log('  the unit layer is float32-quantised at birth and at the end of every tick, so');
+      console.log('  three browser engines now agree on it for six thousand ticks. You are seeing');
+      console.log('  this text because --soft-units was passed. On an unchanged tree that is');
+      console.log('  itself a finding: run tools/qa-xengine.mjs, which names the field.');
     }
     if (hardDrift) {
       console.log('\n  The battle is not the one that was pinned. That is a finding, not necessarily');
