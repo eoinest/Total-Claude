@@ -1,0 +1,707 @@
+{
+ "seed": 4265438264,
+ "map": "carthage",
+ "t": 37.7,
+ "stone": [
+  {
+   "id": 0,
+   "t": "punic-levy",
+   "f": 2,
+   "alive": 150,
+   "onWall": 150,
+   "onGround": 0,
+   "onLink": 0,
+   "runs": [
+    20
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 1,
+   "t": "punic-levy",
+   "f": 2,
+   "alive": 150,
+   "onWall": 150,
+   "onGround": 0,
+   "onLink": 0,
+   "runs": [
+    21
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 2,
+   "t": "punic-levy",
+   "f": 2,
+   "alive": 149,
+   "onWall": 149,
+   "onGround": 0,
+   "onLink": 0,
+   "runs": [
+    20
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 3,
+   "t": "punic-levy",
+   "f": 2,
+   "alive": 150,
+   "onWall": 150,
+   "onGround": 0,
+   "onLink": 0,
+   "runs": [
+    22
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 4,
+   "t": "punic-levy",
+   "f": 2,
+   "alive": 150,
+   "onWall": 150,
+   "onGround": 0,
+   "onLink": 0,
+   "runs": [
+    19
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 5,
+   "t": "punic-levy",
+   "f": 2,
+   "alive": 149,
+   "onWall": 149,
+   "onGround": 0,
+   "onLink": 0,
+   "runs": [
+    22
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 6,
+   "t": "punic-freedmen",
+   "f": 2,
+   "alive": 109,
+   "onWall": 109,
+   "onGround": 0,
+   "onLink": 0,
+   "runs": [
+    19
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 7,
+   "t": "punic-freedmen",
+   "f": 2,
+   "alive": 109,
+   "onWall": 109,
+   "onGround": 0,
+   "onLink": 0,
+   "runs": [
+    23
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 8,
+   "t": "punic-freedmen",
+   "f": 2,
+   "alive": 110,
+   "onWall": 110,
+   "onGround": 0,
+   "onLink": 0,
+   "runs": [
+    18
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 9,
+   "t": "punic-freedmen",
+   "f": 2,
+   "alive": 110,
+   "onWall": 110,
+   "onGround": 0,
+   "onLink": 0,
+   "runs": [
+    23
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 18,
+   "t": "legio-escalade",
+   "f": 0,
+   "alive": 102,
+   "onWall": 9,
+   "onGround": 27,
+   "onLink": 66,
+   "runs": [
+    19
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 19,
+   "t": "legio-escalade",
+   "f": 0,
+   "alive": 102,
+   "onWall": 9,
+   "onGround": 28,
+   "onLink": 65,
+   "runs": [
+    22
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 20,
+   "t": "legio-escalade",
+   "f": 0,
+   "alive": 103,
+   "onWall": 10,
+   "onGround": 27,
+   "onLink": 66,
+   "runs": [
+    19
+   ],
+   "goal": "none",
+   "garr": true
+  },
+  {
+   "id": 21,
+   "t": "legio-escalade",
+   "f": 0,
+   "alive": 100,
+   "onWall": 11,
+   "onGround": 26,
+   "onLink": 63,
+   "runs": [
+    23
+   ],
+   "goal": "none",
+   "garr": true
+  }
+ ],
+ "survey": [
+  {
+   "id": 0,
+   "f": 2,
+   "type": "punic-levy",
+   "onWall": 150,
+   "onLink": 0,
+   "menY": 27,
+   "probes": 63,
+   "answering": 17,
+   "pct": 27,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.86",
+    "x": 800,
+    "y": 375,
+    "w": 35,
+    "onScreen": true,
+    "hit": 0
+   },
+   "standard": {
+    "x": -27.68,
+    "y": 29.38,
+    "z": 528.88
+   },
+   "standardDropM": -2.4
+  },
+  {
+   "id": 1,
+   "f": 2,
+   "type": "punic-levy",
+   "onWall": 150,
+   "onLink": 0,
+   "menY": 26.5,
+   "probes": 63,
+   "answering": 23,
+   "pct": 37,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.86",
+    "x": 800,
+    "y": 375,
+    "w": 35,
+    "onScreen": true,
+    "hit": 1
+   },
+   "standard": {
+    "x": 33.88,
+    "y": 28.88,
+    "z": 524.93
+   },
+   "standardDropM": -2.4
+  },
+  {
+   "id": 2,
+   "f": 2,
+   "type": "punic-levy",
+   "onWall": 149,
+   "onLink": 0,
+   "menY": 27,
+   "probes": 63,
+   "answering": 26,
+   "pct": 41,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.87",
+    "x": 800,
+    "y": 375,
+    "w": 35,
+    "onScreen": true,
+    "hit": 2
+   },
+   "standard": {
+    "x": -48.22,
+    "y": 29.38,
+    "z": 529.92
+   },
+   "standardDropM": -2.4
+  },
+  {
+   "id": 3,
+   "f": 2,
+   "type": "punic-levy",
+   "onWall": 150,
+   "onLink": 0,
+   "menY": 26.5,
+   "probes": 63,
+   "answering": 22,
+   "pct": 35,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.86",
+    "x": 800,
+    "y": 375,
+    "w": 35,
+    "onScreen": true,
+    "hit": 3
+   },
+   "standard": {
+    "x": 70.49,
+    "y": 28.88,
+    "z": 522.65
+   },
+   "standardDropM": -2.4
+  },
+  {
+   "id": 4,
+   "f": 2,
+   "type": "punic-levy",
+   "onWall": 150,
+   "onLink": 0,
+   "menY": 27,
+   "probes": 63,
+   "answering": 13,
+   "pct": 21,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.87",
+    "x": 801,
+    "y": 375,
+    "w": 35,
+    "onScreen": true,
+    "hit": 4
+   },
+   "standard": {
+    "x": -86.6,
+    "y": 29.35,
+    "z": 532.93
+   },
+   "standardDropM": -2.4
+  },
+  {
+   "id": 5,
+   "f": 2,
+   "type": "punic-levy",
+   "onWall": 149,
+   "onLink": 0,
+   "menY": 26.5,
+   "probes": 63,
+   "answering": 19,
+   "pct": 30,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.87",
+    "x": 802,
+    "y": 375,
+    "w": 35,
+    "onScreen": true,
+    "hit": 5
+   },
+   "standard": {
+    "x": 93.07,
+    "y": 28.88,
+    "z": 521.38
+   },
+   "standardDropM": -2.4
+  },
+  {
+   "id": 6,
+   "f": 2,
+   "type": "punic-freedmen",
+   "onWall": 109,
+   "onLink": 0,
+   "menY": 26.5,
+   "probes": 63,
+   "answering": 34,
+   "pct": 54,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.86",
+    "x": 794,
+    "y": 375,
+    "w": 35,
+    "onScreen": true,
+    "hit": 20
+   },
+   "standard": {
+    "x": -112.41,
+    "y": 28.88,
+    "z": 534.7
+   },
+   "standardDropM": -2.4
+  },
+  {
+   "id": 7,
+   "f": 2,
+   "type": "punic-freedmen",
+   "onWall": 109,
+   "onLink": 0,
+   "menY": 26.5,
+   "probes": 63,
+   "answering": 32,
+   "pct": 51,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.87",
+    "x": 811,
+    "y": 374,
+    "w": 35,
+    "onScreen": true,
+    "hit": 21
+   },
+   "standard": {
+    "x": 125.28,
+    "y": 28.88,
+    "z": 519.95
+   },
+   "standardDropM": -2.4
+  },
+  {
+   "id": 8,
+   "f": 2,
+   "type": "punic-freedmen",
+   "onWall": 110,
+   "onLink": 0,
+   "menY": 26.5,
+   "probes": 63,
+   "answering": 39,
+   "pct": 62,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.86",
+    "x": 800,
+    "y": 375,
+    "w": 35,
+    "onScreen": true,
+    "hit": 8
+   },
+   "standard": {
+    "x": -142.45,
+    "y": 28.88,
+    "z": 536.6
+   },
+   "standardDropM": -2.4
+  },
+  {
+   "id": 9,
+   "f": 2,
+   "type": "punic-freedmen",
+   "onWall": 110,
+   "onLink": 0,
+   "menY": 26.5,
+   "probes": 63,
+   "answering": 39,
+   "pct": 62,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.86",
+    "x": 800,
+    "y": 375,
+    "w": 35,
+    "onScreen": true,
+    "hit": 9
+   },
+   "standard": {
+    "x": 157.19,
+    "y": 28.88,
+    "z": 518.03
+   },
+   "standardDropM": -2.4
+  },
+  {
+   "id": 18,
+   "f": 0,
+   "type": "legio-escalade",
+   "onWall": 9,
+   "onLink": 66,
+   "menY": 27,
+   "probes": 63,
+   "answering": 32,
+   "pct": 51,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.86",
+    "x": 801,
+    "y": 373,
+    "w": 35,
+    "onScreen": true,
+    "hit": 18
+   },
+   "standard": {
+    "x": -81.33,
+    "y": 28.75,
+    "z": 530.36
+   },
+   "standardDropM": -1.7
+  },
+  {
+   "id": 19,
+   "f": 0,
+   "type": "legio-escalade",
+   "onWall": 9,
+   "onLink": 65,
+   "menY": 26.5,
+   "probes": 63,
+   "answering": 14,
+   "pct": 22,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.87",
+    "x": 800,
+    "y": 370,
+    "w": 35,
+    "onScreen": true,
+    "hit": 19
+   },
+   "standard": {
+    "x": 95.99,
+    "y": 28.29,
+    "z": 520.65
+   },
+   "standardDropM": -1.8
+  },
+  {
+   "id": 20,
+   "f": 0,
+   "type": "legio-escalade",
+   "onWall": 10,
+   "onLink": 66,
+   "menY": 26.5,
+   "probes": 63,
+   "answering": 24,
+   "pct": 38,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.87",
+    "x": 794,
+    "y": 374,
+    "w": 35,
+    "onScreen": true,
+    "hit": 20
+   },
+   "standard": {
+    "x": -113.46,
+    "y": 28.88,
+    "z": 533.15
+   },
+   "standardDropM": -2.4
+  },
+  {
+   "id": 21,
+   "f": 0,
+   "type": "legio-escalade",
+   "onWall": 11,
+   "onLink": 63,
+   "menY": 26.5,
+   "probes": 63,
+   "answering": 14,
+   "pct": 22,
+   "plate": {
+    "present": true,
+    "off": false,
+    "opacity": "0.87",
+    "x": 755,
+    "y": 374,
+    "w": 35,
+    "onScreen": true,
+    "hit": 21
+   },
+   "standard": {
+    "x": 131.12,
+    "y": 28.26,
+    "z": 518.69
+   },
+   "standardDropM": -1.8
+  }
+ ],
+ "rows": [
+  {
+   "name": "somebody of mine is on the wall",
+   "ok": true,
+   "expected": ">0",
+   "actual": 2
+  },
+  {
+   "name": "an enemy has a lodgement on the wall",
+   "ok": true,
+   "expected": ">0",
+   "actual": 10
+  },
+  {
+   "name": "every unit of mine on the wall answers the cursor somewhere on its own men",
+   "ok": true,
+   "expected": "0 blind units",
+   "actual": "0 of 4: []"
+  },
+  {
+   "name": "every unit on the wall has a banner the player can click",
+   "ok": false,
+   "expected": "0 without a usable plaque",
+   "actual": "2: [{\"id\":6,\"off\":false,\"hit\":20},{\"id\":7,\"off\":false,\"hit\":21}]"
+  },
+  {
+   "name": "every standard is planted with its own men, not in the ground under them",
+   "ok": true,
+   "expected": "0 sunk standards",
+   "actual": "0: []"
+  },
+  {
+   "name": "the unit I am about to give an order to is selected",
+   "ok": false,
+   "expected": "[20]",
+   "actual": "[]"
+  },
+  {
+   "name": "the enemy on the wall can be framed",
+   "ok": true,
+   "expected": "a screen point",
+   "actual": {
+    "x": 799.9818693852178,
+    "y": 444.8958710317843,
+    "z": 0.9603219275148484
+   }
+  },
+  {
+   "name": "the cursor says something about an enemy standing on my own wall",
+   "ok": false,
+   "expected": "attack / wall / refuse, or words",
+   "actual": "default"
+  },
+  {
+   "name": "the order that went out is the order the cursor promised",
+   "ok": false,
+   "expected": "an attack, or a refusal",
+   "actual": "[]"
+  },
+  {
+   "name": "an order aimed at an enemy on my wall does not walk my men off it",
+   "ok": false,
+   "expected": "the garrison stays up there",
+   "actual": "onWall 36, onLink 29, onGround 0, goal descend"
+  },
+  {
+   "name": "an order against an enemy on the wall is carried out or refused out loud",
+   "ok": true,
+   "expected": "blood, or a refusal",
+   "actual": "kills +9, refusals 0"
+  },
+  {
+   "name": "no page errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  },
+  {
+   "name": "no console errors",
+   "ok": true,
+   "expected": 0,
+   "actual": 0
+  }
+ ],
+ "log": [
+  "t+37.7: on the stone — [{\"id\":0,\"t\":\"punic-levy\",\"f\":2,\"alive\":150,\"onWall\":150,\"onGround\":0,\"onLink\":0,\"runs\":[20],\"goal\":\"none\",\"garr\":true},{\"id\":1,\"t\":\"punic-levy\",\"f\":2,\"alive\":150,\"onWall\":150,\"onGround\":0,\"onLink\":0,\"runs\":[21],\"goal\":\"none\",\"garr\":true},{\"id\":2,\"t\":\"punic-levy\",\"f\":2,\"alive\":149,\"onWall\":149,\"onGround\":0,\"onLink\":0,\"runs\":[20],\"goal\":\"none\",\"garr\":true},{\"id\":3,\"t\":\"punic-levy\",\"f\":2,\"alive\":150,\"onWall\":150,\"onGround\":0,\"onLink\":0,\"runs\":[22],\"goal\":\"none\",\"garr\":true},{\"id\":4,\"t\":\"punic-levy\",\"f\":2,\"alive\":150,\"onWall\":150,\"onGround\":0,\"onLink\":0,\"runs\":[19],\"goal\":\"none\",\"garr\":true},{\"id\":5,\"t\":\"punic-levy\",\"f\":2,\"alive\":149,\"onWall\":149,\"onGround\":0,\"onLink\":0,\"runs\":[22],\"goal\":\"none\",\"garr\":true},{\"id\":6,\"t\":\"punic-freedmen\",\"f\":2,\"alive\":109,\"onWall\":109,\"onGround\":0,\"onLink\":0,\"runs\":[19],\"goal\":\"none\",\"garr\":true},{\"id\":7,\"t\":\"punic-freedmen\",\"f\":2,\"alive\":109,\"onWall\":109,\"onGround\":0,\"onLink\":0,\"runs\":[23],\"goal\":\"none\",\"garr\":true},{\"id\":8,\"t\":\"punic-freedmen\",\"f\":2,\"alive\":110,\"onWall\":110,\"onGround\":0,\"onLink\":0,\"runs\":[18],\"goal\":\"none\",\"garr\":true},{\"id\":9,\"t\":\"punic-freedmen\",\"f\":2,\"alive\":110,\"onWall\":110,\"onGround\":0,\"onLink\":0,\"runs\":[23],\"goal\":\"none\",\"garr\":true},{\"id\":18,\"t\":\"legio-escalade\",\"f\":0,\"alive\":102,\"onWall\":9,\"onGround\":27,\"onLink\":66,\"runs\":[19],\"goal\":\"none\",\"garr\":true},{\"id\":19,\"t\":\"legio-escalade\",\"f\":0,\"alive\":102,\"onWall\":9,\"onGround\":28,\"onLink\":65,\"runs\":[22],\"goal\":\"none\",\"garr\":true},{\"id\":20,\"t\":\"legio-escalade\",\"f\":0,\"alive\":103,\"onWall\":10,\"onGround\":27,\"onLink\":66,\"runs\":[19],\"goal\":\"none\",\"garr\":true},{\"id\":21,\"t\":\"legio-escalade\",\"f\":0,\"alive\":100,\"onWall\":11,\"onGround\":26,\"onLink\":63,\"runs\":[23],\"goal\":\"none\",\"garr\":true}]",
+  "  [PASS] somebody of mine is on the wall  expected=\">0\" actual=2",
+  "  [PASS] an enemy has a lodgement on the wall  expected=\">0\" actual=10",
+  "\n=== 2. CAN I GET HOLD OF THEM? one camera per unit, its own drawn men ===",
+  "  unit  0 f2 punic-levy      men y    27  pick 17/63 (27%)  plate shown  hit=0  standard y29.38 (-2.4 m below the men)",
+  "  unit  1 f2 punic-levy      men y  26.5  pick 23/63 (37%)  plate shown  hit=1  standard y28.88 (-2.4 m below the men)",
+  "  unit  2 f2 punic-levy      men y    27  pick 26/63 (41%)  plate shown  hit=2  standard y29.38 (-2.4 m below the men)",
+  "  unit  3 f2 punic-levy      men y  26.5  pick 22/63 (35%)  plate shown  hit=3  standard y28.88 (-2.4 m below the men)",
+  "  unit  4 f2 punic-levy      men y    27  pick 13/63 (21%)  plate shown  hit=4  standard y29.35 (-2.4 m below the men)",
+  "  unit  5 f2 punic-levy      men y  26.5  pick 19/63 (30%)  plate shown  hit=5  standard y28.88 (-2.4 m below the men)",
+  "  unit  6 f2 punic-freedmen  men y  26.5  pick 34/63 (54%)  plate shown  hit=20  standard y28.88 (-2.4 m below the men)",
+  "  unit  7 f2 punic-freedmen  men y  26.5  pick 32/63 (51%)  plate shown  hit=21  standard y28.88 (-2.4 m below the men)",
+  "  unit  8 f2 punic-freedmen  men y  26.5  pick 39/63 (62%)  plate shown  hit=8  standard y28.88 (-2.4 m below the men)",
+  "  unit  9 f2 punic-freedmen  men y  26.5  pick 39/63 (62%)  plate shown  hit=9  standard y28.88 (-2.4 m below the men)",
+  "  unit 18 f0 legio-escalade  men y    27  pick 32/63 (51%)  plate shown  hit=18  standard y28.75 (-1.7 m below the men)",
+  "  unit 19 f0 legio-escalade  men y  26.5  pick 14/63 (22%)  plate shown  hit=19  standard y28.29 (-1.8 m below the men)",
+  "  unit 20 f0 legio-escalade  men y  26.5  pick 24/63 (38%)  plate shown  hit=20  standard y28.88 (-2.4 m below the men)",
+  "  unit 21 f0 legio-escalade  men y  26.5  pick 14/63 (22%)  plate shown  hit=21  standard y28.26 (-1.8 m below the men)",
+  "  [PASS] every unit of mine on the wall answers the cursor somewhere on its own men  expected=\"0 blind units\" actual=\"0 of 4: []\"",
+  "  [FAIL] every unit on the wall has a banner the player can click  expected=\"0 without a usable plaque\" actual=\"2: [{\\\"id\\\":6,\\\"off\\\":false,\\\"hit\\\":20},{\\\"id\\\":7,\\\"off\\\":false,\\\"hit\\\":21}]\"",
+  "  [PASS] every standard is planted with its own men, not in the ground under them  expected=\"0 sunk standards\" actual=\"0: []\"",
+  "\n=== 3. MINE ON THE WALL -> THEIRS ON THE WALL ===",
+  "mine 20 at x-112.23 z533.05 y26.5  ->  theirs 0 at x-26.96 z527.61 y27   85 m apart",
+  "  [FAIL] the unit I am about to give an order to is selected  expected=\"[20]\" actual=\"[]\"",
+  "  [PASS] the enemy on the wall can be framed  expected=\"a screen point\" actual={\"x\":799.9818693852178,\"y\":444.8958710317843,\"z\":0.9603219275148484}",
+  "\nHOVER: cursor=default hovered=0 hostile=0 intent=null",
+  "  wallValid=false solidValid=true groundValid=true sel=[] overBanner=-1 onWallCount=0 traverseRefusal=\"\" hint=\"\"",
+  "  my view {\"standY\":26.5,\"cy\":12.5,\"own\":true,\"destroyed\":false}   their view {\"standY\":27,\"cy\":13.03,\"own\":false,\"destroyed\":false}",
+  "  [FAIL] the cursor says something about an enemy standing on my own wall  expected=\"attack / wall / refuse, or words\" actual=\"default\"",
+  "\nRIGHT-CLICK: during cursor=default hint=\"\" hovered=0",
+  "  what went out: []",
+  "  [FAIL] the order that went out is the order the cursor promised  expected=\"an attack, or a refusal\" actual=\"[]\"",
+  "  30 s later: moved 20.1 m, order 6->5, kills 30->39, their alive 150->148",
+  "  my wall state: {\"onWall\":36,\"onGround\":0,\"onLink\":29,\"runs\":[19],\"runCounts\":{\"19\":36},\"goal\":\"descend\",\"destRun\":19,\"planAge\":754,\"stuck\":0,\"worstFeetError\":0}",
+  "  [FAIL] an order aimed at an enemy on my wall does not walk my men off it  expected=\"the garrison stays up there\" actual=\"onWall 36, onLink 29, onGround 0, goal descend\"",
+  "  [PASS] an order against an enemy on the wall is carried out or refused out loud  expected=\"blood, or a refusal\" actual=\"kills +9, refusals 0\"",
+  "  [PASS] no page errors  expected=0 actual=0",
+  "  [PASS] no console errors  expected=0 actual=0"
+ ]
+}
