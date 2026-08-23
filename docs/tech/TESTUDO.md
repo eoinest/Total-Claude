@@ -53,9 +53,9 @@ would then have to have an opinion about.
 |---|---|---|---|
 | `Face` | rank 0 | 0.30–1.35 m, upright | the frontage, down to the ankles |
 | `Nose` | rank 1 | 1.19–1.92 m, 46° back-slope reaching 0.75 m forward | the band across the front at head height |
-| `RoofA` | interior, even ranks | level at 1.74 m | the roof, course one |
-| `RoofB` | interior, odd ranks | 1.73–1.81 m, 4° off level | the roof, course two |
-| `Flank` | outer files, and the rearmost man of **every** file | 0.72–1.77 m, upright, top edge on the roof line | the flanks and the back, with the man turned outward |
+| `RoofA` | interior, even ranks | 1.66–1.81 m, 8° nose-down | the roof, course one |
+| `RoofB` | interior, odd ranks | 1.63–1.85 m, 12° nose-down | the roof, course two |
+| `Flank` | outer files, and the rearmost man of **every** file | 0.42–1.47 m, upright | the flanks and the back, with the man turned outward |
 
 At the 0.632 m rank interval the formation asks for, each roof board laps the one in front by
 **0.43 m** — which is what leaves no hole when a man is 0.1 m out of his place. The face's top
@@ -66,12 +66,28 @@ the grass and the roof reaches a man.
 testudo with a vertical front rank and a level roof has an open band across its face at head
 height, and that band is exactly what makes the formation read as a crowd wearing hats.
 
-### Two tile courses, not one
+### Two tile courses, and why neither of them is level
 
-`RoofA` and `RoofB` differ by 4° and 30 mm and alternate by rank. One roof clip gives a single
-printed plane; two courses give a surface with a grain, and the boards genuinely lap instead of
-meeting coplanar. It is the cheapest thing in the whole feature and it is most of what makes
-the roof read as hand-held boards from above.
+`RoofA` and `RoofB` alternate by rank and differ by 4° and 10 mm. One roof clip gives a single
+printed plane; two courses give a surface with a grain.
+
+**Both were level in the first build and that was the second-worst thing in it.** A critic
+scored the roof two to three stops brighter than the *same asset* on the wall and called it "a
+flat pink quilt with no occlusion at any overlap" — and both halves of that are the same cause.
+A horizontal board sees the whole sky hemisphere and takes about twice the ambient a vertical
+one does; and two coplanar boards cannot shade each other however good the ambient occlusion
+term is. Tipping the courses 8° and 12° nose-down costs 2% of the fore-and-aft coverage, takes
+the normal off the zenith, and puts a real 0.15 m step at every lap, so the roof shades itself
+with *shadow*. It is also the right way round — the leading edge is the low one, so each board
+sheds over the one behind it, which is how tiles are laid and why the surface reads as laid
+rather than printed.
+
+### The corners
+
+A man who is both the end of a rank and the end of a flank has to face the diagonal, or the
+join between the two walls is a hole with a man standing in it — a critic counted four or five
+fully exposed men at each front corner. The flank men in the first four ranks turn 50° instead
+of a right angle and the two rear corner men turn 144° instead of 180°.
 
 ---
 
@@ -279,17 +295,18 @@ the arms are already most of the way to the roof and it is least visible.
 
 ## 7. What is still wrong
 
-- **Legs.** The flank and rear boards cover 0.72–1.77 m, so a broadside at eye level shows
-  0.72 m of leg under the shield line. It is what a real testudo shows and it is still the
-  weakest thing in the flank frame. Lowering the board trades it for a band of daylight
-  between the board's top edge and the roof, which is worse; closing both needs the outer
-  files' roof boards shifted outboard, which is two more clips.
-- **The corners.** The rank-0 man of an outer file takes `Face`, so the front rank is
-  continuous across the full width and the flank turn starts at rank 1. From directly in front
-  the outermost boards are therefore seen edge-on and there is a visible notch at each end of
-  the face.
+- **The helmet band.** Dropping the flank board to 0.42–1.47 m bought back three quarters of a
+  metre of bare leg, and the price is a 0.19 m band between the rim and the roof's leading
+  edge, seen from outside at about eye height. It shows the men's own helmets and the underside
+  of the roof, not sky, and it arguably reads as men inside a shell rather than as a fault —
+  but it is a hole in the surface and it is there.
+- **The rank-0 man of an outer file takes `Face`**, so the front rank runs unbroken across the
+  full width and the chamfer starts at rank 1. From directly in front the outermost boards are
+  still seen at 50°, which is darker than the rest of the face.
 - **A testudo advances at 0.36 × walk**, so the flank and rear men, who are turned outward,
   side-step and walk backwards. At about 0.5 m/s the foot slide is small, but it is there.
-- **The roof photographs much lighter than the walls.** Up-facing boards take the sun square
-  and the walls take it at a grazing angle; the painted face and the umbo are both there — see
-  `roof-close` — but at 20 m the roof reads as pale planks rather than as painted shields.
+- **One device on 320 shields.** Deliberate — a Roman cohort carried an issued board and the
+  per-man variation is in the field colour and the hide backing — but a critic scored C1 = 1
+  on it, and 320 of them in one frame is the hardest test that decision will ever get.
+- **No dust.** A moving testudo trails none, and criterion E1 is Rome II's most recognisable
+  effect.
