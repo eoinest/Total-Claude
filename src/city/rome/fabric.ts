@@ -1410,7 +1410,6 @@ function pierceElevation(
  * frame, which is axis-aligned, so no transform is pushed.
  */
 function streetDoor(
-  stucco: GeoStream,
   stone: GeoStream | null,
   detail: number,
   cu: number,
@@ -1420,14 +1419,13 @@ function streetDoor(
   s: -1 | 1,
   dw: number,
   dh: number,
-  _dark: THREE.Color,
 ): void {
   const hw = dw / 2;
-  void stucco;
-  // The hole itself is `pierceElevation`'s: this is only the dressing round it. The first
-  // draft drew the opening here as a dark box standing 20 mm PROUD of the wall, which is a
-  // rectangle painted on a façade rather than a way into a building, and E5 scored it as
-  // wall — correctly.
+  // The hole itself is `pierceElevation`'s; this is only the dressing round it, so this
+  // function no longer touches the `stucco` stream at all. The first draft drew the opening
+  // here as a dark box standing 20 mm PROUD of the wall, which is a rectangle painted on a
+  // façade rather than a way into a building, and `probe-eye.mjs` E5 scored it as wall —
+  // correctly.
   if (detail < 1 || !stone) return;
   // Lintel: one travertine block bridging the opening, proud of the render by 90 mm.
   const l0 = cross + s * 0.09;
@@ -1701,7 +1699,7 @@ function buildWing(
         const dw = 1.15 + hash2(i, Math.round(run * 5) + bit, 199) * 0.5;
         if (cu - dw / 2 - uA < 0.7 || uB - (cu + dw / 2) < 0.7) continue;
         holes.push({ u0: cu - dw / 2, u1: cu + dw / 2, head: g + P.doorH });
-        streetDoor(stucco, stone, detail, cu, cross, g, axis, s, dw, P.doorH, dark);
+        streetDoor(stone, detail, cu, cross, g, axis, s, dw, P.doorH);
       }
       pierceElevation(stucco, uA, uB, cross, axis, s, g - 0.6, g + groundH, groundPaint, dado, dark, holes);
     }
