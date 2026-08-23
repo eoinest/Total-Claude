@@ -1,10 +1,10 @@
 // `terrain/topography`, not `terrain/TerrainSystem` — see the note in `circuit.ts`.
 import { HALF_EXTENT, worldOf as projectSurvey } from '../../terrain/topography';
 import { TIBER_ISLAND } from '../../terrain/tiberSurvey';
-import { clamp, lerp } from '../../util/math';
-import { hash2 } from '../../util/rand';
+import { clamp } from '../../util/math';
 import { AX, axisU, axisV, obbOverlap, obbRadius, type Obb, type WayClass } from '../layout';
 import { GATE_X } from './apertures';
+import { ROME_WAYS, wayBearingAt } from './ways';
 // Straight from the terrain, not through `./circuit`: the wall builder now reads
 // `./assertions`, which reads this file, and `./circuit` would close the cycle.
 import { WALL_LENGTH, WALL_X_MIN, romeWallZ as wallCrestZ } from '../../terrain/topography';
@@ -758,13 +758,29 @@ export const DISTRICTS: DistrictSpec[] = DISTRICT_PLAN.map((d) => {
     x = Math.max(w.x, EAST_BANK(z) + 20 + hw);
     z = w.z;
   }
-  // **Grain.** Measured on the orthophoto, Rome's street grain holds over patches of
-  // 150–400 m and then rotates 15–40° across a street; a plan with one global orientation
-  // is the second-strongest tell of a procedural city after a lack of through-routes. The
-  // districts are 400–500 m across, which is exactly that scale, so the grain change is
-  // free — it only needs the rotation to be large enough to see. It was ±4.6°, which is
-  // not, and every quarter of Rome ran very nearly parallel to every other.
-  const rot = (hash2(Math.round(d.e), Math.round(d.n), 0x5c1) - 0.5) * 0.7;
+  /**
+   * **Grain, and this is the line `MAP-METHOD.md` rule 9 was written about.**
+   *
+   * It used to read `(hash2(round(d.e), round(d.n), 0x5c1) − 0.5) * 0.7` — every quarter's
+   * whole lattice rotated by a hash, ±20°, with the comment above it arguing that the grain
+   * change was "free". It is not free and it was not grain: two blocks either side of an
+   * invisible district boundary sat at different angles with a **random** offset, which is the
+   * definition of a quilt. `probe-fabric` measured it at G20 median **9.17°** off the nearest
+   * street against Carthage's 0.00°, and at G21 **17–21 %** of neighbouring blocks rotating
+   * more than 15° across a 40 m gap.
+   *
+   * The reasoning it replaced was not wrong about the observation — the orthophoto really does
+   * show Rome's grain holding over 150–400 m patches and then rotating 15–40°. It was wrong
+   * about the *cause*. Real grain rotates because the streets do. So the rotation now comes
+   * from `wayBearingAt`, the road network's own bearing field, sampled at the quarter's
+   * centre: the patches are still 150–400 m and the rotations between them are still real,
+   * but every one of them is now the angle of a street somebody surveyed off a plate.
+   *
+   * The quarters that were furthest from a ranked way — Trastevere, the Vaticanus — move the
+   * most, and they move onto the nearest authored line rather than onto a hash, which is what
+   * a fringe quarter does.
+   */
+  const rot = wayBearingAt(x, z);
   z = clamp(z, CITY_Z_MIN(x) + hd * 0.5, CITY_Z_MAX - hd * 0.5);
   return {
     id: d.id,
@@ -850,267 +866,34 @@ export interface StreetSpec {
 }
 
 /**
- * The named streets of Rome, in survey metres.
+ * The named streets of Rome — **the table moved out of this file in phase 3.**
  *
- * These are the *armature*: the lines the city was actually organised around, every one
- * of them attested. The Via Lata — the urban continuation of the Via Flaminia, and
- * today's Corso — runs dead straight south from the Porta Flaminia to the foot of the
- * Capitol; everything else in the Campus Martius grows off it. The Via Sacra crosses the
- * Forum and climbs the Velia to the Colosseum valley; the Vicus Patricius is the spine of
- * the Subura; the Alta Semita runs the length of the Quirinal ridge.
+ * `src/city/rome/ways.ts` now carries the armature, in survey metres, with a plate citation
+ * per row. It moved for a reason and not for tidiness: while the table lived here it lived
+ * *below* the monument placement, and everything below the monument placement had access to
+ * the resolved monument positions — which is how `deflect()` came to exist and how 24 % of
+ * ranked street length came to be inside a monument. A way authored in a module that cannot
+ * see a monument cannot be bent round one.
  *
- * **On width, and the honest size of the compromise.** A real Roman *via* is about 4.8 m
- * between kerbs and the Via Lata perhaps twelve. Nothing here is that narrow, because a
- * street a formation cannot enter is not a street in this game, it is a wall with a crack
- * in it. The compromise is confined rather than spread: only the ways below carry a rank
- * above `local`, so the city has **five** corridors a cohort can deploy in and several
- * hundred lanes at 8 m — a ratio of about 1:20, which is close to the real one even
- * though every individual number is inflated. Rome had a handful of processional ways and
- * a fabric of *vici*; so does this. And a 42 m corridor is not un-Roman at the places it
- * is used: the Via Lata ran between continuous porticoes, and the open width of the
- * Campus Martius, the fora and the Saepta was far more than that.
+ * On width, and the honest size of the compromise, which has not changed. A real Roman *via*
+ * is about 4.8 m between kerbs and the Via Lata perhaps twelve. Nothing here is that narrow,
+ * because a street a formation cannot enter is not a street in this game, it is a wall with a
+ * crack in it. The compromise is confined rather than spread: **one** way carries `artery`
+ * rank besides the military road, eleven carry `secondary`, and the several hundred lanes each
+ * quarter cuts for itself are 8 m. Rome had a handful of processional ways and a fabric of
+ * *vici*; so does this.
  */
-const STREET_PLAN: {
-  id: string;
-  path: [number, number][];
-  cls: WayClass;
-  paved: boolean;
-  porticoed?: boolean;
-}[] = [
-  {
-    id: 'via-lata',
-    /**
-     * **The last two hundred metres now go round the Mausoleum of Augustus, because that is
-     * where the road went.**
-     *
-     * It used to run [-497, 2045] -> [-470, 1560] -> [-440, 1080], which passes **14 real metres
-     * from the centre of an 87 m tomb** — straight through it. With `resolveOverlaps` alive that
-     * was invisible, because the solver had shoved the Mausoleum 100-odd metres off its plate
-     * position and the road went through the hole. Phase 2 put the tomb back where the survey
-     * puts it and the road has run through masonry ever since: a ground judge measured **85
-     * unbroken metres of it across the carriageway**, and the same frame is the best view the map
-     * has produced, because the terminus and the obstruction are the same object.
-     *
-     * That tension does not have to be traded, and the judge named the fix: *"bend the last
-     * hundred metres of the carriageway round the tomb's eastern flank, as the real road did, and
-     * keep the tomb closing the view from further out. That is not deflecting a street around a
-     * solver's fiction; it is drawing the street where the street was."* The Via Flaminia ran
-     * along the Mausoleum's **eastern** side; the tomb's precinct was its west kerb.
-     *
-     * So the first 215 real metres out of the gate are dead straight — the frame a player sees
-     * first after a breach is 30 m in, and the tomb still closes it — and the swing east begins
-     * at n 1650, clearing the tomb's precinct by 5.4 world metres of carriageway edge at n 1500.
-     * `deflect` still runs afterwards and does the fine work; what it cannot do is invent a
-     * hundred-metre detour from a line that starts inside the building, which is why the armature
-     * has to state the bend and not merely permit it.
-     *
-     * **What this does and does not fix, stated because the two get conflated.** The
-     * *carriageway* clears the tomb, and the carriageway is what a column walks, because pathing
-     * follows the way graph. The **straight normal out of the gate** is still blocked 145-235 m
-     * in, and it always will be: the tomb stands on it, in reality and on the plate. That number
-     * is the one the judge's headline quotes, `assertGateAxisClear` now re-derives it at every
-     * boot beside this one, and clearing it would mean moving a surveyed monument — which is the
-     * thing this whole rebuild exists to stop doing.
-     */
-    path: [
-      [-497, 2045],
-      [-487, 1830],
-      [-430, 1650],
-      [-375, 1500],
-      [-395, 1350],
-      [-440, 1080],
-      [-400, 620],
-      [-340, 240],
-      [-180, 40],
-      [-30, -30],
-    ],
-    // The one road from the one gate into the city. If any line in Rome is an artery this
-    // is it: the army that holds the Porta Flaminia has to be able to deploy behind it.
-    cls: 'artery',
-    paved: true,
-    porticoed: true,
-  },
-  {
-    id: 'via-sacra',
-    // Out of the Forum, over the Velia, past the Meta Sudans into the Colosseum valley.
-    path: [
-      [-30, -30],
-      [120, 30],
-      [300, -30],
-      [520, -140],
-      [700, -230],
-      [900, -230],
-    ],
-    // The triumphal route. In the real city this is not a street at all for most of its
-    // length — it is the open floor of the Forum Romanum, then Caesar's forum, then
-    // Augustus's, then Nerva's, each a paved rectangle 100 m and more across. Forty-two
-    // metres of colonnaded processional way is a *reduction* of what was there.
-    cls: 'artery',
-    paved: true,
-    porticoed: true,
-  },
-  {
-    id: 'via-recta',
-    // The east–west spine of the Campus Martius, modern Via dei Coronari.
-    path: [
-      [-1000, 520],
-      [-620, 590],
-      [-300, 600],
-      [-40, 540],
-      [180, 380],
-    ],
-    cls: 'secondary',
-    paved: true,
-  },
-  {
-    id: 'vicus-patricius',
-    // Up the Subura from the Fora onto the Viminal.
-    path: [
-      [180, 40],
-      [330, 120],
-      [560, 340],
-      [820, 640],
-      [1080, 900],
-    ],
-    cls: 'local',
-    paved: true,
-  },
-  {
-    id: 'alta-semita',
-    // Along the Quirinal ridge to the Porta Salaria. The ridge road is the only
-    // continuous east–west route through the eastern hills, so it carries a rank.
-    path: [
-      [180, 380],
-      [330, 640],
-      [700, 1020],
-      [1150, 1330],
-      [1500, 1620],
-    ],
-    cls: 'secondary',
-    paved: true,
-  },
-  {
-    id: 'via-appia',
-    // South out of the city between the Palatine and the Caelian, past the Circus.
-    path: [
-      [430, -180],
-      [430, -520],
-      [560, -900],
-      [700, -1320],
-      [800, -1620],
-    ],
-    // Out of the city between the Palatine and the Caelian down the Vallis Murcia, with
-    // the Circus Maximus's whole 600 m flank on one side of it. Open by construction.
-    cls: 'artery',
-    paved: true,
-    porticoed: false,
-  },
-  {
-    id: 'vicus-iugarius',
-    // Round the foot of the Capitol from the Forum to the Forum Boarium and the river.
-    path: [
-      [180, -40],
-      [-40, -180],
-      [-260, -300],
-      [-470, -420],
-    ],
-    cls: 'local',
-    paved: true,
-  },
-  {
-    id: 'vicus-tuscus',
-    // The other way out of the Forum's south-west corner, past the Basilica Julia to the
-    // Velabrum and the Forum Boarium. Paired with the Iugarius round the Capitol's foot.
-    path: [
-      [200, -60],
-      [140, -260],
-      [40, -450],
-      [-120, -560],
-    ],
-    cls: 'local',
-    paved: true,
-  },
-  {
-    id: 'via-labicana',
-    // East from the Colosseum between the Esquiline and the Caelian.
-    path: [
-      [900, -230],
-      [1300, -180],
-      [1750, -140],
-    ],
-    cls: 'secondary',
-    paved: true,
-  },
-  {
-    id: 'via-tiburtina',
-    // Out of the Subura across the Esquiline to the Porta Tiburtina, under the Aqua
-    // Marcia's arches. The eastern quarters had no through route before this.
-    path: [
-      [620, 300],
-      [1050, 420],
-      [1500, 560],
-      [1950, 700],
-    ],
-    cls: 'secondary',
-    paved: true,
-  },
-  {
-    id: 'vicus-longus',
-    // The floor of the valley between the Quirinal and the Viminal, parallel to and below
-    // the Alta Semita. Its name is literally "the long street".
-    path: [
-      [300, 300],
-      [560, 620],
-      [860, 960],
-      [1120, 1240],
-    ],
-    cls: 'local',
-    paved: true,
-  },
-  {
-    id: 'via-triumphalis',
-    // Up the west side of the Campus Martius from the Pons Neronianus, the route of the
-    // triumph before it turned east for the Capitol. Gives the river quarters a spine.
-    path: [
-      [-880, 1500],
-      [-820, 1050],
-      [-780, 620],
-      [-720, 180],
-      [-640, -200],
-    ],
-    // The Campus Martius was a parade ground before it was a quarter, and stayed open
-    // ground between its monuments. The one line the whole west of the city hangs off.
-    cls: 'artery',
-    paved: true,
-    porticoed: true,
-  },
-  {
-    id: 'via-ostiensis',
-    // South along the Tiber past the Emporium's warehouses to the Porta Ostiensis.
-    path: [
-      [-470, -420],
-      [-520, -800],
-      [-560, -1180],
-      [-580, -1520],
-    ],
-    cls: 'local',
-    paved: true,
-  },
-  {
-    id: 'clivus-aventinus',
-    // Up onto the Aventine from the Vallis Murcia, round the west end of the Circus.
-    path: [
-      [-40, -700],
-      [-180, -950],
-      [-320, -1200],
-    ],
-    cls: 'local',
-    paved: true,
-  },
-];
-
-/** The named historical viae, projected and graded. The core of the armature. */
-const NAMED_WAYS: CityWay[] = STREET_PLAN.map((s) => ({
+/**
+ * The named historical viae, **projected once and never touched again.**
+ *
+ * The clamp is the only thing that happens to a node between `ways.ts` and the scene, and it
+ * is a frame clamp, not a plan correction: `x` into the heightfield, `z` into the city side of
+ * the curtain — unless the row declares `outside`, in which case it is the four consular roads
+ * the assault forms up on and they are clamped to the map instead. Before this pass that
+ * `CITY_Z_MIN(x) − 18` bound applied to every row, which meant **no way could leave the city**
+ * and the Via Flaminia outside the Porta Flaminia could not be drawn at all.
+ */
+const NAMED_WAYS: CityWay[] = ROME_WAYS.map((s) => ({
   id: s.id,
   cls: s.cls,
   width: WAY_WIDTH[s.cls],
@@ -1119,25 +902,43 @@ const NAMED_WAYS: CityWay[] = STREET_PLAN.map((s) => ({
   path: s.path.map(([e, n]) => {
     const w = worldOf(e, n);
     const x = clamp(w.x, -HALF_EXTENT + 20, HALF_EXTENT - 20);
-    return { x, z: clamp(w.z, CITY_Z_MIN(x) - 18, CITY_Z_MAX) };
+    const zLo = s.outside ? -HALF_EXTENT + 20 : CITY_Z_MIN(x) - 18;
+    return { x, z: clamp(w.z, zLo, CITY_Z_MAX) };
   }),
 }));
 
 /**
- * The Via Lata has to leave the gate on the road's own centreline, whatever the survey
- * says, or the paving stops at a blank curtain. The first node is pinned to the gate and
- * the next two are eased onto the projected line.
+ * **The gate pin, generalised from the Via Lata's hand-written one to all four apertures.**
+ *
+ * A gate's `x` is surveyed and its `z` is the terrain's — `romeWallZ(x)`, the crest the wall is
+ * actually drawn on. The two agree to the digit at the Porta Flaminia, because the projection
+ * is anchored there, and nowhere else: at the Porta Salaria the surveyed northing projects to
+ * `z 621` against a crest of `469`. So each way that declares a `gate` has the node nearest
+ * that gate's `x` moved onto `(gateX, crest + 8)` — 8 metres inside the mouth, so the paving
+ * starts under the arch rather than under the curtain.
+ *
+ * This is a **pin**, in `ways.ts`'s sense: the plate gives the line, and the engine's own
+ * feature gives the endpoint. It is the only place a monument-free correction is applied to a
+ * way, it applies to one node per way, and the rows that take it say so in the table.
  */
 {
-  const lata = NAMED_WAYS.find((s) => s.id === 'via-lata');
-  if (lata) {
-    lata.path[0] = { x: GATE_X, z: GATE_Z + 8 };
-    for (let i = 1; i < Math.min(3, lata.path.length); i++) {
-      lata.path[i] = {
-        x: lerp(GATE_X, lata.path[i].x, i / 3),
-        z: lata.path[i].z,
-      };
+  const APERTURE_X: Record<string, number> = {
+    'porta-flaminia': GATE_X,
+    'posterula-pinciana': worldOf(530, 1789).x,
+    'porta-salaria': worldOf(1036, 1784).x,
+    'porta-nomentana': worldOf(1831, 1784).x,
+  };
+  for (const spec of ROME_WAYS) {
+    if (!spec.gate) continue;
+    const built = NAMED_WAYS.find((w) => w.id === spec.id);
+    if (!built) continue;
+    const gx = APERTURE_X[spec.gate];
+    const gz = (spec.gate === 'porta-flaminia' ? GATE_Z : wallCrestZ(gx)) + 8;
+    let best = 0;
+    for (let i = 1; i < built.path.length; i++) {
+      if (Math.abs(built.path[i].x - gx) < Math.abs(built.path[best].x - gx)) best = i;
     }
+    built.path[best] = { x: gx, z: gz };
   }
 }
 
@@ -1167,157 +968,34 @@ const POMERIUM_WAY: CityWay = (() => {
 })();
 
 /**
- * A street all the way round every monument.
+ * **`monumentRings`, `feeders` and `deflect` are deleted here, and the deletion is the phase.**
  *
- * This is the answer to "the large monuments are smacked down across multiple buildings".
- * The old plan reserved a monument's footprint and let the fabric grow to the reservation
- * line, so the Colosseum's outer wall stood a metre from somebody's kitchen and nothing
- * about the arrangement said which was which. A real monument is *addressed*: it stands in
- * a precinct, the precinct has a street round it, and the fabric presents a frontage to
- * that street. Emitting the ring explicitly does four things at once —
+ * `docs/ROME-FABRIC.md` §5's phase 3 names all three, and each was a different way of letting
+ * something downstream of the survey decide where a street goes:
  *
- *  - it guarantees the clearance rather than hoping the block cutter leaves one;
- *  - it gives the insula generator a hard, straight edge to build a street wall against,
- *    which is what makes the fabric read as blocks rather than as scatter;
- *  - it puts the monument on the movement network, so a cohort can march round the
- *    Circus instead of only past one end of it;
- *  - and from above it draws the outline the eye needs to see that the monument is a
- *    *different kind of thing* from the houses.
+ *  - **`deflect`** resampled every way every 30 m and pushed its nodes out of the monuments the
+ *    overlap resolver had just moved, with a 1.08 overshoot and 40 relax passes. The resolver
+ *    is gone (phase 2) and the monuments now stand where the plate puts them, so the only
+ *    thing left for `deflect` to do was bend a correctly-surveyed street round a
+ *    correctly-surveyed building — which is `ROME-FABRIC.md` §4.2's rule read backwards. Its
+ *    largest single act was a **360 real metre bow in the Via Lata** round a tomb that stands
+ *    140 m to the west of it; see `ways.ts`'s `via-lata`.
+ *  - **`monumentRings`** put a 14–24 m carriageway all the way round every monument over 95 m,
+ *    at the monument's own bearing. Five kilometres of road nobody authored, and — measured
+ *    this pass — the largest single contributor to `probe-fabric` G20: a block beside the
+ *    Colosseum took its "nearest street" from the Colosseum's own ring, so the grain of the
+ *    quarter came from the amphitheatre's rotation rather than from the street network. The
+ *    clearance the rings were bought for is now `MON_AMBITUS` in `plan.ts`, which buys it by
+ *    construction and costs no carriageway (`ROME-FABRIC.md` §9.7).
+ *  - **`feeders`** joined every district centre to the nearest way with a straight **42 m**
+ *    link and stitched every loose end to its nearest neighbour. Seventeen arteries and about
+ *    3.4 km of them, at arbitrary bearings, produced by a nearest-point search over a plan.
+ *    Connectivity is now a property of the authored table — junctions are shared nodes, and
+ *    `assertWayGraph` fails the boot if the ranked armature stops being one piece.
  *
- * Rank is by size: anything over 150 m on its long axis gets a `secondary` ring, the rest
- * `local`. Hills, gardens and the island are landscape and get nothing.
- */
-const RING_MARGIN = 4;
-function monumentRings(): CityWay[] {
-  const out: CityWay[] = [];
-  for (const l of LANDMARKS) {
-    if (l.soft || l.onRiver) continue;
-    // **Rank by size, and sparingly.** Ringing all 34 monuments with a 14 m road is five
-    // kilometres of carriageway, and measured against the fabric it drowns it: monument
-    // precincts plus the armature were taking 80 % of the ground inside the walls and the
-    // city came back as streets with houses in the gaps rather than the other way round. A
-    // small temple does not need its own ring — the quarter's own lanes already run past
-    // it — so only the ones with a genuinely monumental frontage get one.
-    const long = Math.max(l.hw, l.hd) * 2;
-    if (long < 95) continue;
-    const cls: WayClass = long > 260 ? 'secondary' : long > 150 ? 'local' : 'vicus';
-    const w = WAY_WIDTH[cls];
-    // Centreline of the ring: clear of the precinct by the margin plus half the road.
-    const hu = l.hw + RING_MARGIN + w * 0.5;
-    const hv = l.hd + RING_MARGIN + w * 0.5;
-    const cs = Math.cos(l.rot);
-    const sn = Math.sin(l.rot);
-    const at = (u: number, v: number): { x: number; z: number } => ({
-      x: l.x + u * cs - v * sn,
-      z: l.z + u * sn + v * cs,
-    });
-    out.push({
-      id: `ring-${l.id}`,
-      cls,
-      width: w,
-      paved: true,
-      porticoed: cls === 'secondary',
-      path: [at(-hu, -hv), at(hu, -hv), at(hu, hv), at(-hu, hv), at(-hu, -hv)],
-    });
-  }
-  return out;
-}
-
-/**
- * Feeders: the links that make the armature a connected graph rather than a bundle of
- * parallel lines.
- *
- * A cohort has to be able to get from the gate to any quarter, and the named viae alone do
- * not manage it — they were authored for the silhouette, and several of them never touch.
- * So each district is joined to whichever way is nearest its centre by a straight `local`
- * link, and each way's far endpoint is joined to its nearest neighbour way. Both passes are
- * pure functions of the plan, so they are deterministic and they re-solve automatically
- * when the overlap resolver moves a monument.
+ * What replaced them, in one sentence: **the ways are right, so nothing has to correct them.**
  */
 export const WAY_RANK: Readonly<Record<WayClass, number>> = { artery: 3, secondary: 2, local: 1, vicus: 0 };
-const BY_RANK: readonly WayClass[] = ['vicus', 'local', 'secondary', 'artery'];
-
-function feeders(base: readonly CityWay[]): CityWay[] {
-  const out: CityWay[] = [];
-  const nearestOn = (
-    x: number,
-    z: number,
-    skip?: string
-  ): { x: number; z: number; d: number; cls: WayClass } => {
-    let best = { x, z, d: Infinity, cls: 'vicus' as WayClass };
-    for (const w of base) {
-      if (w.id === skip) continue;
-      for (let i = 0; i + 1 < w.path.length; i++) {
-        const a = w.path[i];
-        const b = w.path[i + 1];
-        const ax = b.x - a.x;
-        const az = b.z - a.z;
-        const len2 = ax * ax + az * az;
-        const t = len2 < 1e-6 ? 0 : clamp(((x - a.x) * ax + (z - a.z) * az) / len2, 0, 1);
-        const px = a.x + ax * t;
-        const pz = a.z + az * t;
-        const d = Math.sqrt((x - px) * (x - px) + (z - pz) * (z - pz));
-        if (d < best.d) best = { x: px, z: pz, d, cls: w.cls };
-      }
-    }
-    return best;
-  };
-
-  /**
-   * Every quarter gets a ranked approach, and it is an **artery**.
-   *
-   * `secondary` was already an upgrade on `local` — a district joined to the network by a
-   * 14 m lane is a district a marching column cannot enter — but 24 m is still eleven metres
-   * short of a cohort in line, so under it the *only* ground in Rome a cohort could deploy
-   * on was the pomerium, the five named arteries and the handful of squares. Measured on the
-   * nav probe as the fabric was densified: cohort-reachable cells inside the circuit fell
-   * from 3,412 to 2,778, because filling the blocks in took away the scattered open ground a
-   * formation had been using by accident. Openness that a formation reaches *by accident* is
-   * not a street network — it is the same fault the whole rebuild exists to correct, seen
-   * from the sim's side.
-   *
-   * So the ground comes back deliberately, as one 42 m approach per quarter. Seventeen
-   * links, about 3.4 km, and the eighteen extra metres over a secondary cost roughly 61,000
-   * m² — 2.4 % of the walled area — for the property that a cohort can march into every
-   * quarter of Rome. That is exactly the trade the width table was written to make.
-   */
-  for (const d of DISTRICTS) {
-    const hit = nearestOn(d.x, d.z);
-    // Already on a way, or impossibly far (the far bank, which the bridges serve).
-    if (hit.d < 40 || hit.d > 620) continue;
-    out.push({
-      id: `feeder-${d.id}`,
-      cls: 'artery',
-      width: WAY_WIDTH.artery,
-      paved: true,
-      path: [{ x: d.x, z: d.z }, { x: hit.x, z: hit.z }],
-    });
-  }
-  // Stitch every loose end onto the network so no named way is an island.
-  //
-  // A stitch takes the **lower rank of the two ways it joins**, which is the rule a real
-  // road hierarchy follows and, more to the point here, the rule that keeps the wide
-  // network connected: two arteries meeting end to end are joined by an artery, so a
-  // cohort can pass, while an artery running into a lane is joined by a lane and the
-  // fabric keeps the ground.
-  for (const w of base) {
-    for (const end of [w.path[0], w.path[w.path.length - 1]]) {
-      const hit = nearestOn(end.x, end.z, w.id);
-      // Under 45 m the two ways already meet for practical purposes and the stitch is
-      // pure carriageway; over 340 m it is a road through open country, not a link.
-      if (hit.d < 45 || hit.d > 340) continue;
-      const cls = BY_RANK[Math.min(WAY_RANK[w.cls], WAY_RANK[hit.cls])];
-      out.push({
-        id: `stitch-${w.id}-${Math.round(end.x)}`,
-        cls,
-        width: WAY_WIDTH[cls],
-        paved: true,
-        path: [{ x: end.x, z: end.z }, { x: hit.x, z: hit.z }],
-      });
-    }
-  }
-  return out;
-}
 
 /** Named historical viae, as the plan diagnostic labels them. */
 export const STREETS: StreetSpec[] = NAMED_WAYS.map((w) => ({
@@ -1326,97 +1004,6 @@ export const STREETS: StreetSpec[] = NAMED_WAYS.map((w) => ({
   paved: w.paved,
   path: w.path,
 }));
-
-/**
- * The whole street armature: named viae, the military road behind the wall, a ring round
- * every monument, and the feeders that connect them.
- *
- * Order matters — the fabric generator clips against this in order and the first match
- * wins for surface treatment, so the widest and most important ways come first.
- */
-/**
- * Bend a way round the monuments, **because the monuments moved after it was drawn.**
- *
- * This is the other half of "the large monuments are smacked down across multiple buildings",
- * and the half nothing in the build could see. A named via is projected from the survey; the
- * overlap resolver then shoves every monument to stop them interpenetrating, by a mean of
- * 45 m and as much as 145 m. Nothing re-ran the streets afterwards, so the Via Appia ran
- * through the Circus Maximus, the Via Sacra through the Temple of Venus and Rome, and the
- * Via Lata through the Mausoleum of Augustus — at *zero* clearance, not a graze.
- *
- * Measured along the centreline against the same boxes the sim collides with: via-appia 90 %
- * of its length inside masonry, via-triumphalis 91 %, via-sacra 81 %, via-lata 73 %. That is
- * why a cohort could march the whole military road behind the wall and then not get into the
- * city — the arteries were not corridors at all, they were dotted lines through buildings —
- * and it is why the fabric round them looked bitten: the generator correctly refused to build
- * where a street was reserved, and the street was reserved inside a temple.
- *
- * The fix is the one a Roman surveyor would recognise. Resample the line every 30 m so there
- * are nodes to work with, then push any node that is inside a precinct out along its shortest
- * exit until the *carriageway* clears the masonry, and relax the result so the deflection
- * reads as a bend rather than a kink. The Via Sacra really does bend round the Basilica of
- * Maxentius; the Clivus Argentarius really does bend round the Capitol.
- *
- * Ring roads are exempt: a ring is *defined* by hugging its own monument, and deflecting one
- * would be asking it not to be a ring.
- */
-const DEFLECT_MARGIN = 3;
-function deflect(way: CityWay): void {
-  const ringOf = way.id.startsWith('ring-') ? way.id.slice(5) : null;
-  const solids = LANDMARKS.filter((l) => !l.soft && l.id !== ringOf);
-  const clear = way.width * 0.5 + DEFLECT_MARGIN;
-
-  const dense: { x: number; z: number }[] = [];
-  for (let i = 0; i + 1 < way.path.length; i++) {
-    const a = way.path[i];
-    const b = way.path[i + 1];
-    const n = Math.max(1, Math.round(Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z)) / 30));
-    for (let s = 0; s < n; s++) dense.push({ x: lerp(a.x, b.x, s / n), z: lerp(a.z, b.z, s / n) });
-  }
-  dense.push({ ...way.path[way.path.length - 1] });
-
-  // Only the Via Lata has a node that cannot move: its first is the Porta Flaminia's
-  // carriageway, and the road out of the one gate in the circuit does not get to wander.
-  const first = way.id === 'via-lata' ? 1 : 0;
-  const push = (): number => {
-    let moved = 0;
-    const pt: Obb = { x: 0, z: 0, hw: 0.1, hd: 0.1, rot: 0 };
-    for (let i = first; i < dense.length; i++) {
-      pt.x = dense[i].x;
-      pt.z = dense[i].z;
-      for (const l of solids) {
-        const hit = obbOverlap(pt, l, clear);
-        if (!hit) continue;
-        // `obbOverlap` points its normal from a toward b, so away is the negative. The 8 %
-        // overshoot matters: landing exactly on the boundary leaves the node oscillating
-        // between two neighbouring precincts and the relaxation never settles.
-        dense[i].x -= hit.nx * hit.depth * 1.08;
-        dense[i].z -= hit.nz * hit.depth * 1.08;
-        pt.x = dense[i].x;
-        pt.z = dense[i].z;
-        moved++;
-      }
-    }
-    return moved;
-  };
-
-  // Relax weakly — 0.12 a side, not 0.25. The smoothing exists so a node shoved sixty metres
-  // drags its neighbours into a curve instead of leaving a spike the fabric has to be cut
-  // around; at a quarter each side it was undoing the push faster than the push applied it,
-  // and the deflection converged to about half the job (via-appia 90 % of its length inside
-  // masonry down to 34 %, where it needed to reach zero).
-  for (let pass = 0; pass < 40; pass++) {
-    const moved = push();
-    if (moved === 0) break;
-    for (let i = 1; i + 1 < dense.length; i++) {
-      dense[i].x = dense[i].x * 0.76 + (dense[i - 1].x + dense[i + 1].x) * 0.12;
-      dense[i].z = dense[i].z * 0.76 + (dense[i - 1].z + dense[i + 1].z) * 0.12;
-    }
-  }
-  // Finish on pure pushes, so the last thing that happened to the line was clearing stone.
-  for (let i = 0; i < 6; i++) if (push() === 0) break;
-  way.path = dense;
-}
 
 /**
  * True where a monument's masonry stands, for the paving.
@@ -1450,17 +1037,17 @@ export function onMonument(x: number, z: number): boolean {
   return false;
 }
 
-export const WAYS: CityWay[] = (() => {
-  const named = [POMERIUM_WAY, ...NAMED_WAYS];
-  const rings = monumentRings();
-  // Deflect the named viae *before* the feeders are solved, so a feeder joins the line the
-  // road actually takes rather than the line the survey drew before the monuments moved.
-  for (const w of named) deflect(w);
-  const base = [...named, ...rings];
-  const links = feeders(base);
-  for (const w of links) deflect(w);
-  return [...base, ...links];
-})();
+/**
+ * The whole street armature: the military road behind the curtain, then the named viae.
+ *
+ * Twenty-four ways and no derived ones. Order matters — the fabric generator clips against
+ * this list in order and the first match wins for surface treatment — so the military road,
+ * which every other way crosses, comes first.
+ *
+ * **There is no step between the authored table and this array.** That is the whole of phase 3
+ * in one line: `ROME_WAYS` → `worldOf` → a frame clamp → here. Nothing reads a monument.
+ */
+export const WAYS: CityWay[] = [POMERIUM_WAY, ...NAMED_WAYS];
 
 /**
  * An open paved square where two ranked ways meet.

@@ -31,6 +31,7 @@ import {
   WAYS,
   type DistrictSpec,
 } from './layout';
+import { foldToAxis, wayBearingAt } from './ways';
 import type { Lane } from '../cityPlan';
 import type { CityMatKey } from '../materials';
 import { PAL } from '../palette';
@@ -159,6 +160,16 @@ const INSULA_DEPTH_MAX = 22;
  * costs a movement obstacle for nothing.
  */
 const MIN_PLOT = 7.5;
+
+/**
+ * How far a row may turn off its quarter's frame to follow the street under it, radians.
+ *
+ * See `rowRotOf`. The lattice is cut in the quarter's own `(u, v)` frame at `d.rot`; a row
+ * placed at a very different angle does not fit the block quad it was cut from and is rejected
+ * by `buildable`, which shows up as a buried quarter rather than as a rotated one. 0.21 rad is
+ * 12 degrees.
+ */
+const PHASE3_ROW_TURN = 0.21;
 /** Shortest frontage a terrace will cut. Ostia's narrowest surviving property is 6.2 m. */
 const MIN_FRONTAGE = 11;
 /** A block shallower than this has no room for a house and a back wall. */
@@ -444,21 +455,38 @@ function planDistrict(
   }
 
   /**
-   * **One rotation per row, taken at the block's centre.**
+   * **One rotation per row, taken at the block's centre — and now taken off the streets.**
    *
-   * Deriving each plot's angle from the spine slope *under that plot* seemed the careful
-   * thing to do and is wrong: it twists every house in a terrace by a different few
-   * degrees, so party walls that are 0.1 m apart at their centres cross by up to three
-   * metres at the corners. Measured on the first build of this: 118 interpenetrating pairs
-   * involving 214 of 439 buildings. A terrace is built to a single line and the street's
-   * bend is taken up at the block ends, which is what a real curving street of houses
-   * does — straight runs, angle changes at a party wall.
+   * Two rules, and they were earned separately.
+   *
+   * *One per row, not one per plot.* Deriving each plot's angle from the spine slope under
+   * that plot seemed the careful thing to do and is wrong: it twists every house in a terrace
+   * by a different few degrees, so party walls that are 0.1 m apart at their centres cross by
+   * up to three metres at the corners. Measured on the first build of this: 118
+   * interpenetrating pairs involving 214 of 439 buildings. A terrace is built to a single line
+   * and the street's bend is taken up at the block ends, which is what a real curving street
+   * of houses does — straight runs, angle changes at a party wall.
+   *
+   * *And the line it is built to is a street's.* `d.rot` is now `wayBearingAt` at the
+   * quarter's centre (`layout.ts`), which removes the ±20° hash offset; this adds the
+   * **local** correction, so a quarter that a way crosses at an angle gets a grain that turns
+   * with the way rather than one flat angle for four hundred metres. `PHASE3_ROW_TURN` bounds
+   * the correction at 12°, because the row is still being cut out of a lattice built on
+   * `d.rot` and a row rotated far off its own block quad is a row that will not fit in it —
+   * `buildable` would reject it and the quarter would report itself buried (`probe-fabric`
+   * G17). Twelve degrees is what the field actually varies by across a quarter in the Campus
+   * Martius; the clamp fires on 3 % of rows and every one of them is on the far bank.
    */
   function rowRotOf(k: number, ua: number, ub: number): [number, number] {
-    return [
-      d.rot + Math.atan(slopeAt(k, (ua + ub) * 0.5)),
-      d.rot + Math.atan(slopeAt(k + 1, (ua + ub) * 0.5)),
-    ];
+    const uc = (ua + ub) * 0.5;
+    const local = (k2: number): number => {
+      const v = vAt(k2, uc);
+      const field = wayBearingAt(F.x(uc, v), F.z(uc, v));
+      return d.rot
+        + clamp(foldToAxis(d.rot, field), -PHASE3_ROW_TURN, PHASE3_ROW_TURN)
+        + Math.atan(slopeAt(k2, uc));
+    };
+    return [local(k), local(k + 1)];
   }
 
   /**

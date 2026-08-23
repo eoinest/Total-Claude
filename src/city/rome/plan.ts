@@ -13,6 +13,7 @@ import {
   assertRomeFrame,
   assertTopology,
   assertGateAxisClear,
+  assertWayGraph,
   assertWaysClearOfMonuments,
 } from './assertions';
 import { buildWall } from './circuit';
@@ -309,14 +310,52 @@ export const ROME_PLAN: CityPlan = {
       );
     }
     /**
+     * **And the same question in survey metres, printed beside it, because they are different
+     * questions and the record kept quoting one as the other.**
+     *
+     * The world-frame number above is what the game collides with and is dominated by the
+     * projection: `KX` 0.443 and `KZ` 0.35 compress the *distance* between a street and a
+     * building while the building keeps its true cross-section. The survey number is what the
+     * road survey is actually responsible for. See `surveyFrameIntrusion`.
+     */
+    const sf = wayClearance.survey;
+    console.info(
+      `[city:rome] ranked ways inside a monument: ${wayClearance.inside}/${wayClearance.samples} = ` +
+        `${((100 * wayClearance.inside) / Math.max(1, wayClearance.samples)).toFixed(1)}% in WORLD metres ` +
+        `(the frame's number), ${sf.inside}/${sf.samples} = ${sf.pct}% in SURVEY metres against the ` +
+        `published footprints (the road survey's number)` +
+        (sf.byWay.some((w) => w.inside)
+          ? `; survey-frame residual: ${sf.byWay
+              .filter((w) => w.inside > 0)
+              .map((w) => `${w.id} ${w.pct}% (${w.hit.join('+')})`)
+              .join(', ')}`
+          : '')
+    );
+    /**
      * The gate axis, printed beside the carriageway rather than instead of it. A ground judge's
      * headline is measured on this line and the record could not re-derive it; now it can, and
      * the difference between the two numbers is visible in one place. See `assertGateAxisClear`.
      */
+    /**
+     * Phase 3's acceptance, printed at every boot: is the armature one graph, and is every gate
+     * mouth on a consular way? `feeders` used to manufacture the first and nothing checked the
+     * second. See `assertWayGraph`.
+     */
+    const graph = assertWayGraph();
+    console.info(
+      `[city:rome] armature: ${graph.ways} ways, consular-and-above in ${graph.rankedComponents} ` +
+        `piece(s); gate mouths: ${graph.gates.map((g) => `${g.id} -> ${g.on ?? 'NOTHING'}${g.cls ? ` (${g.cls})` : ''}`).join(', ')}` +
+        `; ends joined to nothing: ${graph.dangling.length} (` +
+        `${['map edge', 'gate', 'outside the curtain', 'STUB']
+          .map((k) => `${graph.dangling.filter((d) => d.why === k).length} ${k}`)
+          .join(', ')})`
+    );
+    for (const f of graph.faults) console.warn(`[city:rome] armature fault: ${f}`);
     const axis = assertGateAxisClear();
     console.info(
       `[city:rome] gate axis (the straight normal out of the Porta Flaminia, NOT the ` +
-        `carriageway, which deflect bends): ${axis.inside}/${axis.samples} = ${axis.pct}% ` +
+        `carriageway, which is a different line and is measured above): ` +
+        `${axis.inside}/${axis.samples} = ${axis.pct}% ` +
         `inside masonry over the first 700 m` +
         (axis.blockers.length
           ? `; blocked by ${axis.blockers.map((b) => `${b.id} ${b.from}-${b.to} m`).join(', ')}`
