@@ -56,6 +56,41 @@ export interface FormationDef {
   };
   /** Animation the idle pose should use while in this formation. */
   idlePose: 'relaxed' | 'alert' | 'brace';
+  /**
+   * Body radius the crowd solver gives a man while this formation is held, metres.
+   * Absent means the default 0.42 m, and absent is the right answer for all but two.
+   *
+   * ## The bug this exists for
+   *
+   * `BattleSystem.resolveCrowding` separates men to a fixed 0.84 m centre to centre.
+   * `shieldwall` asks for 0.636 m between files and `testudo` for 0.516 m, and **neither
+   * multiplier had ever done anything at all**: the solver ran at up to 0.22 m of
+   * correction per man per tick against a steering term that manages a few millimetres,
+   * so both formations expanded until every man was 0.84 m from his neighbour — the same
+   * ground a `line` stands on.
+   *
+   * Measured on the shipped field battle, one 320-man legionary cohort ordered into
+   * testudo and left to settle for 30 s (`tools/probe-testudo.mjs`): the block came out
+   * **14.39 m by 13.47 m at 0.606 m² a man**, against the 10.8 m by 8.85 m its own
+   * formation asked for, with the median man 2.0 m from his slot and the worst 11.8 m.
+   * A tortoise the size of a line is not a tortoise, and no amount of work on the poses
+   * could have fixed it: a 0.66 m scutum cannot close a rank whose men stand 0.84 m apart,
+   * however it is held.
+   *
+   * ## This is a gameplay change and not a presentation one
+   *
+   * A testudo that can actually close up presents about half the frontage it used to, so
+   * it takes fewer missiles for the same shield modifier, fits through gaps it could not
+   * fit through, and stands on ground a third of the area. `tools/determinism-baseline.json`
+   * was re-recorded in the same commit for exactly that reason.
+   *
+   * The two figures are the formation's own file spacing with a little slack, so a man is
+   * never pushed out of the slot the same file gives him: 0.25 against testudo's 0.516 m
+   * and 0.31 against shieldwall's 0.636 m. Everything else keeps 0.42 m, and the sum of
+   * two defaults is bit-identical to the constant it replaces, so no formation but these
+   * two is touched by so much as a ULP.
+   */
+  packRadius?: number;
 }
 
 /**
@@ -115,6 +150,7 @@ export const FORMATIONS: Record<string, FormationDef> = {
     frontMul: 1,
     mods: { shield: 1.55, attack: 0.86, speed: 0.5, missileTaken: 0.6, charge: 0.3, morale: 8 },
     idlePose: 'brace',
+    packRadius: 0.31,
   },
 
   testudo: {
@@ -133,6 +169,7 @@ export const FORMATIONS: Record<string, FormationDef> = {
     frontMul: 1,
     mods: { shield: 2.3, attack: 0.42, speed: 0.36, missileTaken: 0.16, charge: 0, morale: 4 },
     idlePose: 'brace',
+    packRadius: 0.25,
   },
 
   wedge: {

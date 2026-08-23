@@ -768,6 +768,36 @@ export const CORPSE_DROP_LO =
 export const CORPSE_DROP_COARSE = (1 << Coarse.ShieldBig) | (1 << Coarse.ShieldRound);
 export const CORPSE_DROP_COARSE_HELM = 1 << Coarse.Helmet;
 
+/**
+ * What a man in a testudo puts away, and why he has to.
+ *
+ * A testudo holds the scutum with **both hands** — see the pose block in
+ * `anim/authored.ts` — and a hand cannot be on the board and on a pilum at once. That is
+ * the honest reason, but it is not the reason this mask was written.
+ *
+ * The reason is that a legionary carries a 2.1 m pilum shouldered, and a shouldered pilum
+ * on a man whose shield is now over his head goes **straight through the roof**. Two
+ * hundred of them is a hedgehog, and it is the single loudest thing wrong with a testudo
+ * that has had its arms fixed and nothing else: the surface reads for about a second and
+ * then the eye finds the shafts and it is a crowd again. Polearms are in the list for the
+ * same reason and not because a spearman's grip was thought about.
+ *
+ * `SwordSheathed` goes back **on**, so the gladius is visibly on the hip rather than
+ * nowhere. Every faction's mesh carries the piece — the geometry is the union of
+ * everything a faction can field and the shader collapses what a man is not wearing — so
+ * setting the bit is free and cannot reference geometry that is absent.
+ */
+export const TESTUDO_STOW_HI =
+  bit(Piece.Pilum) | bit(Piece.JavelinBundle) |
+  bit(Piece.WeaponSword) | bit(Piece.WeaponSpear) | bit(Piece.WeaponAxe) |
+  bit(Piece.WeaponFalcata) | bit(Piece.WeaponBow) | bit(Piece.WeaponSling);
+
+/** Put back on when the hands go to the board. */
+export const TESTUDO_WEAR_HI = bit(Piece.SwordSheathed);
+
+/** The same for the far mesh's eight groups: no pole, no blade. */
+export const TESTUDO_STOW_COARSE = (1 << Coarse.Pole) | (1 << Coarse.Blade);
+
 /** Whether this unit type is drawn mounted. */
 export const mounted = (def: UnitTypeDef): boolean => isCavalry(def);
 

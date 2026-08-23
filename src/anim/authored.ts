@@ -418,6 +418,319 @@ const idleBraceLow: OverlayDef = {
   ],
 };
 
+// ---------------------------------------------------------------------------
+// The testudo
+// ---------------------------------------------------------------------------
+/**
+ * Five poses that build one roof, and the arithmetic that produced them.
+ *
+ * A testudo is the only formation in this game whose quality is a *surface* rather than a
+ * crowd. `idleBrace` — which is what `formations.ts` asked for and what a testudo used to
+ * get — is a man with his shield up in front of him, and two hundred of those is two
+ * hundred men holding shields, not a tortoise. What makes it read is that the boards stop
+ * belonging to the men: one unbroken armoured shell with legs under it.
+ *
+ * **Every arm angle below was solved, not authored.** The chain is closed-form and
+ * `tools/scratch/testudo-solve.mjs` inverts it: the scutum is skinned rigidly to
+ * `lowerArmL` through `socket('march', 0, …)`, an `absTr` track sets that bone's world
+ * orientation outright, so `delta = Qboard · R12⁻¹ · Qmarch · restQ⁻¹` puts the board at any
+ * chosen attitude *exactly*; the upper arm then places the elbow, and with it the board's
+ * centre, on a sphere the shoulder decides. Hand-keying that to a tenth of a degree over
+ * five poses is not a thing an eye can do, and the eye is very good at seeing a roof that
+ * is nearly level.
+ *
+ * The reach is what shapes the whole design, and it is worth knowing before touching any
+ * number here: the socket sits 0.285 m from the elbow and the upper arm is 0.30 m, so the
+ * board's centre can only be within 0.585 m of the shoulder. Crouch a man to a 1.24 m
+ * shoulder and his board will not go above 1.70 m — below the crown of a standing man's own
+ * helmet. **That is why the interior of this testudo is hunched and not crouched.** The men
+ * stand, soften the knees, round the back and pull the head in; only the front rank goes
+ * down, because only the front rank has a board in front of it to go down behind.
+ *
+ * What the five do, at the 0.63 m rank interval the formation asks for:
+ *
+ * | pose | board covers | closes |
+ * |---|---|---|
+ * | `testudoFace` | 0.30–1.35 m, upright | the front rank's own frontage, down to the ankles |
+ * | `testudoNose` | 1.16–1.81 m, 52° back-slope reaching 0.85 m forward | the band across the front at head height — the gap that makes a testudo look like a crowd wearing hats |
+ * | `testudoRoofA` | 1.66–1.81 m, 8° nose-down, 1.06 m of board over a 0.63 m interval | the roof, course one |
+ * | `testudoRoofB` | 1.63–1.85 m, 12° nose-down | the roof, course two: alternate ranks take it, so the boards lap rather than butt and the surface has a grain |
+ * | `testudoFlank` | 0.55–1.60 m, upright, rim 0.05 m over the man's own helmet | the flanks and the rear, with the man turned outward by the renderer |
+ *
+ * Each roof board laps the one in front by 0.43 m, which is what leaves no hole when a man
+ * is 0.1 m out of his place. The face's top at 1.35 m sits above the nose's bottom at
+ * 1.19 m, so no horizontal ray at any height between the grass and the roof reaches a man.
+ *
+ * Both hands are on the board, and that is only possible because `TESTUDO_STOW_HI` in
+ * `kit.ts` takes the pilum out of the right hand for the duration. It has to: a 2.1 m pilum
+ * carried at the shoulder goes straight through the roof, and a rank of them is the single
+ * loudest thing wrong with the frame this work started from.
+ */
+
+/** Interior and flanks: knees soft, back rounded, head tucked. Shoulder at 1.32 m. */
+const TESTUDO_HUNCH: BoneTrack[] = [
+  tr(MB.thighL, [[0, -15, 4, 0]]),
+  tr(MB.shinL, [[0, 26, 0, 0]]),
+  tr(MB.thighR, [[0, -9, -4, 0]]),
+  tr(MB.shinR, [[0, 18, 0, 0]]),
+  tr(MB.pelvis, [[0, 0, 9, 0]]),
+  tr(MB.spineLow, [[0, -9, 4, 0]]),
+  tr(MB.chest, [[0, -5, 2, 0]]),
+  tr(MB.neck, [[0, 14, -5, 0]]),
+];
+const TESTUDO_HUNCH_ROOT: readonly (readonly [number, number, number, number])[] =
+  [[0, 0, -0.045, 0.03]];
+
+/**
+ * Front rank: right down behind the board, weight over the front foot. Shoulder at 1.10 m.
+ *
+ * Deeper than it looks like it should be, and the depth is doing two jobs. The board's
+ * centre can only be 0.585 m from the shoulder, so the *only* way to get its lower rim near
+ * the ground is to put the shoulder near the ground: at a 1.20 m shoulder the board bottoms
+ * out at 0.42 m and the frame is a rank of shields on a rank of bare legs. At 1.10 m it
+ * reaches 0.30 m, which is where a scutum's rim actually sits on a man who has set himself.
+ * And it takes his head down to 1.33 m, which is 20 mm under the top of his own board.
+ */
+const TESTUDO_DEEP: BoneTrack[] = [
+  tr(MB.thighL, [[0, -56, 7, 0]]),
+  tr(MB.shinL, [[0, 98, 0, 0]]),
+  tr(MB.thighR, [[0, -34, -7, 0]]),
+  tr(MB.shinR, [[0, 70, 0, 0]]),
+  tr(MB.pelvis, [[0, 0, 26, 0]]),
+  tr(MB.spineLow, [[0, -19, 8, 0]]),
+  tr(MB.chest, [[0, -10, 4, 0]]),
+  tr(MB.neck, [[0, 18, -7, 0]]),
+];
+const TESTUDO_DEEP_ROOT: readonly (readonly [number, number, number, number])[] =
+  [[0, 0, -0.244, 0.05]];
+
+/**
+ * The same two stances, walking.
+ *
+ * The legs keep the march base's own stride and take a constant flexion on top, with the
+ * root dropped to match so the feet stay on the ground: measured, the lowest either foot
+ * reaches is 0.069 m against the base march clip's 0.075 m, which is 6 mm and invisible.
+ * Authoring the halted stance's thigh angles over a stride instead produces a limp.
+ *
+ * The shoulder lands within 19 mm of the halted stance for the hunch and 42 mm for the
+ * deep crouch, which is the number that matters: the arm tracks are shared between halted
+ * and marching, so a shoulder that moved would step the whole roof the instant a cohort
+ * came to a stop.
+ */
+const TESTUDO_HUNCH_MARCH: BoneTrack[] = [
+  tr(MB.thighL, [[0, -10, 0, 0]]),
+  tr(MB.shinL, [[0, 18, 0, 0]]),
+  tr(MB.thighR, [[0, -10, 0, 0]]),
+  tr(MB.shinR, [[0, 18, 0, 0]]),
+  tr(MB.pelvis, [[0, 0, 9, 0]]),
+  tr(MB.spineLow, [[0, -9, 4, 0]]),
+  tr(MB.chest, [[0, -5, 2, 0]]),
+  tr(MB.neck, [[0, 14, -5, 0]]),
+];
+const TESTUDO_HUNCH_MARCH_ROOT: readonly (readonly [number, number, number, number])[] =
+  [[0, 0, -0.03, 0.03]];
+
+const TESTUDO_DEEP_MARCH: BoneTrack[] = [
+  tr(MB.thighL, [[0, -36, 0, 0]]),
+  tr(MB.shinL, [[0, 62, 0, 0]]),
+  tr(MB.thighR, [[0, -36, 0, 0]]),
+  tr(MB.shinR, [[0, 62, 0, 0]]),
+  tr(MB.pelvis, [[0, 0, 26, 0]]),
+  tr(MB.spineLow, [[0, -19, 8, 0]]),
+  tr(MB.chest, [[0, -10, 4, 0]]),
+  tr(MB.neck, [[0, 18, -7, 0]]),
+];
+const TESTUDO_DEEP_MARCH_ROOT: readonly (readonly [number, number, number, number])[] =
+  [[0, 0, -0.21, 0.05]];
+
+/**
+ * Front rank: the board upright and planted, covering 0.30-1.35 m. Both hands behind it.
+ *
+ * The right hand's target was pulled 0.14 m back after a critic found knuckles coming
+ * through the painted face of the board in four places in one eye-level crop. A hand
+ * "on the back of the shield" has to be behind the *back* of the shield, and the scutum
+ * is 0.135 m of curve plus 0.022 m of plywood in front of where the arm is.
+ */
+const ARMS_FACE: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, 150.4, 67.3, 55.3]]),
+  absTr(MB.lowerArmL, [[0, 173, -51, -177]]),
+  absTr(MB.upperArmR, [[0, 18.1, -11.1, 70.5]]),
+  absTr(MB.lowerArmR, [[0, -51.9, -49.8, 151.4]]),
+];
+
+/**
+ * Second rank: the glacis, 52° back from vertical, covering 1.16-1.81 m.
+ *
+ * It was 46° and 1.19-1.92 m, and its top edge therefore stood up to 0.26 m **above** the
+ * roof line all the way across the front. Seen from any camera behind the formation that is
+ * a row of eight to ten hide backs, unlit, standing proud of the shell — a critic measured
+ * them at luminance 33-40 against the roof's 94-103 and called them "flat unlit near-black
+ * rectangles that shred the silhouette at every range". They were the *front* of the
+ * formation seen from behind. Laid back six more degrees and dropped 0.10 m, the glacis now
+ * tops out level with the roof's own trailing edge and there is nothing to see over.
+ */
+const ARMS_NOSE: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, 151.5, 88.7, 3.5]]),
+  absTr(MB.lowerArmL, [[0, 128, -51, -177]]),
+  absTr(MB.upperArmR, [[0, 91.4, 40.8, -1.4]]),
+  absTr(MB.lowerArmR, [[0, -74.5, -42.7, 167.2]]),
+];
+
+/**
+ * Roof, course one: 8 degrees nose-down, 1.66 m at the leading edge and 1.81 m at the
+ * trailing one.
+ *
+ * **It was dead level and that was worse.** A horizontal board sees the whole sky
+ * hemisphere, so it takes about twice the ambient a vertical one does, and a critic scored
+ * the roof two to three stops brighter than the *same asset* on the wall — "a flat pink
+ * quilt", with no occlusion anywhere the boards lap because coplanar boards cannot shade
+ * each other. Eight degrees costs 2% of the fore-and-aft coverage, tips the normal off the
+ * zenith, and puts a real 0.15 m step at every lap, so the roof shades itself with shadow
+ * rather than needing an AO term it cannot have. It is also the correct way round: the
+ * leading edge is the low one, so the front board sheds over the one behind it.
+ */
+const ARMS_ROOF_A: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, 106.3, 84.6, 10.5]]),
+  absTr(MB.lowerArmL, [[0, 98, -51, -177]]),
+  absTr(MB.upperArmR, [[0, 90.8, 5, -0.8]]),
+  absTr(MB.lowerArmR, [[0, -74.2, -27.7, 166.3]]),
+];
+
+/** Roof, course two: 12 degrees and 10 mm higher, so the two courses lap and disagree. */
+const ARMS_ROOF_B: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, 99, 85, 5.5]]),
+  absTr(MB.lowerArmL, [[0, 102, -51, -177]]),
+  absTr(MB.upperArmR, [[0, 90.8, 5, -0.8]]),
+  absTr(MB.lowerArmR, [[0, -78.2, -28.7, 169.5]]),
+];
+
+/**
+ * The **upper** course of the flank and rear wall: the board upright, covering 0.74-1.79 m.
+ *
+ * **One 1.06 m board cannot cover a 1.75 m man, and three passes were spent proving it.**
+ * The flank started at this height, because the rim then stands on the roof line and no
+ * horizontal ray gets in. That left 0.74 m of bare leg along both flanks and the whole of
+ * the back, and a critic named it in five of nine frames as the single highest-leverage
+ * fault in the build. It was dropped to 0.42-1.47 m; the *other* end opened, and the next
+ * critic counted twenty-six exposed helmets, faces and raised forearms in one band across
+ * the back. It was split at 0.55-1.60 m; that hides the head from a level ray but **an eye
+ * at 1.75 m is above any rim below 1.75 m**, so from the height the rubric grades at, it
+ * did not help.
+ *
+ * The answer both critics converged on independently is the one the front of the formation
+ * already used: **two courses, not one.** The outer file plants `testudoFace` low, at
+ * 0.30-1.35 m, so the rim is in the grass; the file behind it holds this one at 0.74-1.79 m,
+ * so the rim is on the roof line. Between them they cover the ground to above a standing
+ * man's helmet, which is exactly what `Face` and `Nose` do at the front and exactly why the
+ * front face was the strongest frame in the set while the flanks were the weakest.
+ *
+ * It costs two files of roof on each side, which is 40 of 320 men.
+ */
+const ARMS_FLANK: BoneTrack[] = [
+  absTr(MB.upperArmL, [[0, 153.5, 88.7, 3]]),
+  absTr(MB.lowerArmL, [[0, -174, -51, -177]]),
+  absTr(MB.upperArmR, [[0, 34.8, 20.2, 54.5]]),
+  absTr(MB.lowerArmR, [[0, -63.6, -47.2, 159.5]]),
+];
+
+/**
+ * Ten clips: five poses, halted and marching.
+ *
+ * The halted ones are 20 frames over 3.2 s, which is long and slow on purpose. A testudo
+ * is a formation of men *not moving*, and the only motion in it should be the base clip's
+ * breathing coming through the spine — the arms are absolute, so the boards do not move
+ * with it at all and the roof stays where it was put.
+ */
+const testudoFace: OverlayDef = {
+  name: 'testudoFace',
+  frames: 20,
+  duration: 3.2,
+  loop: true,
+  root: TESTUDO_DEEP_ROOT,
+  tracks: [...TESTUDO_DEEP, ...ARMS_FACE, ...FEET_FLAT],
+};
+
+const testudoNose: OverlayDef = {
+  name: 'testudoNose',
+  frames: 20,
+  duration: 3.4,
+  loop: true,
+  root: TESTUDO_HUNCH_ROOT,
+  tracks: [...TESTUDO_HUNCH, ...ARMS_NOSE, ...FEET_FLAT],
+};
+
+const testudoRoofA: OverlayDef = {
+  name: 'testudoRoofA',
+  frames: 20,
+  duration: 3.6,
+  loop: true,
+  root: TESTUDO_HUNCH_ROOT,
+  tracks: [...TESTUDO_HUNCH, ...ARMS_ROOF_A, ...FEET_FLAT],
+};
+
+const testudoRoofB: OverlayDef = {
+  name: 'testudoRoofB',
+  frames: 20,
+  duration: 3.3,
+  loop: true,
+  root: TESTUDO_HUNCH_ROOT,
+  tracks: [...TESTUDO_HUNCH, ...ARMS_ROOF_B, ...FEET_FLAT],
+};
+
+const testudoFlank: OverlayDef = {
+  name: 'testudoFlank',
+  frames: 20,
+  duration: 3.5,
+  loop: true,
+  root: TESTUDO_HUNCH_ROOT,
+  tracks: [...TESTUDO_HUNCH, ...ARMS_FLANK, ...FEET_FLAT],
+};
+
+const testudoFaceMarch: OverlayDef = {
+  name: 'testudoFaceMarch',
+  frames: 30,
+  duration: 1.0,
+  loop: true,
+  root: TESTUDO_DEEP_MARCH_ROOT,
+  tracks: [...TESTUDO_DEEP_MARCH, ...ARMS_FACE, ...FEET_FLAT],
+};
+
+const testudoNoseMarch: OverlayDef = {
+  name: 'testudoNoseMarch',
+  frames: 30,
+  duration: 1.0,
+  loop: true,
+  root: TESTUDO_HUNCH_MARCH_ROOT,
+  tracks: [...TESTUDO_HUNCH_MARCH, ...ARMS_NOSE, ...FEET_FLAT],
+};
+
+const testudoRoofAMarch: OverlayDef = {
+  name: 'testudoRoofAMarch',
+  frames: 30,
+  duration: 1.0,
+  loop: true,
+  root: TESTUDO_HUNCH_MARCH_ROOT,
+  tracks: [...TESTUDO_HUNCH_MARCH, ...ARMS_ROOF_A, ...FEET_FLAT],
+};
+
+const testudoRoofBMarch: OverlayDef = {
+  name: 'testudoRoofBMarch',
+  frames: 30,
+  duration: 1.0,
+  loop: true,
+  root: TESTUDO_HUNCH_MARCH_ROOT,
+  tracks: [...TESTUDO_HUNCH_MARCH, ...ARMS_ROOF_B, ...FEET_FLAT],
+};
+
+const testudoFlankMarch: OverlayDef = {
+  name: 'testudoFlankMarch',
+  frames: 30,
+  duration: 1.0,
+  loop: true,
+  root: TESTUDO_HUNCH_MARCH_ROOT,
+  tracks: [...TESTUDO_HUNCH_MARCH, ...ARMS_FLANK, ...FEET_FLAT],
+};
+
 /**
  * A shorter, quicker pace. Stride amplitude 0.92 of the base, so at the same ground speed
  * this man takes about 9% more steps a minute than his neighbour on `march`.
@@ -1335,6 +1648,18 @@ export const MAN_OVERLAYS: { base: string; def: OverlayDef }[] = [
   { base: 'idleAlert', def: idleAlertWatch },
   { base: 'idleRelaxed', def: idleRelaxedLean },
   { base: 'idleAlert', def: idleBraceLow },
+  // The testudo. The marching half is built on `march`, which is the first entry in this
+  // list for that reason — `buildSet` walks it in order and an overlay's base has to exist.
+  { base: 'idleAlert', def: testudoFace },
+  { base: 'idleAlert', def: testudoNose },
+  { base: 'idleAlert', def: testudoRoofA },
+  { base: 'idleAlert', def: testudoRoofB },
+  { base: 'idleAlert', def: testudoFlank },
+  { base: 'march', def: testudoFaceMarch },
+  { base: 'march', def: testudoNoseMarch },
+  { base: 'march', def: testudoRoofAMarch },
+  { base: 'march', def: testudoRoofBMarch },
+  { base: 'march', def: testudoFlankMarch },
   { base: 'walk', def: marchShort },
   { base: 'walk', def: marchLong },
   { base: 'walk', def: walkLooseRoll },

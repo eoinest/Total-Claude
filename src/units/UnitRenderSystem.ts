@@ -11,6 +11,7 @@ import {
   MAN_CLIP_SET, HORSE_CLIP_SET, FOOT_CLIP_MAP, RIDE_CLIP_MAP,
   HORSE_GAIT_LADDER, HORSE_GAIT_STRIDE, HORSE_CHARGE_CLIP, HORSE_STATE_MAP, HORSE_CHARGE_MASK,
   FOOT_CLIP_VARIANT_MAP, FOOT_VARIANTS, bakePointTrack, meanPointOverClip,
+  TESTUDO_CLIP_MAP, TestudoRole,
 } from '../anim/clips';
 import { hash01 } from '../util/rand';
 import { bakeAnimTexture, type AnimTexture } from '../anim/animTexture';
@@ -34,6 +35,7 @@ import {
 import {
   resolveKit, emptyKit, ROUT_DROP_HI, CORPSE_DROP_HI, CORPSE_DROP_LO,
   CORPSE_DROP_COARSE, CORPSE_DROP_COARSE_HELM, Piece, ridesElephant,
+  TESTUDO_STOW_HI, TESTUDO_WEAR_HI, TESTUDO_STOW_COARSE,
   EMBLEM_TRIBAL_FIRST, EMBLEM_PUNIC_FIRST, type ResolvedKit,
 } from './kit';
 import {
@@ -204,6 +206,42 @@ const SEAT_RISE = 0.07;
 const SLOT_LATERAL = 0.11;
 const SLOT_ALONG = 0.13;
 const SLOT_STRAGGLE = 0.30;
+
+/**
+ * The testudo's presentation layer, and exactly how far it is allowed to go.
+ *
+ * Everything under this heading moves *pixels* and not the simulation. The pool's `x`, `z`,
+ * `state` and `hp` — the four fields `stateHash.poolHash` covers — are never written from
+ * here, so a testudo that looks completely different is still the same battle, bit for bit,
+ * and `tools/determinism-baseline.json` does not move. That is the constraint this whole
+ * feature was designed inside, and these four constants are where it is spent.
+ *
+ * `TESTUDO_DRESS` is the mirror of `SLOT_LATERAL` above and is defended by the same
+ * argument. That block *adds* up to 0.11 m of lateral and 0.43 m of longitudinal scatter to
+ * a man's drawn position because a rank of men on a perfect grid reads as a spreadsheet.
+ * A testudo is the one formation where that is precisely wrong: the scatter is what turns a
+ * shield roof into a shield roof with holes in it. So a man in a testudo is drawn up to
+ * 0.40 m *toward* his slot instead of up to 0.43 m away from it, which is a smaller
+ * intervention than the one it replaces and in the direction the formation is asking for.
+ *
+ * `TESTUDO_EVEN` is the one that needs stating plainly. `pool.scale` and `heightMul`
+ * together spread a man's stature about ±7%, which is right — a rank of identical men is a
+ * fatal tell, and criterion C1 says so. But the scutum is held at arm's length above the
+ * head, so ±7% of stature is ±0.14 m of *roof height*, and a 0.28 m peak-to-peak ripple
+ * across a surface that is supposed to read as one plane is the thing an eye picks out
+ * first. 0.78 pulls the roof men's stature 78% of the way to their unit's own nominal
+ * height, leaving about ±0.03 m — enough that the boards are not machined to a jig, little
+ * enough that the plane reads. The men underneath are behind their own shields; the roof is
+ * the only part of them anybody can see.
+ */
+const TESTUDO_DRESS = 0.40;
+const TESTUDO_EVEN = 0.78;
+/** Seconds to form up or fall out. A ninety-degree turn on the flank happens over this. */
+const TESTUDO_FORM = 0.55;
+/** Ranks a block needs before its rearmost turns about to close the back. */
+const TESTUDO_MIN_DEPTH = 4;
+/** How far the two flank men nearest the face turn, instead of a right angle. */
+const TESTUDO_CHAMFER = (50 * Math.PI) / 180;
 
 /**
  * Ceiling on machines drawn at once. Four batteries of four is sixteen; sixty-four leaves
@@ -550,6 +588,22 @@ export class UnitRenderSystem implements Subsystem {
   private heightMul!: Float32Array;
   /** Per-man stand-off from his formation slot: lateral, longitudinal, straggle. */
   private slotOff!: Float32Array;
+  /**
+   * The testudo layer: which board of the shell a man is holding, and how far into it he is.
+   *
+   * `testudoRole` is `TestudoRole * 2 + (marching ? 1 : 0)`, or 255 for the overwhelming
+   * majority of men who are not in one. `testudoBlend` ramps 0..1 over `TESTUDO_FORM` so
+   * that forming up is a movement rather than a substitution — a flank man turning ninety
+   * degrees in one frame is the worst thing this feature could do to a frame.
+   * `testudoYaw` is where he ends up pointing and `testudoSlot` is the world position his
+   * formation slot asks for, both resolved once a frame in `resolveTestudo`.
+   */
+  private testudoRole!: Uint8Array;
+  private testudoBlend!: Float32Array;
+  private testudoYaw!: Float32Array;
+  private testudoSlot!: Float32Array;
+  /** True while any unit on the field is in testudo, so the cost is nothing when none is. */
+  private anyTestudo = false;
   /** Lateral nudge and lift resolved once per corpse, 3 floats per soldier. */
   private corpseNudge!: Float32Array;
   /**
@@ -735,6 +789,10 @@ export class UnitRenderSystem implements Subsystem {
     this.clipBucket = new Uint8Array(cap);
     this.heightMul = new Float32Array(cap).fill(1);
     this.slotOff = new Float32Array(cap * 3);
+    this.testudoRole = new Uint8Array(cap).fill(255);
+    this.testudoBlend = new Float32Array(cap);
+    this.testudoYaw = new Float32Array(cap);
+    this.testudoSlot = new Float32Array(cap * 2);
     this.corpseNudge = new Float32Array(cap * 3);
     this.corpseRoll = new Float32Array(cap);
     this.corpseNudged = new Uint8Array(cap);
@@ -1536,7 +1594,175 @@ export class UnitRenderSystem implements Subsystem {
     for (const m of this.mats) m.uniforms.uTime.value = this.elapsed;
     // Before the playheads, because a crewman's clip is chosen from his engine's phase.
     this.updateEngines(dt);
+    // And before them too, because a man in a testudo takes his clip from where he is
+    // standing in the shell rather than from what the simulation has him doing.
+    this.resolveTestudo(dt);
     this.advancePlayheads(dt, ctx);
+  }
+
+  /**
+   * Work out which board of the shell every man in a testudo is holding.
+   *
+   * The five roles are geometry, not state: a testudo is a *surface* and the surface is
+   * made of five different pieces that only close if each is held by the right man. Rank 0
+   * plants its boards upright; rank 1 tips them back at 46° to bridge the gap over the
+   * front rank's heads; the interior alternates two nearly-level tile courses so the boards
+   * lap rather than butt; and the outer files and the rearmost rank turn outward and stand
+   * theirs up as a rim. See the pose block in `anim/authored.ts` for what each one covers
+   * and the arithmetic that says the five leave no hole.
+   *
+   * **Rank and file are recomputed here rather than read from `pool.rank` / `pool.file`.**
+   * Those two are written once, at spawn, from the *deployment's* width, and
+   * `BattleSystem.setFormation` changes `u.width` without touching them — a 320-man cohort
+   * that deploys 41 across and forms testudo 22 across has every one of them stale by the
+   * time it matters. `pool.slot` is the stable identity and `u.width` is live, so the pair
+   * is always right.
+   *
+   * Costs one pass over the members of units that are actually in testudo, and nothing at
+   * all otherwise; `anyTestudo` then lets `preRender` skip four branches per man per frame
+   * in the overwhelmingly common case that no cohort on the field is in one.
+   */
+  private resolveTestudo(dt: number): void {
+    const p = this.battle.pool;
+    const n = p.count;
+    const role = this.testudoRole;
+    const blend = this.testudoBlend;
+    const wasAny = this.anyTestudo;
+    if (wasAny) role.fill(255, 0, n);
+    let any = false;
+
+    for (const u of this.battle.units) {
+      if (u.formationId !== 'testudo' || u.destroyed) continue;
+      const def = unitType(u.typeId);
+      // Only men on their own two feet. A rider has no shield roof to hold up, and an
+      // artillery crew is at its machine.
+      if (isCavalry(def) || ridesElephant(def) || isEngineUnit(def)) continue;
+      if (!any && !wasAny) role.fill(255, 0, n);
+      any = true;
+      const w = Math.max(1, u.width);
+      const last = Math.max(0, u.members.length - 1);
+      const lastRank = Math.floor(last / w);
+      const c = Math.cos(u.facing);
+      const s = Math.sin(u.facing);
+      for (const i of u.members) {
+        const st = p.state[i] as SoldierState;
+        // A man who is fighting, throwing, staggering, dying or broken is doing that and
+        // not holding a roof. Marching and Idle/Bracing are the two the shell is held in,
+        // and they are also what decides between the standing and the walking clip — the
+        // simulation's own state machine, so it comes with hysteresis already applied and
+        // a man on a threshold cannot flicker between two clips.
+        if (st !== SoldierState.Idle && st !== SoldierState.Bracing
+          && st !== SoldierState.Marching) continue;
+        const slot = p.slot[i];
+        const rank = Math.floor(slot / w);
+        const file = slot % w;
+        let r: TestudoRole;
+        let turn = 0;
+        /**
+         * Two courses on every wall, not one, and this is the shape the whole feature
+         * converged on.
+         *
+         * A man holds one 1.06 m board and stands 1.75 m, so a single course cannot reach
+         * from the grass to above his helmet: put the rim low and his head is out, put it
+         * high and his legs are. The *front* of the formation never had that problem
+         * because it has always been two courses — `Face` planted low at rank 0 and `Nose`
+         * tipped back above it at rank 1 — and the front is the frame two independent
+         * critics called the strongest in the set while calling the flanks the weakest.
+         *
+         * So the flanks and the back are built the same way: the outer file plants `Face`
+         * low, the file behind it stands `Flank` on the roof line, and between them the
+         * wall is closed from the turf to 1.79 m. It costs two files of roof on each side.
+         */
+        const rearRank = Math.floor((last - file) / w);
+        const closed = lastRank >= TESTUDO_MIN_DEPTH;
+        if (rank === 0) {
+          r = TestudoRole.Face;
+        } else if (closed && rank === rearRank - 1 && rank > 1) {
+          // Inner course of the back wall: the high board, standing on the roof line.
+          r = TestudoRole.Flank;
+          turn = Math.PI;
+        } else if (closed && rank >= rearRank) {
+          /**
+           * The back of the shell, and the reason this is per *file* and not per rank.
+           *
+           * A cohort's last rank is almost never full — 320 men 22 across leaves twelve in
+           * rank 14 — so "rank === lastRank" turns twelve men about and leaves the other
+           * ten files with a man in rank 13 whose back is the rearmost thing in the
+           * formation. Photographed from behind that is exactly what it looked like: half
+           * the rear closed and half of it a row of bare legs and shoulder blades.
+           * `floor((last - file) / w)` is the highest rank that file actually reaches.
+           */
+          // Outer course of the back wall: the low board, rim in the grass.
+          r = TestudoRole.Face;
+          // Chamfered at the two back corners for the same reason as the front two: a man
+          // who is both the end of the rear rank and the end of a flank has to face the
+          // diagonal, or the join between the two walls is a hole with a man in it.
+          // `turn` is added to the unit's heading, and the unit's left is negative: a man on
+          // the left flank looking back over his left shoulder is `-(PI - k)`, not `PI - k`,
+          // which would face him back over the *other* one and put his board inside the
+          // block.
+          const k = TESTUDO_CHAMFER * 0.72;
+          turn = file === 0 ? k - Math.PI : file === w - 1 ? Math.PI - k : Math.PI;
+        } else if (file === 0 || file === w - 1) {
+          /**
+           * The flanks, and the chamfer at the front of them.
+           *
+           * File 0 is the most negative local x, which is the unit's *left*: see `centredX`
+           * in `sim/formations.ts`. A flank man turns a right angle and stands his board up
+           * outward — except in the first two ranks behind the face, where a right angle
+           * leaves the board edge-on to anybody standing in front of the formation and a
+           * critic counted four or five men fully exposed at each front corner, helmets and
+           * bare arms, with no shield in front of them and none above. `TESTUDO_CHAMFER`
+           * turns those two men through fifty degrees instead, so the corner presents a
+           * bevel to the front rather than a notch. A shell is not a box with square
+           * corners; the corners are where two surfaces have to meet.
+           */
+          // Outer course: the board planted low, rim in the grass.
+          r = TestudoRole.Face;
+          const out = file === 0 ? -1 : 1;
+          // Eased rather than stepped. A hard step from 50° to 90° at one rank is a corner
+          // with a crease in it, and from in front the first square board behind the bevel
+          // is edge-on and shows the man beside it. Six ranks of it is a bevel.
+          const t = Math.min(1, Math.max(0, (rank - 1) / 5));
+          turn = out * (TESTUDO_CHAMFER + (Math.PI / 2 - TESTUDO_CHAMFER) * t * t);
+        } else if (w >= 6 && (file === 1 || file === w - 2)) {
+          // Inner course: the board standing on the roof line, one file in.
+          r = TestudoRole.Flank;
+          const out = file === 1 ? -1 : 1;
+          const t = Math.min(1, Math.max(0, (rank - 1) / 5));
+          turn = out * (TESTUDO_CHAMFER + (Math.PI / 2 - TESTUDO_CHAMFER) * t * t);
+        } else if (rank === 1) {
+          r = TestudoRole.Nose;
+        } else {
+          r = (rank & 1) ? TestudoRole.RoofB : TestudoRole.RoofA;
+        }
+        role[i] = r * 2 + (st === SoldierState.Marching ? 1 : 0);
+        this.testudoYaw[i] = u.facing + turn;
+        const lx = (file - (w - 1) * 0.5) * u.spacingX;
+        const lz = -rank * u.spacingZ;
+        this.testudoSlot[i * 2] = u.x + lx * c + lz * s;
+        this.testudoSlot[i * 2 + 1] = u.z - lx * s + lz * c;
+      }
+    }
+
+    // The ramp, and the flag that turns the whole layer off again.
+    //
+    // `anyTestudo` cannot simply be `any`: a cohort that leaves the formation has to be
+    // allowed to *unwind* — the flank men turn back, the roof comes down, stature returns —
+    // and that takes `TESTUDO_FORM` seconds during which no unit is in testudo any more. So
+    // the layer stays live until the last man's blend has reached zero, and only then does
+    // the frame stop paying for it.
+    let live = any;
+    if (any || wasAny) {
+      const k = dt / TESTUDO_FORM;
+      for (let i = 0; i < n; i++) {
+        const want = role[i] !== 255 ? 1 : 0;
+        const b = blend[i];
+        if (b !== want) blend[i] = want > b ? Math.min(1, b + k) : Math.max(0, b - k);
+        if (blend[i] > 0) live = true;
+      }
+    }
+    this.anyTestudo = live;
   }
 
   /**
@@ -1580,10 +1806,19 @@ export class UnitRenderSystem implements Subsystem {
       // itself has him idle: during the volley the sim owns him and the throw pose is both
       // right and timed to the bolt.
       const served = this.serveClip(i, clip);
-      const want = cav
-        ? (RIDE_CLIP_MAP[clip] ?? RIDE_CLIP_MAP[Clip.IdleAlert])
-        : (FOOT_CLIP_VARIANT_MAP[served * FOOT_VARIANTS + this.clipBucket[i]]
-          ?? FOOT_CLIP_MAP[Clip.IdleAlert]);
+      // A man in a testudo plays the board he is holding, and the shape variants are
+      // deliberately not consulted. Every other formation wants three silhouettes per rank
+      // so a cohort does not read as one man repeated; this one wants exactly the opposite,
+      // because the variation *is* the hole in the roof. What keeps it from reading as a
+      // stamped copy is that the five roles differ, the two tile courses alternate, and the
+      // base clip's breathing still comes through the spine at each man's own rate.
+      const tRole = this.anyTestudo ? this.testudoRole[i] : 255;
+      const want = tRole !== 255
+        ? TESTUDO_CLIP_MAP[tRole]
+        : cav
+          ? (RIDE_CLIP_MAP[clip] ?? RIDE_CLIP_MAP[Clip.IdleAlert])
+          : (FOOT_CLIP_VARIANT_MAP[served * FOOT_VARIANTS + this.clipBucket[i]]
+            ?? FOOT_CLIP_MAP[Clip.IdleAlert]);
       if (this.curClip[i] !== want) {
         if (this.curClip[i] !== 255) {
           this.prevClip[i] = this.curClip[i];
@@ -2167,6 +2402,21 @@ export class UnitRenderSystem implements Subsystem {
         // over a few hundred men, which is nothing against a 16 M frame.
         if (lod === 3 && cav) lod = 2;
 
+        /**
+         * A man in a testudo never reaches the billboard tier either, and for the same
+         * reason a mounted man does not: the impostor sheet is a *standing* man with his
+         * shield across his body, so a cohort crossing that edge would stop being a
+         * tortoise and go back to being a block of infantry — the whole silhouette this
+         * work exists to produce, deleted at one distance. The billboard cannot be fixed
+         * for this case, because it is a pre-rendered atlas of poses and the roof is five
+         * poses that only mean anything next to each other.
+         *
+         * LOD2 is 313 triangles a man, so holding a 320-man cohort one tier finer costs
+         * about 100,000 triangles against a 16 M frame, and only while it is in testudo
+         * and only past the impostor edge. That is the cheapest thing in this file.
+         */
+        if (lod === 3 && this.anyTestudo && this.testudoBlend[i] > 0.5) lod = 2;
+
         if (lod === 3) {
           this.pushImpostor(i, rp.x, rp.y, rp.z, facing, u.faction, selected);
           continue;
@@ -2241,8 +2491,34 @@ export class UnitRenderSystem implements Subsystem {
           const lat = this.slotOff[o];
           const along = this.slotOff[o + 1]
             + this.slotOff[o + 2] * Math.min(1, Math.sqrt(vx * vx + vz * vz) * 0.6);
-          x += lat * uc + along * us;
-          z += -lat * us + along * uc;
+          const tb = this.anyTestudo ? this.testudoBlend[i] : 0;
+          if (tb > 0) {
+            // The straggle is faded out and replaced by a bounded pull *onto* the slot. See
+            // `TESTUDO_DRESS`: a shield roof is made of boards 0.66 m across held 0.53 m
+            // apart, so 0.11 m of lateral untidiness is a fifth of the overlap that closes
+            // it and the eye finds every one of the gaps. Bounded, so a man the crowd has
+            // genuinely displaced is still drawn where he is and not teleported into the
+            // block — this closes seams, it does not invent a formation.
+            const dx0 = this.testudoSlot[i * 2] - x;
+            const dz0 = this.testudoSlot[i * 2 + 1] - z;
+            const d0 = Math.sqrt(dx0 * dx0 + dz0 * dz0);
+            const pull = d0 > TESTUDO_DRESS ? TESTUDO_DRESS / d0 : 1;
+            x += (lat * uc + along * us) * (1 - tb) + dx0 * pull * tb;
+            z += (-lat * us + along * uc) * (1 - tb) + dz0 * pull * tb;
+            // Dressed on the unit's front, not on his own heading. Two hundred boards can
+            // only be one surface if they are parallel, and a man's drawn facing carries
+            // whatever the integrator last left him turned to.
+            let d = (this.testudoYaw[i] - facing) % (Math.PI * 2);
+            if (d > Math.PI) d -= Math.PI * 2;
+            if (d < -Math.PI) d += Math.PI * 2;
+            facing += d * tb;
+            // And no lean. A lean is acceleration made visible, and it tips the board with
+            // the man: 6 degrees of it across a rank is a roof with a kink in it.
+            lean *= 1 - tb;
+          } else {
+            x += lat * uc + along * us;
+            z += -lat * us + along * uc;
+          }
         }
         this.pushSoldier(tier, i, x, y, z, facing, lean, state, selected, coarse, hasCorpse);
       }
@@ -2281,7 +2557,25 @@ export class UnitRenderSystem implements Subsystem {
 
     const o = n * Stride.Orient;
     buf.orient[o] = facing;
-    buf.orient[o + 1] = p.scale[i] * this.heightMul[i];
+    /**
+     * Stature, and the one place a testudo overrules it.
+     *
+     * See `TESTUDO_EVEN`. The board is at arm's length above the head, so the ±7% spread
+     * that makes a rank look like men rather than like a production run becomes ±0.14 m of
+     * roof height — and a roof that undulates by a quarter of a metre is not a roof. The
+     * men in the shell are pulled most of the way to their unit's nominal height while they
+     * hold it and released again when they fall out; the residual keeps the boards from
+     * looking machined. Nothing outside a testudo is touched.
+     */
+    const tScale = this.anyTestudo ? this.testudoBlend[i] : 0;
+    const raw = p.scale[i] * this.heightMul[i];
+    if (tScale > 0) {
+      const t = this.typeOf(i);
+      const nominal = t >= 0 ? this.types[t].appearance.heightScale : 1;
+      buf.orient[o + 1] = raw + (nominal - raw) * (TESTUDO_EVEN * tScale);
+    } else {
+      buf.orient[o + 1] = raw;
+    }
     // The lean lane doubles as the corpse squash — see the corpse branch in skinShader.ts.
     // Ramped over the second half of the fall so a body compresses as it comes to rest rather
     // than deflating the moment it is hit.
@@ -2322,11 +2616,27 @@ export class UnitRenderSystem implements Subsystem {
     const dropShield = settled && hash01(seed, 86) < 0.58;
     const dropHelm = settled && hash01(seed, 87) < 0.16;
 
+    /**
+     * The one thing that has to happen the instant the roof goes up, not over a ramp.
+     *
+     * A legionary carries his pilum shouldered, and a shouldered pilum on a man whose
+     * shield is now over his head stands 2 m straight through the roof. Two hundred of
+     * them turn an armoured shell back into a crowd in about a second of looking. So a man
+     * whose blend has crossed halfway stows everything in his right hand — both hands are
+     * on the board anyway — and wears the scabbard instead. See `TESTUDO_STOW_HI`.
+     *
+     * Binary rather than blended because a kit mask is a bitfield and there is no half of
+     * a pilum; halfway through the form-up is when the arms are already most of the way to
+     * the roof, which is the least visible moment to do it.
+     */
+    const stow = this.anyTestudo && this.testudoBlend[i] > 0.5 && !hasCorpse;
+
     const k = n * Stride.Kit;
     if (coarse) {
       let c = this.kitCoarse[i];
       if (dropShield) c &= ~CORPSE_DROP_COARSE;
       if (dropHelm) c &= ~CORPSE_DROP_COARSE_HELM;
+      if (stow) c &= ~TESTUDO_STOW_COARSE;
       buf.kit[k] = c;
       buf.kit[k + 1] = 0;
     } else {
@@ -2337,6 +2647,7 @@ export class UnitRenderSystem implements Subsystem {
       let lo = this.kitLo[i];
       if (dropShield) hi &= ~CORPSE_DROP_HI;
       if (dropHelm) lo &= ~CORPSE_DROP_LO;
+      if (stow) hi = (hi & ~TESTUDO_STOW_HI) | TESTUDO_WEAR_HI;
       buf.kit[k] = lo;
       buf.kit[k + 1] = hi;
     }

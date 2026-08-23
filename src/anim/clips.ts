@@ -108,6 +108,40 @@ const FOOT_VARIANT_NAMES: Partial<Record<Clip, readonly string[]>> = {
   [Clip.AttackOverhead]: ['attackOverhead', 'attackOverheadCross', 'attackOverhead'],
 };
 
+/**
+ * The testudo's own clip table, keyed by a man's place in the shell rather than by `Clip`.
+ *
+ * It is separate from `FOOT_NAMES` and from `FOOT_VARIANT_NAMES` on purpose, and the reason
+ * is the whole shape of the feature. Every other clip in this file is chosen by what a man
+ * is *doing*, which is a simulation fact and reaches the renderer through `pool.animClip`.
+ * Which board of a testudo a man is holding is decided by where he is standing in it —
+ * front rank, second rank, an interior tile course, a flank — and that is a *rendering*
+ * fact, derived from `pool.slot` and the unit's live width. Routing it through `Clip` would
+ * mean five new simulation states that the simulation has no use for and that
+ * `stateHash.ts` would then have to have an opinion about.
+ *
+ * `UnitRenderSystem.testudoClip` picks the role; this maps the role and whether he is
+ * walking onto the clip. See the big comment over the poses in `authored.ts`.
+ */
+export const enum TestudoRole {
+  /** Front rank: board upright and planted. */
+  Face = 0,
+  /** Second rank: the 46° glacis that closes the band at head height. */
+  Nose = 1,
+  /** Interior, tile course one: level. */
+  RoofA = 2,
+  /** Interior, tile course two: 4° off level, so the courses lap. */
+  RoofB = 3,
+  /** Flanks and rear, turned outward: board upright and proud of the roof line. */
+  Flank = 4,
+  Count = 5,
+}
+
+const TESTUDO_NAMES: readonly string[] = [
+  'testudoFace', 'testudoNose', 'testudoRoofA', 'testudoRoofB', 'testudoFlank',
+];
+const TESTUDO_MARCH_NAMES: readonly string[] = TESTUDO_NAMES.map((n) => `${n}March`);
+
 /** Riders: seated variants. A mounted man never plays a footed locomotion clip. */
 const RIDE_NAMES: Record<Clip, string> = {
   [Clip.IdleRelaxed]: 'rideIdle',
@@ -238,6 +272,8 @@ const manUsed = [
   ...Object.values(FOOT_NAMES),
   ...Object.values(RIDE_NAMES),
   ...Object.values(FOOT_VARIANT_NAMES).flat(),
+  ...TESTUDO_NAMES,
+  ...TESTUDO_MARCH_NAMES,
 ];
 export const MAN_CLIP_SET = packSet(MAN_RIG, manClips, manUsed);
 export const HORSE_CLIP_SET = packSet(HORSE_RIG, horseClips, [
@@ -254,6 +290,16 @@ const mapTo = (set: ClipSet, names: Record<Clip, string>): Int32Array => {
 
 /** `Clip` -> index into `MAN_CLIP_SET.clips`, for a man on foot. */
 export const FOOT_CLIP_MAP = mapTo(MAN_CLIP_SET, FOOT_NAMES);
+
+/** `TestudoRole * 2 + (moving ? 1 : 0)` -> index into `MAN_CLIP_SET.clips`. */
+export const TESTUDO_CLIP_MAP = ((): Int32Array => {
+  const out = new Int32Array(TestudoRole.Count * 2);
+  for (let r = 0; r < TestudoRole.Count; r++) {
+    out[r * 2] = MAN_CLIP_SET.index(TESTUDO_NAMES[r]);
+    out[r * 2 + 1] = MAN_CLIP_SET.index(TESTUDO_MARCH_NAMES[r]);
+  }
+  return out;
+})();
 
 /**
  * `Clip * FOOT_VARIANTS + bucket` -> index into `MAN_CLIP_SET.clips`, for a man on foot.

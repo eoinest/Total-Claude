@@ -713,6 +713,9 @@ export class BattleSystem implements Subsystem {
     this.breakingOff = new Uint8Array(256);
     this.press = new Float32Array(cap);
     this.sepUsed = new Float32Array(cap);
+    // 0.42 is `resolveCrowding`'s own default body radius, written here so the array is
+    // valid before the first tick even if nothing is in a packed formation.
+    this.packR = new Float32Array(cap).fill(0.42);
     this.roughDrag = new Float32Array(cap).fill(1);
     this.rallyX = new Float32Array(cap);
     this.rallyZ = new Float32Array(cap);
@@ -2890,6 +2893,36 @@ export class BattleSystem implements Subsystem {
   }
 
   /**
+   * Per-man body radius for this tick, from the formation each man's unit is holding.
+   *
+   * Refreshed rather than cached because `setFormation` can be called from an order, an
+   * ability, the tactical AI or a rally, and a stale radius is a formation that silently
+   * keeps the last one's spacing. The whole pass is one fill plus the members of the units
+   * that actually declare a `packRadius`, and it is skipped entirely — including the fill —
+   * on the overwhelmingly common tick where nobody is in shieldwall or testudo and nobody
+   * was on the previous tick either. `dirty` is what makes the *last* such tick still write
+   * the defaults back.
+   */
+  private resolvePackRadii(n: number, dflt: number): Float32Array {
+    if (this.packR.length < n) this.packR = new Float32Array(this.pool.capacity).fill(dflt);
+    let any = false;
+    for (const u of this.units) {
+      if (u.destroyed) continue;
+      if (formation(u.formationId).packRadius !== undefined) { any = true; break; }
+    }
+    if (!any && !this.packDirty) return this.packR;
+    this.packR.fill(dflt, 0, n);
+    for (const u of this.units) {
+      if (u.destroyed) continue;
+      const pr = formation(u.formationId).packRadius;
+      if (pr === undefined) continue;
+      for (const i of u.members) this.packR[i] = pr;
+    }
+    this.packDirty = any;
+    return this.packR;
+  }
+
+  /**
    * Soft body separation. Men are pushed apart so ranks never occupy the same metre,
    * with mass deciding who yields — a horse displaces an infantryman, not the reverse.
    */
@@ -2898,6 +2931,7 @@ export class BattleSystem implements Subsystem {
     const n = p.count;
     const radius = 0.42;
     const diameter = radius * 2;
+    const packR = this.resolvePackRadii(n, radius);
     // Displacement budget, reset each tick. See `MAX_SEPARATION_STEP`.
     const used = this.sepUsed;
     used.fill(0, 0, n);
@@ -2910,6 +2944,11 @@ export class BattleSystem implements Subsystem {
       const xi = p.x[i];
       const zi = p.z[i];
       const yi = p.y[i];
+      // Half the space this man needs. A horse keeps the default whatever formation its
+      // unit claims; a man in shieldwall or testudo gets his own formation's, because
+      // those two ask for files closer together than two default bodies will allow. See
+      // `FormationDef.packRadius`.
+      const ri = this.mounted[i] ? radius : packR[i];
       // Matched to `budgetJ` below, including the mounted case: a horse in a melee is
       // still a horse and keeps the loose-body budget. Testing only `Fighting` here while
       // the neighbour side tested `mounted ? 5 : fighting ? 3 : 1` gave a mounted fighter a
@@ -2929,9 +2968,15 @@ export class BattleSystem implements Subsystem {
         const dx = p.x[j] - xi;
         const dz = p.z[j] - zi;
         const d2 = dx * dx + dz * dz;
-        if (d2 >= diameter * diameter || d2 < 1e-8) return;
+        // The broadphase still asks at the widest body on the field, because the hash cell
+        // size and the query radius have to bound every pair; the *test* is the sum of the
+        // two men's own radii. Two defaults sum to `radius + radius`, which is exactly the
+        // `radius * 2` this used to compare against — doubling is exact in binary floating
+        // point — so a field with no shieldwall and no testudo on it is bit-identical.
+        const sep = ri + (this.mounted[j] ? radius : packR[j]);
+        if (d2 >= sep * sep || d2 < 1e-8) return;
         const d = Math.sqrt(d2);
-        const overlap = diameter - d;
+        const overlap = sep - d;
         const nx = dx / d;
         const nz = dz / d;
         // Split the correction by inverse mass. Mounted/foot is baked per soldier at
@@ -3227,6 +3272,13 @@ export class BattleSystem implements Subsystem {
   private press!: Float32Array;
   /** Metres of crowd separation already spent on each man this tick. */
   private sepUsed!: Float32Array;
+  /**
+   * Per-man body radius, from `FormationDef.packRadius`. `packDirty` says whether the last
+   * tick wrote anything but the default into it, so the fill can be skipped on the ticks
+   * where no unit on the field declares one — which is most of them.
+   */
+  private packR!: Float32Array;
+  private packDirty = false;
   /**
    * Movement multiplier from standing work under each man, refreshed once a tick.
    *
