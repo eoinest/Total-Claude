@@ -236,7 +236,7 @@ lines.push(`amphitheatres (Colosseum form): ${amphi.count} — ${amphi.ok ? 'OK'
 lines.push(`topology: ${topo.checks - topo.failures.length}/${topo.checks} adjacency + hill-ring checks pass`);
 for (const f of topo.failures) lines.push(`  ! ${f}`);
 lines.push(`insulae: ${fabric.footprints.length} plots, ${fabric.trees.length} trees`);
-lines.push('regiones: ' + fabric.report.plotsByRegion.map((r) => `${r.id} ${r.blocks}b/${r.plots}p`).join('  '));
+lines.push('regiones: ' + fabric.report.plotsByRegion.map((r) => `${r.id} ${r.blocks}b/${r.plots}p/${(r.coverage * 100).toFixed(0)}%`).join('  '));
 lines.push(`grid: ${fabric.report.faces} faces, ${fabric.report.blocks} blocks, `
   + `${fabric.report.plazas} plazas, ${fabric.report.crossLanes} cross-lanes `
   + `(${fabric.report.crossLaneKm.toFixed(1)} km)`);

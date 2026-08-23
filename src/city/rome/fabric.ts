@@ -526,7 +526,16 @@ export interface BlockReport {
   /** Faces whose ring is re-entrant, so the half-plane inset is conservative. */
   nonConvexFaces: number;
   plots: number;
-  plotsByRegion: { id: string; blocks: number; plots: number; frontages: number }[];
+  plotsByRegion: {
+    id: string; blocks: number; plots: number; frontages: number;
+    /** Ground between street lines, and how much of it is roof. */
+    insetM2: number; roofM2: number; coverage: number;
+  }[];
+  /**
+   * Regiones the frame carries too little of to grade, by name with their buildable ground.
+   * `MAP-METHOD.md` rule 25: the exclusion arrives *after* the measurement that justifies it.
+   */
+  ungraded: { id: string; insetM2: number; blocks: number }[];
   plotRejects: PlotRejects;
   /** Blocks that survived every face test and then built nothing, by dominant cause. */
   emptyBlocks: { reason: string; n: number }[];
@@ -942,6 +951,7 @@ export function cityPlan(): CityPlanOut {
     nonConvexFaces: nonConvex,
     plots: 0,
     plotsByRegion: [],
+    ungraded: [],
     emptyBlocks: [],
     plotRejects: { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, perimeterTried: 0, perimeterBuilt: 0 },
     worstFrameErrorDeg: worstFrameErr,
@@ -1475,15 +1485,16 @@ export function buildDistricts(
   const why: PlotRejects = { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, perimeterTried: 0, perimeterBuilt: 0 };
   const emptyBlocks = new Map<string, number>();
   const byBlock = new Map<number, Plot[]>();
-  const perRegion = new Map<string, { blocks: number; plots: number; frontages: number }>();
+  const perRegion = new Map<string, { blocks: number; plots: number; frontages: number; insetM2: number; roofM2: number }>();
   let plotCount = 0;
   for (const b of plan.blocks) {
-    const acc = perRegion.get(b.region.id) ?? { blocks: 0, plots: 0, frontages: 0 };
+    const acc = perRegion.get(b.region.id) ?? { blocks: 0, plots: 0, frontages: 0, insetM2: 0, roofM2: 0 };
     if (b.kind !== 'block') {
       perRegion.set(b.region.id, acc);
       continue;
     }
     acc.blocks++;
+    acc.insetM2 += b.insetAreaM2;
     const brng = rng.fork(`block:${b.index}`);
     const out = planBlock(b, brng, keepOut, wallZAt, placed, why);
     acc.frontages += out.frontages;
@@ -1496,6 +1507,7 @@ export function buildDistricts(
     for (const p of out.plots) placed.add(p);
     byBlock.set(b.index, dry);
     acc.plots += dry.length;
+    for (const q of dry) acc.roofM2 += 4 * q.hw * q.hd;
     plotCount += dry.length;
     for (const p of dry) footprints.push({ x: p.x, z: p.z, hw: p.hw, hd: p.hd, rot: p.rot });
     perRegion.set(b.region.id, acc);
@@ -1505,7 +1517,10 @@ export function buildDistricts(
   report.emptyBlocks = [...emptyBlocks.entries()].sort((a, b) => b[1] - a[1]).map(([reason, n]) => ({ reason, n }));
   report.plotsByRegion = [...perRegion.entries()]
     .sort((a, b) => b[1].plots - a[1].plots)
-    .map(([id, v]) => ({ id, blocks: v.blocks, plots: v.plots, frontages: v.frontages }));
+    .map(([id, v]) => ({
+      id, blocks: v.blocks, plots: v.plots, frontages: v.frontages,
+      insetM2: v.insetM2, roofM2: v.roofM2, coverage: v.insetM2 > 0 ? v.roofM2 / v.insetM2 : 0,
+    }));
 
   /*
    * **The self-report, kept word for word, because the check that reads it must not go dark.**
@@ -1524,10 +1539,70 @@ export function buildDistricts(
    * frontage greedily, so one frontage yields six buildings or none and `ok/rows` fired on
    * fourteen of seventeen healthy quarters.
    */
+  /*
+   * **Which regiones the question can be asked of, and the measurement that decides it.**
+   *
+   * `MAP-METHOD.md` rule 25: *"a survey station can only be graded where the frame can carry
+   * it, and that has to be a check that fails rather than an exclusion that explains… An
+   * exclusion that arrives before the check that justifies it is exemption-shopping; one that
+   * arrives after it is a measurement."*
+   *
+   * At `KZ` = 0.35 the map's +Z edge is survey northing −441. **Regio X Palatium** and **Regio
+   * XI Circus Maximus** are centred 450 m past it, so what the frame carries of them is a
+   * ribbon along the last twenty metres of the map: measured on this tree, X keeps **one** block
+   * with 0.31 ha of buildable ground and XI keeps **four** totalling 0.30 ha, all of them
+   * inside the Theatre of Marcellus's or the Capitol's own reservation. "Twenty buildings" is
+   * not a floor that means anything against three hectares of ground.
+   *
+   * So the floor is stated in **ground**, not in blocks: one hectare of buildable polygon,
+   * which is about three and a half blocks at this module's own median inset. It is set there
+   * and not higher because Regio IV, the Subura, has only **1.36 ha** of buildable ground on
+   * this frame and builds **77 %** of it — the densest quarter in the city would have been
+   * excused from the check by a two-hectare floor, which is the shape of mistake rule 25 is
+   * about. A regio below the floor is named,
+   * counted and printed every run with its area, and `assertRegionsGraded` gates the count —
+   * so a third regio dropping out of the graded population is a failure and not a category.
+   */
+  const GRADE_FLOOR_M2 = 10000;
+  const BURIED_COVERAGE = 0.15;
+  const ungraded: { id: string; insetM2: number; blocks: number }[] = [];
   for (const [id, v] of perRegion) {
-    if (v.blocks >= 3 && v.plots < 20) {
-      console.warn(`[city] ${id} planned only ${v.plots} buildings from ${v.frontages} frontages — the quarter is buried`);
+    if (v.insetM2 < GRADE_FLOOR_M2) {
+      ungraded.push({ id, insetM2: v.insetM2, blocks: v.blocks });
+      continue;
     }
+    /*
+     * **Buried is a coverage floor now, not a building count, and the floor is external.**
+     *
+     * "Fewer than twenty buildings" was the right shape for seventeen rectangles of roughly one
+     * size. It is the wrong shape for ten regiones whose buildable ground on this frame runs
+     * from 0.3 to 49 hectares: twenty buildings is a full quarter for Regio IV and a rounding
+     * error for Regio VI. So the question is asked in the units the answer is wanted in —
+     * **roof over the ground between street lines** — and against the number `ROME-FABRIC.md`
+     * §4.4 check 4 takes from the AGEA 2012 orthophoto: the historic core is **60–70 %** built.
+     * Fifteen per cent is a quarter of that and is nowhere near a judgement call about quality;
+     * a regio under it has not been built at all.
+     *
+     * The old wording is kept to the word because `probe-fabric` G17 greps for it, and a check
+     * that goes dark is worse than one that fails (rule 13).
+     */
+    const cov = v.insetM2 > 0 ? v.roofM2 / v.insetM2 : 0;
+    if (cov < BURIED_COVERAGE) {
+      console.warn(
+        `[city] ${id} planned only ${v.plots} buildings from ${v.frontages} frontages — the quarter is buried`
+        + ` (${(cov * 100).toFixed(1)} % of its ${(v.insetM2 / 1e4).toFixed(2)} ha of ground between street lines,`
+        + ` against the orthophoto's 60-70 % and this floor's ${(BURIED_COVERAGE * 100).toFixed(0)} %)`
+      );
+    }
+  }
+  ungraded.sort((a, b) => a.id < b.id ? -1 : 1);
+  report.ungraded = ungraded;
+  if (ungraded.length) {
+    console.info(
+      `[city:rome] ${ungraded.length} regio(nes) the frame carries too little of to grade for `
+      + `burial, by name: ${ungraded.map((u) => `${u.id} ${u.blocks} block(s), ${(u.insetM2 / 1e4).toFixed(2)} ha buildable`).join('; ')}`
+      + ` — the floor is ${(GRADE_FLOOR_M2 / 1e4).toFixed(0)} ha`
+    );
   }
   console.info(
     `[city:rome] grid: ${report.faces} faces of the road graph — ${report.blocks} blocks,`
@@ -1542,7 +1617,7 @@ export function buildDistricts(
   );
   console.info(
     '[city:rome] grid by regio: '
-    + report.plotsByRegion.map((r) => `${r.id} ${r.blocks}b/${r.plots}p`).join('  ')
+    + report.plotsByRegion.map((r) => `${r.id} ${r.blocks}b/${r.plots}p/${(r.coverage * 100).toFixed(0)}%`).join('  ')
   );
 
   // ---- planting -----------------------------------------------------------

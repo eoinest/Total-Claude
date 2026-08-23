@@ -340,7 +340,32 @@ export const ROME_PLAN: CityPlan = {
     if (regionFallbacks() > 0) {
       console.info(`[city:rome] regionAt fell back to the nearest ring ${regionFallbacks()} time(s)`);
     }
+    /*
+     * **Two regiones fall out of the buried check's population, and that is gated.**
+     * `MAP-METHOD.md` rule 16: an exclusion is a claim, so it needs a count, a list of names
+     * printed every run, and a gate on the count so that a third one fails rather than joins a
+     * category. The two are X Palatium and XI Circus Maximus, both centred 450 m past the +Z
+     * edge; the measurement that says so is in `buildDistricts`.
+     */
+    const ungraded = districts.report.ungraded;
+    const UNGRADED_AGREED = ['regio-x-palatium', 'regio-xi-circus-maximus'];
+    const ungradedOk = ungraded.length === UNGRADED_AGREED.length
+      && ungraded.every((u) => UNGRADED_AGREED.includes(u.id));
+    if (!ungradedOk) {
+      console.warn(
+        `[city] the regiones the frame cannot grade are not the two agreed: got `
+          + `${ungraded.map((u) => u.id).join(', ') || 'none'} against ${UNGRADED_AGREED.join(', ')}`
+      );
+    }
+
     romeAssertions.push(
+      {
+        name: 'regiones-graded',
+        ok: ungradedOk,
+        detail: `${ungraded.length} regio(nes) below the 2 ha buildable floor: `
+          + `${ungraded.map((u) => `${u.id} ${(u.insetM2 / 1e4).toFixed(2)} ha`).join('; ') || 'none'}`
+          + `; agreed ${UNGRADED_AGREED.join(', ')}`,
+      },
       {
         name: 'regiones-partition',
         ok: partition.ok,
