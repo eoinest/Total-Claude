@@ -346,6 +346,23 @@ void tcMapSplat(
   // which are trodden, dusty, tomb-lined ground and not pasture. It also has to let the
   // outer flanks of the frontage keep some arable, or a high camera sees one green wash.
   float campus = 1.0 - smoothstep(420.0, 800.0, length(vec2(wp.x * 0.86, (wp.z + 40.0) * 1.9)));
+  /*
+   * The city, off the control map's B channel on the scale heightfield.ts declares:
+   * 0.34 a parade ground, 0.80 a road verge, 1.00 a city street.
+   *
+   * **This shader has been drawing centuriated farmland under Rome.** campus above is the
+   * exemption that keeps the arable off the fighting ground, and it is length(vec2(wp.x *
+   * 0.86, (wp.z + 40) * 1.9)) — at the wall, z 538, the second component alone is 1098
+   * against a cut-off of 800, so campus is **exactly 0 everywhere inside the circuit** and
+   * the whole apparatus runs at full strength: the 94 m survey lattice, its fallow strips,
+   * its headlands and a four-metre metalled cart track on every parcel line, drawn across
+   * the Forum and the Campus Martius. That is VISUAL-RUBRIC.md H9's fail case one level
+   * up from the one it names — not two paving materials meeting on a straight line, a
+   * *ploughed field* meeting one.
+   *
+   * A city is not farmland and it is not pasture. It is beaten earth, gravel and stone.
+   */
+  float urban = smoothstep(0.55, 0.95, cTramp);
   // Aerial convergence. A real aerial photograph *converges*: haze and sub-pixel mixing
   // pull everything toward a common tone as distance grows. This shader diverged instead,
   // which is half of why the strategic view read as camouflage — and the same variance is
@@ -363,8 +380,8 @@ void tcMapSplat(
   // margin, replacing one step with three thinner ones.
   float useDecorr = fld.w;
   float fieldGain = 1.0 - aerial * 0.78;
-  float fallow = smoothstep(0.66, 0.79, useDecorr) * farmed * (1.0 - campus * 0.88) * fieldGain;
-  float stubble = smoothstep(0.30, 0.44, fld.x) * (1.0 - smoothstep(0.56, 0.68, fld.x)) * farmed;
+  float fallow = smoothstep(0.66, 0.79, useDecorr) * farmed * (1.0 - campus * 0.88) * fieldGain * (1.0 - urban);
+  float stubble = smoothstep(0.30, 0.44, fld.x) * (1.0 - smoothstep(0.56, 0.68, fld.x)) * farmed * (1.0 - urban);
   // The headland: a beaten track a few metres wide *on* the field line, where the carts
   // turned and the plough could not reach. It straddles the boundary, so the change of
   // land use either side of it passes through a third material instead of being a hard
@@ -374,7 +391,7 @@ void tcMapSplat(
   // patchwork that a real aerial view resolves more sharply, not less: hedges, ditches and
   // farm tracks are the first thing you read off an air photograph. Converging them away
   // with distance left the fields as flat colour rectangles butting directly together.
-  float headland = fld.y * farmed * (1.0 - campus * 0.55);
+  float headland = fld.y * farmed * (1.0 - campus * 0.55) * (1.0 - urban);
   // Whether the headland actually *wins* the pixel, which until now it never did. It is fed
   // into w[2] below, and the height blend keeps only the three strongest layers with the top
   // one normalised to 1: on open farmland the grass layers reach about 3.0 and trampled earth
@@ -390,7 +407,7 @@ void tcMapSplat(
   // fld.y is smoothstep(0.40, 0.496, edge) and edge is in cell units of 94 m, so the two
   // thresholds below correspond to 2.8 m and 1.0 m either side of the line: a limes of about
   // four metres, which is the eight-pedes minor track the gromatici actually laid out.
-  float track = smoothstep(0.700, 0.985, fld.y) * farmed * (1.0 - campus * 0.72);
+  float track = smoothstep(0.700, 0.985, fld.y) * farmed * (1.0 - campus * 0.72) * (1.0 - urban);
 
   // 0 dry grass and 1 meadow grass share the plain in opposition, so the ground breaks
   // into readable blocks of straw and green rather than averaging into one tone.
@@ -408,13 +425,19 @@ void tcMapSplat(
   // The sward thins on the cart track, which is both what happens and what lets the track
   // take the pixel from it.
   float onTrack = 1.0 - track * 0.62;
-  w[0] = (0.3 + 2.7 * grassMix + stubble * 1.6) * (1.0 - grassKill) * (1.0 - paved) * onTrack;
+  // A city has no sward. 0.97 and not 1.0 for the same reason GrassField keeps 3 % of its
+  // clumps: weeds in the cracks and at the kerb are right, a lawn is not.
+  float onUrban = 1.0 - urban * 0.97;
+  w[0] = (0.3 + 2.7 * grassMix + stubble * 1.6) * (1.0 - grassKill) * (1.0 - paved) * onTrack * onUrban;
   w[1] = (0.3 + 2.5 * (1.0 - grassMix) + cWet * 1.8 + hollow * 0.5)
-       * (1.0 - grassKill) * (1.0 - paved) * (1.0 - fallow * 0.75) * onTrack;
-  // 2 trampled earth: army grounds, road verges, the tracks on the field lines and the
-  // ploughed and fallow strips. An accent, not a fourth co-equal state.
+       * (1.0 - grassKill) * (1.0 - paved) * (1.0 - fallow * 0.75) * onTrack * onUrban;
+  // 2 trampled earth: army grounds, road verges, the tracks on the field lines, the
+  // ploughed and fallow strips — and the floor of the city, which is what beaten earth
+  // between two party walls is. An accent everywhere else; the ground state inside the
+  // circuit, where it has to beat the grass layers' ~3.0 outright.
   w[2] = cTramp * 1.7 + verge * 1.0
-       + fallow * 2.6 + headland * 1.9 + track * 2.4;
+       + fallow * 2.6 + headland * 1.9 + track * 2.4
+       + urban * 2.6;
   // 3 mud: where drainage really concentrates and the ground never dries.
   w[3] = smoothstep(0.68, 0.98, cWet) * 2.1 + hollow * 0.45
        + cSilt * 0.6 * (1.0 - smoothstep(0.8, 4.5, tAbove));
@@ -432,7 +455,11 @@ void tcMapSplat(
        // Traffic wears the fines out of a track and leaves the stones standing. Without
        // this, trodden ground — army camps, the glacis, the ford approach — is a sheet of
        // featureless chocolate mud wherever it is not grass.
-       + smoothstep(0.12, 0.55, cTramp) * 1.3;
+       + smoothstep(0.12, 0.55, cTramp) * 1.3
+       // A Roman street that is not paved is *glarea* — rammed gravel — and the yards and
+       // lanes between insulae are where the fines walk out and the stones stand proud.
+       // Modulated so the city floor is gravel in patches over earth rather than one tone.
+       + urban * (0.7 + 1.5 * smoothstep(0.46, 0.78, macroMid.b));
   // 5 exposed limestone: steep faces, quarry cuts, the noses of ridges.
   w[5] = smoothstep(0.32, 0.60, tSlope) * 2.9
        + cBare * smoothstep(0.18, 0.45, tSlope) * 2.2 + nose * 0.5;

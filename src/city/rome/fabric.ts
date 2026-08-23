@@ -732,6 +732,51 @@ function districtMask(d: DistrictSpec, u: number, v: number): number {
   return s * s * (3 - 2 * s);
 }
 
+/**
+ * **How much of the ground at (x, z) belongs to the city.** 1 inside a quarter, 0 in the
+ * country, and a ragged fade between the two.
+ *
+ * This is `buildDistrictFloor`'s own mask, evaluated without building anything, so the
+ * ground the terrain treats as urban and the floor the city draws over it cannot disagree —
+ * they are the same function of the same `DISTRICTS`. That matters more than it sounds:
+ * `MAP-METHOD.md` rule 11 is about a footprint and a piece of stone drifting apart because
+ * two producers each held their own copy of the same rectangle.
+ *
+ * **What it is for.** Nothing in `GrassField` had ever heard of the city. Its only
+ * road-shaped mask is one analytic sinusoid — the *battlefield's* Via Flaminia, which
+ * wanders on through the city at coordinates the Via Lata has nothing to do with — and there
+ * is no city term, no building term, no way term and no paving term anywhere in the file.
+ * So a 0.32–0.54 m sward grew through a carriageway drawn 6 cm above the terrain and through
+ * a district floor drawn 2 cm above it, and the eye-level frame in an insula quarter
+ * (`eye-quarter-east`) is a photograph of grass with some walls behind it.
+ *
+ * The wall guard is `buildDistrictFloor`'s, to the metre: several districts' inflated
+ * rectangles reach *outside* the circuit — `campus-flaminia` runs to z 457 against a wall at
+ * z 530 — and the glacis is not city. **This is a mask on the ground, not on the fabric**;
+ * it deliberately includes the streets, the yards and the space between the monuments,
+ * because all of that is city floor and none of it is meadow.
+ */
+export function urbanGroundMask(x: number, z: number, wallZAt: (x: number) => number): number {
+  if (z <= wallZAt(x) + 8) return 0;
+  let best = 0;
+  for (const d of DISTRICTS) {
+    const grow = 1 + d.fray * 0.34;
+    const reach = Math.max(d.hw, d.hd) * grow;
+    const dx = x - d.x;
+    const dz = z - d.z;
+    if (dx * dx + dz * dz > reach * reach) continue;
+    const cs = Math.cos(d.rot);
+    const sn = Math.sin(d.rot);
+    // Inverse of `districtFrame`: x = cx + u·cs + v·sn, z = cz − u·sn + v·cs.
+    const u = dx * cs - dz * sn;
+    const v = dx * sn + dz * cs;
+    const m = districtMask(d, u, v);
+    if (m > best) best = m;
+    if (best >= 0.999) break;
+  }
+  return best;
+}
+
 export function buildDistricts(
   heightAt: Ground,
   keepOut: KeepOut,

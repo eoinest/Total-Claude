@@ -717,6 +717,137 @@ export const WALL_BENCH_HALF = 40;
 export const regionalPlain = (x: number, z: number): number =>
   PLAIN_LEVEL + x * 0.0020 + z * 0.0026;
 
+// ---------------------------------------------------------------------------
+// The flood plain, and where it stops — 22 Aug 2026
+// ---------------------------------------------------------------------------
+
+/**
+ * **The toe of the hill front that bounds the Campus Martius on the east**, as the easting
+ * of that toe at a given northing, in survey metres.
+ *
+ * ## Why this exists
+ *
+ * This file's own header has said since it was written that *"the Campus Martius itself is
+ * an alluvial flood plain sitting about 12–13 m above the river, **dead flat** by the
+ * standards of Rome"*, and `riseAmplitude` above repeats it: *"the Campus Martius is a Tiber
+ * flood plain and the Aurelian wall crosses it dead flat from the river to the foot of the
+ * Pincian."* `riseAmplitude` then publishes **0 m of rise for x ≤ 100** and is right.
+ *
+ * The heightfield put a **45-metre hill in the middle of it anyway**, and it did so through a
+ * different door: `baseHeight`'s upland terms are gated on `onHill` and `crestBand`, which are
+ * functions of **z against `riseToeZ(x)` only**. Both saturate to 1 everywhere behind the
+ * crest, at every x on the map, so the flood plain — where `riseAmplitude` is exactly zero —
+ * inherited +13 m of "behind the crest" lift and up to ±27.5 m of isotropic ridged
+ * multifractal. Measured on `ef8b5c7` at x = 50, a station 240 world metres west of the Via
+ * Lata with `riseAmplitude(50) = 0`:
+ *
+ *     z    800    900   1000   1100   1200
+ *     h   5.35   6.37  30.97  44.98   7.97
+ *
+ * Under the Pantheon (world 94, 1008) the ground stood at **37.8 m** against a real Campus
+ * Martius surface of about 13 m a.s.l. `docs/ROME-RENDERS.md` reports the same thing from a
+ * camera: *"rounded masses between the camera and the monuments … the single biggest thing
+ * standing between these frames and a street."*
+ *
+ * This is `MAP-METHOD.md` rule 12 exactly — **a constant appearing in a formula is not the
+ * same as a constant the formula is about.** `onHill` is about *northing behind the toe*; it
+ * was read as *on the hills*.
+ *
+ * ## Why a polyline in survey metres and not a radius
+ *
+ * `MAP-METHOD.md` rule 21, and the Janiculum. That row is authored `len: 520, wid: 240` and
+ * its keep-out is still `addCircle(x, z, moundRadius * 1.02)` in `city/plan.ts` — a circle of
+ * radius 234.6 m standing for a hill whose semi-minor axis is 96.4 m. **A radius cannot say
+ * what a length and a width say**, and the same mistake made here would flatten the Quirinal
+ * or leave the Pantheon on a hill depending only on which way the error fell. So the plain's
+ * eastern limit is a *line*, authored in the survey's own frame, projected by `worldOf` like
+ * any other surveyed position, and each vertex carries the real place it stands at.
+ *
+ * `e = f(n)` is single-valued here and that is a claim, not an accident: the scarp of the
+ * Pincian–Quirinal–Capitoline front runs north–south across the whole of the map's northing
+ * range and never doubles back. The Tiber needed a polyline plus a signed distance field
+ * because it turns through 79°; this front does not turn at all. `probe-relief.mjs` checks
+ * the claim against published spot heights rather than against this table.
+ *
+ * ## The vertices
+ *
+ * Northing, easting, in survey metres from the Capitolium (41.8925 N, 12.4823 E), which is
+ * `survey.ts`'s datum. Spot heights are modern metres above sea level, which for this reach
+ * is within a metre or two of the Tiber's low-water datum; the ancient surface of the plain
+ * sat 3–5 m below the modern one but the *relief* — which is all this table is used for — is
+ * the same. Each row is the foot of the scarp, with the crest above it for the contrast that
+ * makes it a scarp at all.
+ *
+ *     n      e      the place                                          toe     crest above
+ *     2500  −520    the Tiber's east bank north of the gate            14 m    —
+ *     2045  −440    Porta Flaminia, Piazza del Popolo; the Pincio
+ *                   terrace rises directly off the east side           15 m    Pincio 50 m
+ *     1830  −360    Via del Babuino under the Villa Medici             17 m    52 m
+ *     1478  −140    Piazza di Spagna at the foot of the Steps          19 m    Trinità 50 m
+ *     1150   −60    the Via del Tritone valley, Pincian to Quirinal    21 m    —
+ *      900   −30    the Trevi, the Quirinal's west foot                22 m    Quirinale 61 m
+ *      500   −60    the Quirinal's south-west spur above the Via Lata  19 m    55 m
+ *      200  −110    the saddle Trajan cut between Capitol and Quirinal 18 m    —
+ *        0  −180    the Capitoline's north-west foot                   16 m    Capitolium 46 m
+ *     −367  −360    the Velabrum, between the Capitol and the river    12 m    Palatine 51 m
+ *
+ * Sources: Lanciani, *Forma Urbis Romae* (1901), whose plates carry the contours; the
+ * elevations are the standard published spot heights for these piazze and summits, which
+ * `tools/probe-relief.mjs` re-states independently and grades the built ground against.
+ */
+const PLAIN_TOE: readonly (readonly [number, number])[] = [
+  [2500, -520], [2045, -440], [1830, -360], [1478, -140], [1150, -60],
+  [900, -30], [500, -60], [200, -110], [0, -180], [-367, -360],
+];
+
+/**
+ * How far east of the toe the plain gives way entirely to upland structure, in **real**
+ * metres of easting.
+ *
+ * Rule 22: a cross-section authored in world metres is two different real distances in an
+ * anisotropic frame. This one is east–west, so it projects by `KX` alone and 500 real metres
+ * is 221.5 world metres. 500 m is the measured run of the Quirinal's west front — the Trevi
+ * at 22 m a.s.l. to Via del Quirinale at 55 m, 500 m apart — and it is also close to the
+ * Pincian's at the Spanish Steps.
+ */
+const PLAIN_TOE_FEATHER_REAL = 500;
+
+/** The toe's easting at a northing, clamped outside the table's range. */
+export const plainToeE = (n: number): number => {
+  if (n >= PLAIN_TOE[0][0]) return PLAIN_TOE[0][1];
+  const last = PLAIN_TOE[PLAIN_TOE.length - 1];
+  if (n <= last[0]) return last[1];
+  for (let i = 1; i < PLAIN_TOE.length; i++) {
+    const a = PLAIN_TOE[i - 1];
+    const b = PLAIN_TOE[i];
+    if (n > b[0]) {
+      const t = (a[0] - n) / (a[0] - b[0]);
+      return a[1] + (b[1] - a[1]) * t;
+    }
+  }
+  return last[1];
+};
+
+/**
+ * **1 on the Tiber flood plain, 0 on the hills**, in world coordinates.
+ *
+ * Everything west of `plainToeE` is plain: the ager Vaticanus, Trans Tiberim, the whole
+ * Campus Martius and the Velabrum. The hills the map keeps — the Pincian under the Muro
+ * Torto, the Quirinal, the Capitoline — are east of it and are untouched. The Janiculum is
+ * west of it and is unaffected because it is a monument's own mound and never came from the
+ * heightfield; `riseAmplitude`'s docstring already says so.
+ *
+ * This is a *gate on relief*, not a grade: it says where the upland machinery may run. It
+ * does not level anything, which is why the plain keeps `baseHeight`'s broad swells (±2.6 m
+ * over a 540 m wavelength, a 1 % grade) and its river valley.
+ */
+export const floodplainMask = (x: number, z: number): number => {
+  const n = (Z0 - z) / KZ;
+  const toeX = X0 + KX * plainToeE(n);
+  const feather = KX * PLAIN_TOE_FEATHER_REAL;
+  return 1 - sstep(0, feather, x - toeX);
+};
+
 /** Squared-distance-free rectangle mask with smooth edges, 1 inside. */
 const rectMask = (
   x: number,

@@ -1,3 +1,4 @@
+import { urbanGroundMask } from '../city/rome/fabric';
 import { ROME_PLAN } from '../city/rome/plan';
 import { CAMPUS_SHADING } from '../terrain/TerrainMaterial';
 import { GROUND_LAYERS } from '../terrain/groundTextures';
@@ -219,7 +220,15 @@ export const CAMPUS_MARTIUS: MapDefinition = {
     // Distant ground drifts to a little above the plain so the world reads as continuing
     // countryside rather than ending at the battlefield boundary.
     farHeight: 13.5,
-    build: (seedLabel) => buildTerrain(seedLabel),
+    /*
+     * The city's own ground mask goes in with the terrain, and this file is the only place
+     * it can: `terrain/heightfield.ts` must not import `city/`, and `city/rome/fabric.ts`
+     * already imports `terrain/`. A map is where its terrain and its city meet.
+     *
+     * `urbanGroundMask` is the district floor's own mask, so what the terrain calls city and
+     * what the city draws a floor over are the same function of the same table.
+     */
+    build: (seedLabel) => buildTerrain(seedLabel, (x, z) => urbanGroundMask(x, z, romeWallZ)),
     layers: GROUND_LAYERS,
     splatGlsl: CAMPUS_SHADING.splatGlsl,
     splatCacheKey: CAMPUS_SHADING.cacheKey,
