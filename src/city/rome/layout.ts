@@ -780,8 +780,31 @@ export const DISTRICTS: DistrictSpec[] = DISTRICT_PLAN.map((d) => {
    * most, and they move onto the nearest authored line rather than onto a hash, which is what
    * a fringe quarter does.
    */
-  const rot = wayBearingAt(x, z);
   z = clamp(z, CITY_Z_MIN(x) + hd * 0.5, CITY_Z_MAX - hd * 0.5);
+  // Sampled **after** the clamp, not before it. Four quarters — the Emporium, the Forum
+  // Boarium, the Velabrum and the Aventine — are surveyed south of the +Z edge and are pulled
+  // back onto it by the two clamps above, by up to 300 world metres. Reading the field at the
+  // position the quarter was authored at rather than the one it is built at gave the Emporium
+  // a frame 75 degrees off the street it actually stands on, and the quarter came back with 15
+  // buildings out of 297 frontages.
+  /**
+   * **Negated, and the sign is the whole of it.**
+   *
+   * `wayBearingAt` returns a **world bearing** — `atan2(dz, dx)` along the street. A
+   * `DistrictSpec.rot` is a **plan rotation**, and the two are opposite-handed:
+   * `makeRotationY(r)` sends a box's local +X to `(cos r, −sin r)`, so a block's drawn long
+   * axis points along bearing **−rot**, and `districtFrame` maps the lattice's +u the same way.
+   * `CitySystem`'s `occRot` is the one place in the tree that already says this out loud — it
+   * negates on the way into the obstacle list, which is why `probe-fabric` reads a real bearing
+   * off `getObstacles()` and why its G20 is entitled to compare the two directly.
+   *
+   * Written without the minus sign, this line pointed every quarter's lattice at the *mirror*
+   * of the street it was supposed to follow: a quarter on a street bearing 20° came out at
+   * −20°, forty degrees wrong, and the gate read it as such. It is worth recording that the
+   * hash this replaced was immune — a symmetric random draw is its own mirror image, so the
+   * fault could not exist until the rotation started meaning something.
+   */
+  const rot = -wayBearingAt(x, z);
   return {
     id: d.id,
     x,

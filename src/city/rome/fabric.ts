@@ -161,15 +161,8 @@ const INSULA_DEPTH_MAX = 22;
  */
 const MIN_PLOT = 7.5;
 
-/**
- * How far a row may turn off its quarter's frame to follow the street under it, radians.
- *
- * See `rowRotOf`. The lattice is cut in the quarter's own `(u, v)` frame at `d.rot`; a row
- * placed at a very different angle does not fit the block quad it was cut from and is rejected
- * by `buildable`, which shows up as a buried quarter rather than as a rotated one. 0.21 rad is
- * 12 degrees.
- */
-const PHASE3_ROW_TURN = 0.21;
+/** How far a row may turn off its quarter's frame to follow the street under it. See `rowRotOf`. */
+const ROW_TURN = 0.14;
 /** Shortest frontage a terrace will cut. Ostia's narrowest surviving property is 6.2 m. */
 const MIN_FRONTAGE = 11;
 /** A block shallower than this has no room for a house and a back wall. */
@@ -320,7 +313,7 @@ function planDistrict(
     const jitter = edge ? 0 : rng.range(-0.18, 0.18) * bandPitch;
     spine.push({
       v: lerp(-HV, HV, k / nBands) + jitter,
-      amp: edge ? 0 : bandPitch * rng.range(0.05, 0.13),
+      amp: edge ? 0 : bandPitch * rng.range(0.025, 0.065),
       freq: (Math.PI * rng.range(1.1, 2.4)) / Math.max(70, HU),
       phase: rng.range(0, Math.PI * 2),
       cls: k === mainA || k === mainB ? 'local' : 'vicus',
@@ -467,24 +460,50 @@ function planDistrict(
    * and the street's bend is taken up at the block ends, which is what a real curving street
    * of houses does — straight runs, angle changes at a party wall.
    *
-   * *And the line it is built to is a street's.* `d.rot` is now `wayBearingAt` at the
-   * quarter's centre (`layout.ts`), which removes the ±20° hash offset; this adds the
-   * **local** correction, so a quarter that a way crosses at an angle gets a grain that turns
-   * with the way rather than one flat angle for four hundred metres. `PHASE3_ROW_TURN` bounds
-   * the correction at 12°, because the row is still being cut out of a lattice built on
-   * `d.rot` and a row rotated far off its own block quad is a row that will not fit in it —
-   * `buildable` would reject it and the quarter would report itself buried (`probe-fabric`
-   * G17). Twelve degrees is what the field actually varies by across a quarter in the Campus
-   * Martius; the clamp fires on 3 % of rows and every one of them is on the far bank.
+   * *And the line it is built to is a street's.* `d.rot` is `wayBearingAt` at the quarter's
+   * centre (`layout.ts`) — the road network's own bearing field — instead of the ±20° hash it
+   * replaced. That is the whole of the change, and it is deliberately **all** of it.
+   *
+   * *And the line it is built to is a street's.* `d.rot` is the road network's own bearing
+   * field at the quarter's centre (`layout.ts`), negated into plan-rotation handedness; this
+   * adds the **local** correction, so a row takes the angle of the street under *it* rather
+   * than the average over four hundred metres. `frame` is the quarter's own bearing — `−d.rot`,
+   * because a plan rotation and a world bearing are opposite-handed here and conflating them is
+   * the fault that made the first version of this whole mechanism point every quarter at the
+   * mirror of its street.
+   *
+   * **And the spine-slope term is *subtracted*, which is a sign fix and not a preference.**
+   * A spine's own world bearing works out to `−d.rot + atan(slope)`: the frame sends `+u` to
+   * bearing `−d.rot`, and the wander adds `+atan(slope)` on top of it. A plot's drawn long axis
+   * points along `−rot`. So a row written `d.rot + atan(slope)` draws at `−d.rot − atan(slope)`
+   * — the **mirror** of the very spine it fronts, off by `2·atan(slope)`, which is up to
+   * **14.6°** at this amplitude. That is a terrace built to the reflection of its own street,
+   * it has been in this file since the lattice was written, and it is most of what
+   * `probe-fabric` G20 has been reporting: the check's median of 9.17° was read as evidence for
+   * the hash, and the hash was only part of it. Both halves are fixed here, and the two are
+   * independent — the hash decided which angle a whole quarter took, this decides whether a row
+   * agrees with the street it is built along.
+   *
+   * `ROW_TURN` bounds the correction, and the bound is load-bearing in two directions. Too
+   * large and a row no longer fits the block quad it was cut from, `buildable` rejects it, and
+   * the quarter reports itself buried (`probe-fabric` G17). Too small — zero, in particular —
+   * and neighbouring blocks in two *different* quarters take their two quarters' angles with
+   * nothing pulling them together, which is the seam G21 measures: dropping the correction
+   * entirely took G21 from **11.2 %** of neighbour pairs over 15° to **26.5 %**, measured on
+   * this tree. Twelve degrees is what the field varies by across a quarter in the Campus
+   * Martius.
    */
   function rowRotOf(k: number, ua: number, ub: number): [number, number] {
     const uc = (ua + ub) * 0.5;
+    const frame = -d.rot;
     const local = (k2: number): number => {
       const v = vAt(k2, uc);
-      const field = wayBearingAt(F.x(uc, v), F.z(uc, v));
-      return d.rot
-        + clamp(foldToAxis(d.rot, field), -PHASE3_ROW_TURN, PHASE3_ROW_TURN)
-        + Math.atan(slopeAt(k2, uc));
+      const delta = clamp(
+        foldToAxis(frame, wayBearingAt(F.x(uc, v), F.z(uc, v))),
+        -ROW_TURN,
+        ROW_TURN
+      );
+      return d.rot - delta - Math.atan(slopeAt(k2, uc));
     };
     return [local(k), local(k + 1)];
   }

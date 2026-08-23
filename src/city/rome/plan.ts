@@ -215,8 +215,26 @@ export const ROME_PLAN: CityPlan = {
      * and that is a *plaza* — an authored piece of the plan with its own shape and paving — not a
      * uniform margin, and it belongs to phase 5 with the rest of the fabric. This is the floor,
      * not the answer.
+     *
+     * **Phase 3 raised it from 2.5 to 4.0, and the extra 1.5 m comes off a measurement rather
+     * than off an instance.** Re-laying the road armature moved every quarter's grain, which
+     * moved the insulae, and one of them landed where the Baths of Trajan's drawn stone
+     * oversails its own declared box — G16 went red at **0.94 m** of intrusion. §9.7 predicted
+     * exactly that: it said G16 *"was passing on where an insula happened to fall"*, and this is
+     * the pass that made it fall somewhere else. Tuning the constant until that one insula
+     * clears would be the same fault again, so the number is taken from `probe-fabric` G14's own
+     * table instead: six of twenty-seven monuments draw stone outside their box, by **2.52 m**
+     * (the Tabularium) to **13.65 m** (the Stadium of Domitian). 2.52 is the *smallest* oversail
+     * any monument has, so below `1.5 + 2.52` the reservation is provably too small for every
+     * one of the six — that is the floor, and 4.0 m is it.
+     *
+     * **It does not cover the Stadium's 13.65 m and is not meant to.** The fix for that is
+     * `MAP-METHOD.md` rule 11 — derive the reserved rectangle *from the geometry builder's own
+     * extents* instead of typing it into a survey table — and it is monument work, not road
+     * work. `buildLandmarks` already runs in this function; it runs *after* the keep-out is
+     * built, and swapping those two lines is the whole of the plumbing.
      */
-    const MON_AMBITUS = 2.5;
+    const MON_AMBITUS = 4;
     for (const l of LANDMARKS) {
       keepOut.addRect(l.x, l.z, l.hw + MON_AMBITUS, l.hd + MON_AMBITUS, l.rot);
       // A mound is bigger in plan than the building on it.
