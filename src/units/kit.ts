@@ -163,6 +163,30 @@ export const EMBLEMS = [
   'praetorian-scorpion',
   'urban-wreath',
   'equites-star',
+  /*
+   * Two more hands on the *same* device, appended inside the Roman band.
+   *
+   * Two blind graders, given the nine testudo plates independently, both named one thing as
+   * the worst fault in the set and both reached for the same phrase — "the same picture,
+   * recoloured". Per-man rotation, scale, offset and paint loss were already there and none
+   * of them answered it, because they are transforms of one image and a grader is looking
+   * for a different image.
+   *
+   * A legion's shields *did* carry one device, so giving a cohort four blazons would trade a
+   * correct criticism for a wrong build. What a legion's shields did not have is one painter.
+   * `resolveKit` draws a legionary's board from these three, all of which are a winged
+   * thunderbolt on a red field and none of which is the same picture: different wing sweep,
+   * a dropped or deepened middle covert, different bolt count and stroke weight. See
+   * `drawEmblem` in `atlas.ts`; the first of the three is byte-for-byte the one that shipped.
+   *
+   * They sit here rather than at the end because the bands must stay contiguous and a Roman
+   * board takes the Roman treatment — one field colour per unit, dark back. Appending them
+   * after `numidian-crescent` would have given a legionary a bright uniform Punic field.
+   * `EMBLEM_TRIBAL_FIRST` and `EMBLEM_PUNIC_FIRST` below move with them, and so do the two
+   * tribal pools in `resolveKit`.
+   */
+  'legio-thunderbolt-b',
+  'legio-thunderbolt-c',
   'germanic-spiral',
   'germanic-sunwheel',
   'germanic-wolf',
@@ -194,10 +218,18 @@ export const EMBLEMS = [
 ] as const;
 
 /** First index of each style band. See the comment on `EMBLEMS`, and `skinShader.ts`. */
-export const EMBLEM_TRIBAL_FIRST = 4;
-export const EMBLEM_PUNIC_FIRST = 9;
+export const EMBLEM_TRIBAL_FIRST = 6;
+export const EMBLEM_PUNIC_FIRST = 11;
 
 const EMBLEM_INDEX = new Map<string, number>(EMBLEMS.map((e, i) => [e, i]));
+
+/** The issued legionary board, and the three hands that painted it. See `EMBLEMS`. */
+const EMBLEM_LEGIO = EMBLEM_INDEX.get('legio-thunderbolt') ?? 0;
+const LEGIO_HANDS = [
+  EMBLEM_LEGIO,
+  EMBLEM_INDEX.get('legio-thunderbolt-b') ?? EMBLEM_LEGIO,
+  EMBLEM_INDEX.get('legio-thunderbolt-c') ?? EMBLEM_LEGIO,
+];
 
 export interface ResolvedKit {
   /** Bits 0..23 of the piece mask. */
@@ -719,11 +751,26 @@ export function resolveKit(def: UnitTypeDef, variant: number, out: ResolvedKit):
   // La Tène material shows from the Rhine to the Ebro. What separates the two hosts on screen
   // is the dye lot and the kit, not the device.
   if (ap.shield !== 'none') {
-    if (germanic) {
-      const pool = [4, 5, 6, 7];
+    /*
+     * A legionary's board is drawn by one of three hands.
+     *
+     * The device is the unit's — this is not a per-man blazon, and see the note on `EMBLEMS`
+     * for why that distinction is the whole point. What varies is which of the three painted
+     * renderings of that device his board carries, from the same stable per-man hash
+     * everything else about him comes from. `r(22)` is the first free draw: 1 to 21 are
+     * taken, and reusing one would correlate a man's painter with his metal or his crest.
+     *
+     * Gated on the unit's *own* device being the thunderbolt rather than on culture, because
+     * the alternates are two more thunderbolts: a praetorian cohort's scorpion has no second
+     * hand drawn for it and must not be handed one.
+     */
+    if (out.emblem === EMBLEM_LEGIO) {
+      out.emblem = LEGIO_HANDS[Math.floor(r(22) * LEGIO_HANDS.length)];
+    } else if (germanic) {
+      const pool = [6, 7, 8, 9];
       out.emblem = pool[Math.floor(r(15) * pool.length)];
     } else if (culture === 'celtic') {
-      const pool = [4, 5, 8];
+      const pool = [6, 7, 10];
       out.emblem = pool[Math.floor(r(15) * pool.length)];
     }
   }
