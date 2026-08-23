@@ -17,7 +17,8 @@ import {
   assertWaysClearOfMonuments,
 } from './assertions';
 import { buildWall } from './circuit';
-import { buildDistricts } from './fabric';
+import { assertBlockBearingSign, assertBlocksAreFaces, buildDistricts } from './fabric';
+import { assertRegionPartition, OFF_FRAME_REGIONES, regionFallbacks } from './regions';
 import { AQUEDUCTS, LANDMARKS, PLAZAS, WAY_FRONTAGE, wayMix, WAYS } from './layout';
 import { buildLandmarks } from './monuments';
 import { WALL } from './section';
@@ -300,7 +301,93 @@ export const ROME_PLAN: CityPlan = {
     }
 
     const landmarks = buildLandmarks(heightAt, 'rome-monuments');
+
+    /*
+     * **Phase 4's three grid assertions, before the fabric is built and after it.**
+     * `docs/ROME-FABRIC.md` §5 phase 4.
+     */
+    const partition = assertRegionPartition();
+    if (!partition.ok) {
+      console.warn(
+        `[city] the regiones do not partition: ${partition.danglingEdges} dangling edge(s), `
+          + `${partition.foldedEdges} folded, ${partition.sameDirectionEdges} wound the same way; `
+          + `frame covered ${partition.frameCovered}; off-frame rows that are on the frame: `
+          + `${partition.offFrameOnFrame.join(', ') || 'none'}`
+      );
+    }
+    console.info(
+      `[city:rome] regiones: ${partition.regions} on this frame partition it exactly; `
+        + `${partition.offFrame.length} off the +Z edge and not authored — ${partition.offFrame.join(', ')}`
+    );
+    const sign = assertBlockBearingSign();
+    if (!sign.ok) {
+      console.warn(
+        `[city] the block frame is mirrored: worst ${sign.worstDeg.toFixed(3)} deg over `
+          + `${sign.cases.length} asymmetric cases — `
+          + sign.cases.filter((c) => !c.ok).map((c) => `${c.inputDeg} deg -> drawn ${c.drawnDeg.toFixed(2)}`).join('; ')
+      );
+    }
+
     const districts = buildDistricts(heightAt, keepOut, 'rome-fabric', wall.wallZAt);
+
+    const blocksAreFaces = assertBlocksAreFaces(districts.footprints);
+    if (!blocksAreFaces.ok) {
+      console.warn(
+        `[city] ${blocksAreFaces.straddling} plot(s) of ${blocksAreFaces.plots} straddle a street `
+          + `centreline, worst ${blocksAreFaces.worstDepthM.toFixed(2)} m: ${blocksAreFaces.worst.join('; ')}`
+      );
+    }
+    if (regionFallbacks() > 0) {
+      console.info(`[city:rome] regionAt fell back to the nearest ring ${regionFallbacks()} time(s)`);
+    }
+    /*
+     * **Two regiones fall out of the buried check's population, and that is gated.**
+     * `MAP-METHOD.md` rule 16: an exclusion is a claim, so it needs a count, a list of names
+     * printed every run, and a gate on the count so that a third one fails rather than joins a
+     * category. The two are X Palatium and XI Circus Maximus, both centred 450 m past the +Z
+     * edge; the measurement that says so is in `buildDistricts`.
+     */
+    const ungraded = districts.report.ungraded;
+    const UNGRADED_AGREED = ['regio-x-palatium', 'regio-xi-circus-maximus'];
+    const ungradedOk = ungraded.length === UNGRADED_AGREED.length
+      && ungraded.every((u) => UNGRADED_AGREED.includes(u.id));
+    if (!ungradedOk) {
+      console.warn(
+        `[city] the regiones the frame cannot grade are not the two agreed: got `
+          + `${ungraded.map((u) => u.id).join(', ') || 'none'} against ${UNGRADED_AGREED.join(', ')}`
+      );
+    }
+
+    romeAssertions.push(
+      {
+        name: 'regiones-graded',
+        ok: ungradedOk,
+        detail: `${ungraded.length} regio(nes) below the 2 ha buildable floor: `
+          + `${ungraded.map((u) => `${u.id} ${(u.insetM2 / 1e4).toFixed(2)} ha`).join('; ') || 'none'}`
+          + `; agreed ${UNGRADED_AGREED.join(', ')}`,
+      },
+      {
+        name: 'regiones-partition',
+        ok: partition.ok,
+        detail: `${partition.regions} regions tile the frame; ${OFF_FRAME_REGIONES.length} off-frame `
+          + `(${partition.offFrame.join(', ')}); ${partition.danglingEdges} dangling, `
+          + `${partition.foldedEdges} folded, ${partition.sameDirectionEdges} same-direction edges`,
+      },
+      {
+        name: 'block-bearing-sign',
+        ok: sign.ok,
+        detail: `${sign.cases.filter((c) => c.ok).length}/${sign.cases.length} asymmetric cases; `
+          + `worst ${sign.worstDeg.toFixed(6)} deg between the input bearing and the drawn long axis`,
+      },
+      {
+        name: 'blocks-are-faces',
+        ok: blocksAreFaces.ok,
+        detail: `${blocksAreFaces.plots} plots, ${blocksAreFaces.straddling} straddling a street `
+          + `centreline, worst ${blocksAreFaces.worstDepthM.toFixed(2)} m; `
+          + `${districts.report.blocks} blocks from ${districts.report.faces} faces, `
+          + `${districts.report.nonConvexFaces} of them re-entrant`,
+      }
+    );
 
     // The check whose absence let the user see what the build could not: does any house stand
     // inside a monument? Counted against the same rectangles `getObstacles()` publishes, so it

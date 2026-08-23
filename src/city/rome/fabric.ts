@@ -14,24 +14,37 @@ import {
 } from '../build';
 import { KeepOut, obbOverlap, type Obb, type WayClass } from '../layout';
 import {
+  HALF_EXTENT,
   WATER_LEVEL,
   islandMask,
   regionalPlain,
   riverInfluence,
   riverOffset,
   riverProfile,
+  romeWallZ,
+  worldOf,
 } from '../../terrain/topography';
+import { TIBER_SURVEY } from '../../terrain/tiberSurvey';
 import { POMERIUM } from './circuit';
 import {
-  DISTRICTS,
   onMonument,
   PLAZAS,
   WAY_FRONTAGE,
   WAY_WIDTH,
   WAYS,
-  type DistrictSpec,
 } from './layout';
-import { foldToAxis, wayBearingAt } from './ways';
+import {
+  faceBearing,
+  insetFace,
+  planarise,
+  polyArea,
+  type Face,
+  type GraphWay,
+  type PlanarGraph,
+  type Pt,
+} from './graph';
+import { regionAt, surveyNorthingOf, type RegionPoly } from './regions';
+import { wayBearingAt } from './ways';
 import type { Lane } from '../cityPlan';
 import type { CityMatKey } from '../materials';
 import { PAL } from '../palette';
@@ -40,53 +53,65 @@ import { cylinderBetween, type CityChunkSpec, type TreeRequest } from '../wall';
 /**
  * The city fabric: *insulae*, streets and courtyards.
  *
- * ## What was wrong
+ * ## Phase 4: a block is a face of the road graph
  *
- * The user's report was two sentences and both were about this file: *"the streets of Rome
- * look... not so much like streets but a patched quilt"*, and *"the large monuments are
- * smacked down across multiple buildings"*. Rendered from the strategic camera the
- * diagnosis was not subtle. There were **no streets at all**. There were three separate
- * faults compounding:
+ * `docs/ROME-FABRIC.md` §5 phase 4. What this file did until now was lay a **spine-and-rib
+ * lattice** inside each of seventeen district rectangles: two to six spines running the
+ * length of the quarter on their own sine, ribs cutting between them, and the quads left
+ * over filled with terraces. It was a real improvement on the BSP it replaced — every spine
+ * ran end to end, so the gaps between blocks were streets rather than stubs — and it could
+ * not close the gate, for a reason the phase that shipped it measured rather than guessed
+ * (§10.5):
  *
- *  1. **The blocks came from a BSP.** Each district was recursively cut in half with a gap
- *     left between the halves, and the gaps were called streets. They are not streets. A
- *     BSP gap terminates at its parent rectangle, so nothing runs anywhere: the city was a
- *     set of disconnected stubs, T-ing into each other at every level. Worse, each district
- *     ran its own BSP at its own rotation, so no line survived a district boundary.
- *  2. **Nothing drew them.** The subdivision left *absences*. The only paving in the city
- *     was the nine named viae. Between the blocks was `buildDistrictGround`, a 22 × 22 grid
- *     of 25 m quads tinted at random from three tones — which is, quite literally, a patched
- *     quilt, and it had no relationship whatsoever to where the blocks were. That is the
- *     thing the user could see.
- *  3. **The ratio was inverted.** Streets were graded by the size of the block they cut, so
- *     a 42 m artery appeared wherever a district happened to be large. Counted from the
- *     occupancy grid, barely a third of the ground inside the walls was built. Real Rome is
- *     the other way round: dense fabric, thin lanes.
+ *  - **A block's nearest street was almost always its own quarter's rib**, cut in the
+ *    quarter's own `(u, v)` frame. Turning the block toward the *network* turned it away
+ *    from the lane it actually fronted, so `probe-fabric` G20 and G21 pulled in opposite
+ *    directions and a sweep of the correction bound found a **floor of 6.86°** on G20 at any
+ *    setting, against a 5° gate.
+ *  - **The seventeen rectangles overlapped**, claiming 1.46× the available ground with 82
+ *    overlapping pairs, so a block in one quarter was routinely nearest a *different*
+ *    quarter's lane. G20 could not pass while the regions did not partition, whatever the
+ *    lattice did.
  *
- * ## What replaces it
+ * So the lattice is gone and with it `DISTRICT_PLAN`, `DISTRICTS`, `DistrictSpec`,
+ * `districtFrame`, `districtMask`, `planDistrict`, `rowRotOf` and `ROW_TURN`. What replaces
+ * them is one operation, in `graph.ts`:
  *
- * **Streets first, blocks second, buildings third** — the order a Roman surveyor works in.
+ *  1. **Close the armature into a planar graph** — the 23 named ways, the military road
+ *     inside the curtain, and the battlefield frame. Split at every crossing, weld the
+ *     nodes, prune the stubs.
+ *  2. **Insert cross-lanes at the module pitch** inside any face big enough to need them,
+ *     in *that face's own frame* — so a cross-lane is parallel to the street the block
+ *     fronts rather than to the map axes or to a quarter's box.
+ *  3. **Take the faces. Those are the blocks.** A block's orientation is the bearing of its
+ *     own longest bounding edge, which is a street, which is upstream of everything here.
+ *  4. **Inset each face** by its own bounding edges' setbacks. Below `MIN_DEPTH` the face is
+ *     not a block: it is a plaza or a street widening, and it is reported as one.
+ *  5. **Subdivide** the inset polygon into insulae, frontage quantised, depth fixed —
+ *     Carthage's `fitFace` discipline, in the block's own frame.
+ *  6. **Only now reject against the monuments**, which the graph cannot see.
  *
- *  - `rome/layout.ts` publishes `WAYS`, a city-wide armature of named viae, the military road
- *    inside the wall, a ring round every monument, and the feeders that connect them. It is
- *    a graph, it is continuous, and it is graded by rank rather than by accident.
- *  - Each district lays a **spine-and-rib** lattice inside that armature: two to six
- *    *spines* running the length of the quarter, gently wandering and never parallel for
- *    long, with short *ribs* cutting between adjacent spines. Ribs are staggered from band
- *    to band, so every crossing is a T-junction and no two blocks are the same shape. This
- *    is the topology of an organic Mediterranean city, and the important property is that
- *    **irregular is not the same as discontinuous**: every spine runs end to end.
- *  - A **block** is the quad between two ribs and two spines. It is filled with a terrace of
- *    party-walled insulae whose façades sit *on* the street line, in one or two rows about a
- *    central light well. That is what an insula block is, and it is why the result reads as
- *    blocks of buildings rather than as scattered huts.
- *  - The whole network is then **drawn** — cambered basalt carriageway, travertine kerb,
- *    raised footway, colonnades on the processional ways — in one batch, for one draw call.
+ * The *regiones* survive as **attributes**: `regions.ts` says how many storeys, how packed,
+ * how grand and whether the ground is fabric or garden. It says nothing about where a block
+ * is. That separation is `ROME-FABRIC.md` §4.3's whole fix.
  *
- * Real dimensions: Roman insulae ran three to five storeys, and Augustus capped them
- * at 70 Roman feet (20.7 m) after collapses — Trajan later lowered it to 60 (17.8 m).
- * Ground floors held *tabernae* with wide arched openings, and the storeys above were
- * about 3.1 m each with shuttered windows and projecting timber balconies.
+ * ## The sign, once, because it is the one thing here that cannot be seen
+ *
+ * `graph.ts:faceBearing` returns a **world bearing** — `atan2(dz, dx)` along the longest
+ * edge. A `Plot.rot` is a **plan rotation**: `makeRotationY(rot)` sends a box's local +X to
+ * `(cos rot, −sin rot)`, so a plot whose long axis must point along bearing `β` has
+ * `rot = −β`, and its own `(u, v)` axes are `(cos β, sin β)` and `(−sin β, cos β)`. That is
+ * the *only* place the two conventions meet in this file, it is `blockFrame`, and
+ * `assertBlockBearingSign` in `assertions.ts` grades it against a deliberately asymmetric
+ * case — a face at +30° and its mirror at −30° — because `MAP-METHOD.md` rule 24 is about
+ * exactly this: the hash this mechanism replaced was its own mirror image, so two
+ * opposite-handed conventions could disagree under it indefinitely, and they did, for as long
+ * as the lattice existed.
+ *
+ * Real dimensions: Roman insulae ran three to five storeys, and Augustus capped them at 70
+ * Roman feet (20.7 m) after collapses — Trajan later lowered it to 60 (17.8 m). Ground floors
+ * held *tabernae* with wide arched openings, and the storeys above were about 3.1 m each with
+ * shuttered windows and projecting timber balconies.
  */
 
 const STOREY_H = 3.15;
@@ -98,30 +123,44 @@ export interface DistrictOutput {
   /** Building footprints, in world space, for the movement-blocking grid. */
   footprints: { x: number; z: number; hw: number; hd: number; rot: number }[];
   /**
-   * The lanes each quarter cut for itself, so the plan diagnostic and the stats can see
-   * the whole network rather than only the named armature.
+   * The lanes the grid cut for itself, so the plan diagnostic and the stats can see the whole
+   * network rather than only the named armature.
    */
   lanes: Lane[];
+  /** What the grid did, by the numbers, for the report and for the assertions. */
+  report: BlockReport;
 }
 
 type Ground = (x: number, z: number) => number;
+
+/**
+ * What a *regio* tells a block about itself. `RegionPoly` satisfies it; nothing in the
+ * building geometry ever sees a polygon.
+ */
+interface Character {
+  id: string;
+  density: number;
+  grandeur: number;
+  minFloors: number;
+  maxFloors: number;
+}
 
 interface Plot {
   /** World centre. */
   x: number;
   z: number;
   rot: number;
-  /** Half-extents of the footprint in the district's local frame. */
+  /** Half-extents of the footprint in the block's local frame. */
   hw: number;
   hd: number;
   /** Which side faces the widest street; tabernae and balconies go there. */
   frontSide: 1 | -1;
   /**
    * This footprint is a whole city block and must be built as a **continuous perimeter
-   * range about a courtyard**, not as a free-standing building. See `fillBlock`.
+   * range about a courtyard**, not as a free-standing building. See `fillRun`.
    */
   perimeter?: boolean;
-  /** 1 in the heart of the district, falling to 0 at its frayed edge. */
+  /** 1 in the heart of the city, falling to 0 at its frayed edge. */
   edge: number;
   /**
    * `FACE_X0` / `FACE_X1`: which of the plot's own ends is a **party wall** with the plot
@@ -140,26 +179,39 @@ interface Plot {
 /**
  * Depth at which a block is deep enough for two rows of building about a light well.
  *
- * A Roman insula is 12–20 m from street front to back wall — that is as far as a room can
- * be from a window before it is useless — so anything deeper than about two of those plus a
- * gap is built as two terraces back to back with an internal court between them. Ostia's
- * Casa di Diana and the Garden Houses are both exactly this.
+ * A Roman insula is 12–20 m from street front to back wall — that is as far as a room can be
+ * from a window before it is useless — so anything deeper than about two of those plus a gap
+ * is built as two terraces back to back with an internal court between them. Ostia's Casa di
+ * Diana and the Garden Houses are both exactly this.
+ *
+ * **34 m was far too deep a threshold and the measurement is direct.** The blocks the road graph
+ * produces have a median inset depth of about 37 m, so at 34 a large minority of them took the
+ * single-row branch: one 22 m terrace on the street and **fifteen metres of empty back yard**
+ * against the next block's wall. Roof coverage between street lines came out at **26 %** with
+ * the keep-out map switched off entirely, against the AGEA orthophoto's 60–70 %. At 30, the
+ * same 37 m block builds two rows of 16.9 m about a 3.2 m well — inside Ostia's own 12–20 m
+ * band — and covers 91 % of its own depth instead of 59 %.
+ *
+ * **And 30 was still too deep.** Two thirds of the frontages the graph produces are shallower
+ * than that, and each of them took the single-row branch: a 22 m terrace on the street and the
+ * rest of the block bare. Per-block coverage of the buildable polygon came out at a median of
+ * **31 %**. At 22 the branch flips wherever there is room for two ranges and a light well —
+ * `2 × MIN_PLOT + LIGHT_WELL` is 18.2, so 22 leaves each range 9.4 m at the shallowest. That is
+ * not a compromise: a Pompeian street range of *tabernae* is 4–8 m deep and Ostia's shop rows
+ * are 6–9, so a 9 m range with a door on the street and a light well behind it is the commonest
+ * thing in a Roman block. The deep blocks are unaffected — the row depth is still capped at
+ * `INSULA_DEPTH_MAX`.
  */
-const TWO_ROW_DEPTH = 34;
+const TWO_ROW_DEPTH = 22;
 /** Internal light well between the two rows of a deep block. */
-const LIGHT_WELL = 4.2;
+const LIGHT_WELL = 3.2;
 
 /**
  * How deep a single building may be, front wall to back wall.
  *
- * A room needs a window, so a Roman house is one or two rooms deep and that is that:
- * Ostia's insulae run 12–20 m from the street to the light well and the Forma Urbis shows
- * the same across the city. The number matters here for a second reason. A block band can
- * be 50 m deep, and building it as two 23 m slabs makes each *plot* 26 × 23 m — four times
- * the area of the BSP plots this replaced, and once a plot is that big and tested exactly
- * against the monuments there is nowhere left in the monumental core that one will fit.
- * Capping the depth turns the middle of a deep block into what it should be anyway: a
- * garden.
+ * A room needs a window, so a Roman house is one or two rooms deep and that is that: Ostia's
+ * insulae run 12–20 m from the street to the light well and the Forma Urbis shows the same
+ * across the city.
  */
 const INSULA_DEPTH_MAX = 22;
 
@@ -167,51 +219,146 @@ const INSULA_DEPTH_MAX = 22;
  * The smallest thing still worth calling a building, metres on a side.
  *
  * This is the terminator of the adaptive fill in `place`, so it decides the *grain* of the
- * fabric beside an obstruction rather than merely rejecting noise. Below about seven metres
- * a footprint stops reading as a house from any camera and starts reading as debris, and it
+ * fabric beside an obstruction rather than merely rejecting noise. Below about seven metres a
+ * footprint stops reading as a house from any camera and starts reading as debris, and it
  * costs a movement obstacle for nothing.
  */
 const MIN_PLOT = 7.5;
 
-/** How far a row may turn off its quarter's frame to follow the street under it. See `rowRotOf`. */
-const ROW_TURN = 0.14;
-/** Shortest frontage a terrace will cut. Ostia's narrowest surviving property is 6.2 m. */
-const MIN_FRONTAGE = 11;
+/**
+ * Shortest frontage a terrace will cut.
+ *
+ * Ostia's narrowest surviving property is **6.2 m**, so 11 was never an archaeological figure —
+ * it was a floor chosen to keep the old lattice from producing slivers. Nine is closer to the
+ * evidence and it is worth about a fifth more frontage per block: at a mean cut of 15 m a 70 m
+ * block takes five frontages instead of four, and the fifth is the one the old loop threw away
+ * as a remainder.
+ */
+const MIN_FRONTAGE = 9;
 /** A block shallower than this has no room for a house and a back wall. */
 const MIN_DEPTH = 9;
 /** Render's worth of party wall between two pieces of one subdivided frontage. */
 const PARTY_GAP = 0.35;
 
+// ---------------------------------------------------------------------------
+// The module, and the arithmetic that fixes it
+// ---------------------------------------------------------------------------
+
 /**
- * The district's own frame, in the **same rotation convention the geometry uses**.
+ * **Across a block: 59.2 world metres, and every term is a real dimension.**
  *
- * `makeRotationY(r)` sends local +X to world (cos r, −sin r), and `city/layout.ts`'s `Obb`
- * follows it. The previous district mapping sent local u to (cos r, **+**sin r) — the
- * mirror — so a building drawn with `makeRotationY(d.rot)` was skewed by `2·d.rot` from
- * the subdivision that placed it. At ±0.08 rad of district rotation that is nine degrees,
- * which is small enough never to have been noticed and large enough that a terrace of
- * party-walled houses would splay apart instead of forming a street wall. Getting it
- * right is a precondition for façades that sit *on* a street line.
+ * `INSULA_DEPTH_MAX` back to back about a `LIGHT_WELL`, two *vicus* frontages, and one
+ * *vicus* carriageway:
+ *
+ *     22 + 4.2 + 22           = 48.2   two rows of insula about a court
+ *       + 2 × WAY_FRONTAGE.vicus (1.5) = 51.2   to the building line
+ *       + WAY_WIDTH.vicus (8)          = 59.2   to the next lane's centreline
+ *
+ * `ROME-FABRIC.md` §4.3's insula arithmetic is the reason `KZ` is 0.35 and not 0.222: real
+ * cross-street pitch in the Campus Martius is 50–90 m, which projects to 17.5–31.5 world
+ * metres in `z`, and a true-depth insula needs about 30. So **one** row fits between two
+ * projected cross-streets at the top of the real range and two do not, which is why this
+ * pitch is a two-row block rather than a one-row one: the modelled city carries **fewer** of
+ * a repeated thing than the real one did, at true cross-section, which is `CARTHAGE.md`
+ * §2.4's rule stated for a block instead of for a tower.
+ *
+ * At this pitch a block encloses about `51.2 × 76 = 3,890 m²` — 0.39 ha, inside phase 4's
+ * stated acceptance band of 0.15 to 1.2 ha for the median face.
  */
-function districtFrame(d: DistrictSpec): {
+const PITCH_V = INSULA_DEPTH_MAX * 2 + LIGHT_WELL + 2 * WAY_FRONTAGE.vicus + WAY_WIDTH.vicus;
+
+/**
+ * **Along a block: 84 world metres.** Four frontages at the middle of Ostia's 12–26 m range
+ * plus one *vicus*. Roman blocks are longer than they are deep and the Forma Urbis shows the
+ * ratio at about 1.4–1.8; this is 1.42.
+ */
+const PITCH_U = 4 * 19 + WAY_WIDTH.vicus;
+
+/** Faces below this get no cross-lanes: they are already a block. */
+const SUBDIVIDE_MIN_M2 = PITCH_U * PITCH_V * 1.35;
+
+/**
+ * **Where the city ends, and why it is a distance to a street rather than a rectangle.**
+ *
+ * The seventeen district rectangles each faded their own boundary through a `fray` mask, and
+ * the QA pass called the result what it was: *"the city stops at a rectangular seam"*. The
+ * cause of a real city's edge is not a box, it is that fabric fronts streets and there comes
+ * a point where there are no more streets. So the fringe is a smooth ramp in **distance to
+ * the authored armature** — `WAYS`, the 23 plate-cited viae and the military road, and
+ * nothing generated — and the *regio*'s own `fray` weights how quickly it falls.
+ *
+ * The two numbers are measured rather than chosen, in `tools/scratch/rome-urbanreach.mjs`:
+ * they are the pair that puts the built ground inside the Aurelian circuit closest to the
+ * AGEA orthophoto's 60–70 % roof coverage between street lines while leaving the far bank —
+ * which phase 3 authored no way across at all — as the countryside it has to be. A block
+ * beyond `URBAN_FAR` gets no cross-lanes, no plots and no floor; it is field.
+ *
+ * **This is also what protects G20 from the one population that could wreck it.** A block
+ * out in the *ager* is bounded by the battlefield frame rather than by a street, so its grain
+ * comes from the map axes and its nearest carriageway is half a kilometre away at an
+ * unrelated bearing. Not building there is not a convenience: a building whose nearest street
+ * is 500 m off is not a building on a street, and counting it as one would be the check
+ * measuring its own absence.
+ */
+const URBAN_NEAR = 150;
+const URBAN_FAR = 340;
+
+/** How much of a *horti* block is built. `ROME-FABRIC.md` §4.3: about 6 % coverage. */
+const HORTI_COVERAGE = 0.08;
+
+// ---------------------------------------------------------------------------
+// The block frame
+// ---------------------------------------------------------------------------
+
+interface BlockFrame {
+  /** World bearing of the block's longest bounding edge. */
+  bearing: number;
+  /** The plan rotation every plot in this block takes: `−bearing`. */
+  rot: number;
+  cx: number;
+  cz: number;
   x: (u: number, v: number) => number;
   z: (u: number, v: number) => number;
-} {
-  const cs = Math.cos(d.rot);
-  const sn = Math.sin(d.rot);
+  u: (x: number, z: number) => number;
+  v: (x: number, z: number) => number;
+}
+
+/**
+ * **The one place a world bearing becomes a plan rotation.** See the file header, and
+ * `assertBlockBearingSign`, which asks this function for +30° and −30° and fails if either
+ * comes back mirrored.
+ */
+export function blockFrame(poly: readonly Pt[], cx: number, cz: number): BlockFrame {
+  return frameAt(faceBearing(poly), cx, cz);
+}
+
+/** The same, from a bearing that has already been chosen. */
+export function frameAt(bearing: number, cx: number, cz: number): BlockFrame {
+  const cs = Math.cos(bearing);
+  const sn = Math.sin(bearing);
   return {
-    x: (u, v) => d.x + u * cs + v * sn,
-    z: (u, v) => d.z - u * sn + v * cs,
+    bearing,
+    rot: -bearing,
+    cx,
+    cz,
+    x: (u, v) => cx + u * cs - v * sn,
+    z: (u, v) => cz + u * sn + v * cs,
+    u: (x, z) => (x - cx) * cs + (z - cz) * sn,
+    v: (x, z) => -(x - cx) * sn + (z - cz) * cs,
   };
 }
 
 /**
  * A uniform-grid reject for plots already placed.
  *
- * Districts overlap — their half-extents are inflated 1.5× and 2.6× so the fabric can fill
- * the gaps the overlap resolver opens between monuments — and nothing used to stop two
- * quarters interleaving buildings across a shared boundary. Every such pair is a visible
- * interpenetration and a phantom obstacle for the sim.
+ * **The tolerance is zero now, and that is the phase.** It used to be −0.5 m — half a metre
+ * of *allowed* interpenetration — because the districts overlapped and two quarters
+ * interleaved buildings across a shared boundary, and because two plots following a bending
+ * spine at slightly different angles clipped each other at the corner. Neither cause exists:
+ * blocks are disjoint faces inset from their own streets by at least 5.5 m a side, and every
+ * plot in a block shares one rotation. `probe-fabric` G3 and G10 measured the cost of the old
+ * tolerance directly — 13 interpenetrating pairs and a worst clearance of −3.36 m — so the
+ * allowance is gone rather than tightened.
  */
 class PlotGrid {
   private static readonly CELL = 32;
@@ -233,15 +380,7 @@ class PlotGrid {
     }
   }
 
-  /**
-   * `pad` is **negative** by design. A terrace shares party walls, and two plots that
-   * follow a bending spine at slightly different angles clip each other at the corner by a
-   * few centimetres. Testing at zero tolerance made the fabric reject itself — every second
-   * building in every block vanished, and the city came back emptier than the BSP it
-   * replaced. Half a metre of allowed interpenetration is invisible and is what a party
-   * wall is anyway.
-   */
-  hits(x: number, z: number, hw: number, hd: number, rot: number, pad = -0.5): boolean {
+  hits(x: number, z: number, hw: number, hd: number, rot: number, pad = 0): boolean {
     const a: Obb = { x, z, hw, hd, rot };
     const r = Math.sqrt(hw * hw + hd * hd);
     for (let cz = z - r; cz <= z + r + PlotGrid.CELL; cz += PlotGrid.CELL) {
@@ -257,427 +396,751 @@ class PlotGrid {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The plan: graph -> faces -> blocks
+// ---------------------------------------------------------------------------
+
+/** How far a point is from the authored armature. Not from the generated lanes. */
+const armatureSegs: { ax: number; az: number; bx: number; bz: number }[] = [];
+for (const w of WAYS) {
+  for (let i = 0; i + 1 < w.path.length; i++) {
+    armatureSegs.push({ ax: w.path[i].x, az: w.path[i].z, bx: w.path[i + 1].x, bz: w.path[i + 1].z });
+  }
+}
+
+function armatureDist(x: number, z: number): number {
+  let best = Infinity;
+  for (const s of armatureSegs) {
+    const ex = s.bx - s.ax;
+    const ez = s.bz - s.az;
+    const l2 = ex * ex + ez * ez;
+    const t = l2 < 1e-9 ? 0 : clamp(((x - s.ax) * ex + (z - s.az) * ez) / l2, 0, 1);
+    const dx = x - (s.ax + ex * t);
+    const dz = z - (s.az + ez * t);
+    const d = dx * dx + dz * dz;
+    if (d < best) best = d;
+  }
+  return Math.sqrt(best);
+}
+
 /**
- * Lay the spine-and-rib lattice for one quarter and fill its blocks.
- *
- * The lattice is the whole idea, so it is worth stating what each piece is for:
- *
- *  - **Spines** run the length of the district, one every 54–84 m depending on how packed
- *    the quarter was. Each wanders on its own sine — a twelfth of the band's width, a
- *    period and a half across the district — so no two are parallel for long and none is
- *    straight, but every one of them is *continuous end to end*. That is the property the
- *    BSP could not have and the reason its gaps never read as streets.
- *  - **Ribs** cut across a single band from one spine to the next. Their positions are drawn
- *    per band, so ribs in adjacent bands do not line up and every crossing is a T-junction.
- *    A four-way crossroads is the signature of a planned grid; Rome is not one.
- *  - **Blocks** are the quads left over, and they are filled to their edges with a terrace
- *    of party-walled buildings — one row if the block is shallow, two about a light well if
- *    it is deep. The façades sit on the street line with no setback, which is what makes a
- *    street a corridor with walls rather than a gap between objects.
+ * How far a point is from the modelled channel. Built from the same projected stations
+ * `riverWay` puts into the graph, so the frontage and the block boundary are the same line.
  */
-function planDistrict(
-  d: DistrictSpec,
+let RIVER_SEGS: { ax: number; az: number; bx: number; bz: number }[] | null = null;
+// Lazy: `riverWay` reads `FRAME_E`, which is declared below this point, and a module-level
+// IIFE here would run first and read it in its temporal dead zone.
+function riverSegs(): { ax: number; az: number; bx: number; bz: number }[] {
+  if (RIVER_SEGS) return RIVER_SEGS;
+  const out: { ax: number; az: number; bx: number; bz: number }[] = [];
+  for (const w of riverWay()) {
+    for (let i = 0; i + 1 < w.path.length; i++) {
+      out.push({ ax: w.path[i].x, az: w.path[i].z, bx: w.path[i + 1].x, bz: w.path[i + 1].z });
+    }
+  }
+  RIVER_SEGS = out;
+  return out;
+}
+
+function riverDist(x: number, z: number): number {
+  let best = Infinity;
+  for (const s of riverSegs()) {
+    const ex = s.bx - s.ax;
+    const ez = s.bz - s.az;
+    const l2 = ex * ex + ez * ez;
+    const t = l2 < 1e-9 ? 0 : clamp(((x - s.ax) * ex + (z - s.az) * ez) / l2, 0, 1);
+    const dx = x - (s.ax + ex * t);
+    const dz = z - (s.az + ez * t);
+    const d = dx * dx + dz * dz;
+    if (d < best) best = d;
+  }
+  return Math.sqrt(best);
+}
+
+const smooth = (s: number): number => s * s * (3 - 2 * s);
+
+/**
+ * 1 in the city, 0 in the country, a smooth ramp between.
+ *
+ * **Two frontages, and the second one is Transtiberim.** Phase 3 authored no way across the
+ * right bank — the Via Aurelia and the Via Portuensis are not in `ROME_WAYS` — so on the
+ * armature test alone the whole far bank came back as one 108-hectare field and Regio XIV
+ * built **nothing**, on a map where the right bank is 46 % of the ground behind the crest.
+ * That is a worse answer than the rectangles it replaced, which at least put a `trastevere`
+ * and a `vaticanus` there.
+ *
+ * The repair is not to stretch the armature's reach until the Janiculum qualifies. It is that
+ * **a river bank in a city is a frontage**: Transtiberim existed because of the water, its
+ * fabric hugged the *Ripa*, and the hill behind it was gardens — which is exactly the shape a
+ * short ramp off the channel produces. `RIVER_REACH` is 230 m, about 520 real metres of
+ * riverside quarter, and beyond it the Janiculum is country until phase 6 gives it its horti.
+ *
+ * Recording the alternative that was rejected: giving the far-bank face a lattice regardless
+ * would have covered a square kilometre with one uniform grid at one bearing, which is less
+ * like Transtiberim than an empty field is.
+ */
+const RIVER_REACH = 230;
+
+function urbanWeight(x: number, z: number, fray = 0.35): number {
+  const far = URBAN_NEAR + (URBAN_FAR - URBAN_NEAR) * (0.55 + 0.9 * (1 - fray));
+  const a = smooth(clamp((far - armatureDist(x, z)) / Math.max(20, far - URBAN_NEAR), 0, 1));
+  const r = smooth(clamp((RIVER_REACH - riverDist(x, z)) / (RIVER_REACH - 40), 0, 1));
+  return Math.max(a, r);
+}
+
+export type BlockKind = 'block' | 'plaza' | 'pomerium' | 'field';
+
+export interface CityBlock {
+  index: number;
+  face: Face;
+  /** The buildable polygon: the face pulled in by each bounding street's own setback. */
+  inset: Pt[];
+  insetAreaM2: number;
+  frame: BlockFrame;
+  region: RegionPoly;
+  kind: BlockKind;
+  /** Why it is not a block, when it is not. Every rejection is named. */
+  reason: string | null;
+  /** 1 in the city, 0 in the country. */
+  urban: number;
+  /** Terraces and planted avenues rather than fabric. `ROME-FABRIC.md` §4.3. */
+  horti: boolean;
+}
+
+export interface BlockReport {
+  graph: PlanarGraph['report'];
+  crossLanes: number;
+  crossLaneKm: number;
+  faces: number;
+  blocks: number;
+  plazas: number;
+  pomerium: number;
+  field: number;
+  hortiBlocks: number;
+  /** Every face that is not a block, by reason. Nothing is dropped silently. */
+  rejects: { reason: string; n: number }[];
+  faceAreaP10: number;
+  faceAreaP50: number;
+  faceAreaP90: number;
+  insetAreaP50: number;
+  /** Faces whose ring is re-entrant, so the half-plane inset is conservative. */
+  nonConvexFaces: number;
+  plots: number;
+  plotsByRegion: {
+    id: string; blocks: number; plots: number; frontages: number;
+    /** Ground between street lines, and how much of it is roof. */
+    insetM2: number; roofM2: number; coverage: number;
+  }[];
+  /**
+   * Regiones the frame carries too little of to grade, by name with their buildable ground.
+   * `MAP-METHOD.md` rule 25: the exclusion arrives *after* the measurement that justifies it.
+   */
+  ungraded: { id: string; insetM2: number; blocks: number }[];
+  plotRejects: PlotRejects;
+  /** Blocks that survived every face test and then built nothing, by dominant cause. */
+  emptyBlocks: { reason: string; n: number }[];
+  /** `blockFrame`'s answer against its own face, in degrees. Should be exactly zero. */
+  worstFrameErrorDeg: number;
+}
+
+const setbackOf = (cls: WayClass): number => WAY_WIDTH[cls] * 0.5 + WAY_FRONTAGE[cls];
+
+/** All the spans of a polygon (given in the block frame) along a line of constant `u`. */
+function spansAt(poly: readonly { u: number; v: number }[], u: number): [number, number][] {
+  const hits: number[] = [];
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    if (a.u > u !== b.u > u) hits.push(a.v + ((u - a.u) / (b.u - a.u)) * (b.v - a.v));
+  }
+  hits.sort((p, q) => p - q);
+  const out: [number, number][] = [];
+  for (let i = 0; i + 1 < hits.length; i += 2) out.push([hits[i], hits[i + 1]]);
+  return out;
+}
+
+/** The widest span, which for the convex inset polygons here is the only one. */
+function spanAt(poly: readonly { u: number; v: number }[], u: number): [number, number] | null {
+  const s = spansAt(poly, u);
+  if (s.length === 0) return null;
+  let best = s[0];
+  for (const c of s) if (c[1] - c[0] > best[1] - best[0]) best = c;
+  return best;
+}
+
+/**
+ * **Step 2: the grid's own cross-lanes, in the face's own frame.**
+ *
+ * `ROME-FABRIC.md` §4.3 step 2: *"For each pair of adjacent armature edges bounding an
+ * unsubdivided region, insert `vicus`-rank lines perpendicular to the local mean street
+ * direction at the module pitch."* The local mean street direction is the face's own longest
+ * edge, so the cross-lanes of a face are parallel and perpendicular to the street the face
+ * fronts — which is the whole reason this closes G21 where the lattice could not. Two
+ * adjacent faces sharing a long street share its bearing, so their lanes agree across it;
+ * the grain rotates where the *street* rotates and nowhere else.
+ *
+ * Every fourth lane in each direction is a 14 m `local` rather than an 8 m `vicus`, so a
+ * band is never more than two blocks from something a column can turn into.
+ */
+function crossLanesFor(face: Face): GraphWay[] {
+  /*
+   * **Which bearing a face's lattice takes, and why the answer is not always its longest edge.**
+   *
+   * For a face the size of a block, its longest edge *is* the street it fronts and that is the
+   * whole point of §4.3. For a face the size of a quarter it is not: the ground the armature
+   * leaves in one piece can be a kilometre across, its longest edge is then whichever of the
+   * battlefield frame's own sides bounds it, and a lattice cut to the map axes is exactly the
+   * grain that has nothing to do with the city. Measured: the far bank came back with 55 blocks
+   * all aligned to `x` and `z` because the face containing it was bounded by the frame.
+   *
+   * So above eight modules the frame comes from `wayBearingAt` — the road network's own
+   * rank-and-length-weighted bearing field, quadrupled-angle so it respects the same 90°
+   * symmetry the question does. That is still a street's bearing, which is rule 9; it is just
+   * the *mean* of the nearby streets rather than one edge of an arbitrary polygon. The blocks
+   * the cut produces then take their own edges, which are the cuts, so nothing downstream ever
+   * sees this choice.
+   */
+  const bearing = face.areaM2 > 8 * PITCH_U * PITCH_V
+    ? wayBearingAt(face.cx, face.cz)
+    : faceBearing(face.ring);
+  const F = frameAt(bearing, face.cx, face.cz);
+  const uv = face.ring.map((p) => ({ u: F.u(p.x, p.z), v: F.v(p.x, p.z) }));
+  let u0 = Infinity;
+  let u1 = -Infinity;
+  let v0 = Infinity;
+  let v1 = -Infinity;
+  for (const p of uv) {
+    if (p.u < u0) u0 = p.u;
+    if (p.u > u1) u1 = p.u;
+    if (p.v < v0) v0 = p.v;
+    if (p.v > v1) v1 = p.v;
+  }
+  const out: GraphWay[] = [];
+  const nU = Math.max(1, Math.round((u1 - u0) / PITCH_U));
+  const nV = Math.max(1, Math.round((v1 - v0) / PITCH_V));
+  const vSpansAt = (v: number): [number, number][] =>
+    spansAt(uv.map((p) => ({ u: p.v, v: p.u })), v);
+  /*
+   * **A cut is broken where it leaves the city.**
+   *
+   * The faces the armature leaves behind are enormous — the ground outside the curtain is one
+   * face 2,800 m across, and so is the far bank, which phase 3 authored no way across. Running
+   * a lattice edge to edge over those produced **226 km of cross-lane**: a grid of streets
+   * across open country, paved, drawn, and counted in the way mix. So each span is walked and
+   * only the runs standing on city ground survive. A cut that stops at the edge of the fabric
+   * is what a *vicus* does; one that carries on into a ploughed field is a fault that only a
+   * plan view can see, and the plan views are the thing being fixed.
+   */
+  const emit = (id: string, cls: WayClass, ax: number, az: number, bx: number, bz: number): void => {
+    const dx = bx - ax;
+    const dz = bz - az;
+    const len = Math.sqrt(dx * dx + dz * dz);
+    if (len < 12) return;
+    const steps = Math.max(2, Math.round(len / 24));
+    let run: Pt[] = [];
+    const flush = (): void => {
+      if (run.length >= 2) {
+        const d0 = run[0];
+        const d1 = run[run.length - 1];
+        const l = Math.sqrt((d1.x - d0.x) * (d1.x - d0.x) + (d1.z - d0.z) * (d1.z - d0.z));
+        if (l >= 14) out.push({ id, cls, path: run });
+      }
+      run = [];
+    };
+    for (let i = 0; i <= steps; i++) {
+      const x = ax + (dx * i) / steps;
+      const z = az + (dz * i) / steps;
+      if (urbanWeight(x, z) > 0.05) run.push({ x, z });
+      else flush();
+    }
+    flush();
+  };
+  for (let i = 1; i < nU; i++) {
+    const u = lerp(u0, u1, i / nU);
+    const cls: WayClass = i % 4 === 2 ? 'local' : 'vicus';
+    for (const [a, b] of spansAt(uv, u)) {
+      emit(`cut-u${face.index}-${i}`, cls, F.x(u, a), F.z(u, a), F.x(u, b), F.z(u, b));
+    }
+  }
+  for (let j = 1; j < nV; j++) {
+    const v = lerp(v0, v1, j / nV);
+    const cls: WayClass = j % 4 === 2 ? 'local' : 'vicus';
+    for (const [a, b] of vSpansAt(v)) {
+      emit(`cut-v${face.index}-${j}`, cls, F.x(a, v), F.z(a, v), F.x(b, v), F.z(b, v));
+    }
+  }
+  return out;
+}
+
+/**
+ * **The Tiber's centreline, as a graph edge that is never drawn.**
+ *
+ * §4.3 step 1 adds the pomerium and the wall's inner face to the graph because a block may not
+ * cross either. The channel is the same kind of thing and a stronger case: without it the far
+ * bank and the Campus Martius are **one face**, so a block could and did span the water, and
+ * the fabric on the right bank took its grain from the battlefield frame — the map's own axes —
+ * rather than from anything in the city. With it, Transtiberim fronts the river, which is what
+ * Transtiberim is.
+ *
+ * `artery` rank, so the setback is `42/2 + 10 = 31 m` either side of the centreline, and the
+ * number is measured rather than chosen. The modelled channel's half-width is 14–17 world
+ * metres over this reach, and `inTheRiver` refuses any plot whose ground stands below
+ * `WATER_LEVEL + 2.8` — the cut bank's own terrace height — which puts the dry line 25–35 m
+ * out. At `secondary`'s 17 m the riverside blocks were planned right down into the water and
+ * then had **208 of their plots deleted**, one in six of everything the city planned, and the
+ * block they were cut from came back empty. At 31 m the building line is on dry ground and
+ * those blocks build. `inTheRiver` still runs and still owns the bank; this owns the *block
+ * boundary*, and the two now agree instead of arguing.
+ *
+ * It is in the graph and in nothing else. `buildWays` paves `WAYS` and the generated lanes, and
+ * the river is in neither, so no carriageway is drawn on the water.
+ */
+function riverWay(): GraphWay[] {
+  const E = FRAME_E;
+  const out: GraphWay[] = [];
+  let run: Pt[] = [];
+  const flush = (): void => {
+    if (run.length >= 2) out.push({ id: `tiber-${out.length}`, cls: 'artery', path: run });
+    run = [];
+  };
+  const inside = (p: Pt): boolean => Math.abs(p.x) <= E && Math.abs(p.z) <= E;
+  /** Where the segment `a -> b` leaves the square, so the run ends ON the frame. */
+  const exit = (a: Pt, b: Pt): Pt => {
+    let t = 1;
+    for (const [num, den] of [
+      [-E - a.x, b.x - a.x], [E - a.x, b.x - a.x],
+      [-E - a.z, b.z - a.z], [E - a.z, b.z - a.z],
+    ] as const) {
+      if (Math.abs(den) < 1e-9) continue;
+      const s = num / den;
+      if (s > 1e-9 && s < t) {
+        const p = { x: a.x + (b.x - a.x) * s, z: a.z + (b.z - a.z) * s };
+        if (Math.abs(p.x) <= E + 1e-6 && Math.abs(p.z) <= E + 1e-6) t = s;
+      }
+    }
+    return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+  };
+  const pts = TIBER_SURVEY.map(([e, n]) => worldOf(e, n));
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    if (inside(p)) {
+      // Entering: start the run on the frame, not at the first station inside it.
+      if (run.length === 0 && i > 0 && !inside(pts[i - 1])) run.push(exit(p, pts[i - 1]));
+      run.push(p);
+    } else {
+      if (run.length > 0) run.push(exit(pts[i - 1], p));
+      flush();
+    }
+  }
+  flush();
+  return out;
+}
+
+/**
+ * **The wall's own line, as a graph edge that is never drawn.** §4.3 step 1.
+ *
+ * Without it the ground outside the curtain and the ground inside it are **one face**, joined
+ * round the west end of the circuit where the wall stops at the river — measured on this tree
+ * as a single 479-hectare face with 285 edges carrying the glacis, the far bank and everything
+ * the armature had not enclosed. A block may not cross the curtain, so the curtain is an edge.
+ *
+ * Sampled every 40 m off `romeWallZ`, the terrain's own crest, across the whole map width, so
+ * it follows the wall where there is a wall and the same contour where the wall has ended.
+ */
+function wallWay(): GraphWay {
+  const path: Pt[] = [];
+  for (let x = -FRAME_E; x < FRAME_E; x += 40) path.push({ x, z: romeWallZ(x) });
+  path.push({ x: FRAME_E, z: romeWallZ(FRAME_E) });
+  return { id: 'wall-line', cls: 'vicus', path };
+}
+
+/** Does any part of this face stand on city ground? Corners, edge midpoints and the centroid. */
+function touchesCity(f: Face): boolean {
+  if (urbanWeight(f.cx, f.cz) > 0.02) return true;
+  for (let i = 0; i < f.ring.length; i++) {
+    const a = f.ring[i];
+    const b = f.ring[(i + 1) % f.ring.length];
+    if (urbanWeight(a.x, a.z) > 0.02) return true;
+    if (urbanWeight((a.x + b.x) * 0.5, (a.z + b.z) * 0.5) > 0.02) return true;
+  }
+  return false;
+}
+
+/**
+ * The battlefield frame, so the graph is closed and every face is finite.
+ *
+ * **The wall line and the river have to *reach* it**, and one metre short is the difference
+ * between a city and a heap. A chain that ends in mid-air is degree-1 at that end, `planarise`
+ * prunes degree-1 chains iteratively, and a chain that crosses nothing is therefore eaten
+ * whole: with the wall line stopping at `HALF_EXTENT − 3` against a frame at `HALF_EXTENT − 2`,
+ * the frame came back as **one four-edged face covering the entire 7.8 km² map** and the
+ * fabric fell from 354 blocks to 124 with four *regiones* getting none at all. So `FRAME_E` is
+ * one constant and all three producers use it.
+ */
+const FRAME_E = HALF_EXTENT - 2;
+
+function frameWay(): GraphWay {
+  const E = FRAME_E;
+  return {
+    id: 'frame',
+    cls: 'vicus',
+    path: [
+      { x: -E, z: -E }, { x: E, z: -E }, { x: E, z: E }, { x: -E, z: E }, { x: -E, z: -E },
+    ],
+  };
+}
+
+const isConvex = (poly: readonly Pt[]): boolean => {
+  let sign = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const c = poly[(i + 2) % poly.length];
+    const cr = (b.x - a.x) * (c.z - b.z) - (b.z - a.z) * (c.x - b.x);
+    if (Math.abs(cr) < 1e-9) continue;
+    const s = cr > 0 ? 1 : -1;
+    if (sign === 0) sign = s;
+    else if (s !== sign) return false;
+  }
+  return true;
+};
+
+/** The narrowest width of a convex polygon: the smallest edge-normal extent. */
+function minWidth(poly: readonly Pt[]): number {
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const ex = b.x - a.x;
+    const ez = b.z - a.z;
+    const l = Math.sqrt(ex * ex + ez * ez);
+    if (l < 1e-6) continue;
+    let hi = 0;
+    for (const p of poly) {
+      const d = ((p.x - a.x) * -ez + (p.z - a.z) * ex) / l;
+      if (d > hi) hi = d;
+    }
+    if (hi < best) best = hi;
+  }
+  return best === Infinity ? 0 : best;
+}
+
+export interface CityPlanOut {
+  graph: PlanarGraph;
+  blocks: CityBlock[];
+  /** The cross-lanes as authored, before the monuments clip the paving. */
+  cuts: GraphWay[];
+  report: BlockReport;
+}
+
+let PLAN: CityPlanOut | null = null;
+
+/**
+ * **The city's block plan.** Pure: the ways, the frame and the regions, and nothing else.
+ *
+ * Memoised because `urbanGroundMask` is called by the *terrain* build — the heightfield asks
+ * what ground is city before any of the city exists — and `buildDistricts` asks again
+ * afterwards. Two callers, one answer: `ROME-FABRIC.md` §7's own warning about a cache that
+ * answers differently to two callers applies here, and the way this file avoids it is that
+ * nothing in the computation can see a monument, a `KeepOut` or an `Rng`.
+ */
+export function cityPlan(): CityPlanOut {
+  if (PLAN) return PLAN;
+  const base: GraphWay[] = WAYS.map((w) => ({ id: w.id, cls: w.cls, path: w.path }));
+  base.push(frameWay());
+  base.push(wallWay());
+  for (const r of riverWay()) base.push(r);
+
+  const g0 = planarise(base);
+  const cuts: GraphWay[] = [];
+  for (const f of g0.faces) {
+    if (f.areaM2 < SUBDIVIDE_MIN_M2) continue;
+    // **Any part of the face, not its centroid.** The far bank is one 108-hectare face whose
+    // centroid sits 400 m up the Janiculum; testing that point alone said "country", so no
+    // lattice was cut, so Regio XIV came back with zero blocks on a bank the river frontage
+    // had already declared urban. A face is offered a lattice if any of its own corners or
+    // edge midpoints stands in the city; `emit` still clips every span to the ground that is.
+    if (!touchesCity(f)) continue;
+    // Nothing outside the curtain gets a lattice. The Via Flaminia's tomb frontage and the
+    // suburbium are `ROME-FABRIC.md` §5 phase 6, and a grid of lanes across the glacis would
+    // be a street network the assault walks up.
+    if (f.cz < romeWallZ(clamp(f.cx, -HALF_EXTENT, HALF_EXTENT)) + POMERIUM) continue;
+    for (const c of crossLanesFor(f)) cuts.push(c);
+  }
+  const graph = planarise([...base, ...cuts]);
+
+  const blocks: CityBlock[] = [];
+  const rejects = new Map<string, number>();
+  let nonConvex = 0;
+  let worstFrameErr = 0;
+  for (const face of graph.faces) {
+    const region = regionAt(face.cx, face.cz);
+    const urban = urbanWeight(face.cx, face.cz, region.fray);
+    const n = surveyNorthingOf(face.cz);
+    const horti = region.hortiNorthOf !== null && n > region.hortiNorthOf;
+    if (!isConvex(face.ring)) nonConvex++;
+    const inset = insetFace(face, setbackOf);
+    /*
+     * **The frame comes from the FACE's longest edge, not from the inset's.**
+     *
+     * It was the inset's for one revision and the difference is not cosmetic: insetting a
+     * nearly-square face by four different setbacks can make a *different* edge the longest
+     * one, and the block then turns ninety degrees away from the street it fronts. Measured on
+     * this tree the worst disagreement was **43.9°** and it pushed `probe-fabric` G20's p90 to
+     * 20.6°. The face's edges are streets; the inset's edges are offsets of them. Only the
+     * first is a thing the city has.
+     */
+    const frame = blockFrame(face.ring, face.cx, face.cz);
+    // The frame must agree with the face it came from. Zero by construction; measured because
+    // "by construction" is what every sign error in this file has claimed for itself.
+    {
+      const fb = faceBearing(face.ring);
+      let d = Math.abs(frame.bearing - fb) % (Math.PI / 2);
+      if (d > Math.PI / 4) d = Math.PI / 2 - d;
+      const deg = (d * 180) / Math.PI;
+      if (deg > worstFrameErr) worstFrameErr = deg;
+    }
+    let kind: BlockKind = 'block';
+    let reason: string | null = null;
+    const insetArea = inset.length >= 3 ? polyArea(inset) : 0;
+    if (urban <= 0.02) {
+      kind = 'field';
+      reason = `beyond the armature's reach (${armatureDist(face.cx, face.cz).toFixed(0)} m)`;
+    } else if (face.cz < romeWallZ(clamp(face.cx, -HALF_EXTENT, HALF_EXTENT)) + POMERIUM) {
+      kind = 'pomerium';
+      reason = 'inside the pomerium, or outside the curtain';
+    } else if (inset.length < 3) {
+      kind = 'plaza';
+      reason = 'the setbacks meet: the face is all street';
+    } else if (minWidth(inset) < MIN_DEPTH) {
+      kind = 'plaza';
+      reason = `inset narrower than MIN_DEPTH (${minWidth(inset).toFixed(1)} m)`;
+    }
+    if (reason) rejects.set(reason.replace(/\([^)]*\)/, '(...)'), (rejects.get(reason.replace(/\([^)]*\)/, '(...)')) ?? 0) + 1);
+    blocks.push({
+      index: blocks.length, face, inset, insetAreaM2: insetArea, frame, region, kind, reason, urban, horti,
+    });
+  }
+
+  const areas = graph.faces.map((f) => f.areaM2).sort((a, b) => a - b);
+  const insets = blocks.filter((b) => b.kind === 'block').map((b) => b.insetAreaM2).sort((a, b) => a - b);
+  const q = (a: number[], p: number): number => (a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length))] : 0);
+  let cutKm = 0;
+  for (const c of cuts) {
+    for (let i = 0; i + 1 < c.path.length; i++) {
+      const dx = c.path[i + 1].x - c.path[i].x;
+      const dz = c.path[i + 1].z - c.path[i].z;
+      cutKm += Math.sqrt(dx * dx + dz * dz);
+    }
+  }
+  const report: BlockReport = {
+    graph: graph.report,
+    crossLanes: cuts.length,
+    crossLaneKm: cutKm / 1000,
+    faces: graph.faces.length,
+    blocks: blocks.filter((b) => b.kind === 'block').length,
+    plazas: blocks.filter((b) => b.kind === 'plaza').length,
+    pomerium: blocks.filter((b) => b.kind === 'pomerium').length,
+    field: blocks.filter((b) => b.kind === 'field').length,
+    hortiBlocks: blocks.filter((b) => b.kind === 'block' && b.horti).length,
+    rejects: [...rejects.entries()].sort((a, b) => b[1] - a[1]).map(([reason, n]) => ({ reason, n })),
+    faceAreaP10: q(areas, 0.1),
+    faceAreaP50: q(areas, 0.5),
+    faceAreaP90: q(areas, 0.9),
+    insetAreaP50: q(insets, 0.5),
+    nonConvexFaces: nonConvex,
+    plots: 0,
+    plotsByRegion: [],
+    ungraded: [],
+    emptyBlocks: [],
+    plotRejects: { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0, perimeterTried: 0, perimeterBuilt: 0 },
+    worstFrameErrorDeg: worstFrameErr,
+  };
+  PLAN = { graph, blocks, cuts, report };
+  return PLAN;
+}
+
+// ---------------------------------------------------------------------------
+// One block, subdivided
+// ---------------------------------------------------------------------------
+
+/**
+ * Fill one block with insulae, in the block's own frame.
+ *
+ * The order is the one a surveyor works in and each step is a demotion of the last:
+ *
+ *  1. **One courtyard mass over the whole block.** A block big enough and clear enough stops
+ *     being a row of buildings and becomes *one* building — a continuous range wrapped round
+ *     all four sides with a light well in the middle. That is what an insula block is, and it
+ *     is what the figure-ground of Rome looks like from above: one connected mass punched with
+ *     courtyards, not a scatter of separate objects. **This is the difference between a
+ *     scatter and a city, and it took a blind critic to make it stick** — shown the plan
+ *     beside four crops of an orthophoto it sorted the deck 6/6 and wrote *"the buildings are
+ *     separate objects with visible ground between them instead of a continuous mass of
+ *     party-walled frontage… adding count doesn't produce urbanism, adding adjacency does."*
+ *  2. **Halve it along `u` and try again.** A wide block that a monument clips is not
+ *     unbuildable — it is two shorter blocks. Real fabric beside a monument gets *smaller*
+ *     grain, it does not dissolve into open ground.
+ *  3. **A terrace of party-walled frontages**, each of which subdivides further in `place`
+ *     until it fits.
+ */
+/**
+ * Why a candidate footprint did not get built. Accumulated across the city and printed, so a
+ * quarter that comes back thin says *what* thinned it rather than only that it is thin — which
+ * is the difference between the district generator's old "the quarter is buried" line and a
+ * measurement. `MAP-METHOD.md` rule 13's shape applied to a rejection rather than to a check.
+ */
+export interface PlotRejects {
+  /** Inside the consecrated strip behind the curtain, or outside it. */
+  pomerium: number;
+  /** A monument, a named street's reservation, an aqueduct or a plaza stands there. */
+  reserved: number;
+  /** Another block's building is already there. Must be rare; blocks are disjoint. */
+  neighbour: number;
+  /** The dice: `fade` thins the fabric toward the country and inside the horti. */
+  thinned: number;
+  /** The block is one courtyard range instead of a terrace, by the same dice. */
+  notPerimeter: number;
+  /** Nothing at this frontage was wide or deep enough to be a house. */
+  tooSmall: number;
+  /** Planned, then found standing in the Tiber. Counted, not silently dropped. */
+  wet: number;
+  /** The frontage was cut, but the block is shallower than a house there. */
+  narrow: number;
+  /** The frontage came out under `MIN_FRONTAGE`. */
+  shortFrontage: number;
+  /** Frontages cut, and rows offered to `place`, over the whole city. */
+  frontages: number;
+  rows: number;
+  /** Rows that produced at least one building. */
+  rowsBuilt: number;
+  /** Frontages whose own span was too shallow for two rows about a light well. */
+  oneRowOnly: number;
+  /** Whole-block courtyard ranges tried, and how many stood. */
+  perimeterTried: number;
+  perimeterBuilt: number;
+}
+
+function planBlock(
+  b: CityBlock,
   rng: Rng,
   keepOut: KeepOut,
   wallZAt: (x: number) => number,
-  placed: PlotGrid
-): { plots: Plot[]; lanes: Lane[] } {
+  placed: PlotGrid,
+  total: PlotRejects
+): { plots: Plot[]; frontages: number; emptyBecause: string | null } {
+  /*
+   * Counted per block as well as per city, so a block that builds **nothing** can say which
+   * of the six causes did it. Phase 4's acceptance asks for every rejected face to be reported
+   * with its reason; a face that survives as a block and then comes back empty is the same
+   * failure one level down, and it is the one the district generator could never see — its
+   * only instrument was "the quarter is buried", which fires on a whole quarter or not at all.
+   */
+  const why: PlotRejects = {
+    pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0,
+    wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0,
+    perimeterTried: 0, perimeterBuilt: 0,
+  };
   const plots: Plot[] = [];
-  const lanes: Lane[] = [];
-  // Kept because a quarter that plans nothing is a real failure mode and an invisible one:
-  // the district exists, reserves ground and plants trees, and simply has no houses. That
-  // happened to the Subura at one point in this rebuild — 3 buildings out of 125 candidate
-  // frontages — and only a counter showed it.
+  const F = b.frame;
+  const uv = b.inset.map((p) => ({ u: F.u(p.x, p.z), v: F.v(p.x, p.z) }));
+  let u0 = Infinity;
+  let u1 = -Infinity;
+  for (const p of uv) {
+    if (p.u < u0) u0 = p.u;
+    if (p.u > u1) u1 = p.u;
+  }
+  /*
+   * **Strictly inside the bounding box, and this half-metre was the whole fabric.**
+   *
+   * `spansAt` counts crossings of the line `u = const` against the ring's edges. At exactly
+   * `u0` or `u1` the line is *tangent* to the polygon, so it finds nought or one crossing and
+   * returns no span — and `fill` starts by asking for the span over `[u0, u1]`, and every
+   * recursive halving keeps one of the two ends. So every block in Rome answered "no span" and
+   * the city came back with **six buildings**, on a run where G20 and G21 both read PASS off a
+   * sample of six. `MAP-METHOD.md` rule 12: a statistic whose sample has collapsed reports a
+   * confident number rather than an error, and it did.
+   */
+  u0 += 0.6;
+  u1 -= 0.6;
+  if (u1 - u0 < MIN_FRONTAGE) return { plots: [], frontages: 0, emptyBecause: 'narrower than one frontage' };
   const R = { rows: 0, ok: 0 };
   /**
-   * How much of a block actually gets built.
-   *
-   * Measured on the AGEA orthophoto of the historic core, roofs cover 60–72 % of the ground
-   * between street lines; the previous 0.82 + 0.17·density, further multiplied by
-   * `0.55 + 0.45·mask`, was throwing away nearly half of every quarter's *middle* as well as
-   * its edge, and the land audit found the walled city 16.5 % built. The fade belongs at the
-   * margin, where a Roman city really did become yards and orchards, and nowhere else — so
-   * the mask term is now a shallow ramp rather than a halving.
+   * How much of a block actually gets built. Measured on the AGEA orthophoto of the historic
+   * core, roofs cover 60–72 % of the ground between street lines; a *horti* block is 8 %.
    */
-  const keep = 0.9 + d.density * 0.1;
-  /** Thinning by distance from the district's heart: 1 in the middle, ~0.7 at the fringe. */
+  const keep = b.horti ? HORTI_COVERAGE : 0.9 + b.region.density * 0.1;
   const fade = (m: number): number => keep * (0.68 + 0.32 * m);
-  const F = districtFrame(d);
-  const grow = 1 + d.fray * 0.34;
-  const HU = d.hw * grow;
-  const HV = d.hd * grow;
 
-  // ---- spines -------------------------------------------------------------
-  // Block depth. The Subura at density 0.94 gets 54 m bands, the Vaticanus at 0.4 gets 78.
-  // Both sit inside the 40–80 m the historic centre actually measures between street lines.
-  // Measured off the AGEA orthophoto against a 100 m grid: blocks in Rome's historic core
-  // run 45–110 m with a median of 75 × 85 m. The Subura at density 0.94 gets 62 m bands,
-  // the Vaticanus at 0.4 gets 82.
-  const bandPitch = lerp(88, 62, d.density);
-  const nBands = Math.max(1, Math.round((HV * 2) / bandPitch));
-  const nSpines = nBands + 1;
-  const spine: { v: number; amp: number; freq: number; phase: number; cls: WayClass; edge: boolean }[] = [];
-  // The quarter's own high street, and a second one if it is deep enough to need it.
-  const mainA = nBands >= 2 ? rng.int(1, nBands - 1) : -1;
-  const mainB = nBands >= 5 ? ((mainA + Math.floor(nBands / 2) - 1) % (nBands - 1)) + 1 : -1;
-  for (let k = 0; k < nSpines; k++) {
-    const edge = k === 0 || k === nBands;
-    const jitter = edge ? 0 : rng.range(-0.18, 0.18) * bandPitch;
-    spine.push({
-      v: lerp(-HV, HV, k / nBands) + jitter,
-      amp: edge ? 0 : bandPitch * rng.range(0.025, 0.065),
-      freq: (Math.PI * rng.range(1.1, 2.4)) / Math.max(70, HU),
-      phase: rng.range(0, Math.PI * 2),
-      cls: k === mainA || k === mainB ? 'local' : 'vicus',
-      edge,
-    });
-  }
-  const vAt = (k: number, u: number): number =>
-    spine[k].v + spine[k].amp * Math.sin(u * spine[k].freq + spine[k].phase);
-  const slopeAt = (k: number, u: number): number =>
-    spine[k].amp * spine[k].freq * Math.cos(u * spine[k].freq + spine[k].phase);
-  // Half the street plus its setback: the *building line*, not the kerb. The district's
-  // outer boundary is not a street at all — the fray mask fades the fabric out there, and
-  // paving a line through open orchards would put a kerb in a field.
-  const halfW = (k: number): number =>
-    spine[k].edge ? 0 : WAY_WIDTH[spine[k].cls] * 0.5 + WAY_FRONTAGE[spine[k].cls];
-
-  /** True where the fabric may stand: inside the mask, behind the pomerium, off the plan. */
-  const buildable = (u: number, v: number, hu: number, hv: number, rot: number): number => {
+  const buildable = (u: number, v: number, hu: number, hv: number): number => {
     const x = F.x(u, v);
     const z = F.z(u, v);
-    const mask = districtMask(d, u, v);
-    if (mask <= 0.04) return 0;
-    // The *pomerium*: the whole footprint clear of the curtain, not just its centre.
-    const zReach = Math.abs(Math.sin(rot)) * hu + Math.abs(Math.cos(rot)) * hv;
-    if (z - zReach < wallZAt(x) + POMERIUM) return 0;
-    if (keepOut.blockedRect(x, z, hu, hv, rot)) return 0;
-    if (placed.hits(x, z, hu, hv, rot)) return 0;
-    return mask;
+    const zReach = Math.abs(Math.sin(F.rot)) * hu + Math.abs(Math.cos(F.rot)) * hv;
+    if (z - zReach < wallZAt(x) + POMERIUM) {
+      why.pomerium++;
+      return 0;
+    }
+    if (keepOut.blockedRect(x, z, hu, hv, F.rot)) {
+      why.reserved++;
+      return 0;
+    }
+    if (placed.hits(x, z, hu, hv, F.rot)) {
+      why.neighbour++;
+      return 0;
+    }
+    return b.urban;
   };
 
-  // Emit a spine as one or more lanes, broken wherever it runs into something reserved.
-  // A street that stops at the Colosseum's precinct and picks up on the far side is
-  // correct; one that drives through it is not.
-  for (let k = 0; k < nSpines; k++) {
-    if (spine[k].edge) continue;
-    const w = WAY_WIDTH[spine[k].cls];
-    const steps = Math.max(6, Math.round((HU * 2) / 22));
-    let run: { x: number; z: number }[] = [];
-    for (let i = 0; i <= steps; i++) {
-      const u = lerp(-HU, HU, i / steps);
-      const v = vAt(k, u);
-      const x = F.x(u, v);
-      const z = F.z(u, v);
-      const ok =
-        districtMask(d, u, v) > 0.18 &&
-        !keepOut.blockedRect(x, z, 6, w * 0.5, d.rot) &&
-        z > wallZAt(x) + 20;
-      if (ok) run.push({ x, z });
-      else {
-        if (run.length >= 2) lanes.push({ path: run, cls: spine[k].cls, width: w });
-        run = [];
-      }
+  /** The v-span available across the whole of `[ua, ub]`, or null. */
+  const spanOver = (ua: number, ub: number): [number, number] | null => {
+    let lo = -Infinity;
+    let hi = Infinity;
+    for (const u of [ua, (ua + ub) * 0.5, ub]) {
+      const s = spanAt(uv, u);
+      if (!s) return null;
+      if (s[0] > lo) lo = s[0];
+      if (s[1] < hi) hi = s[1];
     }
-    if (run.length >= 2) lanes.push({ path: run, cls: spine[k].cls, width: w });
-  }
+    return hi - lo >= MIN_DEPTH ? [lo, hi] : null;
+  };
 
-  // ---- ribs and blocks, band by band --------------------------------------
-  for (let k = 0; k < nBands; k++) {
-    // Block length along the spine. Roman blocks are longer than they are deep.
-    const ribPitch = lerp(86, 58, d.density) * rng.range(0.88, 1.14);
-    const nRibs = Math.max(1, Math.round((HU * 2) / ribPitch));
-    const cuts: { u: number; half: number; cls: WayClass }[] = [];
-    for (let i = 0; i <= nRibs; i++) {
-      const end = i === 0 || i === nRibs;
-      // Every fourth rib is a 14 m lane rather than an 8 m alley, so a band is never more
-      // than two blocks from something a column can turn into.
-      const cls: WayClass = !end && i % 4 === 2 ? 'local' : 'vicus';
-      cuts.push({
-        u: lerp(-HU, HU, i / nRibs) + (end ? 0 : rng.range(-0.22, 0.22) * ribPitch),
-        half: end ? 0 : WAY_WIDTH[cls] * 0.5,
-        cls,
-      });
-    }
-
-    for (let i = 0; i + 1 < cuts.length; i++) {
-      const ua = cuts[i].u + cuts[i].half;
-      const ub = cuts[i + 1].u - cuts[i + 1].half;
-      if (ub - ua < 13) continue;
-      fillBlock(k, ua, ub);
-    }
-
-    // The ribs themselves, clipped to the band and to anything reserved.
-    for (let i = 1; i < cuts.length - 1; i++) {
-      const u = cuts[i].u;
-      const v0 = vAt(k, u) + halfW(k);
-      const v1 = vAt(k + 1, u) - halfW(k + 1);
-      if (v1 - v0 < 6) continue;
-      const a = { x: F.x(u, v0), z: F.z(u, v0) };
-      const b = { x: F.x(u, v1), z: F.z(u, v1) };
-      const w = WAY_WIDTH[cuts[i].cls];
-      if (districtMask(d, u, (v0 + v1) * 0.5) < 0.2) continue;
-      if (keepOut.blockedRect((a.x + b.x) / 2, (a.z + b.z) / 2, w * 0.5, (v1 - v0) * 0.5, d.rot)) continue;
-      if (Math.min(a.z, b.z) < wallZAt((a.x + b.x) / 2) + 20) continue;
-      lanes.push({ path: [a, b], cls: cuts[i].cls, width: w });
-    }
-  }
-
-  /**
-   * Fill one block, **shrinking it against what crosses it rather than abandoning it.**
-   *
-   * The order is the one a surveyor works in and each step is a demotion of the last:
-   *
-   *  1. **One courtyard mass over the whole block.** A block big enough and clear enough
-   *     stops being a row of buildings and becomes *one* building — a continuous range
-   *     wrapped round all four sides with a light well in the middle. That is what an
-   *     insula block is, and it is what the figure-ground of Rome looks like from above:
-   *     one connected mass punched with courtyards, not a scatter of separate objects.
-   *  2. **Halve it and try again.** A wide block that a street or a precinct clips is not
-   *     unbuildable — it is two shorter blocks. Real fabric beside a monument gets *smaller*
-   *     grain, it does not dissolve into open ground.
-   *  3. **A terrace of party-walled frontages**, each of which subdivides further in
-   *     `place` until it fits.
-   */
-  function fillBlock(k: number, ua: number, ub: number, level = 0): void {
-    if (ub - ua < 13) return;
-    if (tryPerimeter(k, ua, ub)) return;
-    // 66 m is two frontages plus a party wall either side of a 14 m lane: below it,
-    // halving produces blocks too short to read as blocks and the terrace is the honest
-    // answer. Split off-centre so the grain does not come out as powers of two.
-    if (ub - ua >= 66 && level < 2) {
-      const um = lerp(ua, ub, rng.range(0.4, 0.6));
-      fillBlock(k, ua, um - 0.25, level + 1);
-      fillBlock(k, um + 0.25, ub, level + 1);
-      return;
-    }
-    terrace(k, ua, ub);
-  }
-
-  /** The two street lines bounding band `k` at a given point along it. */
-  function cornerV(k: number, u: number): [number, number] {
-    return [vAt(k, u) + halfW(k), vAt(k + 1, u) - halfW(k + 1)];
-  }
-
-  /**
-   * **One rotation per row, taken at the block's centre — and now taken off the streets.**
-   *
-   * Two rules, and they were earned separately.
-   *
-   * *One per row, not one per plot.* Deriving each plot's angle from the spine slope under
-   * that plot seemed the careful thing to do and is wrong: it twists every house in a terrace
-   * by a different few degrees, so party walls that are 0.1 m apart at their centres cross by
-   * up to three metres at the corners. Measured on the first build of this: 118
-   * interpenetrating pairs involving 214 of 439 buildings. A terrace is built to a single line
-   * and the street's bend is taken up at the block ends, which is what a real curving street
-   * of houses does — straight runs, angle changes at a party wall.
-   *
-   * *And the line it is built to is a street's.* `d.rot` is `wayBearingAt` at the quarter's
-   * centre (`layout.ts`) — the road network's own bearing field — instead of the ±20° hash it
-   * replaced. That is the whole of the change, and it is deliberately **all** of it.
-   *
-   * *And the line it is built to is a street's.* `d.rot` is the road network's own bearing
-   * field at the quarter's centre (`layout.ts`), negated into plan-rotation handedness; this
-   * adds the **local** correction, so a row takes the angle of the street under *it* rather
-   * than the average over four hundred metres. `frame` is the quarter's own bearing — `−d.rot`,
-   * because a plan rotation and a world bearing are opposite-handed here and conflating them is
-   * the fault that made the first version of this whole mechanism point every quarter at the
-   * mirror of its street.
-   *
-   * **And the spine-slope term is *subtracted*, which is a sign fix and not a preference.**
-   * A spine's own world bearing works out to `−d.rot + atan(slope)`: the frame sends `+u` to
-   * bearing `−d.rot`, and the wander adds `+atan(slope)` on top of it. A plot's drawn long axis
-   * points along `−rot`. So a row written `d.rot + atan(slope)` draws at `−d.rot − atan(slope)`
-   * — the **mirror** of the very spine it fronts, off by `2·atan(slope)`, which is up to
-   * **14.6°** at this amplitude. That is a terrace built to the reflection of its own street,
-   * it has been in this file since the lattice was written, and it is most of what
-   * `probe-fabric` G20 has been reporting: the check's median of 9.17° was read as evidence for
-   * the hash, and the hash was only part of it. Both halves are fixed here, and the two are
-   * independent — the hash decided which angle a whole quarter took, this decides whether a row
-   * agrees with the street it is built along.
-   *
-   * `ROW_TURN` bounds the correction, and the bound is load-bearing in two directions. Too
-   * large and a row no longer fits the block quad it was cut from, `buildable` rejects it, and
-   * the quarter reports itself buried (`probe-fabric` G17). Too small — zero, in particular —
-   * and neighbouring blocks in two *different* quarters take their two quarters' angles with
-   * nothing pulling them together, which is the seam G21 measures: dropping the correction
-   * entirely took G21 from **11.2 %** of neighbour pairs over 15° to **26.5 %**, measured on
-   * this tree. Twelve degrees is what the field varies by across a quarter in the Campus
-   * Martius.
-   */
-  function rowRotOf(k: number, ua: number, ub: number): [number, number] {
-    const uc = (ua + ub) * 0.5;
-    const frame = -d.rot;
-    const local = (k2: number): number => {
-      const v = vAt(k2, uc);
-      const delta = clamp(
-        foldToAxis(frame, wayBearingAt(F.x(uc, v), F.z(uc, v))),
-        -ROW_TURN,
-        ROW_TURN
-      );
-      return d.rot - delta - Math.atan(slopeAt(k2, uc));
-    };
-    return [local(k), local(k + 1)];
-  }
-
-  /**
-   * The whole block as one continuous range about a courtyard.
-   *
-   * **This is the difference between a scatter and a city, and it took a blind critic to
-   * make it stick.** Shown this plan beside four crops of an orthophoto of Rome, the critic
-   * sorted the deck 6/6 and wrote: *"density was raised without changing topology — the
-   * buildings are separate objects with visible ground between them instead of a continuous
-   * mass of party-walled frontage… adding count doesn't produce urbanism, adding adjacency
-   * does."* It also noted zero courtyards anywhere in the fabric, where a real dense core is
-   * 14–20 % courtyard. A terrace of individually-placed houses cannot fix that however
-   * tightly it is packed, because each house still carries its own eaves, its own shadow and
-   * its own scrap of ground.
-   */
-  function tryPerimeter(k: number, ua: number, ub: number): boolean {
-    const blockW = ub - ua;
-    if (blockW < 26) return false;
-    const [lo0, hi0] = cornerV(k, ua);
-    const [lo1, hi1] = cornerV(k, ub);
-    const blockD = Math.min(hi0 - lo0, hi1 - lo1);
-    if (blockD < 24) return false;
-    // Not every block: a quarter of solid courtyard rings reads as a housing estate. The
-    // rest fall through to a terrace, which is the coarser grain a poorer street has.
-    if (rng.next() > 0.66 + d.density * 0.3) return false;
-    const uc = (ua + ub) * 0.5;
-    const vc = (lo0 + hi0 + lo1 + hi1) * 0.25;
-    const rot = rowRotOf(k, ua, ub)[0];
-    const m = districtMask(d, uc, vc);
-    if (m <= 0.04 || rng.next() > fade(m)) return false;
-    R.rows++;
-    const mask = buildable(uc, vc, blockW * 0.5 - 0.2, blockD * 0.5 - 0.2, rot);
-    if (mask <= 0) return false;
-    R.ok++;
-    plots.push({
-      x: F.x(uc, vc), z: F.z(uc, vc), rot,
-      hw: blockW * 0.5 - 0.2, hd: blockD * 0.5 - 0.2,
-      // A whole block: all four sides are street, and `buildBuilding` derives the wings'
-      // own enclosure from the courtyard plan rather than from this.
-      frontSide: -1, edge: mask, perimeter: true, abut: 0,
-    });
-    return true;
-  }
-
-  /**
-   * A run of party-walled houses fronting the streets either side of the block.
-   *
-   * Frontages are 12–26 m — the range Ostia's surviving properties occupy — and neighbours
-   * share a party wall with a gap of a few centimetres, so the block presents a continuous
-   * street wall broken by the odd passage. A block deeper than `TWO_ROW_DEPTH` becomes two
-   * terraces back to back about a light well, each fronting its own street. Nothing is set
-   * back: the façade *is* the street edge.
-   */
-  function terrace(k: number, ua: number, ub: number): void {
-    const rowRot = rowRotOf(k, ua, ub);
-    const cuts: number[] = [ua];
-    let u = ua;
-    while (ub - u > MIN_FRONTAGE) {
-      const want = rng.range(12, 26);
-      if (ub - (u + want) < MIN_FRONTAGE) break;
-      u += want;
-      cuts.push(u);
-    }
-    cuts.push(ub);
-
-    for (let p = 0; p + 1 < cuts.length; p++) {
-      // Party walls. The figure-ground of a real city is one connected mass punched with
-      // courtyards, not a scatter of separate buildings, so the default gap is a few
-      // centimetres of render and only one frontage in eight opens a passage.
-      const gap = rng.next() < 0.12 ? rng.range(1.3, 2.8) : rng.range(0.05, 0.3);
-      const pa = cuts[p] + (p === 0 ? 0 : gap * 0.5);
-      const pb = cuts[p + 1] - (p + 2 === cuts.length ? 0 : gap * 0.5);
-      const uc = (pa + pb) * 0.5;
-      const hu = (pb - pa) * 0.5;
-      if (hu * 2 < MIN_FRONTAGE) continue;
-
-      const [lo, hi] = cornerV(k, uc);
-      const depth = hi - lo;
-      if (depth < MIN_DEPTH) continue;
-
-      // One terrace, or two back to back about a garden. Either way no building is deeper
-      // than a room and a corridor: the leftover in the middle of the block is the court.
-      const rows: [number, number, 1 | -1][] = [];
-      if (depth >= TWO_ROW_DEPTH) {
-        const rd = Math.min(INSULA_DEPTH_MAX, (depth - LIGHT_WELL) * 0.5);
-        rows.push([lo, lo + rd, -1], [hi - rd, hi, 1]);
-      } else {
-        const rd = Math.min(INSULA_DEPTH_MAX, depth);
-        const front: 1 | -1 = halfW(k) >= halfW(k + 1) ? -1 : 1;
-        rows.push(front < 0 ? [lo, lo + rd, front] : [hi - rd, hi, front]);
-      }
-
-      for (const [v0, v1, front] of rows) {
-        R.rows++;
-        // Thinned toward the frayed margin, so the city fades into orchards and gardens
-        // rather than ending at the mask's cut-off like a bitten biscuit.
-        const m = districtMask(d, uc, (v0 + v1) * 0.5);
-        if (rng.next() > fade(m)) continue;
-        place(uc, hu, v0, v1, front, rowRot[front < 0 ? 0 : 1], 0);
-      }
-    }
-  }
-
-  /**
-   * Fit building mass into one frontage, **clipping it against whatever is in the way
-   * rather than abandoning the frontage.**
-   *
-   * This is what makes room for the monuments, and it is also most of the city. A block is
-   * cut from the district's own lattice, which knows nothing about the armature of named
-   * viae, the ring round the Colosseum or the aqueduct on its piers. A great many blocks
-   * are therefore crossed by one of those, and rejecting every plot that touched one lost
-   * the *whole block* — forty metres of frontage either side of a fourteen-metre lane.
-   * Measured on the revision this replaces: eight of seventeen quarters built under 12 % of
-   * their frontages, the Subura 10 houses out of 202, and the whole city came back with 732
-   * buildings against the 2,907 the BSP had.
-   *
-   * **Bisection is not good enough and the measurement says so.** A frontage clipped eight
-   * metres at one end halves into two twenties, the clipped twenty halves into two tens, and
-   * the clipped ten falls under the minimum — so eight metres of obstruction destroys twenty
-   * metres of frontage, and the fabric ends up standing well back from every kerb in Rome
-   * with a ring of dead ground round each street. Bisecting the whole city that way took the
-   * walled area from 16.5 % built to 17.8 %: nothing.
-   *
-   * So a frontage that does not fit whole is **packed greedily from one end** instead — take
-   * the widest piece from the ladder that fits, advance past it, repeat. That is how a
-   * terrace of houses actually grows along an awkward plot, it walks the façade right up to
-   * whatever is in the way, and it costs a handful of extra rectangle tests.
-   *
-   * Only when *nothing* fits anywhere along the frontage at this depth does it halve in
-   * depth and try again, with each half anchored to the street it faces — the front half
-   * keeps its façade, the back half fronts the lane behind. So the street wall never
-   * develops a sawtooth: what retreats is the back wall, and only where something really is
-   * in the way.
-   */
   function place(
-    uc: number, hu: number, v0: number, v1: number, front: 1 | -1, rot: number, level: number
+    uc: number, hu: number, v0: number, v1: number, front: 1 | -1, level: number
   ): void {
     const w = hu * 2;
     const dep = v1 - v0;
-    if (w < MIN_PLOT || dep < MIN_PLOT) return;
+    if (w < MIN_PLOT || dep < MIN_PLOT) {
+      why.tooSmall++;
+      return;
+    }
     const vc = (v0 + v1) * 0.5;
     const hv = dep * 0.5 - 0.12;
 
-    /** Index into `plots` and the u-extent, for the party-wall pass after packing. */
     const run: { i: number; u0: number; u1: number }[] = [];
     const emit = (u: number, halfW: number): boolean => {
       if (halfW * 2 < MIN_PLOT) return false;
-      const mask = buildable(u, vc, halfW, hv, rot);
+      const mask = buildable(u, vc, halfW, hv);
       if (mask <= 0) return false;
       R.ok++;
       run.push({ i: plots.length, u0: u - halfW, u1: u + halfW });
-      plots.push({ x: F.x(u, vc), z: F.z(u, vc), rot, hw: halfW, hd: hv, frontSide: front, edge: mask, abut: 0 });
+      plots.push({
+        x: F.x(u, vc), z: F.z(u, vc), rot: F.rot, hw: halfW, hd: hv,
+        frontSide: front, edge: mask, abut: 0,
+      });
       return true;
     };
 
-    // A frontage that fits whole has both ends on a cross street. Nothing abuts it.
     if (emit(uc, hu)) return;
 
-    // Pack what will fit, one end to the other. `guard` is belt and braces: every iteration
-    // advances `u` by at least half a minimum plot, so a 26 m frontage cannot exceed seven.
+    /*
+     * **Bisection is not good enough and the measurement says so.** A frontage clipped eight
+     * metres at one end halves into two twenties, the clipped twenty into two tens, and the
+     * clipped ten falls under the minimum — so eight metres of obstruction destroyed twenty
+     * metres of frontage and the fabric stood back from every kerb in Rome. So a frontage that
+     * does not fit whole is packed greedily from one end: take the widest piece from the
+     * ladder that fits, advance past it, repeat. That is how a terrace of houses actually
+     * grows along an awkward plot, and it walks the façade right up to whatever is in the way.
+     */
     const uEnd = uc + hu;
     let u = uc - hu;
     let any = false;
@@ -694,64 +1157,181 @@ function planDistrict(
       u += took > 0 ? took + PARTY_GAP : MIN_PLOT * 0.5;
       any = any || took > 0;
     }
-    /*
-     * Mark the party walls. Two pieces that ended up within a hair of `PARTY_GAP` of each
-     * other are a terrace, and the faces between them are shared. Anything further apart is
-     * an alley — a gap the packer left because something is standing in it — and both faces
-     * of an alley are street.
-     */
     for (let i = 1; i < run.length; i++) {
       if (run[i].u0 - run[i - 1].u1 > PARTY_GAP * 1.6) continue;
       plots[run[i - 1].i].abut |= FACE_X1;
       plots[run[i].i].abut |= FACE_X0;
     }
     if (any || level >= 2) return;
-
-    // Nothing stands at this depth anywhere along the frontage — a precinct or a
-    // carriageway crosses the whole of it. Come forward and try the two shallower rows.
-    place(uc, hu, v0, vc - PARTY_GAP * 0.5, -1, rot, level + 1);
-    place(uc, hu, vc + PARTY_GAP * 0.5, v1, 1, rot, level + 1);
+    place(uc, hu, v0, vc - PARTY_GAP * 0.5, -1, level + 1);
+    place(uc, hu, vc + PARTY_GAP * 0.5, v1, 1, level + 1);
   }
 
-  /**
-   * A quarter that plans nothing is a real failure mode and an invisible one: the district
-   * exists, reserves ground, plants trees, and simply has no houses. It happened to the
-   * Subura twice during this rebuild.
-   *
-   * The test is an absolute count, not a ratio of frontages. A ratio was the obvious thing
-   * and it stopped meaning anything once `place` began packing a frontage greedily — one
-   * frontage can now yield six buildings or none, so `ok/rows` swings wildly and fired on
-   * fourteen of seventeen healthy quarters. Twenty buildings is about two blocks; below that
-   * a district is not thin, it is missing.
-   */
-  if (R.ok < 20) {
-    console.warn(`[city] ${d.id} planned only ${R.ok} buildings from ${R.rows} frontages — the quarter is buried`);
+  function terrace(ua: number, ub: number): void {
+    /*
+     * **No whole-block span test here, and removing it trebled the fabric.**
+     *
+     * This used to begin `if (!spanOver(ua, ub)) return`, which asks whether the block is at
+     * least `MIN_DEPTH` deep *at its narrowest point over its whole length*. A face bounded by
+     * two converging streets comes to a point, so its narrowest point is nought — and the
+     * whole block, including the eighty metres of it that are forty metres deep, was
+     * abandoned. Measured: 885 frontages from 304 blocks, against the eight per block the
+     * module predicts. Each frontage tests its own span a dozen lines below, which is the
+     * right place for the question: what a converging block loses is its last frontage, not
+     * itself.
+     */
+    const cuts: number[] = [ua];
+    let u = ua;
+    while (ub - u > MIN_FRONTAGE) {
+      const want = rng.range(11, 19);
+      if (ub - (u + want) < MIN_FRONTAGE) break;
+      u += want;
+      cuts.push(u);
+    }
+    cuts.push(ub);
+
+    for (let p = 0; p + 1 < cuts.length; p++) {
+      // Party walls. The figure-ground of a real city is one connected mass punched with
+      // courtyards, so the default gap is a few centimetres of render and only one frontage
+      // in eight opens a passage.
+      const gap = rng.next() < 0.12 ? rng.range(1.3, 2.8) : rng.range(0.05, 0.3);
+      const pa = cuts[p] + (p === 0 ? 0 : gap * 0.5);
+      const pb = cuts[p + 1] - (p + 2 === cuts.length ? 0 : gap * 0.5);
+      const uc = (pa + pb) * 0.5;
+      const hu = (pb - pa) * 0.5;
+      if (hu * 2 < MIN_FRONTAGE) {
+        why.shortFrontage++;
+        continue;
+      }
+      why.frontages++;
+      const local = spanOver(pa, pb);
+      if (!local) {
+        why.narrow++;
+        continue;
+      }
+      const [lo, hi] = local;
+      const depth = hi - lo;
+
+      const rows: [number, number, 1 | -1][] = [];
+      if (depth < TWO_ROW_DEPTH) why.oneRowOnly++;
+      if (depth >= TWO_ROW_DEPTH) {
+        const rd = Math.min(INSULA_DEPTH_MAX, (depth - LIGHT_WELL) * 0.5);
+        rows.push([lo, lo + rd, -1], [hi - rd, hi, 1]);
+      } else {
+        const rd = Math.min(INSULA_DEPTH_MAX, depth);
+        rows.push([lo, lo + rd, -1]);
+      }
+      for (const [w0, w1, front] of rows) {
+        R.rows++;
+        why.rows++;
+        if (rng.next() > fade(b.urban)) {
+          why.thinned++;
+          continue;
+        }
+        const before = plots.length;
+        place(uc, hu, w0, w1, front, 0);
+        if (plots.length > before) why.rowsBuilt++;
+      }
+    }
   }
-  return { plots, lanes };
+
+  function tryPerimeter(ua: number, ub: number): boolean {
+    const blockW = ub - ua;
+    if (blockW < 26) return false;
+    const span = spanOver(ua, ub);
+    if (!span) return false;
+    const blockD = span[1] - span[0];
+    if (blockD < 24) return false;
+    /*
+     * **A minority of blocks, and the measurement that inverted this.**
+     *
+     * It used to fire on `0.66 + density × 0.3` — nine blocks in ten — on the argument that a
+     * whole-block courtyard range is what an insula block *is*. The argument is right and the
+     * probability was wrong, because a perimeter range is **one inscribed rectangle** and a
+     * block is not a rectangle: whatever the inscribed rectangle misses is left as bare
+     * ground, and `fill` stops as soon as this returns true, so nothing ever comes back for
+     * the rest. Measured with the keep-out map switched off entirely — no monuments, no
+     * streets, no aqueducts — the city built **213 buildings covering 25 % of its own block
+     * faces**, against the 60–70 % the AGEA orthophoto shows between street lines. 134 of
+     * those 213 were single perimeter masses.
+     *
+     * The terrace does not have that failure mode: it walks the block's *actual* polygon by
+     * spans, cuts party-walled frontages along the whole length, and lays two rows back to
+     * back about a light well — which is a continuous street wall on both sides with a court
+     * between, i.e. both of the things the perimeter range was there for. So the ring is now
+     * the minority case it should always have been: about one block in four, more in the
+     * packed quarters, and the rest get the finer grain.
+     */
+    why.perimeterTried++;
+    if (rng.next() > 0.14 + b.region.density * 0.16) {
+      why.notPerimeter++;
+      return false;
+    }
+    const uc = (ua + ub) * 0.5;
+    const vc = (span[0] + span[1]) * 0.5;
+    R.rows++;
+    if (rng.next() > fade(b.urban)) {
+      why.thinned++;
+      return false;
+    }
+    const mask = buildable(uc, vc, blockW * 0.5 - 0.2, blockD * 0.5 - 0.2);
+    if (mask <= 0) return false;
+    R.ok++;
+    why.perimeterBuilt++;
+    plots.push({
+      x: F.x(uc, vc), z: F.z(uc, vc), rot: F.rot,
+      hw: blockW * 0.5 - 0.2, hd: blockD * 0.5 - 0.2,
+      frontSide: -1, edge: mask, perimeter: true, abut: 0,
+    });
+    return true;
+  }
+
+  function fill(ua: number, ub: number, level = 0): void {
+    if (ub - ua < 13) return;
+    if (!b.horti && tryPerimeter(ua, ub)) return;
+    // 66 m is two frontages plus a party wall either side of a 14 m lane: below it, halving
+    // produces blocks too short to read as blocks and the terrace is the honest answer. Split
+    // off-centre so the grain does not come out as powers of two.
+    if (ub - ua >= 66 && level < 2) {
+      const um = lerp(ua, ub, rng.range(0.4, 0.6));
+      fill(ua, um - 0.25, level + 1);
+      fill(um + 0.25, ub, level + 1);
+      return;
+    }
+    terrace(ua, ub);
+  }
+
+  fill(u0, u1);
+  for (const k of Object.keys(why) as (keyof PlotRejects)[]) total[k] += why[k];
+  let emptyBecause: string | null = null;
+  if (plots.length === 0) {
+    const causes: [string, number][] = [
+      ['a monument, a street reservation or an aqueduct', why.reserved],
+      ['the pomerium', why.pomerium],
+      ['too shallow for a house', why.narrow],
+      ['thinned to nothing at the city fringe', why.thinned],
+      ['no frontage wide enough', why.shortFrontage + why.tooSmall],
+      ["a neighbour's building", why.neighbour],
+    ];
+    causes.sort((a, b) => b[1] - a[1]);
+    emptyBecause = causes[0][1] > 0 ? causes[0][0] : 'no frontage was offered at all';
+  }
+  return { plots, frontages: R.rows, emptyBecause };
 }
 
 /**
  * **Would any part of this plot stand in water?**
  *
- * Not "is it within N metres of the channel". A distance margin is the wrong shape: the Tiber's
- * cut bank rises to `WATER_LEVEL` + 2.8 in fifteen metres and its point bar takes eighty-two to
- * reach + 0.8, so one margin is either too tight on one side or eats a hundred metres of dry
- * quay on the other. Two rounds of tuning a single margin moved the count from 4 to 8 and back,
- * because a rejected plot frees ground the placer immediately fills with the next candidate.
+ * Not "is it within N metres of the channel". A distance margin is the wrong shape: the
+ * Tiber's cut bank rises to `WATER_LEVEL` + 2.8 in fifteen metres and its point bar takes
+ * eighty-two to reach + 0.8, so one margin is either too tight on one side or eats a hundred
+ * metres of dry quay on the other. Two rounds of tuning a single margin moved the count from
+ * 4 to 8 and back, because a rejected plot frees ground the placer immediately fills.
  *
- * So ask the terrain's own question: evaluate the **modelled ground** — `regionalPlain` blended
- * into `riverProfile` by `riverInfluence`, which is exactly what `heightfield.ts` does before it
- * adds noise — and reject the plot if any of nine samples over its bounding box comes out under
- * `WATER_LEVEL + FREEBOARD`. The freeboard absorbs the erosion pass and the fractal relief the
- * heightfield adds afterwards, which this cannot see: step 4a re-imposes the channel at full
- * resolution but leaves 18 % of the eroded relief on the banks so they are not glassy, and 18 %
- * of the 3.9 m the noise stack can reach is 0.7 m. 2.8 m is the cut bank's own terrace height,
- * so the rule reads as *nothing below the flood terrace*, which is a thing rather than a tuning.
- *
- * The box, not the plot's own corners: `CitySystem` publishes footprints to the collision layer
- * through `occRot(planRot) = -planRot`, so the rectangle the rest of the engine sees is this one
- * mirrored. Sampling the plot's own corners disagreed with `tools/probe-tiber.mjs` about four
- * solids, and a filter that disagrees with its own gate is not a filter.
+ * So ask the terrain's own question: evaluate the **modelled ground** — `regionalPlain`
+ * blended into `riverProfile` by `riverInfluence`, which is exactly what `heightfield.ts`
+ * does before it adds noise — and reject the plot if any of nine samples over its bounding
+ * box comes out under `WATER_LEVEL + FREEBOARD`.
  *
  * The Tiber Island is land and is excluded from the test rather than from the map: the Insula
  * Tiberina, the Pons Fabricius and the Pons Cestius all stand on it.
@@ -777,81 +1357,87 @@ function inTheRiver(p: Plot): boolean {
 }
 
 /**
- * How built-up a district is at a point in its own frame, 1 in the middle and 0 outside.
+ * **How much of the ground at (x, z) belongs to the city.** 1 on a block, 0 in the country.
  *
- * A district authored as a rectangle of insulae ends at a straight line, and against the
- * terrain's ploughed fields that line is the single most artificial thing a procedural
- * city does — the QA pass called it out as "the city stops at a rectangular seam". Real
- * fabric fades: the last blocks get shorter, the plots get bigger, walled gardens and
- * orchards take over, and the boundary wanders. So the district's extent is a *lobed*
- * superellipse rather than a box, and density, storey count and ground surface all ramp
- * down through the last fifth of it.
+ * This is the block floor's own mask, evaluated without building anything, so the ground the
+ * terrain treats as urban and the floor the city draws over it cannot disagree — they are the
+ * same function of the same faces. `MAP-METHOD.md` rule 11 is about a footprint and a piece
+ * of stone drifting apart because two producers each held their own copy of the same
+ * rectangle.
+ *
+ * **What it is for.** Nothing in `GrassField` had ever heard of the city, so a 0.32–0.54 m
+ * sward grew through a carriageway drawn 6 cm above the terrain and the eye-level frame in an
+ * insula quarter was a photograph of grass with some walls behind it.
+ *
+ * It is a mask on the **ground**, not on the fabric: it deliberately includes the streets,
+ * the yards and the space between the monuments, because all of that is city floor and none
+ * of it is meadow. It is a raster rather than a polygon sweep because the heightfield asks
+ * this question about a million times and there are two thousand faces.
  */
-function districtMask(d: DistrictSpec, u: number, v: number): number {
-  const tu = Math.abs(u) / d.hw;
-  const tv = Math.abs(v) / d.hd;
-  // Superellipse: rounded corners, so no district has a right-angle boundary.
-  const t = Math.pow(Math.pow(tu, 4) + Math.pow(tv, 4), 0.25);
-  const seed = Rng.hashString(d.id);
-  const ph1 = hash2(seed & 0xff, 1, 0x3a) * Math.PI * 2;
-  const ph2 = hash2(seed & 0xff, 2, 0x3b) * Math.PI * 2;
-  const ang = Math.atan2(v * d.hw, u * d.hd);
-  // Two incommensurate lobes push the boundary in and out along its length.
-  const lobe = d.fray * (0.17 * Math.sin(ang * 3 + ph1) + 0.1 * Math.sin(ang * 7 + ph2));
-  const outer = 1 + d.fray * 0.34 + lobe;
-  // The ramp is the *fringe*, not the quarter. At 0.2 + 0.42·fray it ran from 0.38 of the
-  // half-extent outwards on a frayed district — over three quarters of the area by radius —
-  // so the quarter's heart was being thinned as though it were its edge. Halved, so a
-  // district is a plateau with a soft rim.
-  const inner = outer - (0.12 + d.fray * 0.26);
-  const s = clamp((outer - t) / Math.max(0.05, outer - inner), 0, 1);
-  return s * s * (3 - 2 * s);
+const MASK_CELL = 12;
+const MASK_N = Math.ceil((HALF_EXTENT * 2) / MASK_CELL) + 1;
+let MASK: Float32Array | null = null;
+
+function urbanRaster(): Float32Array {
+  if (MASK) return MASK;
+  const m = new Float32Array(MASK_N * MASK_N);
+  const plan = cityPlan();
+  for (const b of plan.blocks) {
+    if (b.kind === 'field' || b.kind === 'pomerium') continue;
+    const ring = b.face.ring;
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let z0 = Infinity;
+    let z1 = -Infinity;
+    for (const p of ring) {
+      if (p.x < x0) x0 = p.x;
+      if (p.x > x1) x1 = p.x;
+      if (p.z < z0) z0 = p.z;
+      if (p.z > z1) z1 = p.z;
+    }
+    const i0 = Math.max(0, Math.floor((x0 + HALF_EXTENT) / MASK_CELL));
+    const i1 = Math.min(MASK_N - 1, Math.ceil((x1 + HALF_EXTENT) / MASK_CELL));
+    const j0 = Math.max(0, Math.floor((z0 + HALF_EXTENT) / MASK_CELL));
+    const j1 = Math.min(MASK_N - 1, Math.ceil((z1 + HALF_EXTENT) / MASK_CELL));
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const x = i * MASK_CELL - HALF_EXTENT;
+        const z = j * MASK_CELL - HALF_EXTENT;
+        let inside = false;
+        for (let a = 0, c = ring.length - 1; a < ring.length; c = a++) {
+          if (ring[a].z > z !== ring[c].z > z) {
+            const t = (z - ring[a].z) / (ring[c].z - ring[a].z);
+            if (x < ring[a].x + t * (ring[c].x - ring[a].x)) inside = !inside;
+          }
+        }
+        if (inside) m[j * MASK_N + i] = Math.max(m[j * MASK_N + i], b.urban);
+      }
+    }
+  }
+  MASK = m;
+  return m;
 }
 
-/**
- * **How much of the ground at (x, z) belongs to the city.** 1 inside a quarter, 0 in the
- * country, and a ragged fade between the two.
- *
- * This is `buildDistrictFloor`'s own mask, evaluated without building anything, so the
- * ground the terrain treats as urban and the floor the city draws over it cannot disagree —
- * they are the same function of the same `DISTRICTS`. That matters more than it sounds:
- * `MAP-METHOD.md` rule 11 is about a footprint and a piece of stone drifting apart because
- * two producers each held their own copy of the same rectangle.
- *
- * **What it is for.** Nothing in `GrassField` had ever heard of the city. Its only
- * road-shaped mask is one analytic sinusoid — the *battlefield's* Via Flaminia, which
- * wanders on through the city at coordinates the Via Lata has nothing to do with — and there
- * is no city term, no building term, no way term and no paving term anywhere in the file.
- * So a 0.32–0.54 m sward grew through a carriageway drawn 6 cm above the terrain and through
- * a district floor drawn 2 cm above it, and the eye-level frame in an insula quarter
- * (`eye-quarter-east`) is a photograph of grass with some walls behind it.
- *
- * The wall guard is `buildDistrictFloor`'s, to the metre: several districts' inflated
- * rectangles reach *outside* the circuit — `campus-flaminia` runs to z 457 against a wall at
- * z 530 — and the glacis is not city. **This is a mask on the ground, not on the fabric**;
- * it deliberately includes the streets, the yards and the space between the monuments,
- * because all of that is city floor and none of it is meadow.
- */
 export function urbanGroundMask(x: number, z: number, wallZAt: (x: number) => number): number {
   if (z <= wallZAt(x) + 8) return 0;
-  let best = 0;
-  for (const d of DISTRICTS) {
-    const grow = 1 + d.fray * 0.34;
-    const reach = Math.max(d.hw, d.hd) * grow;
-    const dx = x - d.x;
-    const dz = z - d.z;
-    if (dx * dx + dz * dz > reach * reach) continue;
-    const cs = Math.cos(d.rot);
-    const sn = Math.sin(d.rot);
-    // Inverse of `districtFrame`: x = cx + u·cs + v·sn, z = cz − u·sn + v·cs.
-    const u = dx * cs - dz * sn;
-    const v = dx * sn + dz * cs;
-    const m = districtMask(d, u, v);
-    if (m > best) best = m;
-    if (best >= 0.999) break;
-  }
-  return best;
+  const m = urbanRaster();
+  const fx = (x + HALF_EXTENT) / MASK_CELL;
+  const fz = (z + HALF_EXTENT) / MASK_CELL;
+  const i = Math.floor(fx);
+  const j = Math.floor(fz);
+  if (i < 0 || j < 0 || i + 1 >= MASK_N || j + 1 >= MASK_N) return 0;
+  const tx = fx - i;
+  const tz = fz - j;
+  const a = m[j * MASK_N + i];
+  const b = m[j * MASK_N + i + 1];
+  const c = m[(j + 1) * MASK_N + i];
+  const d = m[(j + 1) * MASK_N + i + 1];
+  return lerp(lerp(a, b, tx), lerp(c, d, tx), tz);
 }
+
+// ---------------------------------------------------------------------------
+// The build
+// ---------------------------------------------------------------------------
 
 export function buildDistricts(
   heightAt: Ground,
@@ -862,166 +1448,285 @@ export function buildDistricts(
   const rng = new Rng(seed);
   const trees: TreeRequest[] = [];
   const footprints: { x: number; z: number; hw: number; hd: number; rot: number }[] = [];
+  const plan = cityPlan();
+  const report: BlockReport = { ...plan.report };
 
-  // Plan every district up front so the movement grid and the tree list are complete
-  // before any geometry is built (chunk builders run lazily, per LOD level).
-  //
-  // Order matters now in a way it did not before: districts overlap, and a plot is rejected
-  // against everything already standing, so the first quarter planned wins the shared
-  // ground. `DISTRICTS` runs north to south, which puts the Campus Martius — the quarter the
-  // camera is in for most of the battle — first.
-  const planned = new Map<string, Plot[]>();
+  /*
+   * **The cross-lanes become drawn streets here, and only here, because this is the first
+   * place a monument is visible.**
+   *
+   * `graph.ts` cannot see a monument by design — §4.3 step 6, and the reason `deflect()`
+   * existed. So the *plan* runs a lane straight across the Baths of Trajan if the block
+   * boundary falls there, and the block boundary is right: the ground on both sides of the
+   * baths is fabric and the two sides are different blocks. What must not happen is that the
+   * lane is *paved* over the temple floor, which is `probe-fabric` G4 and G5. So the run is
+   * broken wherever it enters a reservation and picked up on the far side, which is what a
+   * street that stops at a precinct does.
+   */
   const lanes: Lane[] = [];
-  const placed = new PlotGrid();
-  for (const d of DISTRICTS) {
-    const drng = rng.fork(d.id);
-    const out = planDistrict(d, drng, keepOut, wallZAt, placed);
-    // **Nothing stands in the Tiber.** `planDistrict` lays a lattice over a district's own
-    // rectangle and has never been told where the water is, so it did not avoid it: measured on
-    // this map before the filter, **41 of 1 333 solids were wholly under `WATER_LEVEL` and 62
-    // had their centre in it.** Nothing reported it, because `assertNoFabricOverlaps` and
-    // `probe-fabric` G1/G2 grade solids against each other and the river is not a solid.
-    //
-    // **The wet plots still claim their ground.** Dropping them outright freed the river's own
-    // footprint, later districts filled it — the quarters overlap and are planned in order — and
-    // the reshuffle cost two `probe-fabric` gates about monuments nowhere near the water. So the
-    // whole lattice is committed to `placed` and only the dry part is built and collided. The
-    // river is a hole in the city; nothing is supposed to be standing in it, and nothing is
-    // supposed to move because of it either.
-    const dry = out.plots.filter((p) => !inTheRiver(p));
-    // Committed only now the quarter is complete. A plot must be tested against the
-    // *neighbouring district*, never against the terrace it belongs to.
-    for (const p of out.plots) placed.add(p);
-    out.plots = dry;
-    planned.set(d.id, out.plots);
-    // **Restored in the assembly merge, where it had been dropped.** `e/terrain/tiber-resurvey`
-    // added `out.plots = dry` on the line this one used to occupy and git took the deletion
-    // silently. Nothing failed: `lanes` stayed an empty array, so `nearLane` returned false for
-    // every tree, `buildWays` was handed nothing to draw, and every district street in Rome
-    // vanished while the water gates the same commit added all still passed. A quarter with no
-    // streets in it is invisible to a probe that grades solids against solids.
-    for (const l of out.lanes) lanes.push(l);
-    for (const p of out.plots) footprints.push({ x: p.x, z: p.z, hw: p.hw, hd: p.hd, rot: p.rot });
-
-    // Courtyard trees and street planting: cypress in gardens, umbrella pine in
-    // squares. Density falls with how packed the district is.
-    // Courtyard trees inside, orchards and garden plots on the frayed margin — which is
-    // what actually made the edge of a Roman city, and it hides the transition to fields.
-    const F = districtFrame(d);
-    const grow = 1 + d.fray * 0.34;
-    const nTrees = Math.round(d.hw * d.hd * 0.0022 * (1.4 - d.density));
-    for (let i = 0; i < nTrees; i++) {
-      const u = drng.range(-d.hw * grow, d.hw * grow);
-      const v = drng.range(-d.hd * grow, d.hd * grow);
-      const wx = F.x(u, v);
-      const wz = F.z(u, v);
-      if (wz < wallZAt(wx) + 14) continue;
-      const mask = districtMask(d, u, v);
-      if (mask < 0.02) continue;
-      // Sparse in the packed heart, thick round the edges.
-      if (drng.next() > 1.15 - mask) continue;
-      if (keepOut.blocked(wx, wz, 5)) continue;
-      // A tree standing in the carriageway is worse than no tree. The fabric already
-      // avoids the lanes by construction; the planting has to be told.
-      if (placed.hits(wx, wz, 3, 3, 0)) continue;
-      if (nearLane(lanes, wx, wz, 3)) continue;
-      trees.push({ x: wx, z: wz, kind: drng.pick(['cypress', 'pine', 'umbrella'] as const), scale: drng.range(0.75, 1.25) });
+  for (const c of plan.cuts) {
+    const w = WAY_WIDTH[c.cls];
+    for (let s = 0; s + 1 < c.path.length; s++) {
+      const a = c.path[s];
+      const b = c.path[s + 1];
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      const steps = Math.max(2, Math.round(len / 12));
+      let run: { x: number; z: number }[] = [];
+      for (let i = 0; i <= steps; i++) {
+        const x = a.x + (dx * i) / steps;
+        const z = a.z + (dz * i) / steps;
+        const ok = !keepOut.blockedRect(x, z, 6, w * 0.5, 0) && z > wallZAt(x) + 20;
+        if (ok) run.push({ x, z });
+        else {
+          if (run.length >= 2) lanes.push({ path: run, cls: c.cls, width: w });
+          run = [];
+        }
+      }
+      if (run.length >= 2) lanes.push({ path: run, cls: c.cls, width: w });
     }
   }
 
-  // Group districts into depth bands: one chunk per band keeps the draw count down,
-  // and the whole city is normally in frame at once anyway so per-district culling
-  // buys little.
-  // Ids must match `DISTRICT_PLAN` in layout.ts exactly — see `assertEveryDistrictBuilt`,
-  // which is why this list is now checked rather than trusted. Six of the seven names the
-  // first revision used (`porta-flaminia`, `campus-north`, `campus-mid`, `campus-south`,
-  // `east-suburb`, `forum-east`) matched nothing, so the whole of the Campus Martius, the
-  // Velabrum and the Emporium — 40 % of the city's fabric, and the ground directly behind
-  // the wall in the standard viewpoint — were laid out, reserved in the movement grid and
-  // planted with trees, but never emitted as geometry. The visible symptom was courtyard
-  // cypresses standing in bare field.
-  /**
-   * Switch distances, and **they are a draw-call budget before they are a quality setting.**
+  // ---- the plots ----------------------------------------------------------
+  const placed = new PlotGrid();
+  const why: PlotRejects = { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0, perimeterTried: 0, perimeterBuilt: 0 };
+  const emptyBlocks = new Map<string, number>();
+  const byBlock = new Map<number, Plot[]>();
+  const perRegion = new Map<string, { blocks: number; plots: number; frontages: number; insetM2: number; roofM2: number }>();
+  let plotCount = 0;
+  for (const b of plan.blocks) {
+    const acc = perRegion.get(b.region.id) ?? { blocks: 0, plots: 0, frontages: 0, insetM2: 0, roofM2: 0 };
+    if (b.kind !== 'block') {
+      perRegion.set(b.region.id, acc);
+      continue;
+    }
+    acc.blocks++;
+    acc.insetM2 += b.insetAreaM2;
+    const brng = rng.fork(`block:${b.index}`);
+    const out = planBlock(b, brng, keepOut, wallZAt, placed, why);
+    acc.frontages += out.frontages;
+    if (out.emptyBecause) emptyBlocks.set(out.emptyBecause, (emptyBlocks.get(out.emptyBecause) ?? 0) + 1);
+    // **Nothing stands in the Tiber.** The graph has never been told where the water is. The
+    // wet plots still claim their ground: dropping them outright frees the river's own
+    // footprint and something else fills it. The river is a hole in the city.
+    const dry = out.plots.filter((p) => !inTheRiver(p));
+    why.wet += out.plots.length - dry.length;
+    for (const p of out.plots) placed.add(p);
+    byBlock.set(b.index, dry);
+    acc.plots += dry.length;
+    for (const q of dry) acc.roofM2 += 4 * q.hw * q.hd;
+    plotCount += dry.length;
+    for (const p of dry) footprints.push({ x: p.x, z: p.z, hw: p.hw, hd: p.hd, rot: p.rot });
+    perRegion.set(b.region.id, acc);
+  }
+  report.plots = plotCount;
+  report.plotRejects = why;
+  report.emptyBlocks = [...emptyBlocks.entries()].sort((a, b) => b[1] - a[1]).map(([reason, n]) => ({ reason, n }));
+  report.plotsByRegion = [...perRegion.entries()]
+    .sort((a, b) => b[1].plots - a[1].plots)
+    .map(([id, v]) => ({
+      id, blocks: v.blocks, plots: v.plots, frontages: v.frontages,
+      insetM2: v.insetM2, roofM2: v.roofM2, coverage: v.insetM2 > 0 ? v.roofM2 / v.insetM2 : 0,
+    }));
+
+  /*
+   * **The self-report, kept word for word, because the check that reads it must not go dark.**
    *
-   * A district at full detail is four meshes — stucco, roof, stone, timber — and therefore
-   * four draw calls plus their shadow passes. At the mid tier `buildBuilding` stops asking
-   * for `timber` at all (shutters, awning poles, balcony rails and pergolas are centimetres
-   * across) so the chunk is three, and `TRIM_MERGE` folds what is left. Six district groups
-   * at full detail is 24 calls; the same six at mid is 18, for geometry that is 300 m away
-   * and already inside a couple of screen pixels per shutter.
+   * `probe-fabric` G17 greps the boot log for `planned only N buildings from M frontages — the
+   * quarter is buried`. Deleting the seventeen districts deletes the only producer of that
+   * line, and `MAP-METHOD.md` rule 13 is explicit that a check which goes dark is worse than
+   * one that fails: G17 would have read PASS on a city with no houses in it. So the *regiones*
+   * report themselves in the same words.
    *
-   * The numbers below were 420–600 and every district was resolving at full detail from the
-   * `city` camera, which is how the frame reached 231 calls against a 220 cap. The distance
-   * is measured to a chunk's *surface* (`d = |cam − centre| − 0.55·radius`), and these
-   * districts are 400–700 m across, so a nominal 560 m switch fires at nearly a kilometre of
-   * centre distance. `city-gate` keeps its 260: it is the quarter directly behind the wall
-   * and the player is looking at it from thirty metres.
+   * The population changed and the threshold has to change with it. A regio is asked the
+   * question only if it has at least three blocks — Regio X keeps one sliver of the Palatine's
+   * north slope on this frame and a regio with one block is not buried, it is off the edge —
+   * and the floor stays twenty buildings, which is about two blocks' worth. The count is
+   * absolute rather than a ratio for the reason the district version recorded: `place` packs a
+   * frontage greedily, so one frontage yields six buildings or none and `ok/rows` fired on
+   * fourteen of seventeen healthy quarters.
    */
-  const groups: { name: string; ids: string[]; lod: [number, number] }[] = [
-    { name: 'city-gate', ids: ['campus-flaminia'], lod: [260, 1200] },
-    { name: 'city-campus-n', ids: ['campus-augusti', 'via-lata', 'vaticanus'], lod: [300, 1400] },
-    { name: 'city-campus-s', ids: ['campus-medius', 'campus-flaminius', 'trastevere', 'ripa-campi'], lod: [260, 1e9] },
-    { name: 'city-east', ids: ['quirinal', 'viminal', 'esquiline'], lod: [260, 1e9] },
-    // The Velabrum is the low ground *between* the Forum Boarium and the Forum, so the two
-    // share a chunk rather than adding one: the city is already at 104 visible meshes
-    // against a budget of 100.
-    // The whole southern half in one chunk. Six district groups at four materials each is
-    // 24 draw calls before a single monument, and the LOD ladder cannot recover them here:
-    // the switch distance is measured to a chunk's surface, and a chunk 700 m across is
-    // *never* far away by that measure however small the number is set. Merging is the only
-    // lever that actually removes a call. The cost is coarser frustum culling over ground
-    // that is almost always in frame together anyway — the Subura, the Velabrum, the Forum
-    // Boarium, the Caelian, the Aventine and the Emporium are one continuous sweep of city
-    // south of the Fora, and no city camera has ever held part of it without the rest.
-    { name: 'city-south', ids: ['subura', 'velabrum', 'forum-boarium', 'caelian', 'aventine', 'emporium'], lod: [280, 1e9] },
-  ];
-  const built = new Set(groups.flatMap((g) => g.ids));
-  const missing = DISTRICTS.filter((d) => !built.has(d.id)).map((d) => d.id);
-  const unknown = [...built].filter((id) => !DISTRICTS.some((d) => d.id === id));
-  if (missing.length || unknown.length) {
-    console.warn(
-      `[city] district groups do not cover the plan: unbuilt ${missing.join(', ') || 'none'}; ` +
-        `unknown ${unknown.join(', ') || 'none'}`
+  /*
+   * **Which regiones the question can be asked of, and the measurement that decides it.**
+   *
+   * `MAP-METHOD.md` rule 25: *"a survey station can only be graded where the frame can carry
+   * it, and that has to be a check that fails rather than an exclusion that explains… An
+   * exclusion that arrives before the check that justifies it is exemption-shopping; one that
+   * arrives after it is a measurement."*
+   *
+   * At `KZ` = 0.35 the map's +Z edge is survey northing −441. **Regio X Palatium** and **Regio
+   * XI Circus Maximus** are centred 450 m past it, so what the frame carries of them is a
+   * ribbon along the last twenty metres of the map: measured on this tree, X keeps **one** block
+   * with 0.31 ha of buildable ground and XI keeps **four** totalling 0.30 ha, all of them
+   * inside the Theatre of Marcellus's or the Capitol's own reservation. "Twenty buildings" is
+   * not a floor that means anything against three hectares of ground.
+   *
+   * So the floor is stated in **ground**, not in blocks: one hectare of buildable polygon,
+   * which is about three and a half blocks at this module's own median inset. It is set there
+   * and not higher because Regio IV, the Subura, has only **1.36 ha** of buildable ground on
+   * this frame and builds **77 %** of it — the densest quarter in the city would have been
+   * excused from the check by a two-hectare floor, which is the shape of mistake rule 25 is
+   * about. A regio below the floor is named,
+   * counted and printed every run with its area, and `assertRegionsGraded` gates the count —
+   * so a third regio dropping out of the graded population is a failure and not a category.
+   */
+  const GRADE_FLOOR_M2 = 10000;
+  const BURIED_COVERAGE = 0.15;
+  const ungraded: { id: string; insetM2: number; blocks: number }[] = [];
+  for (const [id, v] of perRegion) {
+    if (v.insetM2 < GRADE_FLOOR_M2) {
+      ungraded.push({ id, insetM2: v.insetM2, blocks: v.blocks });
+      continue;
+    }
+    /*
+     * **Buried is a coverage floor now, not a building count, and the floor is external.**
+     *
+     * "Fewer than twenty buildings" was the right shape for seventeen rectangles of roughly one
+     * size. It is the wrong shape for ten regiones whose buildable ground on this frame runs
+     * from 0.3 to 49 hectares: twenty buildings is a full quarter for Regio IV and a rounding
+     * error for Regio VI. So the question is asked in the units the answer is wanted in —
+     * **roof over the ground between street lines** — and against the number `ROME-FABRIC.md`
+     * §4.4 check 4 takes from the AGEA 2012 orthophoto: the historic core is **60–70 %** built.
+     * Fifteen per cent is a quarter of that and is nowhere near a judgement call about quality;
+     * a regio under it has not been built at all.
+     *
+     * The old wording is kept to the word because `probe-fabric` G17 greps for it, and a check
+     * that goes dark is worse than one that fails (rule 13).
+     */
+    const cov = v.insetM2 > 0 ? v.roofM2 / v.insetM2 : 0;
+    if (cov < BURIED_COVERAGE) {
+      console.warn(
+        `[city] ${id} planned only ${v.plots} buildings from ${v.frontages} frontages — the quarter is buried`
+        + ` (${(cov * 100).toFixed(1)} % of its ${(v.insetM2 / 1e4).toFixed(2)} ha of ground between street lines,`
+        + ` against the orthophoto's 60-70 % and this floor's ${(BURIED_COVERAGE * 100).toFixed(0)} %)`
+      );
+    }
+  }
+  ungraded.sort((a, b) => a.id < b.id ? -1 : 1);
+  report.ungraded = ungraded;
+  if (ungraded.length) {
+    console.info(
+      `[city:rome] ${ungraded.length} regio(nes) the frame carries too little of to grade for `
+      + `burial, by name: ${ungraded.map((u) => `${u.id} ${u.blocks} block(s), ${(u.insetM2 / 1e4).toFixed(2)} ha buildable`).join('; ')}`
+      + ` — the floor is ${(GRADE_FLOOR_M2 / 1e4).toFixed(0)} ha`
     );
+  }
+  console.info(
+    `[city:rome] grid: ${report.faces} faces of the road graph — ${report.blocks} blocks,`
+    + ` ${report.plazas} plazas, ${report.pomerium} pomerium, ${report.field} field;`
+    + ` ${report.crossLanes} cross-lanes (${report.crossLaneKm.toFixed(1)} km);`
+    + ` block face p10/p50/p90 ${(report.faceAreaP10 / 1e4).toFixed(2)}/`
+    + `${(report.faceAreaP50 / 1e4).toFixed(2)}/${(report.faceAreaP90 / 1e4).toFixed(2)} ha;`
+    + ` ${plotCount} insulae. Footprints rejected: ${JSON.stringify(why)}.`
+    + ` Blocks that built nothing: ${report.emptyBlocks.map((e) => `${e.n} ${e.reason}`).join('; ') || 'none'}.`
+    + ` Rejected faces by reason: `
+    + report.rejects.map((r) => `${r.n} ${r.reason}`).join('; ')
+  );
+  console.info(
+    '[city:rome] grid by regio: '
+    + report.plotsByRegion.map((r) => `${r.id} ${r.blocks}b/${r.plots}p/${(r.coverage * 100).toFixed(0)}%`).join('  ')
+  );
+
+  // ---- planting -----------------------------------------------------------
+  // Courtyard trees inside, orchards and garden plots on the frayed margin — which is what
+  // actually made the edge of a Roman city, and it hides the transition to fields.
+  {
+    const trng = rng.fork('planting');
+    for (const b of plan.blocks) {
+      if (b.kind === 'pomerium' || b.kind === 'field') continue;
+      const n = Math.round(b.face.areaM2 * (b.horti ? 0.0016 : 0.00055) * (1.4 - b.region.density));
+      for (let i = 0; i < n; i++) {
+        const F = b.frame;
+        const u = trng.range(-1, 1);
+        const v = trng.range(-1, 1);
+        const wx = F.x(u * 90, v * 60);
+        const wz = F.z(u * 90, v * 60);
+        if (wz < wallZAt(wx) + 14) continue;
+        if (urbanGroundMask(wx, wz, wallZAt) < 0.15) continue;
+        if (keepOut.blocked(wx, wz, 5)) continue;
+        if (placed.hits(wx, wz, 3, 3, 0)) continue;
+        if (nearLane(lanes, wx, wz, 3)) continue;
+        trees.push({
+          x: wx, z: wz,
+          kind: trng.pick(['cypress', 'pine', 'umbrella'] as const),
+          scale: trng.range(0.75, 1.25),
+        });
+      }
+    }
+  }
+
+  /**
+   * **Chunks are a draw-call budget before they are a quality setting**, and the grouping is
+   * no longer by quarter because there are no quarters.
+   *
+   * A chunk at full detail is four meshes — stucco, roof, stone, timber — and therefore four
+   * draw calls plus their shadow passes. Six groups at full detail is 24 calls before a single
+   * monument, against a 220 whole-frame cap. So the city is cut into **six bands, two columns
+   * by three rows, aligned to the wall rather than to the quarters**, because the camera that
+   * matters looks *along* the wall from above it or *at* it from the field: a band parallel to
+   * the curtain is either wholly in frame or wholly out, which is what makes an LOD switch
+   * worth having. The switch distance is measured to a chunk's surface, so a 1,400 m band is
+   * never far away by that measure however small the number; merging is the only lever that
+   * actually removes a call.
+   *
+   * `city-gate-w` keeps the tightest switch and the only shadow pass: it is the quarter
+   * directly behind the Porta Flaminia and the player is looking at it from thirty metres.
+   */
+  const bandOf = (b: CityBlock): string => {
+    const col = b.face.cx < 300 ? 'w' : 'e';
+    const row = b.face.cz < 720 ? 'gate' : b.face.cz < 980 ? 'mid' : 'far';
+    return `city-${row}-${col}`;
+  };
+  const groups = new Map<string, CityBlock[]>();
+  for (const b of plan.blocks) {
+    if (b.kind === 'field' || b.kind === 'pomerium') continue;
+    const k = bandOf(b);
+    const list = groups.get(k);
+    if (list) list.push(b);
+    else groups.set(k, [b]);
   }
 
   const chunks: CityChunkSpec[] = [];
-  for (const grp of groups) {
-    const specs = DISTRICTS.filter((d) => grp.ids.includes(d.id));
-    if (!specs.length) continue;
+  for (const [name, list] of [...groups.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
     let cx = 0;
     let cz = 0;
-    for (const d of specs) {
-      cx += d.x;
-      cz += d.z;
+    for (const b of list) {
+      cx += b.face.cx;
+      cz += b.face.cz;
     }
-    cx /= specs.length;
-    cz /= specs.length;
+    cx /= list.length;
+    cz /= list.length;
     let radius = 60;
-    for (const d of specs) radius = Math.max(radius, Math.sqrt((d.x - cx) * (d.x - cx) + (d.z - cz) * (d.z - cz)) + Math.sqrt(d.hw * d.hw + d.hd * d.hd));
+    for (const b of list) {
+      for (const p of b.face.ring) {
+        const d = Math.sqrt((p.x - cx) * (p.x - cx) + (p.z - cz) * (p.z - cz));
+        if (d > radius) radius = d;
+      }
+    }
+    const near = name === 'city-gate-w';
     chunks.push({
-      name: grp.name,
+      name,
       cx,
       cz,
       radius,
-      castShadow: grp.name === 'city-gate',
-      lodSwitch: grp.lod,
+      castShadow: near,
+      lodSwitch: near ? [260, 1200] : [280, 1e9],
       build: (batch, detail) => {
         batch.setUvOrigin(cx, 0, cz);
-        for (const d of specs) {
-          if (detail >= 1) buildDistrictFloor(batch, d, heightAt, wallZAt);
-          const plots = planned.get(d.id) ?? [];
+        for (const b of list) {
+          if (detail >= 1) buildBlockFloor(batch, b, heightAt, wallZAt);
+          const plots = byBlock.get(b.index) ?? [];
           for (let i = 0; i < plots.length; i++) {
-            buildBuilding(batch, detail, plots[i], d, heightAt, new Rng(Rng.hashString(`${d.id}:${i}`)));
+            buildBuilding(batch, detail, plots[i], b.region, heightAt, new Rng(Rng.hashString(`${b.index}:${i}`)));
           }
         }
       },
     });
   }
 
-  // The whole street network in one chunk: carriageways, kerbs, footways and the
-  // colonnades of the processional ways. Two materials, so two draw calls for every
-  // paved surface in Rome.
+  // The whole street network in one chunk: carriageways, kerbs, footways and the colonnades
+  // of the processional ways. Two materials, so two draw calls for every paved surface in Rome.
   chunks.push({
     name: 'streets',
     cx: 0,
@@ -1035,7 +1740,156 @@ export function buildDistricts(
     },
   });
 
-  return { chunks, trees, footprints, lanes };
+  return { chunks, trees, footprints, lanes, report };
+}
+
+/**
+ * **The deliberately asymmetric case, which is the only way this sign can be checked.**
+ *
+ * `MAP-METHOD.md` rule 24, in full because it was paid for here: *"a symmetric input hides an
+ * asymmetric bug, and replacing it is what reveals the bug… Every terrace in Rome was built to
+ * the reflection of its own street, off by up to 14.6°, since the lattice was written. Neither
+ * the fabric gate nor the Carthage control could see it, for the same reason: Carthage's
+ * blocks are axis-aligned, and an axis-aligned control is symmetric under reflection too."*
+ *
+ * So this asks `blockFrame` for a face whose long axis is at **+30°**, and for its mirror at
+ * **−30°**, and requires that the plot rotation it hands back draws the long axis along the
+ * bearing it was given. Three independent things have to be right at once and each of them has
+ * been wrong in this file:
+ *
+ *  - `faceBearing` must return `atan2(dz, dx)` of the long edge, not its negation;
+ *  - `Plot.rot` must be `−bearing`, because `makeRotationY(rot)` sends local +X to
+ *    `(cos rot, −sin rot)`;
+ *  - the frame's own `u` axis must be `(cos bearing, sin bearing)`, so the terrace is laid
+ *    along the same line the plot is drawn along.
+ *
+ * A mirrored implementation passes every one of these at 0° and 45° and fails at 30°, which is
+ * exactly why 0 and 45 are not in the list. `drawnDeg` is computed the way the *renderer*
+ * computes it, from `makeRotationY`, rather than from the sign convention this file believes
+ * in — otherwise it would be the check comparing something against itself.
+ */
+export function assertBlockBearingSign(): {
+  ok: boolean;
+  cases: { inputDeg: number; bearingDeg: number; rotDeg: number; drawnDeg: number; ok: boolean }[];
+  worstDeg: number;
+} {
+  const fold = (rad: number): number => {
+    let d = (Math.abs(rad) * 180) / Math.PI % 90;
+    if (d > 45) d = 90 - d;
+    return d;
+  };
+  const cases = [30, -30, 12, -12, 75, -75, 3].map((inputDeg) => {
+    const th = (inputDeg * Math.PI) / 180;
+    const cs = Math.cos(th);
+    const sn = Math.sin(th);
+    // A 240 x 80 rectangle whose long axis is at `th`, so "longest edge" is unambiguous.
+    const ring: Pt[] = ([[-120, -40], [120, -40], [120, 40], [-120, 40]] as const)
+      .map(([u, v]) => ({ x: u * cs - v * sn, z: u * sn + v * cs }));
+    const F = blockFrame(ring, 0, 0);
+    // The renderer's own reading: `makeRotationY(rot)` sends local +X to (cos rot, -sin rot).
+    const drawn = Math.atan2(-Math.sin(F.rot), Math.cos(F.rot));
+    // ...and the frame's u axis, which the terrace is laid along, must be the same line.
+    const uAxis = Math.atan2(F.z(1, 0) - F.z(0, 0), F.x(1, 0) - F.x(0, 0));
+    const bad = Math.max(fold(F.bearing - th), fold(drawn - th), fold(uAxis - th));
+    return {
+      inputDeg,
+      bearingDeg: (F.bearing * 180) / Math.PI,
+      rotDeg: (F.rot * 180) / Math.PI,
+      drawnDeg: (drawn * 180) / Math.PI,
+      ok: bad < 1e-6,
+    };
+  });
+  // And the mirror relation itself: +30 and -30 must give exactly opposite rotations.
+  const pairOk = Math.abs(cases[0].rotDeg + cases[1].rotDeg) < 1e-9
+    && Math.abs(cases[2].rotDeg + cases[3].rotDeg) < 1e-9
+    && Math.abs(cases[4].rotDeg + cases[5].rotDeg) < 1e-9;
+  const worst = Math.max(...cases.map((c) => fold(((c.drawnDeg - c.inputDeg) * Math.PI) / 180)));
+  return { ok: cases.every((c) => c.ok) && pairOk, cases, worstDeg: worst };
+}
+
+/**
+ * **Are the blocks actually faces of the graph?** The check that says whether §4.3 happened.
+ *
+ * Two questions, and the second is the one that can go wrong quietly:
+ *
+ *  1. **Every plot's rotation is its block's frame rotation**, which is the bearing of a street.
+ *     Zero by construction — `planBlock` writes `F.rot` into every plot — so this is a guard on
+ *     the construction rather than a measurement, and it is cheap.
+ *  2. **No plot straddles a street centreline.** The graph's own edges are the centrelines, and
+ *     a plot is cut from a polygon that was inset from them, so the answer must be none. It can
+ *     fail: `spanAt` takes the widest span of a re-entrant polygon, the half-plane inset is only
+ *     conservative for a *convex* face, and either could put a rectangle across a lane. This is
+ *     the boot-time half of `probe-fabric` G4/G5, asked of the fabric instead of the monuments.
+ *
+ * The reference is the planar graph, which is upstream of the block generator and has never
+ * heard of a plot — `MAP-METHOD.md` rule 6.
+ */
+export function assertBlocksAreFaces(
+  footprints: readonly { x: number; z: number; hw: number; hd: number; rot: number }[]
+): { ok: boolean; plots: number; straddling: number; worstDepthM: number; worst: string[] } {
+  const plan = cityPlan();
+  const CELL = 48;
+  const cells = new Map<number, number[]>();
+  const key = (ix: number, iz: number): number => ((ix + 4096) << 13) | (iz + 4096);
+  const g = plan.graph;
+  for (let i = 0; i < g.edges.length; i++) {
+    const a = g.nodes[g.edges[i].a];
+    const b = g.nodes[g.edges[i].b];
+    const x0 = Math.floor(Math.min(a.x, b.x) / CELL);
+    const x1 = Math.floor(Math.max(a.x, b.x) / CELL);
+    const z0 = Math.floor(Math.min(a.z, b.z) / CELL);
+    const z1 = Math.floor(Math.max(a.z, b.z) / CELL);
+    for (let iz = z0; iz <= z1; iz++) {
+      for (let ix = x0; ix <= x1; ix++) {
+        const k = key(ix, iz);
+        const list = cells.get(k);
+        if (list) list.push(i);
+        else cells.set(k, [i]);
+      }
+    }
+  }
+  let straddling = 0;
+  let worst = 0;
+  const names: string[] = [];
+  for (const f of footprints) {
+    const cs = Math.cos(f.rot);
+    const sn = Math.sin(f.rot);
+    // The plot's own axes, in the plan convention: +X -> (cos, -sin), +Z -> (sin, cos).
+    const inside = (px: number, pz: number): number => {
+      const dx = px - f.x;
+      const dz = pz - f.z;
+      const u = dx * cs - dz * sn;
+      const v = dx * sn + dz * cs;
+      return Math.min(f.hw - Math.abs(u), f.hd - Math.abs(v));
+    };
+    const r = Math.sqrt(f.hw * f.hw + f.hd * f.hd);
+    const seen = new Set<number>();
+    for (let iz = Math.floor((f.z - r) / CELL); iz <= Math.floor((f.z + r) / CELL); iz++) {
+      for (let ix = Math.floor((f.x - r) / CELL); ix <= Math.floor((f.x + r) / CELL); ix++) {
+        for (const ei of cells.get(key(ix, iz)) ?? []) {
+          if (seen.has(ei)) continue;
+          seen.add(ei);
+          const a = g.nodes[g.edges[ei].a];
+          const b = g.nodes[g.edges[ei].b];
+          // Sample the segment; a centreline crossing a plot puts a sample inside it.
+          const len = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.z - a.z) * (b.z - a.z));
+          const n = Math.max(2, Math.min(64, Math.round(len / 2)));
+          for (let i = 0; i <= n; i++) {
+            const d = inside(a.x + ((b.x - a.x) * i) / n, a.z + ((b.z - a.z) * i) / n);
+            if (d > 0.05 && d > worst) worst = d;
+            if (d > 0.05) {
+              straddling++;
+              if (names.length < 6) {
+                names.push(`plot at (${f.x.toFixed(0)}, ${f.z.toFixed(0)}) over an edge, ${d.toFixed(2)} m in`);
+              }
+              i = n + 1;
+            }
+          }
+        }
+      }
+    }
+  }
+  return { ok: straddling === 0, plots: footprints.length, straddling, worstDepthM: worst, worst: names };
 }
 
 /** Distance test against every lane centreline, for keeping planting out of the road. */
@@ -1058,70 +1912,95 @@ function nearLane(lanes: readonly Lane[], x: number, z: number, pad: number): bo
 }
 
 /**
- * The urban floor: the trodden ground the whole quarter stands on.
+ * The urban floor: the trodden ground the whole block stands on, out to the street lines.
  *
- * **The quilt was here, and it is worth being precise about what was wrong with it**,
- * because the obvious fix is to delete it and that is also wrong. The old version laid a
- * 22 × 22 grid of 25 m quads over each district and chose each cell's *base colour* from a
- * hash of its indices — basalt, dust or dirt, three unrelated tones — then multiplied by a
- * second hash over a ±22 % range. Adjacent cells therefore had no relationship to each
- * other or to anything else in the scene, and at 25 m a cell is about the size of a house,
- * so from the strategic camera it read as a chequerboard: *"not so much like streets but a
- * patched quilt"*.
+ * **The quilt was here, and it is worth being precise about what was wrong with it**, because
+ * the obvious fix is to delete it and that is also wrong. The old version laid a 22 × 22 grid
+ * of 25 m quads over each district *rectangle* and chose each cell's base colour from a hash
+ * of its indices — basalt, dust or dirt, three unrelated tones. Adjacent cells had no
+ * relationship to each other or to anything in the scene, and at 25 m a cell is about the size
+ * of a house, so from the strategic camera it read as a chequerboard: *"not so much like
+ * streets but a patched quilt"*.
  *
- * Deleting it is worse. The first attempt at this rebuild paved only the streets and the
- * block interiors, and the terrain's grass came through everywhere else — Rome as a set of
- * terraces standing in a meadow. A city has a floor.
+ * Deleting it is worse. The first attempt at this rebuild paved only the streets and the block
+ * interiors, and the terrain's grass came through everywhere else — Rome as a set of terraces
+ * standing in a meadow. A city has a floor.
  *
- * So: same coverage, but the variation is **smooth and low-contrast** rather than per-cell
- * and random. One base tone drifting between beaten earth and dust over a scale of two
- * hundred metres, ±7 % rather than ±22 %, from two incommensurate sinusoids instead of a
- * hash. It reads as ground that has been walked on for eight hundred years, which is what
- * it is, and nothing in it competes with the paving laid on top.
+ * So: one base tone drifting between beaten earth and dust over a scale of two hundred metres,
+ * ±7 % rather than ±22 %, from two incommensurate sinusoids instead of a hash — and now laid
+ * **per face**, so the floor's own boundary is a street rather than a rectangle. That is the
+ * part the rectangles could not do: the edge of the paving is the edge of the block.
+ *
+ * **This surface is the back of the block, and it has to be the darkest thing in the frame or
+ * there is no street.** The hue was corrected once already, from three randomly-tinted tones
+ * per cell to one smooth grey drift, on the strength of a blind critic's measurement that the
+ * real plates are ~30 % achromatic while this was 1.2 %. The grey was right; the *value* was
+ * not, and it is why the plan still read as a quilt afterwards. In an orthophoto of Rome the
+ * light achromatic pixels are roofs, render and pavement — never the ground between buildings,
+ * which is the darkest thing in the picture because it is a yard in the shade of a five-storey
+ * insula. So the bright achromatic budget belongs to the travertine footways in `buildWays`,
+ * which are continuous lines and therefore *draw* the network, and this is what it physically
+ * is: beaten earth and ash between party walls, dark and warm.
  */
-function buildDistrictFloor(
+function buildBlockFloor(
   batch: Batch,
-  d: DistrictSpec,
+  b: CityBlock,
   heightAt: Ground,
   wallZAt: (x: number) => number
 ): void {
+  if (b.urban < 0.08) return;
   const st = batch.s('stone');
-  const F = districtFrame(d);
-  const grow = 1 + d.fray * 0.34;
-  const HU = d.hw * grow;
-  const HV = d.hd * grow;
-  const n = 24;
+  const F = b.frame;
+  const ring = b.face.ring;
+  const uv = ring.map((p) => ({ u: F.u(p.x, p.z), v: F.v(p.x, p.z) }));
+  let u0 = Infinity;
+  let u1 = -Infinity;
+  let v0 = Infinity;
+  let v1 = -Infinity;
+  for (const p of uv) {
+    if (p.u < u0) u0 = p.u;
+    if (p.u > u1) u1 = p.u;
+    if (p.v < v0) v0 = p.v;
+    if (p.v > v1) v1 = p.v;
+  }
+  const STEP = 9;
+  const nu = Math.max(1, Math.min(48, Math.round((u1 - u0) / STEP)));
+  const nv = Math.max(1, Math.min(48, Math.round((v1 - v0) / STEP)));
   const p0 = new THREE.Vector3();
   const p1 = new THREE.Vector3();
   const p2 = new THREE.Vector3();
   const p3 = new THREE.Vector3();
   const nrm = new THREE.Vector3(0, 1, 0);
   const c = new THREE.Color();
-  const seed = Rng.hashString(d.id) & 0xff;
+  const seed = Rng.hashString(b.region.id) & 0xff;
   const ph1 = hash2(seed, 1, 0x71) * Math.PI * 2;
   const ph2 = hash2(seed, 2, 0x72) * Math.PI * 2;
-
+  const inRing = (x: number, z: number): boolean => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      if (ring[i].z > z !== ring[j].z > z) {
+        const t = (z - ring[i].z) / (ring[j].z - ring[i].z);
+        if (x < ring[i].x + t * (ring[j].x - ring[i].x)) inside = !inside;
+      }
+    }
+    return inside;
+  };
   const at = (u: number, v: number, out: THREE.Vector3): boolean => {
     const x = F.x(u, v);
     const z = F.z(u, v);
     out.set(x, heightAt(x, z) + 0.02, z);
     return z > wallZAt(x) + 8;
   };
-
-  for (let j = 0; j < n; j++) {
-    for (let i = 0; i < n; i++) {
-      const u0 = lerp(-HU, HU, i / n);
-      const u1 = lerp(-HU, HU, (i + 1) / n);
-      const v0 = lerp(-HV, HV, j / n);
-      const v1 = lerp(-HV, HV, (j + 1) / n);
-      const uc = (u0 + u1) * 0.5;
-      const vc = (v0 + v1) * 0.5;
-      const mask = districtMask(d, uc, vc);
-      // Fades out through the frayed margin instead of stopping at a rectangle.
-      if (mask < 0.09) continue;
-      if (!(at(u0, v0, p0) && at(u1, v0, p1) && at(u1, v1, p2) && at(u0, v1, p3))) continue;
-      // Two incommensurate waves, wavelengths ~200 m and ~90 m. Smooth, so no cell edge
-      // is ever a tonal boundary.
+  for (let j = 0; j < nv; j++) {
+    for (let i = 0; i < nu; i++) {
+      const ua = lerp(u0, u1, i / nu);
+      const ub = lerp(u0, u1, (i + 1) / nu);
+      const va = lerp(v0, v1, j / nv);
+      const vb = lerp(v0, v1, (j + 1) / nv);
+      const uc = (ua + ub) * 0.5;
+      const vc = (va + vb) * 0.5;
+      if (!inRing(F.x(uc, vc), F.z(uc, vc))) continue;
+      if (!(at(ua, va, p0) && at(ub, va, p1) && at(ub, vb, p2) && at(ua, vb, p3))) continue;
       const w = clamp(
         0.5 +
           0.32 * Math.sin(uc * 0.031 + ph1) * Math.cos(vc * 0.027 + ph2) +
@@ -1129,60 +2008,15 @@ function buildDistrictFloor(
         0,
         1
       );
-      /**
-       * **This surface is the back of the block, and it has to be the darkest thing in
-       * the frame or there is no street.**
-       *
-       * The hue was already corrected once, from three randomly-tinted tones per 25 m cell —
-       * the literal quilt — to one smooth grey drift, on the strength of a blind critic's
-       * measurement that the real plates are ~30 % achromatic and 6–10 % above 0.80 value
-       * while this was 1.2 % achromatic with nothing above 0.80. The grey was right. The
-       * *value* was not, and it is why the plan still read as a quilt afterwards: raising
-       * the floor to peperino-drifting-to-travertine put it within a few per cent of the
-       * carriageway laid on top of it, so a road stopped being visible at all and the whole
-       * city became one mottled grey field with roofs sitting on it.
-       *
-       * The critic's statistic was about the *frame*, and in an orthophoto of Rome the light
-       * achromatic pixels are roofs, render and pavement — never the ground between
-       * buildings, which is the darkest thing in the picture because it is a yard in the
-       * shade of a five-storey insula. So the bright achromatic budget now belongs to the
-       * travertine footways in `buildWays`, which are continuous lines and therefore *draw*
-       * the network, and this reverts to what it physically is: beaten earth and ash
-       * between party walls, dark and warm, with the same smooth low-contrast drift.
-       */
-      /*
-       * **The value was wrong, and this section's own paragraph above says by how much.**
-       * It ends *"this reverts to what it physically is: beaten earth and ash between party
-       * walls, dark and warm"* and then mixes 0.34–0.64 of the way to `terraDirty`
-       * (0xa58462) and multiplies by up to 1.02. That is a pale dusty tan, and once the
-       * sward stopped growing over it — 22 August 2026 — it became the largest and
-       * brightest surface in every eye-level frame in Rome. `r-eye-quarter-east` came back
-       * as a beach.
-       *
-       * A yard in the shade of a five-storey insula is the darkest thing in an orthophoto
-       * of Rome, which is the argument the paragraph above already makes and did not carry
-       * through into the numbers. 0.16–0.42 toward `terraDirty` and a 0.58–0.74 multiplier
-       * puts it at roughly a third of the travertine footway's value, so the footway draws
-       * the street network as a light line on a dark ground, which is what it is for.
-       */
       c.copy(PAL.basalt).lerp(PAL.terraDirty, 0.16 + w * 0.26).multiplyScalar(0.58 + w * 0.16);
-      // Toward the margin it becomes the orchards and garden plots that actually ended a
+      // Toward the country it becomes the orchards and garden plots that actually ended a
       // Roman city, so the transition to ploughed field is a fade and not a seam.
-      c.lerp(PAL.terraDirty, (1 - mask) * 0.62);
+      c.lerp(PAL.terraDirty, (1 - b.urban) * 0.62);
       st.quadN(nrm, p0, p1, p2, p3, c);
     }
   }
 }
 
-/**
- * Pick a paint colour. Roman street façades were mostly red and ochre.
- *
- * Lime white is down from a fifth of frontages to an eighth. It is the least saturated entry
- * by a wide margin, and at 20 % it was the reason a district read grey from a strategic
- * camera even though two thirds of its buildings were painted: the white ones cluster and the
- * eye averages them. The rubric is explicit that the everyday palette is reds and ochres with
- * cheap lime white as the *minority* note, and Ostia bears that out.
- */
 function paintColour(rng: Rng): THREE.Color {
   const base = rng.pickWeighted(
     [PAL.pompeianRed, PAL.ochre, PAL.limeWhite, PAL.ochreDeep, PAL.terraDirty, PAL.romanRed],
@@ -1200,7 +2034,7 @@ function roofColour(rng: Rng): THREE.Color {
 // One building
 // ---------------------------------------------------------------------------
 
-function buildBuilding(batch: Batch, detail: number, plot: Plot, d: DistrictSpec, heightAt: Ground, rng: Rng): void {
+function buildBuilding(batch: Batch, detail: number, plot: Plot, d: Character, heightAt: Ground, rng: Rng): void {
   const g = heightAt(plot.x, plot.z);
   const m = new THREE.Matrix4().makeRotationY(plot.rot).setPosition(plot.x, 0, plot.z);
   const stucco = batch.s('stucco');

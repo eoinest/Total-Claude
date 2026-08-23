@@ -614,211 +614,36 @@ export const AQUEDUCTS: AqueductRun[] = AQUEDUCT_PLAN.map((a) => ({
   }),
 }));
 
-export interface DistrictSpec {
-  id: string;
-  /** Centre and half-extents of the region to fill with insulae. */
-  x: number;
-  z: number;
-  hw: number;
-  hd: number;
-  rot: number;
-  /** Storeys, low..high. Augustus capped insulae at 70 Roman feet (20.7 m). */
-  minFloors: number;
-  maxFloors: number;
-  /** 0 = spacious, 1 = packed shoulder to shoulder. */
-  density: number;
-  /** Weight of grand houses / porticoes among the blocks. */
-  grandeur: number;
-  /**
-   * How ragged the district's outer edge is, 0..1. The fabric of a real city fades into
-   * gardens, yards and orchards; a rectangle of insulae ending in a straight line
-   * against ploughed fields is the single most artificial thing a procedural city does.
-   */
-  fray: number;
-}
-
 /**
- * Insula districts, one per *regio* of the real city, projected the same way as the
- * monuments. Half-extents are scaled by the map as well, because a district is an area
- * of fabric rather than a building: compressing it is correct.
+ * **`DistrictSpec`, `DISTRICT_PLAN` and `DISTRICTS` are deleted here, and the deletion is the
+ * phase.** `docs/ROME-FABRIC.md` §5 phase 4; `src/city/rome/regions.ts` is what replaces them.
  *
- * Densities and storey counts follow the ancient character of each quarter — the Subura
- * was the notorious tenement valley, the Aventine and Caelian were quiet and grand, the
- * Campus Martius monumental with dense fabric between the monuments.
+ * Seventeen inflated rectangles, each with its own rotation, its own superellipse mask and its
+ * own spine-and-rib lattice. `probe-fabric` measured what they cost, and none of it is
+ * recoverable by tuning:
+ *
+ *  - **G18: 82 overlapping pairs, 4.71 km² of double-claimed ground.** This file's own comment
+ *    argued for it — *"a district costs nothing where it overlaps a neighbour (the plot grid
+ *    gives the ground to whichever quarter is planned first)"*. Ground allocated by planning
+ *    order is `MAP-METHOD.md` rule 8's definition of a quilt.
+ *  - **G19: 1.46× the available ground claimed and only 0.60× of it covered.** Two fifths of
+ *    the land inside the Aurelian circuit was no district's job, so nothing was ever built
+ *    there however the generator was tuned.
+ *  - **G20: a floor of 6.86°** on block-to-street orientation even with the per-row correction
+ *    at zero, because a block in one quarter was routinely nearest a *different* quarter's
+ *    lane (§10.5's sweep).
+ *  - **G17: two quarters buried**, `emporium` and `forum-boarium`, both `eastBank` rows whose
+ *    `x` was overridden 300 m from their surveyed position and whose `z` was clamped to the +Z
+ *    edge, so half of each lay off the map whatever angle it took.
+ *
+ * What replaces them is not a better set of rectangles. A *regio* carries `density`,
+ * `minFloors`, `maxFloors`, `grandeur`, `fray` and a terrain class and **no extent at all**;
+ * the extent of a block is a face of the road planar graph in `src/city/rome/graph.ts`. The
+ * two `eastBank`/`farBank` overrides go with them: the ground along the modelled channel is
+ * claimed by Regio IX and Regio XIV because the river is their shared boundary, not because a
+ * rectangle was dragged onto the water.
  */
-const DISTRICT_PLAN: {
-  id: string;
-  /** Survey-frame centre and half-extents, metres. */
-  e: number;
-  n: number;
-  he: number;
-  hn: number;
-  minFloors: number;
-  maxFloors: number;
-  density: number;
-  grandeur: number;
-  fray: number;
-  /**
-   * Pinned to the Tiber's **east** bank rather than to the projected position.
-   *
-   * The projection cannot put both the Porta Flaminia and the Tiber where the terrain has
-   * them: the gate is fixed at x ≈ 72 because that is where the Via Flaminia crosses the
-   * crest, the modelled channel runs at x ≈ −580 to −900, and in the real city those two are
-   * only 280 m apart, not 700. So the affine map leaves a 640 m strip of empty ground along
-   * the whole east bank — a third of the wall's frontage, and the most conspicuous hole in
-   * the plan seen from above. These quarters are what actually occupied that ground: the
-   * Navalia and the Trigarium on the Campus Martius shore, the Forum Boarium and the
-   * Velabrum below the Capitol, the Emporium's warehouses under the Aventine. Because a
-   * district is an *area* of fabric rather than a surveyed building, moving it to the water
-   * costs nothing the survey can measure and gains the whole riverside.
-   */
-  eastBank?: boolean;
-}[] = [
-  // Campus Martius, north to south along the Via Lata.
-  { id: 'campus-flaminia', e: -420, n: 1780, he: 330, hn: 250, minFloors: 2, maxFloors: 4, density: 0.74, grandeur: 0.12, fray: 0.55 },
-  { id: 'campus-augusti', e: -430, n: 1250, he: 320, hn: 230, minFloors: 3, maxFloors: 5, density: 0.84, grandeur: 0.2, fray: 0.35 },
-  { id: 'campus-medius', e: -520, n: 700, he: 340, hn: 260, minFloors: 3, maxFloors: 5, density: 0.9, grandeur: 0.22, fray: 0.3 },
-  { id: 'campus-flaminius', e: -520, n: 160, he: 330, hn: 250, minFloors: 3, maxFloors: 5, density: 0.86, grandeur: 0.24, fray: 0.4 },
-  // The Via Lata's east side, under the Quirinal scarp.
-  { id: 'via-lata', e: -80, n: 1150, he: 260, hn: 420, minFloors: 3, maxFloors: 5, density: 0.8, grandeur: 0.16, fray: 0.35 },
-  { id: 'quirinal', e: 430, n: 900, he: 320, hn: 300, minFloors: 2, maxFloors: 4, density: 0.66, grandeur: 0.34, fray: 0.45 },
-  { id: 'viminal', e: 950, n: 700, he: 330, hn: 300, minFloors: 2, maxFloors: 4, density: 0.66, grandeur: 0.22, fray: 0.5 },
-  // The Subura: the tenement valley between the Quirinal, Viminal and Esquiline.
-  { id: 'subura', e: 560, n: 280, he: 250, hn: 220, minFloors: 4, maxFloors: 6, density: 0.94, grandeur: 0.04, fray: 0.2 },
-  { id: 'esquiline', e: 1330, n: 280, he: 340, hn: 330, minFloors: 2, maxFloors: 4, density: 0.6, grandeur: 0.26, fray: 0.6 },
-  // The Velabrum and Forum Boarium, between the Capitol, the river and the Palatine.
-  { id: 'velabrum', e: -120, n: -300, he: 250, hn: 200, minFloors: 3, maxFloors: 5, density: 0.86, grandeur: 0.14, fray: 0.35 },
-  { id: 'caelian', e: 1020, n: -600, he: 320, hn: 250, minFloors: 2, maxFloors: 4, density: 0.56, grandeur: 0.3, fray: 0.55 },
-  { id: 'aventine', e: -300, n: -1180, he: 280, hn: 230, minFloors: 2, maxFloors: 4, density: 0.56, grandeur: 0.36, fray: 0.55 },
-  // The Emporium: the river port under the Aventine, all warehouses. On the water by
-  // definition — the *horrea* backed onto the quays.
-  { id: 'emporium', e: -560, n: -900, he: 200, hn: 260, minFloors: 1, maxFloors: 3, density: 0.8, grandeur: 0.06, fray: 0.45, eastBank: true },
-  // The Tiber shore of the Campus Martius: the Navalia (the naval sheds), the Trigarium
-  // exercise ground and the Tarentum, from the Pons Neronianus up to the Mausoleum. Low,
-  // loose and workaday — sheds and yards, not tenements.
-  { id: 'ripa-campi', e: -800, n: 900, he: 220, hn: 420, minFloors: 1, maxFloors: 3, density: 0.62, grandeur: 0.06, fray: 0.6, eastBank: true },
-  // The Forum Boarium and the Portus Tiberinus below the Capitol: the cattle market, the
-  // round temple of Hercules Victor, the Pons Aemilius and the river gate.
-  { id: 'forum-boarium', e: -430, n: -320, he: 200, hn: 250, minFloors: 2, maxFloors: 4, density: 0.82, grandeur: 0.12, fray: 0.4, eastBank: true },
-  // Trans Tiberim, on the far bank — placed against the terrain's river below.
-  { id: 'trastevere', e: -1150, n: 100, he: 240, hn: 420, minFloors: 2, maxFloors: 4, density: 0.72, grandeur: 0.1, fray: 0.5 },
-  { id: 'vaticanus', e: -1500, n: 1100, he: 260, hn: 300, minFloors: 1, maxFloors: 3, density: 0.4, grandeur: 0.18, fray: 0.7 },
-];
 
-export const DISTRICTS: DistrictSpec[] = DISTRICT_PLAN.map((d) => {
-  const w = worldOf(d.e, d.n);
-  // Districts are *inflated* well beyond the compressed survey extent, for two reasons.
-  // A monument keeps its true size while its position compresses, so the overlap resolver
-  // spreads the monumental core over far more ground than the scaled plan asked for and the
-  // gaps between monuments are correspondingly wider. And the fabric is what fills those
-  // gaps: the generator rejects any plot that hits a keep-out, so an over-large district
-  // costs nothing but a bald one leaves a quarter of the city as empty field. The first
-  // version of this file scaled the districts by KX and KZ like the positions, and produced
-  // 256 insulae for the whole of Rome.
-  // Measured with the land audit in `tools/scratch/land-audit.mjs`: at 1.72 / 2.95 the
-  // seventeen quarters between them claimed only 77 % of the ground inside the circuit, and
-  // the missing 23 % — 570,000 m², most of it the eastern hills behind the Esquiline and the
-  // Caelian — was simply not any district's job to fill, so nothing ever built there however
-  // the generator was tuned. A district costs nothing where it overlaps a neighbour (the
-  // plot grid gives the ground to whichever quarter is planned first) and costs nothing where
-  // it overlaps a monument or a street (the keep-out map rejects it), so over-covering is the
-  // cheap error and under-covering is the expensive one.
-  //
-  // **The depth factor is a world scale now, not a multiple of `KZ`, and that is a hold rather
-  // than a fix.** `ROME-FABRIC.md` §2.3 measures this pair of lines as fault 2: the seventeen
-  // districts claim **266 %** of the ground inside the circuit, with 79 overlapping pairs and
-  // 5.18 km² double-claimed, and *"a district costs nothing where it overlaps a neighbour"* is
-  // the quilt in the file's own words. §4.3 deletes `DISTRICT_PLAN` outright in phase 5 and
-  // replaces it with the fourteen Augustan regions as a partition.
-  //
-  // Phase 1 raised `KZ` from 0.222 to 0.35. Written as `KZ * 3.5` this line would have made
-  // every district **57.7 % deeper** and pushed the over-claim past 350 % as a side effect of a
-  // projection change — growing a fault a later phase deletes, on a map the owner is about to
-  // review. `0.222 * 3.5 = 0.777` is the world scale it has actually had, so it is written as
-  // that and the districts do not move. **Do not re-couple this to `KZ` to make it look
-  // tidier**; the coupling was never meaningful, which is exactly why the number could be read
-  // off and pinned.
-  const hw = Math.max(150, d.he * KX * 2.05);
-  const hd = Math.max(120, d.hn * 0.777);
-  let x = w.x;
-  let z = clamp(w.z, CITY_Z_MIN(w.x) + hd + 6, CITY_Z_MAX);
-  const farBank = d.id === 'trastevere' || d.id === 'vaticanus';
-  if (farBank) {
-    x = FAR_BANK(z, 60 + hw);
-  } else if (d.eastBank) {
-    x = EAST_BANK(z) + 16 + hw;
-  } else {
-    // The projected position, full stop. This used to add `nearbyDrift` — the inverse-square
-    // mean displacement the overlap resolver had applied to the monuments nearest this point —
-    // so that a quarter followed the buildings it was named after wherever the solver had
-    // shoved them. With the resolver gone the monuments are at their surveyed positions, so a
-    // district authored against the projection is already beside its own quarter and the whole
-    // correction is identically zero. Deleted rather than left returning zero: a field whose
-    // only job was to track a solver is a second copy of that solver's error.
-    x = Math.max(w.x, EAST_BANK(z) + 20 + hw);
-    z = w.z;
-  }
-  /**
-   * **Grain, and this is the line `MAP-METHOD.md` rule 9 was written about.**
-   *
-   * It used to read `(hash2(round(d.e), round(d.n), 0x5c1) − 0.5) * 0.7` — every quarter's
-   * whole lattice rotated by a hash, ±20°, with the comment above it arguing that the grain
-   * change was "free". It is not free and it was not grain: two blocks either side of an
-   * invisible district boundary sat at different angles with a **random** offset, which is the
-   * definition of a quilt. `probe-fabric` measured it at G20 median **9.17°** off the nearest
-   * street against Carthage's 0.00°, and at G21 **17–21 %** of neighbouring blocks rotating
-   * more than 15° across a 40 m gap.
-   *
-   * The reasoning it replaced was not wrong about the observation — the orthophoto really does
-   * show Rome's grain holding over 150–400 m patches and then rotating 15–40°. It was wrong
-   * about the *cause*. Real grain rotates because the streets do. So the rotation now comes
-   * from `wayBearingAt`, the road network's own bearing field, sampled at the quarter's
-   * centre: the patches are still 150–400 m and the rotations between them are still real,
-   * but every one of them is now the angle of a street somebody surveyed off a plate.
-   *
-   * The quarters that were furthest from a ranked way — Trastevere, the Vaticanus — move the
-   * most, and they move onto the nearest authored line rather than onto a hash, which is what
-   * a fringe quarter does.
-   */
-  z = clamp(z, CITY_Z_MIN(x) + hd * 0.5, CITY_Z_MAX - hd * 0.5);
-  // Sampled **after** the clamp, not before it. Four quarters — the Emporium, the Forum
-  // Boarium, the Velabrum and the Aventine — are surveyed south of the +Z edge and are pulled
-  // back onto it by the two clamps above, by up to 300 world metres. Reading the field at the
-  // position the quarter was authored at rather than the one it is built at gave the Emporium
-  // a frame 75 degrees off the street it actually stands on, and the quarter came back with 15
-  // buildings out of 297 frontages.
-  /**
-   * **Negated, and the sign is the whole of it.**
-   *
-   * `wayBearingAt` returns a **world bearing** — `atan2(dz, dx)` along the street. A
-   * `DistrictSpec.rot` is a **plan rotation**, and the two are opposite-handed:
-   * `makeRotationY(r)` sends a box's local +X to `(cos r, −sin r)`, so a block's drawn long
-   * axis points along bearing **−rot**, and `districtFrame` maps the lattice's +u the same way.
-   * `CitySystem`'s `occRot` is the one place in the tree that already says this out loud — it
-   * negates on the way into the obstacle list, which is why `probe-fabric` reads a real bearing
-   * off `getObstacles()` and why its G20 is entitled to compare the two directly.
-   *
-   * Written without the minus sign, this line pointed every quarter's lattice at the *mirror*
-   * of the street it was supposed to follow: a quarter on a street bearing 20° came out at
-   * −20°, forty degrees wrong, and the gate read it as such. It is worth recording that the
-   * hash this replaced was immune — a symmetric random draw is its own mirror image, so the
-   * fault could not exist until the rotation started meaning something.
-   */
-  const rot = -wayBearingAt(x, z);
-  return {
-    id: d.id,
-    x,
-    z,
-    hw,
-    hd,
-    rot,
-    minFloors: d.minFloors,
-    maxFloors: d.maxFloors,
-    density: d.density,
-    grandeur: d.grandeur,
-    fray: d.fray,
-  };
-});
 
 // ---------------------------------------------------------------------------
 // The street network. `WayClass` — the rank — is shared, in `city/layout.ts`;
