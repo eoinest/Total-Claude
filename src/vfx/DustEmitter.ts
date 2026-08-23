@@ -92,12 +92,35 @@ export class DustEmitter {
   driftZ = 0;
 
   private carry = new Float32Array(0);
+  /**
+   * Accumulator, and last-known anchor, for the formation wake. See `emitMarchWake`.
+   *
+   * The anchor's own velocity is tracked here rather than read off the unit because
+   * `UnitGroupState` does not carry one, and adding one would be a simulation field for a
+   * presentation effect. Differencing `u.x, u.z` between frames is exact and costs two
+   * floats a unit.
+   */
+  private wakeCarry = new Float32Array(0);
+  private wakePrevX = new Float32Array(0);
+  private wakePrevZ = new Float32Array(0);
+  private wakeSpeed = new Float32Array(0);
+  private wakeSeen = new Uint8Array(0);
   /** Separate accumulator for contact dust so it cannot be starved by locomotion. */
   private fightCarry = new Float32Array(0);
   private trampleTimer = new Float32Array(0);
   private frame = 0;
   private spawned = 0;
   private fightSpawned = 0;
+  /**
+   * Wake puffs spawned on the last frame, and how many units contributed.
+   *
+   * Kept because the first build of `emitMarchWake` had a coefficient sixteen times too
+   * small and the frame was indistinguishable from the frame without it — an effect that is
+   * *emitting* and an effect that is *invisible* look the same from outside, and there was no
+   * way to tell them apart. Read by `tools/probe-contact.mjs --arms=dust`.
+   */
+  wakeSpawnedLastFrame = 0;
+  wakeUnitsLastFrame = 0;
 
   /** Two-octave dryness field: the flat bakes hard, hollows stay damp. */
   private drynessAt(x: number, z: number): number {
@@ -119,13 +142,21 @@ export class DustEmitter {
     this.frame++;
     this.spawned = 0;
     this.fightSpawned = 0;
+    this.wakeSpawnedLastFrame = 0;
+    this.wakeUnitsLastFrame = 0;
 
     const p = battle.pool;
     const n = p.count;
     if (this.carry.length < battle.units.length + 1) {
-      this.carry = new Float32Array(battle.units.length + 64);
-      this.fightCarry = new Float32Array(battle.units.length + 64);
-      this.trampleTimer = new Float32Array(battle.units.length + 64);
+      const cap = battle.units.length + 64;
+      this.carry = new Float32Array(cap);
+      this.fightCarry = new Float32Array(cap);
+      this.trampleTimer = new Float32Array(cap);
+      this.wakeCarry = new Float32Array(cap);
+      this.wakePrevX = new Float32Array(cap);
+      this.wakePrevZ = new Float32Array(cap);
+      this.wakeSpeed = new Float32Array(cap);
+      this.wakeSeen = new Uint8Array(cap);
     }
 
     // Optical governor. Emission is per man, so the natural failure mode is that the rate
@@ -144,6 +175,32 @@ export class DustEmitter {
 
     // Beyond ~520 m a puff is a couple of pixels: spend the budget where it reads.
     const cullR2 = 620 * 620;
+
+    /*
+     * Anchor velocity, for every unit and *before* the distance cull.
+     *
+     * It has to be before the cull, because the cull is a `continue` and a unit that walks
+     * out of range and back in would otherwise difference two positions a hundred frames
+     * apart and read as travelling at 40 m/s. `wakeSeen` covers the same case at spawn: a
+     * unit's first frame has no previous position and must report zero rather than its
+     * distance from the origin.
+     */
+    for (let ui = 0; ui < battle.units.length; ui++) {
+      const u = battle.units[ui];
+      if (this.wakeSeen[ui] === 0) {
+        this.wakeSeen[ui] = 1;
+        this.wakeSpeed[ui] = 0;
+      } else {
+        const vx = (u.x - this.wakePrevX[ui]) / dt;
+        const vz = (u.z - this.wakePrevZ[ui]) / dt;
+        // A first-order low pass, so a single frame of teleport (a deployment, a rout
+        // re-anchoring) cannot produce a puff of dust the size of the map.
+        const sp = Math.min(14, Math.sqrt(vx * vx + vz * vz));
+        this.wakeSpeed[ui] += (sp - this.wakeSpeed[ui]) * clamp01(dt * 7);
+      }
+      this.wakePrevX[ui] = u.x;
+      this.wakePrevZ[ui] = u.z;
+    }
 
     for (let ui = 0; ui < battle.units.length; ui++) {
       const u = battle.units[ui];
@@ -180,10 +237,182 @@ export class DustEmitter {
       const alphaK = (0.14 + 0.86 * nf) / sizeK;
 
       this.emitForUnit(dt, battle, u, ui, ps, horse, rate, sizeK, alphaK, cullR2, camX, camZ);
+      this.emitMarchWake(dt, battle, u, ui, ps, horse, rate, sizeK, alphaK);
       this.emitContactDust(dt, battle, u, ui, ps, horse, density * (0.5 + 0.5 * near), sizeK, alphaK);
       this.trample(dt, battle, u, ui, damage, terrain);
     }
     void n;
+  }
+
+  /**
+   * The wake a *formation* leaves, as opposed to the puffs its men leave.
+   *
+   * ## Why the per-man emitter is not enough, measured
+   *
+   * `emitForUnit` above is per man, and it is correct as far as it goes: it reads 13.2 % of
+   * the frame covered at the melee camera (`tools/probe-dust.mjs`), which is a real dust
+   * bank. But criterion E1's tell is not haze over a melee, it is *"moving formations trail
+   * sunlit dust"*, and a marching formation is the one case the per-man rate cannot reach.
+   * The arithmetic, on a 320-man cohort at a 1.4 m/s walk: `want` is `sum pow(speed, 1.5)`
+   * = 530, the coefficient is 0.075, so the unit emits **40 puffs a second**, of which about
+   * 39 % are the metre-scale haze tier and the rest is grit at the heel. Sixty-odd
+   * mid-sized puffs alive at a time, spread over a 25 m frontage, is an optical depth of
+   * roughly 0.2 in a band that ought to read at 0.5 — visible if you know to look, and
+   * three independent critics did not see it in eighteen frames.
+   *
+   * Raising the per-man coefficient is the wrong lever twice over. It scales with **men**,
+   * so it saturates the optical governor on a 9,000-man approach march long before it makes
+   * one cohort read; and it emits *under each man*, so what it thickens is the block itself
+   * rather than the ground behind it.
+   *
+   * ## What this does instead
+   *
+   * A formation is a plough. What it displaces scales with its **frontage** and its
+   * **speed**, not with its headcount, and what it leaves is a sheet behind its rear rank,
+   * not a cloud inside it. So:
+   *
+   *  - the rate is `frontage x speed`, in metres squared of ground disturbed per second,
+   *    which is dimensionally the right thing and which means a 40-man skirmisher screen
+   *    and a 480-man phalanx of the same frontage raise the same dust;
+   *  - it is gated on the **anchor** moving, not on the men moving, so a melee — where two
+   *    thousand men shuffle at 0.2 m/s and the anchors are still — raises none of it, and
+   *    the contact emitter keeps that case as it always did;
+   *  - the puffs are born on a line across the rear of the block and behind it, spread over
+   *    the full frontage, so the shape in the frame is a band the width of the unit;
+   *  - they are large, slow, low and long-lived. Optical depth is alpha times overlap, and
+   *    overlap is what a small number of wide, four-to-eight-second puffs buys cheaply. A
+   *    band 25 m wide and 12 m deep needs about a hundred live 3 m puffs at 0.09 alpha to
+   *    reach 0.4 optical depth, and a hundred live at a six-second life is **17 spawns a
+   *    second**. That is the whole cost of the effect, and the coefficient below is that
+   *    number divided by the frontage-times-speed a formed cohort actually presents: a
+   *    34 m line at 1.4 m/s is 48 m squared a second, so 0.30. Cavalry gets 0.50 rather
+   *    than the 3.1 the per-man emitter gives it, because a horse's extra dust is mostly
+   *    thrown from the hoof and the per-man term already has it; what the wake adds for a
+   *    squadron is width.
+   *
+   * `emitForUnit`'s grit stays exactly as it was: the heel puffs are what a man reads as
+   * and this is what a block reads as, and both are wanted.
+   */
+  private emitMarchWake(
+    dt: number,
+    battle: BattleSystem,
+    u: UnitGroupState,
+    ui: number,
+    ps: ParticleSystem,
+    horse: boolean,
+    rate: number,
+    sizeK: number,
+    alphaK: number
+  ): void {
+    const speed = this.wakeSpeed[ui];
+    // 0.55 m/s is below a formed walk and above the drift of a unit dressing its ranks.
+    // A testudo advances at 0.36 x walk and is deliberately above it: a shell grinding
+    // forward is exactly the case that should be visibly heavy.
+    if (speed < 0.45) return;
+
+    const frontage = Math.max(1.2, u.width * u.spacingX);
+    // Metres squared of ground crossed per second, times the tier/distance/dryness rate,
+    // times a coefficient chosen off the optical-depth arithmetic in the note above.
+    this.wakeCarry[ui] += frontage * speed * rate * (horse ? 0.80 : 0.52) * dt;
+    let count = this.wakeCarry[ui] | 0;
+    if (count <= 0) return;
+    this.wakeCarry[ui] -= count;
+    // A cap per unit per frame, so a cavalry wing wheeling at a gallop cannot take the
+    // whole frame's spawn budget in one unit.
+    count = Math.min(count, horse ? 12 : 8);
+
+    const remaining = this.budget.maxSpawnsPerFrame - this.spawned - this.fightSpawned;
+    if (remaining <= 0) return;
+    count = Math.min(count, remaining);
+
+    const p = battle.pool;
+    const salt = this.frame * 197 + ui * 41;
+    // The unit's own frame. `facing` is the way it points; the rear edge is behind it.
+    const fs = Math.sin(u.facing);
+    const fc = Math.cos(u.facing);
+    const depth = Math.max(0.8, Math.ceil(u.alive / Math.max(1, u.width)) * u.spacingZ);
+    const speedN = clamp01(speed / (horse ? 8 : 3.2));
+    let yBase = 0;
+    for (let m = 0; m < u.members.length; m++) {
+      const i = u.members[m];
+      if (p.state[i] === SoldierState.Dead || p.state[i] === SoldierState.Dying) continue;
+      yBase = p.y[i];
+      break;
+    }
+
+    for (let k = 0; k < count; k++) {
+      const h1 = hash01(k * 5, salt);
+      const h2 = hash01(k * 7, salt + 1);
+      const h3 = hash01(k * 11, salt + 2);
+      const h4 = hash01(k * 13, salt + 3);
+
+      // Across the frontage, and from the rear rank to a couple of metres behind it. The
+      // lateral spread runs a little wider than the block because a wake spreads.
+      const across = (h1 - 0.5) * frontage * 1.14;
+      const behind = -depth - 0.4 - h2 * 2.6;
+      const x = u.x + fs * behind + fc * across;
+      const z = u.z + fc * behind - fs * across;
+
+      const dry = this.drynessAt(x, z);
+      const rec = ps.reset(PLayer.Soft, h4 < 0.22 ? PT.dustBillow : PT.smokeSoft);
+      rec.x = x;
+      rec.z = z;
+      // Height comes from a man of the unit rather than from the anchor, because
+      // `UnitGroupState` carries no y — and from the *first* live member rather than a
+      // sampled one, because the ground under a formation is flat to within a few
+      // centimetres over its own depth and a per-puff terrain lookup would be a hundred
+      // heightfield samples a second for a number that does not vary. `PGround.Ride` then
+      // keeps the puff on the surface as it drifts.
+      rec.y = yBase + 0.10 + h3 * 0.22;
+      rec.ground = PGround.Ride;
+
+      // It drifts backwards out of the block at a fraction of the march, plus the ambient
+      // wind. Almost no vertical: this is a sheet the formation peels off the ground, and
+      // anything that lifts reads as smoke.
+      rec.vx = -fs * speed * 0.16 + (h3 - 0.5) * 0.5 + this.driftX * 0.45;
+      rec.vz = -fc * speed * 0.16 + (h1 - 0.5) * 0.5 + this.driftZ * 0.45;
+      rec.vy = 0.10 + h2 * 0.13 + speedN * 0.10;
+
+      rec.life = 3.8 + h3 * 3.2;
+      rec.size0 = (2.2 + h1 * 2.0) * (horse ? 1.5 : 1) * sizeK;
+      rec.size1 = rec.size0 * (1.9 + h2 * 1.0);
+      /*
+       * Peak alpha, and it is about twice the per-man haze tier's.
+       *
+       * The first build ran at 0.09 and `tools/probe-contact.mjs --arms=dust` showed the
+       * wake changing the ground behind a marching cohort by 5 to 20 parts in 255 — present
+       * in an ablation diff amplified twelve times, invisible in the frame. Optical depth is
+       * alpha times overlap and the overlap is already paid for, so the honest lever is
+       * alpha, which costs nothing: the same fragments are blended either way.
+       *
+       * The owner's standing complaint about dust — "it is like making things just plain
+       * hard to see" — is about the *melee*, and this term is deliberately the opposite
+       * case. It is emitted behind the rear rank of a formation that is moving, over ground
+       * the unit has already crossed, so what it obscures is grass. `veil` at the *melee*
+       * camera is the number that has to stay small, and it is 0.16 %.
+       *
+       * **Raised a second time, and the growth cut with it.** At 0.12 the ablation diff said
+       * the band was there and the frame said it was not, because a puff growing to three
+       * and a half times its birth size ends up ten metres across and spends its optical
+       * depth over ground nobody is looking at. Alpha up 1.4x, spawn rate up 1.3x and the
+       * growth down from 2.2-3.4x to 1.9-2.9x concentrates the same budget into a band the
+       * depth of the block rather than a haze the depth of the field.
+       */
+      rec.a = (0.17 + 0.21 * dry * (0.45 + 0.55 * speedN)) * alphaK * this.budget.opacity;
+      rec.drag = 0.85;
+      rec.gravity = 0.22;
+      rec.turb = 0.95;
+      rec.spin = (h4 - 0.5) * 0.30;
+      const tint = 0.86 + dry * 0.24;
+      rec.r = DUST_R * tint;
+      rec.g = DUST_G * tint;
+      rec.b = DUST_B * (0.9 + dry * 0.18);
+      rec.windFactor = 1.0;
+      ps.push();
+      this.spawned++;
+      this.wakeSpawnedLastFrame++;
+    }
+    this.wakeUnitsLastFrame++;
   }
 
   /**

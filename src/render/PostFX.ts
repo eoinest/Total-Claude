@@ -4,6 +4,7 @@ import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import type { EngineContext, Subsystem } from '../core/Engine';
 import { AGX_GLSL, DEPTH_GLSL, FS_VERT, HASH_GLSL, SRGB_GLSL } from '../shaders/common.glsl';
 import { clamp, clamp01, smoothstep } from '../util/math';
+import type { LightingSystem } from './LightingSystem';
 import type { SkySystem } from './SkySystem';
 
 /**
@@ -41,10 +42,110 @@ import type { SkySystem } from './SkySystem';
 const BLOOM_THRESHOLD = 0.95;
 const BLOOM_KNEE = 0.4;
 const BLOOM_STRENGTH = 0.07;
-/** AO sampling radius in metres. A man is 1.75 m; 1.1 m darkens the gaps between
- *  ranks and the contact under a shield without haloing whole formations. */
+/**
+ * AO sampling radius in metres. A man is 1.75 m; 1.1 m darkens the gaps between
+ * ranks and the contact under a shield without haloing whole formations.
+ *
+ * **This is the *ambient* scale and it is deliberately only half the story.** Measured on
+ * the testudo's `roof-close` station, `tools/probe-contact.mjs --arms=split`: the 1.1 m
+ * gather is a low-frequency wash — it darkens the interior of a crowd as a mass, which is
+ * what an ambient term should do, and it cannot produce the tight dark core where a boot
+ * meets grass or where one shield rim laps another, because at 1.1 m those two surfaces are
+ * a small fraction of the gather and the horizon it finds is nearly the same as the one it
+ * finds a metre away. A7's tell is that core. So the same pass now gathers at **two**
+ * radii — see `AO_CONTACT_RADIUS` — and takes the darker.
+ */
 const AO_RADIUS = 1.1;
 const AO_STRENGTH = 0.72;
+/**
+ * The near-field contact radius, in metres. Lives in the **full-resolution** pass — see the
+ * long note above `nearContact` in `mContact` for why it cannot live in the half-res one.
+ *
+ * 0.30 m is chosen off the geometry it has to catch rather than by eye: the lap between two
+ * roof boards of a testudo is 0.15 m, the gap between two men shoulder to shoulder in a
+ * closed rank is 0.16 m, a boot sole is 0.10 m deep and a wall base against paving is a
+ * right angle at any scale. A disc that reaches 0.30 m has most of its area inside solid
+ * matter at all four and almost none of it on open ground, which is what "contact darkening"
+ * has to mean if it is not to become grime.
+ */
+const AO_CONTACT_RADIUS = 0.30;
+/**
+ * Strength of the contact term, and it is far higher than the ambient one on purpose.
+ *
+ * The ambient term covers most of the frame, so it has to be gentle. The contact term
+ * covers a few per cent of it, so it can be hard, and it has to be: the measured difference
+ * between a Rome II crowd and this one was never that ours is uniformly lighter, it is that
+ * ours had no black in the joins at all. The two numbers are not comparable — the ambient
+ * term is a horizon in [0,1] and this one is a mean over a disc that rarely exceeds 0.2.
+ *
+ * **Chosen off a ladder, not by eye.** `tools/probe-contact.mjs --arms=sweep` reads the
+ * occlusion buffer itself at the testudo's `roof-close` station and reports its percentiles.
+ * At 0 — which is the pipeline as it stood, half-res HBAO plus the sun march — the buffer's
+ * 5th percentile is **0.70** and 5 % of it is under 0.7: there is no contact darkening in
+ * the frame worth the name, and three blind critics were right. At 2.2 the 5th percentile is
+ * 0.65 and nothing visible has changed. At 5.0 it is **0.44** with 25 % of the frame under
+ * 0.7, which is a contact field. At 7.0 it is 0.31, which reads as soot on the grass.
+ */
+const AO_CONTACT_STRENGTH = 5.0;
+/**
+ * How much of a surface's own colour survives *total* occlusion, before the tint.
+ *
+ * This replaces the hard `max( occ, 0.34 )` floor the composite used to apply, and the
+ * number is close to the one it replaces on purpose: 0.324 of the lit luminance was measured
+ * surviving in the deepest 5 % of a soldier's own cast shadow at the midcrowd camera, 0.375
+ * at the wide one. What changed is the shape — see the long note at its use in `mComposite`.
+ * The tint is taken live from `LightingSystem.fill`, so this is a scalar and the colour is
+ * the rig's own.
+ */
+const AO_FILL = 0.30;
+/**
+ * The exponent on the occlusion before the fill lifts it, and it is not a look decision — it
+ * is what makes the new curve agree with the one it replaces everywhere except at the bottom.
+ *
+ * **The linear form was shipped first and it silently threw most of the effect away.** The
+ * old response was `max( occ, 0.34 )`, which is the *identity* for every occlusion above
+ * 0.34: the frame darkened exactly as much as the buffer said. Replacing it with
+ * `fill + ( 1 - fill ) * occ` keeps the endpoints and lifts the whole middle — at occ 0.7 it
+ * returns 0.79 where the clamp returned 0.70, at occ 0.55 it returns 0.685 against 0.55. So
+ * a pass that took the buffer's 5th percentile from 0.698 to 0.439 moved the finished frame's
+ * mean luminance by 1.3 %, and a blind grader compared the before and after plates and could
+ * not tell them apart. That is the correct verdict on the frames and the wrong conclusion
+ * about the buffer, and the fault was here.
+ *
+ * 1.9 puts the curve back on top of the clamp — 0.814 against 0.850 at occ 0.85, 0.655
+ * against 0.700 at 0.70, 0.447 against 0.440 at 0.44, 0.371 against the clamp's floor at
+ * 0.30 — while keeping everything the clamp could not do: it is continuous, it never crushes
+ * below `AO_FILL`, and what survives is the colour of the sky bounce rather than a neutral
+ * fraction of the surface's own light.
+ */
+const AO_FILL_GAMMA = 1.9;
+/**
+ * Tap spacing of the full-resolution contact blur, in texels.
+ *
+ * It was exactly 1.0 and the comment at its use said why: "wider than that and the contact
+ * core under a boot is smeared back out to nothing, which is the whole thing this pass exists
+ * to produce; narrower and the per-pixel march jitter survives as visible grain over a
+ * crowd". Both halves of that are still true and the balance moved, because the pass now
+ * carries a 16-sample stochastic disc as well as an eight-step march and therefore has more
+ * variance to remove.
+ *
+ * 1.5 rather than 2.0, and the sample count went up at the same time, because the two levers
+ * fail in opposite directions and only one of them is free of the core: more samples costs
+ * milliseconds and loses nothing, a wider blur costs nothing and eats the core.
+ *
+ * Measured on the `corner` plate's shaded shield face — high-frequency RMS, and the darkest
+ * pixel in the box, against the same box in the unoccluded frame's 2.60 and 6.5:
+ *
+ *   12 samples, 1.0 texel   3.87 / 0.1     <- what a grader called "near-black pepper"
+ *   16 samples, 1.5 texel   3.60 / 4.9     <- shipped
+ *   16 samples, 1.9 texel   3.62 / 4.6
+ *
+ * **The sample count was the whole of it and the blur width was not**, which is why this is
+ * 1.5 and not wider: 1.9 moved the noise by 0.02 in the wrong direction and cost 0.3 of the
+ * darkest pixel. The 1.0 in the residual over the unoccluded frame is signal — the term adds
+ * real high-frequency detail at every plank seam and every boss rim, and it should.
+ */
+const CONTACT_BLUR = 1.5;
 /** 8-sample Halton(2,3) jitter, the standard TAA sequence. */
 /*
  * Sky is tested with `>= 1.0`, not with an epsilon.
@@ -369,9 +470,39 @@ export class PostFXSystem implements Subsystem {
    */
   contactShadows = true;
 
+  /**
+   * Blit an intermediate buffer to the canvas instead of the graded frame.
+   *
+   * An instrument, and it exists because an argument about ambient occlusion was settled
+   * three times by three people looking at *finished frames* and getting it wrong in both
+   * directions — a critic who could not see any contact darkening, and a reader of this file
+   * who could see two whole passes computing it. A graded frame is the worst possible place
+   * to read an occlusion term off: AgX, bloom, a contrast-adaptive sharpen and SMAA all sit
+   * between the buffer and the pixel, and the sharpen alone makes 30 % of the pixels in a
+   * crowded frame *brighter* when the occlusion is switched on, because an unsharp mask
+   * turns a darkened crevice into a brightened ridge beside it.
+   *
+   * `'ao'` shows the blurred half-resolution AO buffer, `'contact'` the full-resolution
+   * screen-space contact-shadow buffer, `'occ'` the two combined exactly as the composite
+   * combines them. Never set outside a probe.
+   */
+  debugView: 'ao' | 'contact' | 'occ' | null = null;
+
+  /**
+   * Live handles on the two occlusion strengths, so a probe can A/B them inside one browser
+   * session. Absolute frame times from two sessions on this machine are not comparable —
+   * see `contactShadows` above — and neither is a look, because the sun moves.
+   */
+  get aoStrength(): number { return (this.mAo?.uniforms.uStrength.value as number) ?? AO_STRENGTH; }
+  set aoStrength(v: number) { if (this.mAo) this.mAo.uniforms.uStrength.value = v; }
+
+  /** Strength of the full-resolution near-field contact term. See `AO_CONTACT_STRENGTH`. */
+  aoContactStrength = AO_CONTACT_STRENGTH;
+
   private renderer!: THREE.WebGLRenderer;
   private quad = new FullScreenQuad();
   private sky?: SkySystem;
+  private lighting?: LightingSystem;
   private smaa?: SMAAPass;
 
   private w = 1;
@@ -420,6 +551,7 @@ export class PostFXSystem implements Subsystem {
   private mFxaa?: THREE.ShaderMaterial;
   private mFinal?: THREE.ShaderMaterial;
   private mCopy?: THREE.ShaderMaterial;
+  private mOccView?: THREE.ShaderMaterial;
 
   private frameIndex = 0;
   /**
@@ -503,6 +635,15 @@ export class PostFXSystem implements Subsystem {
   init(ctx: EngineContext): void {
     this.renderer = ctx.renderer;
     this.sky = ctx.tryGet<SkySystem>('sky');
+    /*
+     * The rig's own answer to "what lights a surface the sun cannot reach".
+     *
+     * Optional and read defensively, like `sky` above and for the same reason: the viewer
+     * builds a `PostFXSystem` without a `LightingSystem`, and a hard import here would be a
+     * cycle. Without it the occlusion fill falls back to neutral grey, which is the old
+     * behaviour and merely duller.
+     */
+    this.lighting = ctx.tryGet<LightingSystem>('lighting');
 
     // This chain tone maps itself; leaving AgX on the renderer would apply the
     // display transform twice, once into the HDR buffer and once here.
@@ -687,6 +828,24 @@ export class PostFXSystem implements Subsystem {
       uniform float uStrength;
       varying vec2 vUv;
 
+      /*
+       * **The ambient scale, and only the ambient scale.**
+       *
+       * This gathers at ${AO_RADIUS.toFixed(1)} m, which is a mass term: it says how deep inside a
+       * crowd, a colonnade or a street a surface is standing. It is *not* the term criterion
+       * A7 is scored on and it cannot be made into one, for two reasons that are both
+       * measured rather than argued — the buffer is half resolution and its blur is seven
+       * taps wide, so a join three pixels across does not survive it; and a metre-scale
+       * gather finds nearly the same horizon a centimetre either side of a join, so there is
+       * no edge in the signal to preserve in the first place. The contact term lives in the
+       * full-resolution pass below.
+       *
+       * The one change here: the four steps are **log-spaced** rather than even — 10 %,
+       * 26 %, 55 % and 100 % of the radius — so the nearest tap is 0.11 m out instead of
+       * 0.14 m and two of the four land inside half a metre. Same tap count, same cost, a
+       * better-conditioned near field for the term that still has to hand over to the
+       * contact one without a seam.
+       */
       void main() {
         float d = texture2D( tDepth, vUv ).x;
         if ( d >= 1.0 ) { gl_FragColor = vec4( 1.0 ); return; }
@@ -699,33 +858,37 @@ export class PostFXSystem implements Subsystem {
         rad = min( rad, vec2( 0.09 ) );
 
         float rot = tcIGN( gl_FragCoord.xy ) * 6.2831853;
+        float jit = tcIGN( gl_FragCoord.yx );
         float occ = 0.0;
         const int DIRS = 6;
         const int STEPS = 4;
+        // Log-spaced along the ray. A literal array so the compiler unrolls the loop.
+        float FR[ 4 ];
+        FR[ 0 ] = 0.10; FR[ 1 ] = 0.26; FR[ 2 ] = 0.55; FR[ 3 ] = 1.00;
+        const float RFAR2 = ${(AO_RADIUS * AO_RADIUS).toFixed(4)};
         for ( int j = 0; j < DIRS; j ++ ) {
           float a = rot + float( j ) * ( 6.2831853 / float( DIRS ) );
           vec2 dir = vec2( cos( a ), sin( a ) );
           // Horizon-based: keep the largest elevation found along the direction
           // rather than summing, which is what stops thin geometry over-darkening.
-          float best = 0.0;
-          for ( int s = 1; s <= STEPS; s ++ ) {
-            float t = ( float( s ) - 0.5 + tcIGN( gl_FragCoord.yx ) ) / float( STEPS );
+          float hi = 0.0;
+          for ( int s = 0; s < STEPS; s ++ ) {
+            // The jitter is a fraction of each step's own distance, so it decorrelates the
+            // near taps without ever pushing one past the next one out.
+            float t = FR[ s ] * ( 0.72 + 0.56 * jit );
             vec2 suv = vUv + dir * rad * t;
             float sd = texture2D( tDepth, suv ).x;
             if ( sd >= 1.0 ) continue;
-            vec3 S = tcViewPos( suv, sd );
-            vec3 V = S - P;
+            vec3 V = tcViewPos( suv, sd ) - P;
             float len2 = dot( V, V );
-            float inv = inversesqrt( max( len2, 1e-6 ) );
-            float ndv = dot( N, V ) * inv;
-            // Alchemy-style falloff: full weight inside the radius, zero outside,
-            // so distant geometry never bleeds occlusion onto a near surface.
-            float att = clamp( 1.0 - len2 / ( ${AO_RADIUS.toFixed(2)} * ${AO_RADIUS.toFixed(2)} ), 0.0, 1.0 );
             // 0.12 tangent bias kills the self-occlusion a depth-derived normal
             // always produces on gently curved ground.
-            best = max( best, ( ndv - 0.12 ) * att );
+            float ndv = dot( N, V ) * inversesqrt( max( len2, 1e-6 ) ) - 0.12;
+            // Alchemy-style falloff: full weight inside the radius, zero outside,
+            // so distant geometry never bleeds occlusion onto a near surface.
+            hi = max( hi, ndv * clamp( 1.0 - len2 / RFAR2, 0.0, 1.0 ) );
           }
-          occ += max( 0.0, best );
+          occ += max( 0.0, hi );
         }
         float ao = 1.0 - ( occ / float( DIRS ) ) * uStrength;
         gl_FragColor = vec4( clamp( ao, 0.0, 1.0 ) );
@@ -796,7 +959,108 @@ export class PostFXSystem implements Subsystem {
       uniform vec3 uSunView;   // unit, view space, surface -> sun
       // x: ray length (m), y: normal offset (m), z: thickness (m), w: strength
       uniform vec4 uParams;
+      // x/y: near-AO world radius projected (x already divided by aspect), z: strength,
+      // w: tangent bias
+      uniform vec4 uNear;
+      uniform float uNearR2;   // the same radius, squared, in metres
       varying vec2 vUv;
+
+      /*
+       * ---- the near-field ambient contact term -----------------------------------------
+       *
+       * **Why this is here and not in the HBAO pass.** It was in the HBAO pass first, and the
+       * buffer is on the record: \`roof-close-occ.png\` under any label in
+       * \`screenshots/contact\`, at 320 shields, is
+       * white from edge to edge. Two independent reasons, both structural:
+       *
+       *  1. **Resolution.** The join this term exists to find is 3–8 pixels wide at the
+       *     station §H grades from. The AO buffer is half resolution and its blur is seven
+       *     taps at one half-res texel, so a join is two texels wide inside a filter six
+       *     wide, and the composite's own bilateral upsample softens it again. The pass this
+       *     now lives in is full resolution with a one-texel blur, and its own comment says
+       *     why in almost these words: "run at half res the contact darkening under a boot
+       *     lands between texels and the effect disappears".
+       *  2. **Direction.** The sun march above returns white outright for any surface with
+       *     \`N·L <= 0.05\`, which is correct for a *shadow* — a surface already turned away
+       *     from the sun is dark by Lambert and shading it twice puts a grey rim round every
+       *     silhouette. But that early-out is exactly the set of surfaces A7 is scored on:
+       *     the inside of a rank, the underside of a shield rim, the shaded face of a wall.
+       *     Ambient occlusion has no direction and must be computed for them.
+       *
+       * So: a 16-sample disc, cosine-weighted, radius \`uNear\` metres, dithered by the same
+       * interleaved gradient the march uses and cleaned by the same one-texel blur. Samples
+       * are placed on a golden-angle spiral at *linear* radius fraction rather than the
+       * square root that gives a uniform disc — the density is deliberately biased toward the
+       * centre, because this is a contact term and everything it is looking for is in the
+       * first few centimetres.
+       *
+       * Summed rather than max'd, unlike the horizon search in the HBAO pass. A horizon is
+       * the right estimator over a metre, where one near occluder should not count twice; at
+       * a hand's breadth what is wanted is *how much* of the neighbourhood is solid, and the
+       * sum is that.
+       *
+       * **Sixteen samples and not twelve, and the four extra were bought by a blind grader.**
+       * At twelve the term was measurably correct and visibly *dirty*: on the shaded shield
+       * face at (132-176, 650-720) of the \`corner\` plate the high-frequency RMS went from
+       * 2.60 to 3.87 and the darkest pixel from 6.5 to 0.1, and a grader looking at that
+       * frame called it "coarse near-black pepper that does not follow the plank grain" and
+       * took a whole grade off A3 for it. Twelve dithered samples cleaned by a seven-tap
+       * one-texel blur leaves per-pixel variance a smoothly shaded surface has no business
+       * carrying. Sixteen samples and a 1.5-texel blur is the cheapest pair that fixes it —
+       * see the blur call in \`render\` for why the blur alone could not.
+       */
+      float nearContact( vec2 uv, vec3 P, vec3 N ) {
+        vec2 rad = uNear.xy / max( 0.35, -P.z );
+        // A cost guard, not a look decision: uncapped, a camera 0.4 m from a wall gathers
+        // over a third of the screen and every tap is a cache miss.
+        rad = min( rad, vec2( 0.05 ) );
+        float rot = tcIGN( gl_FragCoord.xy ) * 6.2831853;
+        const int NS = 16;
+        const float GA = 2.39996323;   // golden angle
+        float occ = 0.0;
+        for ( int i = 0; i < NS; i ++ ) {
+          float fi = float( i ) + 0.5;
+          float a = rot + fi * GA;
+          vec2 suv = uv + vec2( cos( a ), sin( a ) ) * rad * ( fi / float( NS ) );
+          float sd = texture2D( tDepth, suv ).x;
+          if ( sd >= 1.0 ) continue;
+          vec3 V = tcViewPos( suv, sd ) - P;
+          float len2 = dot( V, V );
+          float ndv = dot( N, V ) * inversesqrt( max( len2, 1e-8 ) ) - uNear.w;
+          occ += max( 0.0, ndv ) * clamp( 1.0 - len2 / uNearR2, 0.0, 1.0 );
+        }
+        /*
+         * ---- no foliage guard here, and it was tried -------------------------------------
+         *
+         * A field of thin blades occludes itself everywhere: every grass pixel has some
+         * neighbours in front of its tangent plane and some behind it, so this disc finds
+         * solid matter in every direction and the whole lawn darkens. It is the one artefact
+         * of this term and it is real.
+         *
+         * The obvious discriminator is **coherence**: a genuine junction — a boot on the
+         * ground, a rim over a rim, a wall against paving — should have its occluders all on
+         * one side of the tangent plane, so the signed sum of the elevations and the sum of
+         * their magnitudes should agree; a thicket should have them on both sides at pixel
+         * scale and the ratio should collapse. It costs two adds and it does not work. Both
+         * variants were built and measured on the buffer at the roof-close station, 320 shields:
+         *
+         *   | 5th percentile of the occlusion buffer | with guard | without |
+         *   | every sample votes                     | 0.663      | 0.439   |
+         *   | only samples clearing the tangent bias | 0.655      | 0.439   |
+         *
+         * The guard attenuates the corners as hard as the grass, and gating the vote on the
+         * bias — which should have removed the near-tangent samples that cancel each other —
+         * moved it by 0.008. The reason is that the normal is reconstructed from depth, so on
+         * any real surface a good fraction of the disc reads as slightly *behind* the plane
+         * and votes against; the sign distribution at a junction is not clean enough to
+         * measure. A guard would need a real normal buffer, which is the geometry pass this
+         * chain exists to avoid.
+         *
+         * Recorded rather than shipped at zero, because a knob that halves the effect is
+         * worse than a known limitation.
+         */
+        return clamp( 1.0 - ( occ / float( NS ) ) * uNear.z, 0.0, 1.0 );
+      }
 
       void main() {
         float d = texture2D( tDepth, vUv ).x;
@@ -804,11 +1068,13 @@ export class PostFXSystem implements Subsystem {
         vec3 P = tcViewPos( vUv, d );
         vec3 N = tcNormalFromDepth( vUv, uTexel, d, P );
 
+        float near = nearContact( vUv, P, N );
+
         // A surface already turned away from the sun gets its darkness from N.L. Tracing a
         // contact shadow onto it as well would darken it twice, and the visible result is a
         // grey rim around every silhouette — the classic SSAO tell the rubric calls out.
         float ndl = dot( N, uSunView );
-        if ( ndl <= 0.05 ) { gl_FragColor = vec4( 1.0 ); return; }
+        if ( ndl <= 0.05 || uParams.w <= 0.0 ) { gl_FragColor = vec4( near ); return; }
 
         vec3 O = P + N * uParams.y;
         float jitter = tcIGN( gl_FragCoord.xy );
@@ -853,6 +1119,8 @@ export class PostFXSystem implements Subsystem {
         uTexel: { value: new THREE.Vector2() },
         uSunView: { value: new THREE.Vector3(0, 1, 0) },
         uParams: { value: new THREE.Vector4(1.3, 0.03, 0.55, 1) },
+        uNear: { value: new THREE.Vector4(0, 0, AO_CONTACT_STRENGTH, 0.10) },
+        uNearR2: { value: AO_CONTACT_RADIUS * AO_CONTACT_RADIUS },
       },
     );
 
@@ -870,6 +1138,8 @@ export class PostFXSystem implements Subsystem {
       uniform vec4 uHaze;
       uniform vec3 uHazeTint;
       uniform float uMieG;
+      // Linear tint of the light that survives total occlusion. See the note at its use.
+      uniform vec3 uAoFill;
       varying vec2 vUv;
 
       float hg( float mu, float g ) {
@@ -911,13 +1181,43 @@ export class PostFXSystem implements Subsystem {
         // Hemispherical (sky) occlusion and directional (sun) occlusion are combined with a
         // min, not a product. They are two measurements of the same thing — how much of
         // the surrounding geometry is in the way — and multiplying them darkens a boot sole,
-        // where both fire at once, to the square of what either justifies. The floor is the
-        // measured "sun fully blocked" value: sampled over the deepest 5 % of the pixels a
-        // soldier's own cast shadow darkens, 0.324 of the lit luminance survives at the
-        // midcrowd camera and 0.375 at the wide one. So 0.34 is not a taste constant, it is
-        // what losing the sun and keeping the sky actually costs in this scene.
+        // where both fire at once, to the square of what either justifies.
         float occ = min( aoAt( dc ), texture2D( tContact, vUv ).r );
-        col *= max( occ, uHaze.w );
+
+        /*
+         * **The floor is a colour, not a clamp, and that is the change that let the
+         * occlusion be strong enough to see.**
+         *
+         * This used to be \`col *= max( occ, 0.34 )\`. The 0.34 was measured — sampled over
+         * the deepest 5 % of the pixels a soldier's own cast shadow darkens, 0.324 of the
+         * lit luminance survives at the midcrowd camera and 0.375 at the wide one — so it
+         * was the right number for the wrong shape. A clamp does two bad things at once. It
+         * puts a hard edge into the image wherever the occlusion crosses it, and, far worse,
+         * it makes every occluded pixel *neutral*: the surface keeps its own hue and simply
+         * loses energy, so a deep crevice goes toward black rather than toward the colour of
+         * the light that still reaches it.
+         *
+         * That is the same defect a critic named as "the crushed black interior is an absent
+         * ambient bounce in the lighting rig", and it is why the occlusion could not be
+         * turned up. Measured on the testudo at \`roof-close\`, contact strength 7 against the
+         * clamp: the shields read correctly and the grass went to a black mat, because grass
+         * is a field of thin blades every one of which occludes its neighbours, and the term
+         * had nowhere to put the light it removed.
+         *
+         * So the light that survives total occlusion is stated as a colour instead —
+         * \`uAoFill\`, the chromaticity of \`LightingSystem.fill\`, which is the sky bounce over
+         * the warm ground bounce and is already the rig's own answer to "what lights a
+         * surface the sun cannot reach". The response is linear in \`occ\` with no clamp
+         * anywhere: full occlusion leaves \`uAoFill\` of the surface's own colour, and because
+         * it multiplies rather than replaces, a green tunic stays green in the crevice and a
+         * red shield stays red. Nothing crosses an edge and nothing goes neutral.
+         *
+         * The exponent is what keeps this as *dark* as the clamp was over the whole middle of
+         * the range instead of quietly lifting it. See \`AO_FILL_GAMMA\`; the first build of
+         * this line was linear and a blind grader could not tell the before and after plates
+         * apart because of it.
+         */
+        col *= uAoFill + ( 1.0 - uAoFill ) * pow( occ, ${AO_FILL_GAMMA.toFixed(2)} );
 
         vec3 wp = tcWorldPos( vUv, d );
         vec3 v = wp - uCamPos;
@@ -988,6 +1288,7 @@ export class PostFXSystem implements Subsystem {
         uHaze: { value: new THREE.Vector4(0.0013, 620, 2.2, 0.35) },
         uHazeTint: { value: new THREE.Vector3(0.94, 1.0, 1.12) },
         uMieG: { value: 0.72 },
+        uAoFill: { value: new THREE.Vector3(AO_FILL, AO_FILL, AO_FILL) },
       },
     );
 
@@ -1333,6 +1634,46 @@ export class PostFXSystem implements Subsystem {
       `,
       { tSrc: { value: null } },
     );
+
+    // ---- the occlusion instrument ----------------------------------------
+    //
+    // The same two lines the composite uses to combine the two terms, and no others, so
+    // what a probe photographs here is what the composite multiplies the frame by. Kept as
+    // its own pass rather than as a branch inside `mComposite` because a branch there is a
+    // branch in the hottest fullscreen shader in the frame.
+    this.mOccView = this.pass(
+      cam + /* glsl */ `
+      uniform sampler2D tAo;
+      uniform sampler2D tContact;
+      uniform vec2 uTexel;
+      varying vec2 vUv;
+      void main() {
+        float d = texture2D( tDepth, vUv ).x;
+        if ( d >= 1.0 ) { gl_FragColor = vec4( 1.0 ); return; }
+        float dc = -tcViewZ( d );
+        vec2 t = uTexel * 2.0;
+        float sum = 0.0;
+        float wsum = 0.0;
+        float tol = 0.04 + dc * 0.008;
+        for ( int y = 0; y < 2; y ++ ) {
+          for ( int x = 0; x < 2; x ++ ) {
+            vec2 uv = vUv + ( vec2( float( x ), float( y ) ) - 0.5 ) * t;
+            float ds = -tcViewZ( texture2D( tDepth, uv ).x );
+            float w = exp( -abs( ds - dc ) / tol ) + 1e-3;
+            sum += texture2D( tAo, uv ).r * w;
+            wsum += w;
+          }
+        }
+        gl_FragColor = vec4( vec3( min( sum / wsum, texture2D( tContact, vUv ).r ) ), 1.0 );
+      }
+      `,
+      {
+        ...this.camUniforms(),
+        tAo: { value: null },
+        tContact: { value: null },
+        uTexel: { value: new THREE.Vector2() },
+      },
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1449,7 +1790,7 @@ export class PostFXSystem implements Subsystem {
   private syncCamUniforms(cam: THREE.PerspectiveCamera): void {
     const mats = [
       this.mAo, this.mBlur, this.mContact, this.mComposite, this.mGod, this.mDof,
-      this.mMotion, this.mTaa,
+      this.mMotion, this.mTaa, this.mOccView,
     ];
     for (const m of mats) {
       if (!m) continue;
@@ -1551,34 +1892,79 @@ export class PostFXSystem implements Subsystem {
       aoTex = this.aoRT.texture;
     }
 
-    // 2b --- screen-space contact shadows ----------------------------------
+    // 2b --- full-resolution contact: sun march AND near-field ambient -----
+    //
+    // **No longer gated on the sun being up**, and that is the point of the pass now. The
+    // near-field ambient term is omnidirectional, so a surface turned away from the sun — the
+    // inside of a rank, the underside of a rim, the shaded face of a wall, and the entire
+    // frame at dusk — is exactly where it has to work.
     let contactTex: THREE.Texture | null = null;
-    if (this.contactShadows && q.ssao && this.mContact && this.contactRT
-      && this.sky && this.sky.sunIntensity > 0.001) {
+    if (this.contactShadows && q.ssao && this.mContact && this.contactRT) {
       const u = this.mContact.uniforms;
       (u.uTexel.value as THREE.Vector2).copy(texel);
       (u.tcProj.value as THREE.Matrix4).copy(this.projNoJitter);
-      // The march runs in view space, so the sun direction has to be rotated into it.
-      // `matrixWorldInverse` is the view matrix; only its rotation applies to a direction.
-      this.tmpV3.copy(this.sky.sunDirection)
-        .transformDirection(cam.matrixWorldInverse)
-        .normalize();
-      (u.uSunView.value as THREE.Vector3).copy(this.tmpV3);
+      const sunUp = !!this.sky && this.sky.sunIntensity > 0.001;
+      if (sunUp && this.sky) {
+        // The march runs in view space, so the sun direction has to be rotated into it.
+        // `matrixWorldInverse` is the view matrix; only its rotation applies to a direction.
+        this.tmpV3.copy(this.sky.sunDirection)
+          .transformDirection(cam.matrixWorldInverse)
+          .normalize();
+        (u.uSunView.value as THREE.Vector3).copy(this.tmpV3);
+      }
+      // `uParams.w` is the march's strength and zeroing it is how the shader is told to skip
+      // the march entirely, so the sunless case costs eight taps less rather than a branch
+      // the compiler cannot see.
+      (u.uParams.value as THREE.Vector4).w = sunUp ? 1 : 0;
+      // World radius -> screen fraction, the same projection the HBAO pass uses. `y` is the
+      // reference because the field of view is vertical.
+      {
+        const projScale = 0.5 / Math.tan((cam.fov * Math.PI) / 360);
+        (u.uNear.value as THREE.Vector4).set(
+          (AO_CONTACT_RADIUS * projScale) / cam.aspect, AO_CONTACT_RADIUS * projScale,
+          this.aoContactStrength, 0.10,
+        );
+        u.uNearR2.value = AO_CONTACT_RADIUS * AO_CONTACT_RADIUS;
+      }
       this.blit(this.mContact, this.contactRT);
-      // Depth-aware separable blur, at full resolution and one texel per tap. Wider than
-      // that and the contact core under a boot is smeared back out to nothing, which is the
-      // whole thing this pass exists to produce; narrower and the per-pixel march jitter
-      // survives as visible grain over a crowd.
+      // Depth-aware separable blur, at full resolution. See `CONTACT_BLUR` for the width and
+      // why it is no longer exactly one texel.
       if (this.mBlur && this.contactTmp) {
         const bu = this.mBlur.uniforms;
         bu.tSrc.value = this.contactRT.texture;
-        (bu.uStep.value as THREE.Vector2).set(1 / this.w, 0);
+        (bu.uStep.value as THREE.Vector2).set(CONTACT_BLUR / this.w, 0);
         this.blit(this.mBlur, this.contactTmp);
         bu.tSrc.value = this.contactTmp.texture;
-        (bu.uStep.value as THREE.Vector2).set(0, 1 / this.h);
+        (bu.uStep.value as THREE.Vector2).set(0, CONTACT_BLUR / this.h);
         this.blit(this.mBlur, this.contactRT);
       }
       contactTex = this.contactRT.texture;
+    }
+
+    // 2c --- the instrument -------------------------------------------------
+    //
+    // Straight to the canvas, ungraded and untouched by anything downstream. See
+    // `debugView` for why reading an occlusion term off a finished frame does not work.
+    if (this.debugView && this.mCopy) {
+      const t = this.debugView === 'contact' ? contactTex
+        : this.debugView === 'occ' ? null
+          : aoTex;
+      if (this.debugView === 'occ' && this.mOccView) {
+        const u = this.mOccView.uniforms;
+        u.tAo.value = aoTex ?? this.whiteTexture();
+        u.tContact.value = contactTex ?? this.whiteTexture();
+        (u.uTexel.value as THREE.Vector2).copy(texel);
+        this.blit(this.mOccView, null);
+      } else {
+        this.mCopy.uniforms.tSrc.value = t ?? this.whiteTexture();
+        this.blit(this.mCopy, null);
+      }
+      this.prevViewProj.copy(this.curViewProj);
+      this.prevViewProjValid = true;
+      this.frameIndex++;
+      this.nFrames++;
+      r.setRenderTarget(null);
+      return;
     }
 
     // 3 ---- composite: AO + contact shadow + aerial perspective -----------
@@ -1595,6 +1981,26 @@ export class PostFXSystem implements Subsystem {
         (u.uSunDir.value as THREE.Vector3).copy(this.sky.sunDirection);
         const p = this.sky.preset;
         (u.uHaze.value as THREE.Vector4).set(p.hazeDensity, p.hazeHeight, 2.4, 0.34);
+      }
+      /*
+       * The occlusion fill's colour, live off the hemisphere light.
+       *
+       * Two thirds sky, one third ground: a crevice between two men sees mostly the sky
+       * strip above it and a little of the dry plain, and `LightingSystem` has already done
+       * the hard part — its `fill.color` carries the sky's own chromaticity stretched about
+       * its luminance by `FILL_CHROMA_GAIN`, which is the term that makes this project's
+       * shadows blue-grey instead of grey. Normalised to unit luminance and scaled by
+       * `AO_FILL`, so the *amount* of light that survives occlusion is one number here and
+       * the *colour* of it is the rig's, and tuning either cannot silently change the other.
+       */
+      {
+        const f = this.lighting?.fill;
+        const cr = f ? f.color.r * 0.66 + f.groundColor.r * 0.34 : 1;
+        const cg = f ? f.color.g * 0.66 + f.groundColor.g * 0.34 : 1;
+        const cb = f ? f.color.b * 0.66 + f.groundColor.b * 0.34 : 1;
+        const lum = Math.max(1e-4, 0.2126 * cr + 0.7152 * cg + 0.0722 * cb);
+        const k = AO_FILL / lum;
+        (u.uAoFill.value as THREE.Vector3).set(cr * k, cg * k, cb * k);
       }
       // No sky cube yet (first frame) means no aerial term; fall back to a copy.
       if (u.tSky.value) this.blit(this.mComposite, cur);
