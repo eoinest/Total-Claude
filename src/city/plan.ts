@@ -9,7 +9,8 @@ import {
   assertTopology,
 } from './rome/assertions';
 import { WALL_X_MAX, WALL_X_MIN } from './rome/circuit';
-import { AQUEDUCTS, DISTRICTS, LANDMARKS, STREETS } from './rome/layout';
+import { AQUEDUCTS, LANDMARKS, STREETS } from './rome/layout';
+import { REGIONS } from './rome/regions';
 import { buildDistricts } from './rome/fabric';
 import { KX, KZ, ROME } from './rome/survey';
 
@@ -154,15 +155,14 @@ for (const l of LANDMARKS) {
   push(t);
 }
 
-// ---- districts, outlined on top so the landmark fills do not hide them ---
-for (const d of DISTRICTS) {
+// ---- the fourteen regiones, outlined so the landmark fills do not hide them ---
+// Polygons, not rectangles: `ROME-FABRIC.md` §5 phase 4. Ten of the fourteen have ground on
+// this frame and they partition it exactly, so these outlines abut and never overlap — which
+// is the one thing the seventeen dashed rectangles this replaces could never draw.
+for (const g of REGIONS) {
   push(
-    el('rect', {
-      x: -d.hw,
-      y: -d.hd,
-      width: d.hw * 2,
-      height: d.hd * 2,
-      transform: `translate(${d.x} ${d.z}) rotate(${(-d.rot * 180) / Math.PI})`,
+    el('polygon', {
+      points: g.poly.map((p) => `${p.x.toFixed(1)},${p.z.toFixed(1)}`).join(' '),
       fill: 'none',
       stroke: '#7a5f3a',
       'stroke-width': 2,
@@ -200,19 +200,7 @@ for (const l of LANDMARKS) {
 for (const st of STREETS) keepOut.addPath(st.path, st.width * 0.5 + 2.5);
 for (const a of AQUEDUCTS) keepOut.addPath(a.path, 8);
 const fabric = buildDistricts(() => 20, keepOut, 'rome-fabric', (x) => crestZAt(x));
-const perDistrict = new Map<string, number>();
-for (const f of fabric.footprints) {
-  let best = '';
-  let bestD = Infinity;
-  for (const d of DISTRICTS) {
-    const dd = Math.sqrt((f.x - d.x) * (f.x - d.x) + (f.z - d.z) * (f.z - d.z));
-    if (dd < bestD) {
-      bestD = dd;
-      best = d.id;
-    }
-  }
-  perDistrict.set(best, (perDistrict.get(best) ?? 0) + 1);
-}
+
 for (const f of fabric.footprints) {
   push(el('rect', { x: f.x - f.hw, y: f.z - f.hd, width: f.hw * 2, height: f.hd * 2, transform: `rotate(${(-f.rot * 180) / Math.PI} ${f.x} ${f.z})`, fill: '#8a6b4a', opacity: 0.5 }));
 }
@@ -248,7 +236,10 @@ lines.push(`amphitheatres (Colosseum form): ${amphi.count} — ${amphi.ok ? 'OK'
 lines.push(`topology: ${topo.checks - topo.failures.length}/${topo.checks} adjacency + hill-ring checks pass`);
 for (const f of topo.failures) lines.push(`  ! ${f}`);
 lines.push(`insulae: ${fabric.footprints.length} plots, ${fabric.trees.length} trees`);
-lines.push('districts: ' + DISTRICTS.map((d) => `${d.id} ${perDistrict.get(d.id) ?? 0}`).join('  '));
+lines.push('regiones: ' + fabric.report.plotsByRegion.map((r) => `${r.id} ${r.blocks}b/${r.plots}p`).join('  '));
+lines.push(`grid: ${fabric.report.faces} faces, ${fabric.report.blocks} blocks, `
+  + `${fabric.report.plazas} plazas, ${fabric.report.crossLanes} cross-lanes `
+  + `(${fabric.report.crossLaneKm.toFixed(1)} km)`);
 lines.push('');
 lines.push('id                  worldx worldz  reale realn   size    drift  hill');
 for (const r of rows) {

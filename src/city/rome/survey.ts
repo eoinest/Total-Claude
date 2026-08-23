@@ -1,5 +1,10 @@
-import { HALF_EXTENT } from '../../terrain/TerrainSystem';
-import { KX, KZ, riverBankX, romeWallZ } from '../../terrain/topography';
+// `HALF_EXTENT` is *defined* in `topography.ts`; `TerrainSystem.ts` only re-exports it, and
+// importing it from there dragged the whole of `TerrainSystem` — and through `../maps`, the
+// city's own fabric — into this module's dependency graph. That closed a cycle
+// `survey -> TerrainSystem -> maps -> city/rome/fabric -> city/rome/layout -> survey` which
+// Vite's evaluation order happened to tolerate and Node's does not, so no offline tool could
+// import anything under `src/city/rome`. One line, same value, one fewer cycle.
+import { HALF_EXTENT, KX, KZ, riverBankX, romeWallZ } from '../../terrain/topography';
 import { clamp } from '../../util/math';
 
 /**

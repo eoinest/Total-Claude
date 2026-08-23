@@ -1122,6 +1122,82 @@ try {
       return p.length < 3 ? 0 : Math.abs(signedArea(p));
     };
 
+    /** Crossing number. Correct for any simple polygon; `inPoly` is convex-only. */
+    const inRing = (p, x, z) => {
+      let inside = false;
+      for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+        const a = p[i];
+        const b = p[j];
+        if ((a.z > z) !== (b.z > z)) {
+          const t = (z - a.z) / (b.z - a.z);
+          if (x < a.x + t * (b.x - a.x)) inside = !inside;
+        }
+      }
+      return inside;
+    };
+
+    /** Ear clipping. Enough for the region rings, which are simple and hole-free. */
+    const triangulate = (poly) => {
+      const n = poly.length;
+      if (n < 3) return [];
+      if (n === 3) return [poly];
+      const idx = [...Array(n).keys()];
+      if (signedArea(poly) < 0) idx.reverse();
+      const tris = [];
+      let guard = 0;
+      while (idx.length > 3 && guard++ < 4 * n) {
+        let cut = false;
+        for (let i = 0; i < idx.length; i++) {
+          const a = poly[idx[(i + idx.length - 1) % idx.length]];
+          const b = poly[idx[i]];
+          const c = poly[idx[(i + 1) % idx.length]];
+          const cr = (b.x - a.x) * (c.z - b.z) - (b.z - a.z) * (c.x - b.x);
+          if (cr <= 0) continue;              // reflex under CCW winding
+          let clean = true;
+          for (let k = 0; k < idx.length && clean; k++) {
+            if (k === i || k === (i + idx.length - 1) % idx.length || k === (i + 1) % idx.length) continue;
+            const p = poly[idx[k]];
+            const d1 = (b.x - a.x) * (p.z - a.z) - (b.z - a.z) * (p.x - a.x);
+            const d2 = (c.x - b.x) * (p.z - b.z) - (c.z - b.z) * (p.x - b.x);
+            const d3 = (a.x - c.x) * (p.z - c.z) - (a.z - c.z) * (p.x - c.x);
+            if (d1 >= 0 && d2 >= 0 && d3 >= 0) clean = false;
+          }
+          if (!clean) continue;
+          tris.push([a, b, c]);
+          idx.splice(i, 1);
+          cut = true;
+          break;
+        }
+        if (!cut) break;                       // degenerate; stop rather than spin
+      }
+      if (idx.length === 3) tris.push(idx.map((k) => poly[k]));
+      return tris;
+    };
+
+    /**
+     * Area of the intersection of two arbitrary simple polygons.
+     *
+     * `clipArea` is Sutherland-Hodgman, which is only correct when the *clip* polygon is
+     * convex; a region ring is not. Triangulating both and clipping triangle against triangle
+     * is exact, because a triangle is convex, and it reduces to `clipArea` when both inputs
+     * already are — which is why Carthage's rectangles must read the same through it.
+     */
+    const polyIntersectArea = (a, b) => {
+      if (a.length === 4 && b.length === 4) return clipArea(a, b);
+      const ta = triangulate(ccw(a));
+      const tb = triangulate(ccw(b));
+      const bg = makeGrid(tb.map((t) => ({ bb: bbox(t) })));
+      let sum = 0;
+      for (const p of ta) {
+        const pb = bbox(p);
+        gridQuery(bg, pb, 0, (j) => {
+          if (bbClear(pb, bbox(tb[j]))) return;
+          sum += clipArea(p, tb[j]);
+        });
+      }
+      return sum;
+    };
+
     const axesOf = (p) => {
       const ax = [];
       for (let i = 0; i < p.length; i++) {
@@ -1340,6 +1416,8 @@ try {
      * and against the number 1.00, which is what a partition means.
      */
     let regions = null;
+    /** Rows the frame cannot carry, read as a declaration and printed. `MAP-METHOD.md` rule 16. */
+    let regionsOffFrame = [];
     /**
      * The build's own claim about which survey rows are off this map's frame, read as a
      * DECLARATION and graded against `OFF_FRAME_AGREED`, which is typed into the probe. Not a
@@ -1358,7 +1436,19 @@ try {
           id: l.id, name: l.name, x: l.x, z: l.z, reach: Math.hypot(l.hw, l.hd), soft: !!l.soft,
           complex: l.complex ?? null, onRiver: !!l.onRiver, farBank: !!l.farBank,
         }));
-        regions = L.DISTRICTS.map((d) => ({ id: d.id, x: d.x, z: d.z, hw: d.hw, hd: d.hd, rot: d.rot }));
+        /*
+         * **Rome's regions are polygons now, and this reads them as polygons.**
+         *
+         * `src/city/rome/layout.ts`'s seventeen `DISTRICTS` rectangles are deleted;
+         * `src/city/rome/regions.ts` publishes the ten Augustan *regiones* the frame carries,
+         * as rings in world metres. It is imported by name and **not** with a fallback to the
+         * old export: a silent fallback to a table that no longer exists is how G18 and G19
+         * would come back green on a city with no regions at all. If the import fails,
+         * `importNotes` says so and both checks read NOT MEASURED, which is a failure.
+         */
+        const RG = await import('/src/city/rome/regions.ts');
+        regions = RG.REGIONS.map((r) => ({ id: r.id, poly: r.poly.map((p) => ({ x: p.x, z: p.z })) }));
+        regionsOffFrame = (RG.OFF_FRAME_REGIONES ?? []).map((r) => `${r.numeral} ${r.name}`);
         declaredOffFrame = (L.OFF_MAP_SOUTH ?? []).map((m) => m.id);
       } else if (MAPID === 'carthage') {
         const L = await import('/src/city/carthage/layout.ts');
@@ -2333,9 +2423,18 @@ try {
       }
       const TOPO = await import('/src/terrain/topography.ts');
       const EXT = TOPO.HALF_EXTENT;
+      /*
+       * A region is a **polygon** here, not a rectangle. Carthage still publishes
+       * `{x, z, hw, hd, rot}` quarters and they go through `planPoly` exactly as before, so
+       * the control's G18 and G19 must read the same numbers after this change as before it —
+       * that is the test that this generalisation is not a relaxation. Rome publishes rings.
+       */
       const polys = regions.map((r) => {
-        const poly = planPoly(r);
-        return { id: r.id, poly: ccw(poly), bb: bbox(poly), area: 4 * r.hw * r.hd };
+        const poly = r.poly ?? planPoly(r);
+        return {
+          id: r.id, poly: ccw(poly), bb: bbox(poly),
+          area: r.poly ? Math.abs(signedArea(poly)) : 4 * r.hw * r.hd,
+        };
       });
       const STEP = 8;
       const A = STEP * STEP;
@@ -2360,7 +2459,10 @@ try {
           let n = 0;
           for (const r of polys) {
             if (x < r.bb.x0 || x > r.bb.x1 || z < r.bb.z0 || z > r.bb.z1) continue;
-            if (!inPoly(r.poly, x, z)) continue;
+            // `inPoly` is an all-left test and is only correct for a CONVEX polygon. A regio's
+            // ring is not convex, so this uses the crossing number, which is correct for any
+            // simple polygon and gives the identical answer on Carthage's rectangles.
+            if (!inRing(r.poly, x, z)) continue;
             n++;
             perRegion.set(r.id, (perRegion.get(r.id) ?? 0) + A);
           }
@@ -2376,7 +2478,10 @@ try {
       for (let i = 0; i < polys.length; i++) {
         for (let j = i + 1; j < polys.length; j++) {
           if (bbClear(polys[i].bb, polys[j].bb)) continue;
-          const ar = clipArea(polys[i].poly, polys[j].poly);
+          // Sutherland-Hodgman needs a convex clip polygon and a regio's ring is not one, so
+          // this is the triangulated intersection: exact for any pair of simple polygons, and
+          // identical to `clipArea` on the convex rectangles Carthage publishes.
+          const ar = polyIntersectArea(polys[i].poly, polys[j].poly);
           if (ar <= TH.NOISE_M2) continue;
           pairs++;
           pairM2 += ar;
@@ -2400,6 +2505,7 @@ try {
         doubleClaimedM2: r2(claimedCells - coveredOnce),
         overlappingPairs: pairs,
         overlapAreaM2: r2(pairM2),
+        offFrame: regionsOffFrame,
         worstOverlaps: worst.slice(0, 10).map((w) => ({ a: w.a, b: w.b, m2: r2(w.m2) })),
         perRegionInsideAvailableM2: [...perRegion.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([id, m2]) => ({ id, m2: r2(m2) })),
       };
@@ -2835,8 +2941,11 @@ try {
           && Math.abs((P.coverageOverAvailable ?? 0) - 1) <= TH.PARTITION_TOL : false,
         P.measured
           ? `${P.regions} regions claim ${P.claimedOverAvailable}x the ${P.availableGroundM2} m2 of land inside the circuit`
-            + ` (their declared rectangles total ${P.declaredOverAvailable}x it); ${P.coverageOverAvailable}x covered at`
+            + ` (their authored outlines, which may run past the map edge, total ${P.declaredOverAvailable}x it); ${P.coverageOverAvailable}x covered at`
             + ` least once; ${P.doubleClaimedM2} m2 claimed more than once`
+            + (P.offFrame && P.offFrame.length
+              ? ` | OFF-FRAME, named and counted: ${P.offFrame.length} [${P.offFrame.join(', ')}]`
+              : '')
           : `NOT MEASURED: ${P.why}`,
         `1.00 +/- ${TH.PARTITION_TOL}`);
     }
