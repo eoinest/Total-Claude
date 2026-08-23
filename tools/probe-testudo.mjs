@@ -85,7 +85,6 @@ const CAMS = {
   // A true broadside, aimed at the middle of the block's length rather than at its front
   // corner. The first version of this camera stood at `ahead: 2` and photographed the
   // corner at a grazing angle, which shows a seam in any shield wall ever built.
-  'flank-march': { ahead: -4.5, right: 17, eye: 1.75, aim: 1.55, dist: 17, fov: 40, march: true },
   'flank-halt': { ahead: -4.5, right: 17, eye: 1.75, aim: 1.55, dist: 17, fov: 40 },
   corner: { ahead: 6, right: -6, eye: 1.6, aim: 1.45, dist: 8, fov: 50 },
   tactical: { ahead: 26, right: 18, eye: 34, aim: 1.5, dist: 32, fov: 40 },
@@ -101,6 +100,15 @@ const CAMS = {
   // manoeuvres from, and it is past the distance at which a man would otherwise become a
   // billboard of a man standing up.
   far120: { ahead: 90, right: 55, eye: 42, aim: 1.5, dist: 118, fov: 24 },
+  /*
+   * **Last, and that is not cosmetic.** A camera with `march: true` orders the cohort
+   * forward and lets it walk for 2.2 s before the shutter, and the simulation cannot be
+   * rewound: every camera after it is photographing a block that has moved, at an anchor
+   * that has moved with it. In the first pass `tactical` came after the marching shot in
+   * one arm and before it in the other, so the two frames differed by 1.79 m of world
+   * position and the pair was not a comparison. Everything halted is shot first.
+   */
+  'flank-march': { ahead: -4.5, right: 17, eye: 1.75, aim: 1.55, dist: 17, fov: 40, march: true },
 };
 const requested = args.get('cams') ? String(args.get('cams')).split(',') : Object.keys(CAMS);
 

@@ -203,7 +203,64 @@ above the terrain under the aim point, `fov` is the vertical field of view.
 | `far120` | 90 | 55 | 42 | 1.5 | 24° | 120 m out, past the impostor edge — does it still read as a tortoise |
 
 The frames themselves are under `screenshots/testudo/<label>/`, which is `.gitignore`d; the
-whole directory sits under `screenshots/.metadata_never_index`.
+whole directory sits under `screenshots/.metadata_never_index`. The plates below are the same
+frames re-encoded by `tools/scratch/testudo-plates.mjs`, because `docs/images/` is where a
+frame that has to survive in the repository goes.
+
+**`flank-march` is shot last, and that is not cosmetic.** A camera with `march: true` orders the
+cohort forward and lets it walk for 2.2 s before the shutter, and a simulation cannot be
+rewound: every camera after it photographs a block that has moved. The first pass had
+`tactical` before the marching shot in one arm and after it in the other, so the two frames
+differed by 1.79 m of world position and the pair was not a comparison at all.
+
+---
+
+## 6.1 Before and after, same stations
+
+Every one of these nine pairs was shot at a **bit-identical world eye and aim position** — the
+`cameras.json` in the two directories agree to the centimetre on all nine, which is the only
+reason the pairs mean anything.
+
+| | before | after |
+|---|---|---|
+| eye level, 13 m out | ![](../images/testudo/before-front-eye.jpg) | ![](../images/testudo/after-front-eye.jpg) |
+| 8 m up, 17° | ![](../images/testudo/before-roof-rake.jpg) | ![](../images/testudo/after-roof-rake.jpg) |
+| 34 m up | ![](../images/testudo/before-tactical.jpg) | ![](../images/testudo/after-tactical.jpg) |
+| broadside, eye level | ![](../images/testudo/before-flank-halt.jpg) | ![](../images/testudo/after-flank-halt.jpg) |
+| the corner, 1.6 m | ![](../images/testudo/before-corner.jpg) | ![](../images/testudo/after-corner.jpg) |
+
+After only: [`roof-close`](../images/testudo/after-roof-close.jpg) — one board magnified, which
+is where the umbo on the *front* face of every roof tile settles the question of which way up
+the boards are; [`rear`](../images/testudo/after-rear.jpg);
+[`far120`](../images/testudo/after-far120.jpg);
+[`flank-march`](../images/testudo/after-flank-march.jpg).
+
+## 6.2 What it costs
+
+`renderer.info` after a real frame, same nine cameras, same tree except for this work.
+
+| camera | draws before | draws after | Mtri before | Mtri after |
+|---|---|---|---|---|
+| `front-eye` | 148 | 148 | 9.56 | 9.56 |
+| `roof-rake` | 151 | 151 | 9.96 | 9.96 |
+| `flank-halt` | 112 | 112 | 14.04 | 14.03 |
+| `corner` | 140 | 140 | 10.69 | 10.69 |
+| `tactical` | 130 | 130 | 8.96 | 9.02 |
+| `roof-close` | 137 | **136** | 8.92 | **7.25** |
+| `rear` | 99 | 99 | 10.38 | 10.38 |
+| `far120` | 142 | 142 | 6.42 | 6.42 |
+| `flank-march` | 112 | 112 | 14.04 | 14.04 |
+
+Draw calls are unchanged at eight of nine and one lower at the ninth. No geometry was added:
+the ten new clips are rows in the animation texture (about 250 rows of 48 half-float RGBA
+texels, ~77 KB) and the poses are chosen from an existing instanced draw. The one real
+movement is `roof-close` at **−18.7% triangles**, and it is in the helpful direction — a block
+that stands on a third of the ground occludes and frustum-culls more of itself.
+
+The per-frame CPU is `resolveTestudo`: one pass over the units, one pass over the members of
+the units actually in testudo, and one pass over the pool to advance the form-up ramp. The last
+of those is skipped entirely — including the fill — on any frame where no cohort is in one and
+none was on the previous frame.
 
 ---
 
