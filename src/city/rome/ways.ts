@@ -71,7 +71,7 @@ import { worldOf } from './survey';
  * |---|---|---:|---|
  * | processional | `artery` | 42 m | **`via-lata` alone**, plus the `via-sagularis` behind the curtain |
  * | consular | `secondary` | 24 m | 11 ways: the four gate roads, the Alta Semita, the Via Recta, the Via Sacra, the Labicana, the Tiburtina, the Appia, the Triumphalis |
- * | local | `local` | 14 m | 12 *vici* and *clivi* |
+ * | local | `local` | 14 m | 14 *vici* and *clivi*: ten on the left bank, and the four Trans Tiberim rows, whose rank is a statement about the map rather than about the road — see their own section |
  * | vicus | `vicus` | 8 m | the grid's own cross-lanes — **phase 4**, not authored here |
  * | pomerium way | `artery` | 42 m | `via-sagularis`, unchanged, still built in `layout.ts` |
  * | clivus (stepped) | — | — | **owed.** The stepped treatment is Carthage's `streets.ts` and is not wired here; the four *clivi* carry `local` rank and ordinary paving, and `docs/MAP-METHOD.md` §3 records the debt. A flag nothing reads is worse than no flag (`ROME-FABRIC.md` §9.9 on `maxDrawAt`). |
@@ -86,6 +86,10 @@ import { worldOf } from './survey';
  * `clivus-capitolinus`, `subura`, `via-pinciana`. Plus `clivus-argentarius`, which is not on
  * §4.2's list and had to be added anyway: without it the Via Lata's southern end dies 350 m
  * short of the Forum and the armature is in two pieces.
+ *
+ * **And four more across the Tiber**, which is a later pass and has its own section at the
+ * bottom of the table: `via-aurelia`, `ripa-transtiberim`, `via-septimiana` and
+ * `via-triumphalis-vaticana`. **26 rows, 12.4 km**, against 22 and 10.3 before them.
  */
 export interface RomeWay {
   id: string;
@@ -602,6 +606,289 @@ export const ROME_WAYS: readonly RomeWay[] = [
     paved: true,
     cite: '[PLATE Shepherd] the ramp between the Tabularium and the Arx',
   },
+
+  // -------------------------------------------------------------------------
+  // TRANS TIBERIM — the right bank, which phase 3 authored no way across at all
+  // -------------------------------------------------------------------------
+  /**
+   * **Regio XIV is 47.2 % of this map's city ground and had 12.7 % of it under fabric.**
+   *
+   * Phase 3 left the far bank out on purpose and said so: *"the Via Aurelia and the Via
+   * Portuensis are not in `ROME_WAYS`"* (`fabric.ts`'s `RIVER_REACH` comment), so the only
+   * thing making the right bank urban at all was a 230 m ramp off the channel — a ribbon of
+   * insulae hugging the water and a square kilometre of empty field behind it. The five rows
+   * below are the ways that were missing, and the two paragraphs that follow are what reading
+   * the plates for them changed about the answer.
+   *
+   * ## The far bank on THIS map is a suburbium, not a second Campus Martius
+   *
+   * Measured before anything was authored (`tools/scratch/rome-farbank.mjs`), Regio XIV's
+   * 108.9 ha of city ground divides into four bands of roughly equal size, and only the
+   * southernmost is the quarter everybody means by Transtiberim:
+   *
+   * | survey n | world z | ha | what the plates put there |
+   * |---|---|---:|---|
+   * | −367 … 300 | 1245–1374 | 35.5 | Transtiberim, the *Ripa*, the Janiculum's east foot |
+   * | 300 … 900 | 1030–1245 | 22.9 | the **Prata Quinctia** and the Horti Agrippinae — meadow |
+   * | 900 … 1400 | 755–1030 | 22.0 | the **Gardens of Domitia**, the Mausoleum of Hadrian |
+   * | 1400 … 2006 | 543–755 | 28.5 | the **Ager Vaticanus** — the Circus of Nero, tombs, gardens |
+   *
+   * **Three quarters of the far bank was never built on**, and the reason is the frame rather
+   * than the history: `CITY_Z_MAX` is world z 1374, which is survey northing **−367**, and
+   * S. Maria in Trastevere — the middle of the real quarter — is at n **−445**. Trastevere
+   * proper is off the +Z edge for the same reason `offMapSouth` takes the Aventine and
+   * `REGIONES` takes four whole *regiones*. What the map carries is the quarter's northern
+   * lobe, the water frontage, and then a kilometre of the imperial gardens and the Vatican
+   * plain behind it.
+   *
+   * So the honest target for this ground is **not** the 40–52 % coverage the left-bank
+   * *regiones* carry. It is a dense lip along the water and *horti* behind it, and Regio XIV's
+   * `hortiNorthOf` in `regions.ts` is set to 120 — the Porta Septimiana's own northing — to
+   * say so. A lattice of insulae over the Prata Quinctia would be the fault phase 3 named
+   * (*"less like Transtiberim than an empty field is"*) wearing a different coat.
+   *
+   * ## The rank of every row here is `local`, and that is a statement about the map
+   *
+   * The Via Aurelia and the Via Triumphalis are consular roads and belong at `secondary`.
+   * They are `local` because **this map authors no bridge.** `buildWays` drapes a carriageway
+   * on `heightAt`, so a way laid across the channel dives into the river bed; the only
+   * modelled crossings on the whole map are the Pons Fabricius and the Pons Cestius, drawn as
+   * part of the `tiber-island` monument, and the Cestius's right abutment computes to world
+   * z 1406 — eight metres off the +Z edge. With no crossing in the table, a `secondary` on the
+   * right bank puts `assertWayGraph`'s ranked armature in **two** components and that check
+   * goes red for a completely true reason.
+   *
+   * Demoting to `local` keeps it green, and it is worth being exact about what that is:
+   * `MAP-METHOD.md` rule 25 calls dodging a check by reshaping its input *exemption-shopping*.
+   * The reason this is a demotion and not an exemption is that **the fault it dodges is a real
+   * one and it is recorded rather than removed** — the debt is five bridges (Aelius,
+   * Neronianus, Aurelius, Aemilius, Sublicius), their survey coordinates are in
+   * `tools/scratch/tiber-bridges.json`, and the day one of them is drawn these rows go back to
+   * `secondary` and the check has something to say. What would change my mind: a `secondary`
+   * far-bank row that leaves `rankedComponents` at 1, which would mean I was wrong about the
+   * bridges.
+   */
+  {
+    id: 'via-aurelia',
+    cls: 'local',
+    /**
+     * **Shepherd's "Aurelian Way", and it is the only labelled street on the right bank.**
+     *
+     * It crosses at the Pons Aemilius, runs west-north-west the length of Transtiberim, climbs
+     * the Janiculum and leaves through the Porta Aurelia. Read off the plate at 100 m of grid:
+     * the road under the letters `A u r e l i a n   W a y`, from the Cestian and Aemilian
+     * bridgeheads at `e ≈ −390 / n −278`, through the Y junction at `e −1123 / n −270` where
+     * the *Ripa* and the road to the Pons Aurelius branch off it, and on down to the Aurelian
+     * Gate, which the plate puts at `e −1740 / n −427`.
+     *
+     * **Truncated at n −367 and not deleted**, which is the treatment `via-appia`,
+     * `vicus-iugarius` and `vicus-tuscus` already get and the opposite of `via-ostiensis`'s.
+     * The distinction is whether the frame carries a length of the way that varies: the Aurelia
+     * runs `n −270 … −427` on the plate, so 60 % of its on-plate length is inside
+     * `CITY_Z_MAX` and the part that is inside falls 32 world metres in z over 490 in x. That
+     * is a street. The Ostiensis ran `n −420 … −1520`, all of it outside, and every node
+     * collapsed onto one line of ground.
+     *
+     * The four nodes the frame cannot carry, for when the +Z cap moves:
+     *
+     *     [-1515, -379]  [-1650, -409]  [-1740, -427]  the Porta Aurelia  [-1965, -481]
+     *
+     * It crosses the Janiculum Ridge's published footprint in its last 120 metres. That is not
+     * reported by `assertWaysClearOfMonuments` and should not be: the Janiculum is `soft`, the
+     * Via Aurelia climbed it, and a road over a ridge is a road over a ridge. What the frames
+     * *do* show is `ROME-FABRIC.md`'s recorded fault that the 520 × 240 ridge renders as a
+     * circular plateau, because `moundRadius` is one number.
+     */
+    path: [
+      [-368, -259],
+      [-600, -286],
+      [-820, -295],
+      [-1000, -288],
+      [-1123, -270],
+      [-1250, -302],
+      [-1380, -345],
+      [-1467, -367],
+    ],
+    paved: true,
+    cite: '[PLATE Shepherd] "Aurelian Way", read at 100 m grid over e −2100..−300; '
+      + '[DER] east end on the ripa-transtiberim node at the Pons Aemilius; '
+      + '[DER] west end truncated at n −367, the last northing CITY_Z_MAX can draw',
+  },
+  {
+    id: 'ripa-transtiberim',
+    cls: 'local',
+    /**
+     * **The *Ripa*: the right bank's own road, derived from the channel the terrain draws.**
+     *
+     * Transtiberim existed because of the water. Its wharves, its warehouses, its
+     * *mensores frumentarii* and its Syrian and Jewish quarters were all on the bank, and the
+     * street that served them followed the bank — which on this map means it has to follow
+     * **`tiberSurvey.ts`'s 451 stations and not a line read off a plate**, for the same reason
+     * `regions.ts`'s `RIVER` chain does: the region boundary, the block boundary
+     * (`fabric.ts`'s `riverWay`) and the frontage road all have to be the same water or the
+     * quarter fronts something that is not there.
+     *
+     * So the nodes are `[PIN]`: the **right bank facing downstream**, offset **55 survey metres
+     * inland of the bank line** — half the channel's own modelled width plus a quay — computed
+     * from the perpendicular of the local tangent rather than by northing, because two of the
+     * reaches it crosses run east–west and a by-northing offset is degenerate there
+     * (`MAP-METHOD.md` rule 20, which cost this project a 392 m error the first time).
+     * Reproduce them with `tools/scratch/rome-ripa.mjs`; the channel station each one came off
+     * is in the comment beside it.
+     *
+     * **Where the plate agrees and where it is silent, stated separately.** South of the Porta
+     * Septimiana — nodes 1 to 7 — Shepherd draws this road, from the Aurelian Way's Y junction
+     * up to the gate, and the derived line and the inked one agree to about 60 m, which is
+     * inside the Shepherd fit's own RMS. **North of the gate the plate draws nothing**, and it
+     * is right not to: the Prata Quinctia was meadow and the Via della Lungara that runs on
+     * this line today is Julius II's, cut in 1508. The claim the northern nine nodes make is
+     * that the Horti Agrippinae and the Gardens of Domitia fronted a bank *track* to the Pons
+     * Aelius, not a paved via — which is why the row is `local`, why it stops at the Mausoleum
+     * of Hadrian, and why `regions.ts` calls everything it opens north of n 120 *horti*.
+     * **What would change my mind:** a plate that draws the Prata's right bank at a scale that
+     * could show a road, and shows none.
+     *
+     * The north end is 74 world metres from the Mausoleum of Hadrian's centre and 26 clear of
+     * its published box: the Pons Aelius landed on the tomb, and a way that ran to the
+     * bridgehead would run through it.
+     */
+    path: [
+      [-368, -259],   // channel (-293, -194), and the via-aurelia's east end
+      [-552, -222],   // channel (-568, -127)
+      [-790, -229],   // channel (-767, -136)
+      [-997, -113],   // channel (-940, -38)
+      [-1076, -16],   // channel (-1002, 40)
+      [-1136, 48],    // channel (-1070, 113)
+      [-1208, 124],   // channel (-1139, 186)
+      [-1272, 197],   // channel (-1205, 261), and the via-septimiana's north end
+      [-1346, 275],   // channel (-1274, 334)
+      [-1405, 348],   // channel (-1334, 413)
+      [-1483, 429],   // channel (-1402, 486)
+      [-1539, 522],   // channel (-1453, 572)
+      [-1592, 607],   // channel (-1505, 657)
+      [-1637, 743],   // channel (-1537, 751) — the Ansa's westernmost reach
+      [-1631, 865],   // channel (-1533, 851)
+      [-1567, 1004],  // channel (-1493, 941)
+      [-1474, 1082],  // channel (-1417, 1005) — the Pons Aelius approach
+    ],
+    paved: true,
+    cite: '[PIN] the right bank of tiberSurvey.ts facing downstream, offset 55 survey m inland; '
+      + '[PLATE Shepherd] the drawn road from the Aurelian Way junction to the Septimian Gate '
+      + 'agrees to ~60 m over nodes 1–7; north of the gate the plate draws nothing and the '
+      + 'nodes are [DER]',
+  },
+  {
+    id: 'via-septimiana',
+    cls: 'local',
+    /**
+     * The inland street of the quarter, from the Aurelian Way's Y junction north through the
+     * Porta Septimiana to the bank. Shepherd draws it as a double line and puts the gate at
+     * `e −1272 / n −21`; the real Porta Septimiana is at 41.8925 N 12.4670 E, which is
+     * `e −1268 / n 0`, so plate and geodesy agree to **21 metres** here — the best agreement
+     * anywhere on the right bank, and worth saying because nothing else over here is that good.
+     *
+     * It runs about 90 world metres inland of `ripa-transtiberim` and parallel to it, and the
+     * strip between the two is the quarter: quay, one range of blocks, street. That section is
+     * the whole reason this row exists rather than being folded into the *Ripa* — one street on
+     * a bank makes a frontage, two make a quarter.
+     *
+     * The north end is set on a `ripa-transtiberim` node so the junction is exact.
+     */
+    path: [
+      [-1123, -270],
+      [-1191, -157],
+      [-1272, -21],
+      [-1272, 197],
+    ],
+    paved: true,
+    cite: '[PLATE Shepherd] the road from the Aurelian Way to the "Septimian Gate"; '
+      + '[DER] north end on the ripa-transtiberim node at (−1272, 197)',
+  },
+  {
+    id: 'via-triumphalis-vaticana',
+    cls: 'local',
+    /**
+     * **Shepherd's "Triumphal Way", and it is not the way this table already calls that.**
+     *
+     * The plate carries the label `T r i u m p h a l   w a y` in one place only: on the far
+     * bank, running north-north-west across the Ager Vaticanus from the Vatican road junction
+     * toward Monte Mario and Veii. The existing `via-triumphalis` row is on the **left** bank,
+     * up the west side of the Campus Martius, and its own citation is careful about this — it
+     * says *"the road inside the Tiber bend"* and does not claim the label. Both are real, they
+     * are two legs of one processional route, and the id of the left-bank row is the loose one.
+     * Renaming that row is a change this pass does not own; naming this one for the region it
+     * crosses is not.
+     *
+     * **The first leg is the Aelian Bridge's own road** — the line Shepherd draws from the
+     * bridge's west end through the Vatican junction at `e −1792 / n 1095`, where the Triumphal
+     * Way crosses it and the road to the Circus of Nero leaves west. It is folded into this row
+     * rather than authored as a `via-cornelia`, and *that* decision is the one worth recording,
+     * because the first version of this pass did author the Cornelia and ran it 2.3 km west to
+     * the frame:
+     *
+     *  - With it, the Ager Vaticanus came back **46.7 % inside a block** and the generated
+     *    cross-lane total went from **42.5 km to 59.9 km** — seventeen kilometres of new lane,
+     *    at a 59 m pitch, over the imperial gardens. `crossLanesFor`'s `emit` already refuses to
+     *    cut a lattice across open country, and the reason it did not refuse here is that the
+     *    road *made* the country urban: `urbanWeight` is a distance to the armature and it does
+     *    not know what the road was for.
+     *  - The Vatican necropolis is a **street of tombs**, not a quarter, and a corridor 365 m
+     *    either side of one line is what a street of tombs is shaped like.
+     *
+     * So the road west to the circus is a deletion with a reason, and the reading is kept
+     * because it is the control on the junction's position: the plate puts the Circus of Nero
+     * at `e −2428 … −2088 / n 1047 … 1122`, and 41.9022 N 12.4544 E puts its centre at
+     * `e −2312 / n 1080` — **19 metres** from the middle of the inked outline, which is the
+     * best control anywhere on the far bank.
+     *
+     *   via-cornelia  local  [-1792,1095] [-2100,1088] [-2500,1080] [-3100,1070] [-3815,1060]
+     *
+     * North of the junction the row is Shepherd's labelled line, read at `de/dn = −0.478` over
+     * 750 metres of northing, and continued on that bearing to `n 2250` — world z 458, which is
+     * **85 m north of the crest contour** the terrain gives the whole western half of the map
+     * (`romeWallZ` is a flat 543.4 for every x below zero). So the row carries `outside`, like
+     * the four consular gate roads, and `assertWayGraph` reads its far end as a road leaving the
+     * city rather than as a stub.
+     *
+     * The first cut of this row stopped at `n 2130` without `outside`, and the frame clamp put
+     * it back at z 549 — six metres on the *city* side of the contour and therefore a STUB.
+     * `assertWayGraph` said so, which is the check doing exactly what `MAP-METHOD.md` rule 26
+     * asks of one: it could fail, and it did.
+     */
+    path: [
+      [-1474, 1082],
+      [-1792, 1095],
+      [-1920, 1353],
+      [-2088, 1675],
+      [-2200, 1900],
+      [-2320, 2250],
+    ],
+    paved: true,
+    outside: true,
+    cite: '[PLATE Shepherd] "Triumphal way", the only place the plate carries that label, and '
+      + 'the Aelian Bridge road to the Vatican junction; [DER] south end on the '
+      + 'ripa-transtiberim terminus at the Pons Aelius',
+  },
+  /**
+   * **`via-portuensis` is not here, and the reason is the same one that deleted
+   * `via-ostiensis`: the frame's south edge.**
+   *
+   * The brief for this pass named three ways to establish and this was one of them, so the
+   * measurement is owed rather than the road. The Via Portuensis leaves the city at the **Porta
+   * Portuensis**, which 41.8830 N 12.4740 E puts at `e −688 / n −1057`, and runs south-west
+   * down the right bank to Portus. `CITY_Z_MAX` is survey northing **−367**. So the gate is
+   * **690 metres** past the last northing this map can draw, and the whole road with it.
+   *
+   * What could have been authored is the stub between the Aurelian Way's Y junction and the
+   * clamp — about 110 survey metres, which is **38 world metres**, less than three carriageway
+   * widths. `planarise` prunes degree-1 chains iteratively, so it would bound no block; it
+   * would be drawn, and what it would draw is a 38 m spur pointing at the edge of the map.
+   * That is the "line on the border" this table already refused twice.
+   *
+   * Its coordinates are here so nothing has to be re-read if the +Z cap moves:
+   *
+   *   via-portuensis  secondary  [-1123,-270] [-1010,-520] [-900,-780] [-688,-1057] [-620,-1400]
+   */
   /**
    * **`via-ostiensis` and `clivus-aventinus` are deleted, and the reason is the frame's south
    * edge rather than the plate.**

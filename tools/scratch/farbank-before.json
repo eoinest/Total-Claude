@@ -1,0 +1,149 @@
+{
+ "planMs": 34,
+ "ways": 22,
+ "totalKm": 10.267,
+ "byRank": {
+  "artery": {
+   "n": 1,
+   "km": 0.627
+  },
+  "secondary": {
+   "n": 11,
+   "km": 6.806
+  },
+  "local": {
+   "n": 10,
+   "km": 2.834
+  }
+ },
+ "graph": {
+  "inputWays": 156,
+  "inputSegments": 2389,
+  "intersections": 2040,
+  "nodes": 2881,
+  "edges": 3254,
+  "prunedStubs": 88,
+  "outerFaces": 1,
+  "faces": 463,
+  "degenerateFaces": 0
+ },
+ "crossLanes": 130,
+ "crossLaneKm": 42.47,
+ "blocks": 299,
+ "field": 3,
+ "hortiBlocks": 11,
+ "cityGroundCells": 36056,
+ "onFabricCells": 10916,
+ "regions": [
+  {
+   "id": "regio-vii-via-lata",
+   "numeral": "VII",
+   "blocks": 31,
+   "fieldFaces": 1,
+   "insetHa": 7.68,
+   "groundHa": 16.1,
+   "fabCells": 1170,
+   "cells": 2521,
+   "share": 0.4641
+  },
+  {
+   "id": "regio-ix-circus-flaminius",
+   "numeral": "IX",
+   "blocks": 53,
+   "fieldFaces": 1,
+   "insetHa": 11.14,
+   "groundHa": 28,
+   "fabCells": 1771,
+   "cells": 4378,
+   "share": 0.4045
+  },
+  {
+   "id": "regio-vi-alta-semita",
+   "numeral": "VI",
+   "blocks": 77,
+   "fieldFaces": 0,
+   "insetHa": 18.1,
+   "groundHa": 39.3,
+   "fabCells": 2867,
+   "cells": 6137,
+   "share": 0.4672
+  },
+  {
+   "id": "regio-iv-templum-pacis",
+   "numeral": "IV",
+   "blocks": 7,
+   "fieldFaces": 0,
+   "insetHa": 1.36,
+   "groundHa": 3.5,
+   "fabCells": 225,
+   "cells": 549,
+   "share": 0.4098
+  },
+  {
+   "id": "regio-v-esquiliae",
+   "numeral": "V",
+   "blocks": 48,
+   "fieldFaces": 0,
+   "insetHa": 11.29,
+   "groundHa": 21.5,
+   "fabCells": 1734,
+   "cells": 3363,
+   "share": 0.5156
+  },
+  {
+   "id": "regio-viii-forum-romanum",
+   "numeral": "VIII",
+   "blocks": 15,
+   "fieldFaces": 0,
+   "insetHa": 3.48,
+   "groundHa": 6.5,
+   "fabCells": 475,
+   "cells": 1010,
+   "share": 0.4703
+  },
+  {
+   "id": "regio-iii-isis-et-serapis",
+   "numeral": "III",
+   "blocks": 11,
+   "fieldFaces": 0,
+   "insetHa": 2.5,
+   "groundHa": 5,
+   "fabCells": 384,
+   "cells": 784,
+   "share": 0.4898
+  },
+  {
+   "id": "regio-x-palatium",
+   "numeral": "X",
+   "blocks": 1,
+   "fieldFaces": 0,
+   "insetHa": 0.31,
+   "groundHa": 0.7,
+   "fabCells": 67,
+   "cells": 105,
+   "share": 0.6381
+  },
+  {
+   "id": "regio-xi-circus-maximus",
+   "numeral": "XI",
+   "blocks": 3,
+   "fieldFaces": 0,
+   "insetHa": 0.3,
+   "groundHa": 1.2,
+   "fabCells": 67,
+   "cells": 192,
+   "share": 0.349
+  },
+  {
+   "id": "regio-xiv-transtiberim",
+   "numeral": "XIV",
+   "blocks": 53,
+   "fieldFaces": 1,
+   "insetHa": 13.82,
+   "groundHa": 108.9,
+   "fabCells": 2156,
+   "cells": 17017,
+   "share": 0.1267
+  }
+ ]
+}
