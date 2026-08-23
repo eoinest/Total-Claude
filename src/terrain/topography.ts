@@ -778,54 +778,61 @@ export const regionalPlain = (x: number, z: number): number =>
  * the same. Each row is the foot of the scarp, with the crest above it for the contrast that
  * makes it a scarp at all.
  *
- *     n      e      the place                                          toe     crest above
- *     2500  −520    the Tiber's east bank north of the gate            14 m    —
- *     2045  −440    Porta Flaminia, Piazza del Popolo; the Pincio
- *                   terrace rises directly off the east side           15 m    Pincio 50 m
- *     1830  −360    Via del Babuino under the Villa Medici             17 m    52 m
- *     1478  −140    Piazza di Spagna at the foot of the Steps          19 m    Trinità 50 m
- *     1150   −60    the Via del Tritone valley, Pincian to Quirinal    21 m    —
- *      900   −30    the Trevi, the Quirinal's west foot                22 m    Quirinale 61 m
- *      500   −60    the Quirinal's south-west spur above the Via Lata  19 m    55 m
- *      200  −110    the saddle Trajan cut between Capitol and Quirinal 18 m    —
- *        0  −180    the Capitoline's north-west foot                   16 m    Capitolium 46 m
- *     −367  −360    the Velabrum, between the Capitol and the river    12 m    Palatine 51 m
+ * **The third column is the run from toe to crest, and it is not a constant** — that was the
+ * first draft and `tools/probe-eye.mjs` failed it by 23.8 m at Piazza di Spagna on the first
+ * run. A single feather cannot describe both of the scarps that bound this plain: the
+ * Pincian above the Spanish Steps rises **31 m in 41 real metres**, and the Quirinal above
+ * the Trevi rises **36 m in 420**. One is a cliff and the other is a hillside, and a mask
+ * that splits the difference either leaves a hill in the piazza or shaves the Quirinal.
+ * Rule 22 again: the run is a real distance and is projected by `KX`, never authored in
+ * world metres.
+ *
+ *     n      e     run   the place                                     toe   crest above
+ *     2500  −520   400   the Tiber's east bank north of the gate       14 m  —
+ *     2045  −440   300   Porta Flaminia, Piazza del Popolo             15 m  Pincio 50 m
+ *     1830  −300   220   Via del Babuino under the Villa Medici        17 m  52 m
+ *     1478   −10    80   Piazza di Spagna at the foot of the Steps     19 m  Trinità 50 m
+ *     1150  +120   260   the Via del Tritone valley                    24 m  Quattro Fontane 55 m
+ *      900   +83   420   the Trevi, the Quirinal's west foot           22 m  Quirinale 58 m
+ *      500   +30   340   the Quirinal's south-west spur                19 m  55 m
+ *      200   −60   200   the saddle Trajan cut, Capitol to Quirinal    18 m  —
+ *        0  −140   150   the Capitoline's north-west foot              16 m  Capitolium 46 m
+ *     −367  −330   200   the Velabrum, between the Capitol and river   12 m  Palatine 51 m
  *
  * Sources: Lanciani, *Forma Urbis Romae* (1901), whose plates carry the contours; the
  * elevations are the standard published spot heights for these piazze and summits, which
- * `tools/probe-relief.mjs` re-states independently and grades the built ground against.
+ * `tools/probe-eye.mjs` re-states independently and grades the built ground against. **That
+ * probe does not import this table**, which is the whole point of it.
  */
-const PLAIN_TOE: readonly (readonly [number, number])[] = [
-  [2500, -520], [2045, -440], [1830, -360], [1478, -140], [1150, -60],
-  [900, -30], [500, -60], [200, -110], [0, -180], [-367, -360],
+const PLAIN_TOE: readonly (readonly [number, number, number])[] = [
+  [2500, -520, 400], [2045, -440, 300], [1830, -300, 220], [1478, -10, 80], [1150, 120, 260],
+  [900, 83, 420], [500, 30, 340], [200, -60, 200], [0, -140, 150], [-367, -330, 200],
 ];
 
 /**
- * How far east of the toe the plain gives way entirely to upland structure, in **real**
- * metres of easting.
+ * The toe's easting and the scarp's run at a northing, in **real** metres. Clamped outside
+ * the table's range, and linear between vertices.
  *
- * Rule 22: a cross-section authored in world metres is two different real distances in an
- * anisotropic frame. This one is east–west, so it projects by `KX` alone and 500 real metres
- * is 221.5 world metres. 500 m is the measured run of the Quirinal's west front — the Trevi
- * at 22 m a.s.l. to Via del Quirinale at 55 m, 500 m apart — and it is also close to the
- * Pincian's at the Spanish Steps.
+ * The loop below reads `if (n < b[0]) continue`, and it is worth saying why, because the
+ * first draft had `>` and the whole line came out 200 real metres west: the table descends
+ * in `n`, so the segment that contains `n` is the first one whose *lower* end is at or below
+ * it. With the test the wrong way round every query fell through to the first segment and
+ * extrapolated off the end of it. `probe-eye.mjs` E1c caught it as 15.3 m of median relief
+ * on a plain that should carry 2.
  */
-const PLAIN_TOE_FEATHER_REAL = 500;
-
-/** The toe's easting at a northing, clamped outside the table's range. */
-export const plainToeE = (n: number): number => {
-  if (n >= PLAIN_TOE[0][0]) return PLAIN_TOE[0][1];
+export const plainToeAt = (n: number): { e: number; run: number } => {
+  const first = PLAIN_TOE[0];
+  if (n >= first[0]) return { e: first[1], run: first[2] };
   const last = PLAIN_TOE[PLAIN_TOE.length - 1];
-  if (n <= last[0]) return last[1];
+  if (n <= last[0]) return { e: last[1], run: last[2] };
   for (let i = 1; i < PLAIN_TOE.length; i++) {
     const a = PLAIN_TOE[i - 1];
     const b = PLAIN_TOE[i];
-    if (n > b[0]) {
-      const t = (a[0] - n) / (a[0] - b[0]);
-      return a[1] + (b[1] - a[1]) * t;
-    }
+    if (n < b[0]) continue;
+    const t = (a[0] - n) / (a[0] - b[0]);
+    return { e: a[1] + (b[1] - a[1]) * t, run: a[2] + (b[2] - a[2]) * t };
   }
-  return last[1];
+  return { e: last[1], run: last[2] };
 };
 
 /**
@@ -843,9 +850,9 @@ export const plainToeE = (n: number): number => {
  */
 export const floodplainMask = (x: number, z: number): number => {
   const n = (Z0 - z) / KZ;
-  const toeX = X0 + KX * plainToeE(n);
-  const feather = KX * PLAIN_TOE_FEATHER_REAL;
-  return 1 - sstep(0, feather, x - toeX);
+  const toe = plainToeAt(n);
+  const toeX = X0 + KX * toe.e;
+  return 1 - sstep(0, KX * toe.run, x - toeX);
 };
 
 /** Squared-distance-free rectangle mask with smooth edges, 1 inside. */
@@ -1245,10 +1252,32 @@ export const MURO_TORTO = {
    * onto it off the Pincian's own hillside."*
    */
   bank: 46,
-  /** How far the raised terrace runs back before the hill falls away into the city. */
-  terrace: 120,
-  /** Length of the fall from the terrace back to the natural ground behind it. */
-  backslope: 150,
+  /**
+   * How far the raised terrace runs back before the hill falls away into the city, and how
+   * long the fall is — **in real metres, projected by `KZ`.**
+   *
+   * These were **120 and 150 world metres**, which is `MAP-METHOD.md` rule 22 in the one
+   * place nobody had looked: a cross-section authored as a world constant is a variable in
+   * real metres whenever the frame is anisotropic, and these two are *northings*, so they
+   * divide by `KZ` rather than by `KX`. At 0.35 the terrace and its backslope reached
+   * **903 real metres** cityward of the curtain — at the old `KZ` of 0.222 it was 1,424 —
+   * against a Pincian whose plateau and south-west fall together run about 500.
+   *
+   * Measured: `tools/probe-eye.mjs` E1a put **Piazza di Spagna 23.7 m above its published
+   * height**, standing on the back edge of a garden terrace 480 real metres inside the wall,
+   * and E1c read a median 13.9 m of relief on the flood plain because the terrace's own
+   * backslope crosses half the quarter. The Piazza di Spagna is 19 m a.s.l. and the ground
+   * above it is the Pincian's *west* face, which is 500 m away, not a plateau it stands on.
+   *
+   * `bank` is deliberately **not** converted and stays 46 world metres. It is the ramp a man
+   * walks up onto the wall-walk off the hillside — §4.5's central claim — and it is graded
+   * against `ROUGH_SLOPE_IMPASSABLE`, which is a slope in world metres because that is where
+   * `Pathfinding` lives. Converting it would change a gameplay gradient to fix a geography
+   * error, and the two are separate arguments. It is a named exception, with the ratio
+   * stated, exactly as rule 14 requires.
+   */
+  terraceRealM: 170,
+  backslopeRealM: 200,
   /** How far the bank tapers out past each end of the stretch, in x. */
   taper: 44,
 } as const;
@@ -1271,7 +1300,11 @@ export const muroTortoBank = (x: number, z: number): number => {
   const d = z - romeWallZ(x) - 3.0;
   if (d <= 0) return 0;
   const up = sstep(0, m.bank, d);
-  const down = 1 - sstep(m.bank + m.terrace, m.bank + m.terrace + m.backslope, d);
+  // The terrace and its backslope are real metres of northing; `KZ` projects them here so
+  // the constant and the ground it makes cannot drift apart the way they did.
+  const terrace = m.terraceRealM * KZ;
+  const backslope = m.backslopeRealM * KZ;
+  const down = 1 - sstep(m.bank + terrace, m.bank + terrace + backslope, d);
   return m.height * ends * up * down;
 };
 

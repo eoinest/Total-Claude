@@ -437,7 +437,11 @@ void tcMapSplat(
   // circuit, where it has to beat the grass layers' ~3.0 outright.
   w[2] = cTramp * 1.7 + verge * 1.0
        + fallow * 2.6 + headland * 1.9 + track * 2.4
-       + urban * 2.6;
+       // Modulated, not flat. A flat 2.6 made the whole interior of Rome one unbroken
+       // sheet of the same warm tan and the eye-level frames came back reading as a
+       // beach; a city floor is beaten earth in the yards, gravel in the lanes and stone
+       // where anyone paved it, in patches of tens of metres.
+       + urban * (1.15 + 1.5 * (1.0 - smoothstep(0.34, 0.74, macroMid.b)));
   // 3 mud: where drainage really concentrates and the ground never dries.
   w[3] = smoothstep(0.68, 0.98, cWet) * 2.1 + hollow * 0.45
        + cSilt * 0.6 * (1.0 - smoothstep(0.8, 4.5, tAbove));
@@ -477,7 +481,11 @@ void tcMapSplat(
   // is what the worn edge of a consular carriageway actually looks like. Kept separate from
   // 'paved' so the grass suppression and the aerial exemption are unchanged.
   float pavedFace = 1.0 - smoothstep(kerb - 0.45, kerb + 1.05, roadD);
-  w[7] = pavedFace * 5.2;
+  // ...and inside the circuit, in patches. Rome paved its streets and its fora and left
+  // the yards in beaten earth, and the two interlock at the scale of a block rather than
+  // fading. This is deliberately below the consular road's 5.2 so a carriageway still
+  // wins its own pixels outright where the two meet at the gate.
+  w[7] = pavedFace * 5.2 + urban * 3.1 * smoothstep(0.54, 0.80, macroMid.a);
 }
 `;
 

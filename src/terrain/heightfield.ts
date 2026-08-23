@@ -7,6 +7,7 @@ import {
   DEPLOY_GROUND,
   DITCH_OFFSET,
   HALF_EXTENT,
+  KZ,
   PLAIN_LEVEL,
   QUARRIES,
   RISE_RUN,
@@ -119,8 +120,24 @@ function baseHeight(x: number, z: number, seed: number): number {
    * the survey's own frame, marking the toe of the scarp that bounds the plain on the east.
    * West of it there is no upland structure. East of it nothing has changed.
    */
-  const onHill = sstep(toe - 40, toe + RISE_RUN, z) * (1 - floodplainMask(x, z));
-  let h = plain + amp * sstep(toe, toe + RISE_RUN, z);
+  const dry = 1 - floodplainMask(x, z);
+  const onHill = sstep(toe - 40, toe + RISE_RUN, z) * dry;
+  /*
+   * **The published staircase is a section across the wall, not a column of the map.**
+   * `riseAmplitude(x)` is `ROME.md` §3.5's seven bands — how far the ground stands above the
+   * plain *at the curtain* — and it is a function of x alone, so it was applied at full
+   * strength from the wall line to the map's south edge, 900 world metres inside the city.
+   * At the Fontana di Trevi, world (329, 919), that is **21.7 m of Pincian shoulder standing
+   * on the flood plain a kilometre south of the Pincian**, and `probe-eye.mjs` E1a measured
+   * the station 13.7 m above its published height because of it.
+   *
+   * The mask is applied here and nothing at the wall moves: along `romeWallZ(x)` the toe line
+   * is 80-200 world metres north-west of the curtain for every x where `amp` is above 4, so
+   * the mask is 0 there and §3.5's transect reads unchanged. The one place it is not zero is
+   * x 187-210, where `amp` is 2-4 m and the mask reaches 0.17 — a 0.66 m reduction before the
+   * bench, and the bench then grades 92 % of it away.
+   */
+  let h = plain + amp * dry * sstep(toe, toe + RISE_RUN, z);
 
   // Behind the crest the ground keeps climbing gently into the city's hills — on the hills.
   // On the plain it does not: Piazza del Popolo is 15 m a.s.l. and Piazza Venezia 17 m, two
@@ -494,7 +511,11 @@ export function buildTerrain(
     if (wx < MURO_TORTO.x0 - MURO_TORTO.taper || wx > MURO_TORTO.x1 + MURO_TORTO.taper) continue;
     const cz = romeWallZ(wx);
     const j0 = Math.max(0, Math.floor((cz + HALF_EXTENT) / spacing));
-    const reach = MURO_TORTO.bank + MURO_TORTO.terrace + MURO_TORTO.backslope + 8;
+    // A bound on the loop, derived from the bank itself rather than transcribed from it —
+    // `terraceRealM` and `backslopeRealM` are real metres and project by `KZ`, and a copy of
+    // that arithmetic here is exactly the kind of silent side effect `MAP-METHOD.md` rule 12
+    // is about.
+    const reach = MURO_TORTO.bank + (MURO_TORTO.terraceRealM + MURO_TORTO.backslopeRealM) * KZ + 8;
     const j1 = Math.min(res - 1, Math.ceil((cz + reach + HALF_EXTENT) / spacing));
     const target = muroTortoTopAt(wx);
     for (let j = j0; j <= j1; j++) {
