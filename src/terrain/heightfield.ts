@@ -7,6 +7,7 @@ import {
   DEPLOY_GROUND,
   DITCH_OFFSET,
   HALF_EXTENT,
+  KZ,
   PLAIN_LEVEL,
   QUARRIES,
   RISE_RUN,
@@ -19,6 +20,7 @@ import {
   MURO_TORTO,
   battleCoreMask,
   crestHeightAt,
+  floodplainMask,
   muroTortoBank,
   muroTortoTopAt,
   germanDeployMask,
@@ -73,7 +75,17 @@ export interface TerrainData {
   spacing: number;
   minHeight: number;
   maxHeight: number;
-  /** RGBA8: R wetness, G bedrock exposure, B trampling, A silt. */
+  /**
+   * RGBA8: R wetness, G bedrock exposure, B trampling, A silt.
+   *
+   * **B now carries the city as well, and that is a widening of its meaning rather than a
+   * second use of a spare channel.** The channel says *how trodden this ground is*; the
+   * ground of a city of a million people is the most trodden ground on the map, and the
+   * splat already draws high B as beaten earth, which is what the floor of a Roman quarter
+   * between two party walls actually is. The scale is now declared: **0.34 is a parade
+   * ground, 0.80 a road verge, 1.00 a city street.** Anything reading this channel has to
+   * respect those three, and `GrassField` and `CAMPUS_SPLAT_GLSL` both do.
+   */
   control: Uint8Array;
   controlRes: number;
   /** Wall-clock milliseconds spent generating, for the boot log. */
@@ -91,13 +103,46 @@ function baseHeight(x: number, z: number, seed: number): number {
   const toe = riseToeZ(x);
   const amp = riseAmplitude(x);
 
-  // The slope up onto the Pincian and Quirinal. `onHill` also gates the hill relief so
-  // the flood plain never inherits upland structure.
-  const onHill = sstep(toe - 40, toe + RISE_RUN, z);
-  let h = plain + amp * sstep(toe, toe + RISE_RUN, z);
+  /*
+   * The slope up onto the Pincian and Quirinal.
+   *
+   * **`onHill` does not mean what its name says, and that was the fault.** It is
+   * `sstep(toe - 40, toe + RISE_RUN, z)`: a function of *northing against the toe*, and
+   * nothing else. It saturates to 1 behind the crest at **every x on the map**, so the two
+   * terms it gates — the +13 m climb below and the ±27.5 m ridged multifractal further down
+   * — ran at full strength across the Tiber flood plain, where `riseAmplitude` is exactly
+   * zero and this file's own header says the ground is dead flat. The comment above this
+   * line used to claim `onHill` "gates the hill relief so the flood plain never inherits
+   * upland structure". Measured on `ef8b5c7`, at x = 50 with `riseAmplitude(50) = 0`, the
+   * ground stood at **44.98 m** at z 1100 and the Pantheon sat on a **37.8 m** hill.
+   *
+   * `floodplainMask` is the relation the gate lacked (`MAP-METHOD.md` rule 18): a line, in
+   * the survey's own frame, marking the toe of the scarp that bounds the plain on the east.
+   * West of it there is no upland structure. East of it nothing has changed.
+   */
+  const dry = 1 - floodplainMask(x, z);
+  const onHill = sstep(toe - 40, toe + RISE_RUN, z) * dry;
+  /*
+   * **The published staircase is a section across the wall, not a column of the map.**
+   * `riseAmplitude(x)` is `ROME.md` §3.5's seven bands — how far the ground stands above the
+   * plain *at the curtain* — and it is a function of x alone, so it was applied at full
+   * strength from the wall line to the map's south edge, 900 world metres inside the city.
+   * At the Fontana di Trevi, world (329, 919), that is **21.7 m of Pincian shoulder standing
+   * on the flood plain a kilometre south of the Pincian**, and `probe-eye.mjs` E1a measured
+   * the station 13.7 m above its published height because of it.
+   *
+   * The mask is applied here and nothing at the wall moves: along `romeWallZ(x)` the toe line
+   * is 80-200 world metres north-west of the curtain for every x where `amp` is above 4, so
+   * the mask is 0 there and §3.5's transect reads unchanged. The one place it is not zero is
+   * x 187-210, where `amp` is 2-4 m and the mask reaches 0.17 — a 0.66 m reduction before the
+   * bench, and the bench then grades 92 % of it away.
+   */
+  let h = plain + amp * dry * sstep(toe, toe + RISE_RUN, z);
 
-  // Behind the crest the ground keeps climbing gently into the city's hills.
-  const behind = sstep(toe + RISE_RUN, toe + RISE_RUN + 640, z);
+  // Behind the crest the ground keeps climbing gently into the city's hills — on the hills.
+  // On the plain it does not: Piazza del Popolo is 15 m a.s.l. and Piazza Venezia 17 m, two
+  // kilometres apart, and `regionalPlain`'s own z tilt already carries that 1.9 m.
+  const behind = sstep(toe + RISE_RUN, toe + RISE_RUN + 640, z) * (1 - floodplainMask(x, z));
   h += behind * 13;
 
   // The bluff across the river bend to the north-east (Monti Parioli).
@@ -143,7 +188,17 @@ function baseHeight(x: number, z: number, seed: number): number {
 const UP_A = -1 / 16;
 const UP_B = 9 / 16;
 
-export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
+/**
+ * How much of the ground at (x, z) is city, 0..1. Supplied by the *map*, which is the only
+ * module that may see both its terrain and its city — `heightfield.ts` must not import
+ * `city/`, and does not.
+ */
+export type UrbanMask = (x: number, z: number) => number;
+
+export function buildTerrain(
+  seedLabel = 'campus-martius-271',
+  urbanAt?: UrbanMask
+): TerrainData {
   const t0 = performance.now();
   const rng = new Rng(seedLabel);
   const seed = rng.getState() & 0xffff;
@@ -170,7 +225,11 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
     const x = -HALF_EXTENT + i * wspacing;
     const z = -HALF_EXTENT + j * wspacing;
     const toe = riseToeZ(x);
-    const onHill = sstep(toe - 130, toe + 60, z);
+    // Same correction as `baseHeight`'s `onHill`, and for the sharper reason: 62 % of the
+    // droplet budget was spawning on the flood plain, where the base form is now flat, and
+    // a droplet on flat ground either does nothing or cuts a gully into a floodplain. The
+    // river bank keeps its share — that is where a flood plain really is eroded.
+    const onHill = sstep(toe - 130, toe + 60, z) * (1 - floodplainMask(x, z));
     const north = sstep(-560, -1000, z) * sstep(-200, 480, x);
     const bank = 1 - sstep(60, 210, Math.abs(riverOffset(x, z)));
     return Math.max(onHill, Math.max(north, bank * 0.7));
@@ -452,7 +511,11 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
     if (wx < MURO_TORTO.x0 - MURO_TORTO.taper || wx > MURO_TORTO.x1 + MURO_TORTO.taper) continue;
     const cz = romeWallZ(wx);
     const j0 = Math.max(0, Math.floor((cz + HALF_EXTENT) / spacing));
-    const reach = MURO_TORTO.bank + MURO_TORTO.terrace + MURO_TORTO.backslope + 8;
+    // A bound on the loop, derived from the bank itself rather than transcribed from it —
+    // `terraceRealM` and `backslopeRealM` are real metres and project by `KZ`, and a copy of
+    // that arithmetic here is exactly the kind of silent side effect `MAP-METHOD.md` rule 12
+    // is about.
+    const reach = MURO_TORTO.bank + (MURO_TORTO.terraceRealM + MURO_TORTO.backslopeRealM) * KZ + 8;
     const j1 = Math.min(res - 1, Math.ceil((cz + reach + HALF_EXTENT) / spacing));
     const target = muroTortoTopAt(wx);
     for (let j = j0; j <= j1; j++) {
@@ -660,6 +723,16 @@ export function buildTerrain(seedLabel = 'campus-martius-271'): TerrainData {
       tramp = Math.max(tramp, (1 - sstep(AGGER_HALF_WIDTH, AGGER_HALF_WIDTH + 9, Math.abs(wx - rx))) * 0.8);
       const fordTrack = (1 - sstep(9, 30, Math.abs(wz + 520))) * (1 - sstep(90, 320, Math.abs((wx - cx) * cs)));
       tramp = Math.max(tramp, fordTrack * 0.75 * churn);
+      /*
+       * The city. Not broken up by `churn`, deliberately: a parade ground is a field that
+       * happens to have men standing on it and wants to read as sward broken by scrapes,
+       * and a city street is not a field at all. The mask's own ragged rim is the variation.
+       *
+       * 0.96 rather than 1.00 so the channel keeps a little headroom and so the very heart
+       * of a quarter is not bit-identical to its lane — `GrassField` reads the top of this
+       * range and a flat 255 would quantise the fade at the city's edge.
+       */
+      if (urbanAt) tramp = Math.max(tramp, urbanAt(wx, wz) * 0.96);
 
       const siltV = clamp01((silt[k] / siltMax) * 4.0);
 

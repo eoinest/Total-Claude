@@ -506,7 +506,7 @@ export class GrassField {
       uDryColour: { value: new THREE.Color(1.24, 1.06, 0.62) },
       // The tints above are only half the story: which of them a blade actually gets is
       // decided by the mix factor in the vertex shader, and that factor carried a hard
-      // +0.62 bias toward the wet end. So a map could ask for straw, get its `uWetColour`
+      // +0.62 bias toward the wet end. So a map could ask for straw, get its uWetColour
       // nudged a little warmer, and still render a green sward — measured on Pydna, whose
       // frames came back 20-26 % yellow-green where all three Rome II reference plates
       // carry 0 %. Passing dryness through lets it move the *distribution*, not just the
@@ -588,6 +588,19 @@ export class GrassField {
               // the files; they do not shave it. 0.9 here left the whole parade ground bald,
               // and even 0.55 opened the mat into sparse stubble once height came down too.
               * (1.0 - gctl.b * 0.34)
+              // ...and above a road verge it stops being a sward at all. The control
+              // channel's B is declared in heightfield.ts: 0.34 a parade ground, 0.80 a
+              // road verge, 1.00 a city street. The term above is right for the first and
+              // has nothing to say about the other two, and nothing else in this file has
+              // ever heard of either — 22 August 2026, docs/CITY-GROUND-JUDGE.md G6 and
+              // the rubric's H2, the fail case of which is literally "grass between the
+              // pavement and the wall".
+              //
+              // Deliberately not zero at the top: 3 % of a very short, dry clump left in a
+              // city is weeds in the cracks and at the kerb, which H9 asks for by name. What
+              // it must not be is meadow, and 0.03 of the near ring's 8.9 clumps/m² is one
+              // tuft every four square metres.
+              * (1.0 - smoothstep(0.55, 0.95, gctl.b) * 0.97)
               * (1.0 - gctl.g * 0.85)
               * (1.0 - smoothstep(0.74, 0.99, gctl.r) * 0.7)
               * step(uWaterLevel + 0.35, gh);
@@ -660,7 +673,12 @@ export class GrassField {
   // Trampling shortens the sward far harder than it thins it. Ground five thousand men have
   // been standing on is beaten flat — which is both what actually happens and what lets the
   // men read against it.
-  float trodden = 1.0 - smoothstep(0.05, 0.32, gctl.b) * 0.45;
+  // The second term is the city, on the scale declared in heightfield.ts. A weed at a
+  // Roman kerb is 100 mm of scrub, not the 340 mm sward of a water meadow, and the whole
+  // point of leaving 3 % of the clumps standing is that they read as cracks rather than as a
+  // thin lawn. Multiplied rather than maxed so a trodden city street gets both.
+  float trodden = (1.0 - smoothstep(0.05, 0.32, gctl.b) * 0.45)
+                * (1.0 - smoothstep(0.55, 0.95, gctl.b) * 0.62);
   float wScale = keep * fade * mix(0.88 + 0.30 * h4, 1.03, vMerge);
   float hScale = keep * fade * hVar * trodden * uHeightScale * (1.0 + weed * 0.8);
 

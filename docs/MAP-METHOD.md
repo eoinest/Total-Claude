@@ -227,6 +227,38 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    gate. Deleting the mechanism is what makes the check worth having, and the test for whether you
    have written a real one is the same as rule 18's: **it must be able to fail, and you must be
    able to say what would make it.**
+24. **An aperture is the *absence* of geometry, and a call that draws one is not evidence that one
+   exists.** `VISUAL-RUBRIC.md` H7 scored **zero on both maps for two passes** while
+   `CITY-GROUND-JUDGE.md` §3 truthfully recorded that *"the generator models arched tabernae"* —
+   and both were right. `archPanel` was called on a wall box drawn solid on all four faces, so its
+   0.55 m reveal opened onto that box's own painted face 40 mm behind it: **every taberna in Rome
+   was blind arcading.** Carthage made the identical mistake independently — its street doors are
+   0.28 m recesses whose outer face is drawn in the wall plane — and measures **0 openings per 10 m
+   over 20,637 m of frontage, 100 % of faces blank.** Two generators, one fault, no instrument on
+   either. So: grade an opening by scanning a face's own plane for **gaps**, never by counting
+   calls to the thing meant to make them, and fix it by *ordering* rather than by geometry — work
+   out which faces the street can see, omit them from the solid, and rebuild each as an elevation
+   with holes in it. This generalises past apertures: **anything defined by what is missing needs
+   an instrument that measures the missing thing** — a hole, a street, a gap between two buildings,
+   a skyline.
+25. **A survey station can only be graded where the frame can carry it, and that has to be a check
+   that fails rather than an exclusion that explains.** At `KX` 0.443, Piazza di Spagna and Trinità
+   dei Monti — 41 real metres apart with 31 m of height between them — project to **19.7 world
+   metres at a gradient of 1.57**, against the engine's own `ROUGH_SLOPE_IMPASSABLE` of 0.625 and a
+   heightfield sampled at 1.37 m. No terrain in this projection can put both where the sources put
+   them; this is rule 21 asked of a landform instead of a river. The *form* of the answer is the
+   rule: `probe-eye.mjs` E1d is a named check that computes the projected gradient between every
+   pair of published stations and **fails** on the ones the frame cannot carry, and only then are
+   those stations excluded, counted and printed. An exclusion that arrives before the check that
+   justifies it is exemption-shopping; one that arrives after it is a measurement.
+26. **A green gate on a tree with a large known fault in it is not evidence.** `probe-fabric` G12
+   passed on `main` and fails here, on one row — and the row's *plan* is byte-identical. What moved
+   is the drawn geometry: the Iseum's `drawnTopY` fell 32 m, `drawnVerts` 9,439 → 5,839, and the
+   32 m is the hill that was under it. The check was measuring foundation spreading down a
+   hillside a flood plain does not have, and reading it as monument. **A gate measuring the wrong
+   thing can be green for the wrong reason, and the only way to find out is to fix the wrong thing
+   and watch the gate move.** Corollary for anyone reading a scorecard: a check that changes state
+   when you fix something it does not name is telling you what it was actually measuring.
 
 ---
 
@@ -1528,6 +1560,134 @@ meant to be photographing the street. The approach frame turned out to be one of
 the set, because the Via Flaminia outside the gate had never been drawn before — every way node
 was clamped to 18 world metres outside the curtain — so **the ground the assault forms up on has a
 road on it for the first time.**
+### 22 Aug 2026 — Rome from 1.75 m: the ground under the city, and the first three metres above it
+
+**What we did.** Took the brief *"from 150–400 m, yes; from 1.75 m, not yet"* and worked the three
+faults it named, in the order it named them: terrain relief in a flood plain, blank ground floors,
+grass at the street edge. Built `tools/probe-eye.mjs`, which is the first instrument in the project
+that grades §H of `VISUAL-RUBRIC.md` — nine checks over the landform under the fabric and the
+bottom three metres of the frontage. Branch `e/city/rome-eye-level`, three commits.
+
+**What we expected.** That the flood-plain relief would be one wrong constant, that the ground
+floors would need new geometry, and that the grass would need a city mask. Two of those three were
+right, and the third — the ground floors — was not new geometry at all.
+
+**What happened.**
+
+| | `ef8b5c7` (main) | `17e885c` | ruler |
+|---|---|---|---|
+| flood-plain relief, median over a 120 m window | **33.69 m** | **9.26 m** | published spot heights, 2.5 m target |
+| flood-plain relief, worst | 40.18 m | 9.95 m | |
+| flood plain against its published height, worst station | **22.7 m** (Piazza del Popolo) | **5.0 m** (the Trevi) | 4 m target |
+| the plain's implied datum against sea level | **+21.9 m** | **−1.7 m** | m a.s.l. |
+| Quirinal summit against its published rise | 0.59× (FAIL) | **0.97×** (PASS) | 61 m a.s.l. |
+| terrain fall across a building's own footprint, median | 2.18 m | **1.78 m** | 1.0 m target |
+| street gradient, median | 5.38 % | **2.73 %** | Clivus Capitolinus 17 % |
+| **openings per 10 m of street frontage at 1.6 m** | **0.26** | **0.74** | Ostia's Via di Diana ≈ 2.5 |
+| street faces with no opening at all | **54.6 %** | **23.6 %** | 35 % target |
+| frontage the instrument could resolve | 1,971 m / 97 faces | **6,098 m / 382 faces** | |
+| vegetation pixels in `eye-quarter-east`, whole frame | **12.6 %** | **0.0 %** | the frame itself |
+| `probe-fabric` | 10/25 | **9/25** | |
+| draw calls / triangles, worst of nine cameras | 174 / 6.63 M | **174 / 6.83 M** | cap 220 |
+
+**Four things worth keeping, and the last one is the useful one.**
+
+**1. The flood plain had a 45 m hill in it, and the mask that let it in was named for the right
+thing.** `baseHeight`'s upland terms are gated on `onHill = sstep(toe − 40, toe + RISE_RUN, z)`,
+which is a function of *northing against the hill's toe* and nothing else. It saturates to 1
+behind the crest at **every x on the map**, so the Tiber flood plain — where `riseAmplitude`
+publishes exactly zero rise, and where `topography.ts`'s own header says the ground is *"dead
+flat"* — took +13 m of "behind the crest" lift and up to ±27.5 m of ridged multifractal. The
+Pantheon stood on a 37.8 m hill. **The comment above the line claimed the opposite**: *"`onHill`
+also gates the hill relief so the flood plain never inherits upland structure."* This is rule 12
+with a name attached: a constant appearing in a formula is not the same as a constant the formula
+is about, and *a variable named for a place is not a mask of that place*.
+
+**2. Two more of the same fault fell out of the instrument once it existed, and neither was
+visible by reading.** The Muro Torto's cityward terrace is authored `terrace: 120, backslope: 150`
+in **world** metres; they are northings, so at `KZ` 0.35 they reach **903 real metres** of Pincian
+garden inside the curtain and put Piazza di Spagna 23.7 m up a hill. Rule 22, in a place nobody
+had looked. And `riseAmplitude(x)` — §3.5's published seven-band staircase, which describes the
+ground **at the curtain** — was added at full strength 900 m south of it, putting 21.7 m of
+Pincian shoulder under the Fontana di Trevi. Both were found by a probe failing, not by reading
+the code: each is individually plausible and only a number outside the tree can say they are wrong.
+
+**3. The instrument caught its own author twice, and that is the argument for building it first.**
+The toe polyline's segment search was written `if (n > b[0]) continue` where the table descends in
+`n`, so every query fell through to the first segment and the whole line came out 200 real metres
+west. Reading it did not catch it; E1c's *"median 15.3 m of relief on a plain that should carry 2"*
+did. Then E1c itself was wrong — it sampled a bounding **box** around nine points scattered across
+a river bend, whose north-east corner is the Pincian — and the fix is the same one `probe-fabric`
+uses for clearances: a window statistic needs its window inside the region, so the hull is eroded
+by the window radius. **Both corrections made the number worse before they made it better**, which
+is what an instrument is for.
+
+**4. The ground floor was already modelled and was never drawn, and this is the finding.**
+`CITY-GROUND-JUDGE.md` §3 says, correctly, *"the generator models arched tabernae
+(`fabric.ts:1200`)"*, and H7 has scored **zero on both maps for two passes** anyway. Both are
+true: `archPanel` was called on a wall box drawn solid on all four faces, so its 0.55 m reveal
+opened onto that box's own painted face 40 mm behind. **Every taberna in Rome was blind arcading**
+— an arched niche in a solid wall. The fallback door was worse: a dark box standing 20 mm *proud*
+of the render, which is a rectangle painted on a façade. The repair is not more geometry, it is
+**an ordering**: work out which faces the street can see, omit them from the box, and rebuild each
+one as an elevation with real holes in it.
+
+And the same is true of the control. `probe-eye` E5 on Carthage: **0 openings per 10 m over
+20,637 m of frontage on 896 faces, 100 % of them blank** — on a map whose fabric generator also
+cuts street doors, as 0.28 m recesses whose outer face is drawn in the wall plane. Two independent
+generators, the same mistake, and no instrument on either until now.
+
+**What would have changed my mind, and did not.** That the terrain fix would cost the frame
+budget: it does not, and neither does the ground floor — **draw calls 174 → 174** on the worst of
+nine cameras, because every triangle added lands in the `stucco` and `stone` streams the fabric
+already submits. Triangles +3.0 %.
+
+**One number went the wrong way and it is not a regression in the world.** `probe-fabric` 10/25 →
+9/25, one row: G12's drawn aspect for the Iseum Campense, 3.487 → 2.456 against a published 4. Its
+*plan* is byte-identical. What moved is the drawn geometry: `drawnLong` 90.46 → 59.63,
+`drawnTopY` 57.81 → 25.71, `drawnVerts` 9,439 → 5,839, and the 32 m the top lost is the height of
+the hill that was under it. G13a's below-the-floor list grows from 3 to 5 with the two Campus
+Martius rows that stood on that hill. **The best reading is that the drawn extents were inflated
+by foundation spreading down a hillside a flood plain does not have, and that with it gone the
+monument measures its own stone — which is 0.298 of published, the "0.339 floor" §10.7.3 already
+names.** I did not isolate it to the line and am not calling it proven: the measurement that
+settles it is one run with `buildSubstructure` disabled, comparing `drawnVerts`.
+
+**What we would do differently.**
+
+- **Build the §H instrument before the §H pass, not during it.** Every one of the four findings
+  above came out of `probe-eye` inside ninety minutes of it running, and two of them are in files
+  four people have read this week. The pass spent its first third reading code and its second
+  third writing an instrument; the second third found more.
+- **Do not trust a green check on a tree with a large known fault in it.** G12 passed on `main`
+  *because* of the hill. A gate that is measuring the wrong thing can be green for the wrong
+  reason, and the only way to find out is to fix the wrong thing and watch the gate move.
+- **Grade the control with the same instrument in the same run.** Carthage's 100 % blank frontage
+  is the single most useful number this pass produced and it cost one extra command.
+
+**Proposed rule, earned by finding 4.** *An aperture is the absence of geometry, and a call that
+draws one is not evidence that one exists.* Grade an opening by scanning a face's own plane for
+gaps, never by counting calls to the thing that is supposed to make them. This is
+`VISUAL-RUBRIC.md`'s critic instruction 5 — *"if code exists for an effect but the effect is not
+visible in the frame, it scores 0"* — promoted from a rule about frames to a rule about
+instruments, because the frame said so for two passes and nobody could act on it. It generalises
+past apertures: **any feature defined by what is missing needs an instrument that measures the
+missing thing.** A hole, a street, a gap between two buildings, a skyline.
+
+**Proposed rule, earned by E1d.** *A camera or a survey station can only be graded where the frame
+can carry it.* `KX` = 0.443 puts Piazza di Spagna and Trinità dei Monti — 41 real metres and 31 m
+of height apart — **19.7 world metres apart at a gradient of 1.57**, against the engine's own
+`ROUGH_SLOPE_IMPASSABLE` of 0.625. No heightfield in this projection can put both where the
+sources put them. That is rule 21 asked of a landform, and the useful part is the form of the
+answer: the pair is reported as a **named check that can fail** with its computed gradient, and
+*then* both members are excluded and counted — never excluded first and explained afterwards.
+
+**Where the cameras were.** `tools/shots/rome-eye-level.shot.mjs` carries all thirteen as data,
+which is the answer to the previous entry's complaint that a camera station goes stale and nothing
+marks it: the stations are now in the tree, in the format `film.mjs --check` validates, rather than
+in a table in a document. Ten are the previous pass's rails unchanged; `r-eye-tabernae` is new and
+is marked as new. Three Carthage stations are shot in the same run, at the pairings
+`CITY-GROUND-JUDGE.md` §2 used, so "Rome improved" can be read against something that did not.
 
 <!-- Append new entries above this line. -->
 

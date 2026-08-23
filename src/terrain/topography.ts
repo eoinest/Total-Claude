@@ -717,6 +717,144 @@ export const WALL_BENCH_HALF = 40;
 export const regionalPlain = (x: number, z: number): number =>
   PLAIN_LEVEL + x * 0.0020 + z * 0.0026;
 
+// ---------------------------------------------------------------------------
+// The flood plain, and where it stops — 22 Aug 2026
+// ---------------------------------------------------------------------------
+
+/**
+ * **The toe of the hill front that bounds the Campus Martius on the east**, as the easting
+ * of that toe at a given northing, in survey metres.
+ *
+ * ## Why this exists
+ *
+ * This file's own header has said since it was written that *"the Campus Martius itself is
+ * an alluvial flood plain sitting about 12–13 m above the river, **dead flat** by the
+ * standards of Rome"*, and `riseAmplitude` above repeats it: *"the Campus Martius is a Tiber
+ * flood plain and the Aurelian wall crosses it dead flat from the river to the foot of the
+ * Pincian."* `riseAmplitude` then publishes **0 m of rise for x ≤ 100** and is right.
+ *
+ * The heightfield put a **45-metre hill in the middle of it anyway**, and it did so through a
+ * different door: `baseHeight`'s upland terms are gated on `onHill` and `crestBand`, which are
+ * functions of **z against `riseToeZ(x)` only**. Both saturate to 1 everywhere behind the
+ * crest, at every x on the map, so the flood plain — where `riseAmplitude` is exactly zero —
+ * inherited +13 m of "behind the crest" lift and up to ±27.5 m of isotropic ridged
+ * multifractal. Measured on `ef8b5c7` at x = 50, a station 240 world metres west of the Via
+ * Lata with `riseAmplitude(50) = 0`:
+ *
+ *     z    800    900   1000   1100   1200
+ *     h   5.35   6.37  30.97  44.98   7.97
+ *
+ * Under the Pantheon (world 94, 1008) the ground stood at **37.8 m** against a real Campus
+ * Martius surface of about 13 m a.s.l. `docs/ROME-RENDERS.md` reports the same thing from a
+ * camera: *"rounded masses between the camera and the monuments … the single biggest thing
+ * standing between these frames and a street."*
+ *
+ * This is `MAP-METHOD.md` rule 12 exactly — **a constant appearing in a formula is not the
+ * same as a constant the formula is about.** `onHill` is about *northing behind the toe*; it
+ * was read as *on the hills*.
+ *
+ * ## Why a polyline in survey metres and not a radius
+ *
+ * `MAP-METHOD.md` rule 21, and the Janiculum. That row is authored `len: 520, wid: 240` and
+ * its keep-out is still `addCircle(x, z, moundRadius * 1.02)` in `city/plan.ts` — a circle of
+ * radius 234.6 m standing for a hill whose semi-minor axis is 96.4 m. **A radius cannot say
+ * what a length and a width say**, and the same mistake made here would flatten the Quirinal
+ * or leave the Pantheon on a hill depending only on which way the error fell. So the plain's
+ * eastern limit is a *line*, authored in the survey's own frame, projected by `worldOf` like
+ * any other surveyed position, and each vertex carries the real place it stands at.
+ *
+ * `e = f(n)` is single-valued here and that is a claim, not an accident: the scarp of the
+ * Pincian–Quirinal–Capitoline front runs north–south across the whole of the map's northing
+ * range and never doubles back. The Tiber needed a polyline plus a signed distance field
+ * because it turns through 79°; this front does not turn at all. `probe-relief.mjs` checks
+ * the claim against published spot heights rather than against this table.
+ *
+ * ## The vertices
+ *
+ * Northing, easting, in survey metres from the Capitolium (41.8925 N, 12.4823 E), which is
+ * `survey.ts`'s datum. Spot heights are modern metres above sea level, which for this reach
+ * is within a metre or two of the Tiber's low-water datum; the ancient surface of the plain
+ * sat 3–5 m below the modern one but the *relief* — which is all this table is used for — is
+ * the same. Each row is the foot of the scarp, with the crest above it for the contrast that
+ * makes it a scarp at all.
+ *
+ * **The third column is the run from toe to crest, and it is not a constant** — that was the
+ * first draft and `tools/probe-eye.mjs` failed it by 23.8 m at Piazza di Spagna on the first
+ * run. A single feather cannot describe both of the scarps that bound this plain: the
+ * Pincian above the Spanish Steps rises **31 m in 41 real metres**, and the Quirinal above
+ * the Trevi rises **36 m in 420**. One is a cliff and the other is a hillside, and a mask
+ * that splits the difference either leaves a hill in the piazza or shaves the Quirinal.
+ * Rule 22 again: the run is a real distance and is projected by `KX`, never authored in
+ * world metres.
+ *
+ *     n      e     run   the place                                     toe   crest above
+ *     2500  −520   400   the Tiber's east bank north of the gate       14 m  —
+ *     2045  −440   300   Porta Flaminia, Piazza del Popolo             15 m  Pincio 50 m
+ *     1830  −300   220   Via del Babuino under the Villa Medici        17 m  52 m
+ *     1478   −10    80   Piazza di Spagna at the foot of the Steps     19 m  Trinità 50 m
+ *     1150  +120   260   the Via del Tritone valley                    24 m  Quattro Fontane 55 m
+ *      900   +83   420   the Trevi, the Quirinal's west foot           22 m  Quirinale 58 m
+ *      500   +30   340   the Quirinal's south-west spur                19 m  55 m
+ *      200   −60   200   the saddle Trajan cut, Capitol to Quirinal    18 m  —
+ *        0  −140   150   the Capitoline's north-west foot              16 m  Capitolium 46 m
+ *     −367  −330   200   the Velabrum, between the Capitol and river   12 m  Palatine 51 m
+ *
+ * Sources: Lanciani, *Forma Urbis Romae* (1901), whose plates carry the contours; the
+ * elevations are the standard published spot heights for these piazze and summits, which
+ * `tools/probe-eye.mjs` re-states independently and grades the built ground against. **That
+ * probe does not import this table**, which is the whole point of it.
+ */
+const PLAIN_TOE: readonly (readonly [number, number, number])[] = [
+  [2500, -520, 400], [2045, -440, 300], [1830, -300, 220], [1478, -10, 80], [1150, 120, 260],
+  [900, 83, 420], [500, 30, 340], [200, -60, 200], [0, -140, 150], [-367, -330, 200],
+];
+
+/**
+ * The toe's easting and the scarp's run at a northing, in **real** metres. Clamped outside
+ * the table's range, and linear between vertices.
+ *
+ * The loop below reads `if (n < b[0]) continue`, and it is worth saying why, because the
+ * first draft had `>` and the whole line came out 200 real metres west: the table descends
+ * in `n`, so the segment that contains `n` is the first one whose *lower* end is at or below
+ * it. With the test the wrong way round every query fell through to the first segment and
+ * extrapolated off the end of it. `probe-eye.mjs` E1c caught it as 15.3 m of median relief
+ * on a plain that should carry 2.
+ */
+export const plainToeAt = (n: number): { e: number; run: number } => {
+  const first = PLAIN_TOE[0];
+  if (n >= first[0]) return { e: first[1], run: first[2] };
+  const last = PLAIN_TOE[PLAIN_TOE.length - 1];
+  if (n <= last[0]) return { e: last[1], run: last[2] };
+  for (let i = 1; i < PLAIN_TOE.length; i++) {
+    const a = PLAIN_TOE[i - 1];
+    const b = PLAIN_TOE[i];
+    if (n < b[0]) continue;
+    const t = (a[0] - n) / (a[0] - b[0]);
+    return { e: a[1] + (b[1] - a[1]) * t, run: a[2] + (b[2] - a[2]) * t };
+  }
+  return { e: last[1], run: last[2] };
+};
+
+/**
+ * **1 on the Tiber flood plain, 0 on the hills**, in world coordinates.
+ *
+ * Everything west of `plainToeE` is plain: the ager Vaticanus, Trans Tiberim, the whole
+ * Campus Martius and the Velabrum. The hills the map keeps — the Pincian under the Muro
+ * Torto, the Quirinal, the Capitoline — are east of it and are untouched. The Janiculum is
+ * west of it and is unaffected because it is a monument's own mound and never came from the
+ * heightfield; `riseAmplitude`'s docstring already says so.
+ *
+ * This is a *gate on relief*, not a grade: it says where the upland machinery may run. It
+ * does not level anything, which is why the plain keeps `baseHeight`'s broad swells (±2.6 m
+ * over a 540 m wavelength, a 1 % grade) and its river valley.
+ */
+export const floodplainMask = (x: number, z: number): number => {
+  const n = (Z0 - z) / KZ;
+  const toe = plainToeAt(n);
+  const toeX = X0 + KX * toe.e;
+  return 1 - sstep(0, KX * toe.run, x - toeX);
+};
+
 /** Squared-distance-free rectangle mask with smooth edges, 1 inside. */
 const rectMask = (
   x: number,
@@ -1114,10 +1252,32 @@ export const MURO_TORTO = {
    * onto it off the Pincian's own hillside."*
    */
   bank: 46,
-  /** How far the raised terrace runs back before the hill falls away into the city. */
-  terrace: 120,
-  /** Length of the fall from the terrace back to the natural ground behind it. */
-  backslope: 150,
+  /**
+   * How far the raised terrace runs back before the hill falls away into the city, and how
+   * long the fall is — **in real metres, projected by `KZ`.**
+   *
+   * These were **120 and 150 world metres**, which is `MAP-METHOD.md` rule 22 in the one
+   * place nobody had looked: a cross-section authored as a world constant is a variable in
+   * real metres whenever the frame is anisotropic, and these two are *northings*, so they
+   * divide by `KZ` rather than by `KX`. At 0.35 the terrace and its backslope reached
+   * **903 real metres** cityward of the curtain — at the old `KZ` of 0.222 it was 1,424 —
+   * against a Pincian whose plateau and south-west fall together run about 500.
+   *
+   * Measured: `tools/probe-eye.mjs` E1a put **Piazza di Spagna 23.7 m above its published
+   * height**, standing on the back edge of a garden terrace 480 real metres inside the wall,
+   * and E1c read a median 13.9 m of relief on the flood plain because the terrace's own
+   * backslope crosses half the quarter. The Piazza di Spagna is 19 m a.s.l. and the ground
+   * above it is the Pincian's *west* face, which is 500 m away, not a plateau it stands on.
+   *
+   * `bank` is deliberately **not** converted and stays 46 world metres. It is the ramp a man
+   * walks up onto the wall-walk off the hillside — §4.5's central claim — and it is graded
+   * against `ROUGH_SLOPE_IMPASSABLE`, which is a slope in world metres because that is where
+   * `Pathfinding` lives. Converting it would change a gameplay gradient to fix a geography
+   * error, and the two are separate arguments. It is a named exception, with the ratio
+   * stated, exactly as rule 14 requires.
+   */
+  terraceRealM: 170,
+  backslopeRealM: 200,
   /** How far the bank tapers out past each end of the stretch, in x. */
   taper: 44,
 } as const;
@@ -1140,7 +1300,11 @@ export const muroTortoBank = (x: number, z: number): number => {
   const d = z - romeWallZ(x) - 3.0;
   if (d <= 0) return 0;
   const up = sstep(0, m.bank, d);
-  const down = 1 - sstep(m.bank + m.terrace, m.bank + m.terrace + m.backslope, d);
+  // The terrace and its backslope are real metres of northing; `KZ` projects them here so
+  // the constant and the ground it makes cannot drift apart the way they did.
+  const terrace = m.terraceRealM * KZ;
+  const backslope = m.backslopeRealM * KZ;
+  const down = 1 - sstep(m.bank + terrace, m.bank + terrace + backslope, d);
   return m.height * ends * up * down;
 };
 
