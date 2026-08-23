@@ -301,7 +301,27 @@ position** — the two `cameras.json` agree to the centimetre on all nine.
 | broadside, eye level | ![](../images/contact/before-flank-halt.jpg) | ![](../images/contact/after-flank-halt.jpg) |
 | 34 m up | ![](../images/contact/before-tactical.jpg) | ![](../images/contact/after-tactical.jpg) |
 
-**One caveat on these pairs, and it is a property of the probe rather than of this work.**
+### And in the cities, which is the point of the whole exercise
+
+The premise of this pass is that A7 is **project-wide**, so a fix that only worked on a
+formation would be worthless. `tools/film.mjs tools/shots/judge-city-eye2.shot.mjs --stills`
+shoots §H's own reference camera set at 1.75 m with a level lens, and the pairs below are the
+same station, same hour, same everything, with `src/` swapped:
+
+| | before | after |
+|---|---|---|
+| Rome, standing in a street | ![](../images/contact/before-rome-street.jpg) | ![](../images/contact/after-rome-street.jpg) |
+| Carthage, 90 m inside the gate | ![](../images/contact/before-carthage-90.jpg) | ![](../images/contact/after-carthage-90.jpg) |
+
+What to look at in the Rome pair is **the line where the frontage meets the paving**. Before,
+the insula in the middle of the frame and the one on the left both stand on the pavement with
+no darkening at all at the junction — the buildings are composited onto the street rather than
+resting on it, which is the exact sentence A7 exists to catch. After, there is a soft dark
+band along the base of every frontage in the frame, the door reveals have depth, and the
+paving immediately in front of each wall is darker than the paving in the middle of the way.
+Nothing else in the frame moved.
+
+**One caveat on the testudo pairs, and it is a property of the probe rather than of this work.**
 `probe-testudo` boots the page and lets the live rAF loop run until `ready`, so how many
 frames of battle elapse before the fast-forward depends on the wall clock. The two runs
 therefore photograph the same cohort in the same formation at the same camera, but with the
