@@ -51,7 +51,7 @@ would then have to have an opinion about.
 
 | role | rank / file | the board covers | what it closes |
 |---|---|---|---|
-| `Face` | rank 0; **and** the outer file and rearmost man of every file, turned outward | 0.30–1.35 m, upright, rim in the grass | the lower course of all four walls |
+| `Face` | rank 0; **and** the outer file and rearmost man of every file, turned outward | 0.30–1.35 m, upright | the lower course of all four walls |
 | `Flank` | the **second** file in, and the man one rank forward of the rearmost, turned outward | 0.74–1.79 m, upright, rim on the roof line | the upper course of the flanks and the back |
 | `Nose` | rank 1 | 1.16–1.81 m, 52° back-slope reaching 0.85 m forward | the upper course of the front — the band at head height |
 | `RoofA` | interior, even ranks | 1.66–1.81 m, 8° nose-down | the roof, course one |
@@ -95,11 +95,19 @@ eye at 1.75 m is above any rim below 1.75 m, so at the height the rubric grades 
 not help.
 
 Both critics converged independently on the answer the front of the formation had used all
-along: **two courses.** The outer file plants `Face` low, rim in the grass; the file behind
-it stands `Flank` on the roof line. Between them the wall is closed from the turf to 1.79 m,
-which is exactly what `Face` and `Nose` do at the front — and the front was the frame both
-critics called the strongest while calling the flanks the weakest. It costs two files of
-roof on each side, 40 men of 320.
+along: **two courses.** The outer file plants `Face` low; the file behind it stands `Flank`
+on the roof line. Between them the wall is closed from 0.30 m to 1.79 m, which is exactly
+what `Face` and `Nose` do at the front — and the front was the frame both critics called the
+strongest while calling the flanks the weakest. It costs two files of roof on each side,
+40 men of 320.
+
+**The rim is at 0.30 m, not in the grass, and that is the reach limit and not a choice.** A
+third critic measured it off `front-eye`'s own lens geometry and put it at 0.60 m; that
+reading takes image centre as the eye height when the camera is aimed at 1.55 m, and
+correcting for it gives ~0.35 m, which agrees with the solve. Either way a band of shin
+shows, the grass is about 0.3 m, and going lower needs the front rank on one knee — the
+board's centre cannot get below 0.81 m of the shoulder and the shoulder is already at
+1.10 m. Rome II shows bare legs under a shield line too (`reference/rome2/r2-04.jpg`).
 
 ### The corners
 
@@ -312,8 +320,46 @@ the arms are already most of the way to the roof and it is least visible.
 
 ---
 
+## 6.4 Three blind passes, and what they agree on
+
+Three independent critics graded the nine plates against `docs/VISUAL-RUBRIC.md`, each told
+to be harsh and each calibrated against real Rome II frames first. **2.00 → 1.93 → 2.07, and
+all three said FAIL.** The middle number is not a regression: that pass graded a build whose
+marching camera was photographing a halted block, which cost it two criteria outright.
+
+The third pass is the useful one, because it was asked to classify every sub-2 criterion as
+**specific to this formation** or as **a property of the project any frame would show**. Its
+answer:
+
+| criterion | score | its verdict |
+|---|---|---|
+| C1 individual variation | 1 | **project-wide** — one scutum device with a colour rotation; the *before* frames fail identically on a loose mob. The testudo only stacks 320 copies into one plane where the repeat cannot be missed. |
+| C6 weight in motion | 1 | **project-wide**, with one aggravation — no dust, lean or ground deformation under any moving unit anywhere in the eighteen frames; the testudo's own part is that the shell rides level instead of jostling. |
+| A7 ambient occlusion | 1 | **project-wide** — no contact darkening under feet in the before frames, none under shield rims in the after, and the crushed black interior is an absent ambient bounce in the lighting rig. |
+
+It also put G1, G2, A3 and C9 in the same bucket, and named the genuinely testudo-specific
+faults as **four pieces of geometry**: the two open front corners, the roof not meeting the
+rear wall, a roof slot at the right rear, and the band of shin along the wall base. That is
+the honest state of this work — the formation is fixed and the frame is not, and the
+remaining distance to Rome II is in the shield asset, the crowd variety and the post chain.
+
+What it liked: `roof-close` ("the one frame in the set I would show somebody"), `corner`
+("the best-composed frame"), and `far120` ("the clearest tortoise read in the whole set").
+What it disliked most is quoted in §7.
+
+---
+
 ## 7. What is still wrong
 
+- **Both front corners.** The roof stops two files short on each side because those two
+  files are the wall's two courses, so at the corner — where the front face meets the flank —
+  there is a pocket with a single course and no lid. A critic counted three helmets with
+  faces over the rim in `front-eye` at x 1330–1700 and a file of fully exposed men in
+  `flank-halt` at x 850–1000. It is the last piece of *testudo* geometry left.
+- **A band of shin along every wall base.** The low course's rim is at 0.30 m and the grass
+  is about 0.3 m, so a thin frieze of leg and boot shows all the way round. Going lower
+  needs the front rank on one knee: the board's centre cannot get more than 0.585 m from
+  the shoulder and the shoulder is already down at 1.10 m.
 - **The rear seen from above.** The roof's rearmost board belongs to the third rank from the
   back, so the two rear wall courses have no roof over them — as a real testudo's rear rank
   does not. From an elevated camera behind the formation you therefore look into that pocket
