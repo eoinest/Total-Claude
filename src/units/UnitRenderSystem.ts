@@ -1658,9 +1658,30 @@ export class UnitRenderSystem implements Subsystem {
         const file = slot % w;
         let r: TestudoRole;
         let turn = 0;
+        /**
+         * Two courses on every wall, not one, and this is the shape the whole feature
+         * converged on.
+         *
+         * A man holds one 1.06 m board and stands 1.75 m, so a single course cannot reach
+         * from the grass to above his helmet: put the rim low and his head is out, put it
+         * high and his legs are. The *front* of the formation never had that problem
+         * because it has always been two courses — `Face` planted low at rank 0 and `Nose`
+         * tipped back above it at rank 1 — and the front is the frame two independent
+         * critics called the strongest in the set while calling the flanks the weakest.
+         *
+         * So the flanks and the back are built the same way: the outer file plants `Face`
+         * low, the file behind it stands `Flank` on the roof line, and between them the
+         * wall is closed from the turf to 1.79 m. It costs two files of roof on each side.
+         */
+        const rearRank = Math.floor((last - file) / w);
+        const closed = lastRank >= TESTUDO_MIN_DEPTH;
         if (rank === 0) {
           r = TestudoRole.Face;
-        } else if (rank >= Math.floor((last - file) / w) && lastRank >= TESTUDO_MIN_DEPTH) {
+        } else if (closed && rank === rearRank - 1 && rank > 1) {
+          // Inner course of the back wall: the high board, standing on the roof line.
+          r = TestudoRole.Flank;
+          turn = Math.PI;
+        } else if (closed && rank >= rearRank) {
           /**
            * The back of the shell, and the reason this is per *file* and not per rank.
            *
@@ -1671,7 +1692,8 @@ export class UnitRenderSystem implements Subsystem {
            * the rear closed and half of it a row of bare legs and shoulder blades.
            * `floor((last - file) / w)` is the highest rank that file actually reaches.
            */
-          r = TestudoRole.Flank;
+          // Outer course of the back wall: the low board, rim in the grass.
+          r = TestudoRole.Face;
           // Chamfered at the two back corners for the same reason as the front two: a man
           // who is both the end of the rear rank and the end of a flank has to face the
           // diagonal, or the join between the two walls is a hole with a man in it.
@@ -1695,11 +1717,18 @@ export class UnitRenderSystem implements Subsystem {
            * bevel to the front rather than a notch. A shell is not a box with square
            * corners; the corners are where two surfaces have to meet.
            */
-          r = TestudoRole.Flank;
+          // Outer course: the board planted low, rim in the grass.
+          r = TestudoRole.Face;
           const out = file === 0 ? -1 : 1;
           // Eased rather than stepped. A hard step from 50° to 90° at one rank is a corner
           // with a crease in it, and from in front the first square board behind the bevel
           // is edge-on and shows the man beside it. Six ranks of it is a bevel.
+          const t = Math.min(1, Math.max(0, (rank - 1) / 5));
+          turn = out * (TESTUDO_CHAMFER + (Math.PI / 2 - TESTUDO_CHAMFER) * t * t);
+        } else if (w >= 6 && (file === 1 || file === w - 2)) {
+          // Inner course: the board standing on the roof line, one file in.
+          r = TestudoRole.Flank;
+          const out = file === 1 ? -1 : 1;
           const t = Math.min(1, Math.max(0, (rank - 1) / 5));
           turn = out * (TESTUDO_CHAMFER + (Math.PI / 2 - TESTUDO_CHAMFER) * t * t);
         } else if (rank === 1) {

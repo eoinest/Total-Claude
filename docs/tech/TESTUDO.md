@@ -51,11 +51,11 @@ would then have to have an opinion about.
 
 | role | rank / file | the board covers | what it closes |
 |---|---|---|---|
-| `Face` | rank 0 | 0.30–1.35 m, upright | the frontage, down to the ankles |
-| `Nose` | rank 1 | 1.19–1.92 m, 46° back-slope reaching 0.75 m forward | the band across the front at head height |
+| `Face` | rank 0; **and** the outer file and rearmost man of every file, turned outward | 0.30–1.35 m, upright, rim in the grass | the lower course of all four walls |
+| `Flank` | the **second** file in, and the man one rank forward of the rearmost, turned outward | 0.74–1.79 m, upright, rim on the roof line | the upper course of the flanks and the back |
+| `Nose` | rank 1 | 1.16–1.81 m, 52° back-slope reaching 0.85 m forward | the upper course of the front — the band at head height |
 | `RoofA` | interior, even ranks | 1.66–1.81 m, 8° nose-down | the roof, course one |
 | `RoofB` | interior, odd ranks | 1.63–1.85 m, 12° nose-down | the roof, course two |
-| `Flank` | outer files, and the rearmost man of **every** file | 0.42–1.47 m, upright | the flanks and the back, with the man turned outward |
 
 At the 0.632 m rank interval the formation asks for, each roof board laps the one in front by
 **0.43 m** — which is what leaves no hole when a man is 0.1 m out of his place. The face's top
@@ -81,6 +81,25 @@ the normal off the zenith, and puts a real 0.15 m step at every lap, so the roof
 with *shadow*. It is also the right way round — the leading edge is the low one, so each board
 sheds over the one behind it, which is how tiles are laid and why the surface reads as laid
 rather than printed.
+
+### Two courses on every wall
+
+**A man holds one 1.06 m board and stands 1.75 m, so a single course cannot reach from the
+grass to above his helmet.** Three passes were spent proving it. The flanks began at
+0.74–1.79 m so the rim stood on the roof line and no horizontal ray got in; that left 0.74 m
+of bare leg along both flanks and the whole back, and a critic named it in five of nine
+frames as the highest-leverage fault in the build. Dropped to 0.42–1.47 m, the other end
+opened and the next critic counted twenty-six exposed helmets, faces and raised forearms in
+one band across the back. Split at 0.55–1.60 m it hides the head from a *level* ray — but an
+eye at 1.75 m is above any rim below 1.75 m, so at the height the rubric grades from it did
+not help.
+
+Both critics converged independently on the answer the front of the formation had used all
+along: **two courses.** The outer file plants `Face` low, rim in the grass; the file behind
+it stands `Flank` on the roof line. Between them the wall is closed from the turf to 1.79 m,
+which is exactly what `Face` and `Nose` do at the front — and the front was the frame both
+critics called the strongest while calling the flanks the weakest. It costs two files of
+roof on each side, 40 men of 320.
 
 ### The corners
 
@@ -295,11 +314,19 @@ the arms are already most of the way to the roof and it is least visible.
 
 ## 7. What is still wrong
 
-- **The helmet band.** Dropping the flank board to 0.42–1.47 m bought back three quarters of a
-  metre of bare leg, and the price is a 0.19 m band between the rim and the roof's leading
-  edge, seen from outside at about eye height. It shows the men's own helmets and the underside
-  of the roof, not sky, and it arguably reads as men inside a shell rather than as a fault —
-  but it is a hole in the surface and it is there.
+- **The rear seen from above.** The roof's rearmost board belongs to the third rank from the
+  back, so the two rear wall courses have no roof over them — as a real testudo's rear rank
+  does not. From an elevated camera behind the formation you therefore look into that pocket
+  and see a course of helmets between the wall and the roof. From eye level, which is the
+  height §H grades at, you do not.
+- **Nothing here fixes the shield *surface*.** Two critics independently marked the board
+  down for having no rim, no edge thickness, a plank-corrugated face where painted plywood
+  belongs, and a device that is pixel-identical on all 320 boards with no wear or placement
+  jitter. All four are properties of `shieldPanel` and the atlas and they affect every shield
+  in the game; a testudo is simply the frame that puts 320 of them in front of you at once.
+- **No geometry anti-aliasing**, measured by a critic at one clean pixel step on every shield
+  edge against sky, and an exposure that clips 13% of the eye-level frame above 90% luminance
+  against Rome II's 0.24%. Both are whole-frame, not testudo.
 - **The rank-0 man of an outer file takes `Face`**, so the front rank runs unbroken across the
   full width and the chamfer starts at rank 1. From directly in front the outermost boards are
   still seen at 50°, which is darker than the rest of the face.

@@ -163,8 +163,8 @@ const POSES = {
   // Turned outward by the renderer rather than by the pose — a flank man in a testudo
   // faces the flank, so his whole body turns and the same board maths serves.
   flank: {
-    stance: 'hunch', board: [6, 0, 0], centre: [-0.02, 1.09, 0.30],
-    elbowR: [-0.31, 1.02, -0.05], handR: [-0.21, 1.10, 0.10],
+    stance: 'hunch', board: [6, 0, 0], centre: [-0.02, 1.24, 0.30],
+    elbowR: [-0.31, 1.16, -0.05], handR: [-0.21, 1.24, 0.10],
   },
 };
 

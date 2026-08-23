@@ -605,33 +605,32 @@ const ARMS_ROOF_B: BoneTrack[] = [
 ];
 
 /**
- * Flank and rear: the board upright, covering 0.55-1.60 m. **This height is a solved
- * three-way trade and it is worth understanding before moving it.**
+ * The **upper** course of the flank and rear wall: the board upright, covering 0.74-1.79 m.
  *
- * One 1.06 m board cannot cover a 1.75 m man, so wherever it is put, something is out. Two
- * critics moved it in opposite directions and between them fixed the number:
+ * **One 1.06 m board cannot cover a 1.75 m man, and three passes were spent proving it.**
+ * The flank started at this height, because the rim then stands on the roof line and no
+ * horizontal ray gets in. That left 0.74 m of bare leg along both flanks and the whole of
+ * the back, and a critic named it in five of nine frames as the single highest-leverage
+ * fault in the build. It was dropped to 0.42-1.47 m; the *other* end opened, and the next
+ * critic counted twenty-six exposed helmets, faces and raised forearms in one band across
+ * the back. It was split at 0.55-1.60 m; that hides the head from a level ray but **an eye
+ * at 1.75 m is above any rim below 1.75 m**, so from the height the rubric grades at, it
+ * did not help.
  *
- *   - **0.72-1.77 m** — the first attempt, chosen so the rim stood on the roof line and
- *     sealed every horizontal sightline. It put 0.72 m of bare leg along both flanks and
- *     the whole of the back; a critic named it in five of nine frames and called it the
- *     single highest-leverage fix in the build.
- *   - **0.42-1.47 m** — the answer to that, and it made the *other* end worse: the hunched
- *     man's head is at 1.55 m, so a rim at 1.47 leaves his helmet, face and both raised
- *     forearms above it. The next critic counted twenty-six in one unbroken band across the
- *     back and scored it as the same fault the legs were.
- *   - **0.55-1.60 m**, here. The rim is 0.05 m *over* the head, so nothing of the man shows
- *     above it, and the gap to the roof's own leading edge at 1.66 m is 0.06 m — closed for
- *     any practical sightline. The leg band is 0.55 m of which the grass takes about 0.2 m.
+ * The answer both critics converged on independently is the one the front of the formation
+ * already used: **two courses, not one.** The outer file plants `testudoFace` low, at
+ * 0.30-1.35 m, so the rim is in the grass; the file behind it holds this one at 0.74-1.79 m,
+ * so the rim is on the roof line. Between them they cover the ground to above a standing
+ * man's helmet, which is exactly what `Face` and `Nose` do at the front and exactly why the
+ * front face was the strongest frame in the set while the flanks were the weakest.
  *
- * Dropping it also took the "black fins" with it: at 1.60 m the far wall no longer stands
- * above the roof, so the unlit hide backs a tactical camera used to see over the top of the
- * shell are hidden behind the roof they used to stick through.
+ * It costs two files of roof on each side, which is 40 of 320 men.
  */
 const ARMS_FLANK: BoneTrack[] = [
-  absTr(MB.upperArmL, [[0, -172.1, 88.7, 6.2]]),
+  absTr(MB.upperArmL, [[0, 153.5, 88.7, 3]]),
   absTr(MB.lowerArmL, [[0, -174, -51, -177]]),
-  absTr(MB.upperArmR, [[0, 22.1, 26.6, 67.2]]),
-  absTr(MB.lowerArmR, [[0, -52, -46.8, 150.8]]),
+  absTr(MB.upperArmR, [[0, 34.8, 20.2, 54.5]]),
+  absTr(MB.lowerArmR, [[0, -63.6, -47.2, 159.5]]),
 ];
 
 /**
