@@ -1559,14 +1559,25 @@ function emptyReason(b: CityBlock, why: PlotRejects, planned: number, drowned: n
  * terrain edit raises the channel floor.
  *
  * What is left as a number is the **quay**: how far a dry floor stands above the drawn water
- * surface. 0.45 m, and it is deliberately below the point bar's own 0.8 m terrace so that
- * the terrace is land rather than tangent to the test (rule 12 — a test tangent to its own
- * threshold answers by rounding). `probe-fabric` G22 gates the consequence at 0 m: no solid
- * may have its centre under water. **What would change this number: G22 going red, or the
- * terrain raising the right bank's terrace, which is `terrain/topography.ts`'s call and not
- * this file's.** Raising the terrace is the better fix and it is not on this branch.
+ * surface. It has to be under the point bar's own 0.8 m terrace so that the terrace is land
+ * rather than tangent to the test (rule 12 — a test tangent to its own threshold answers by
+ * rounding), and it has to be over nothing, because the channel test above already owns the
+ * water.
+ *
+ * **0.6, and the number is `e/city/rome-transtiberim`'s rather than this branch's.** That pass
+ * found the same fault independently, on the far bank rather than in the coverage figure, and
+ * stated the constant better than the 0.45 this branch first used: *the lower of the terrain's
+ * two terrace heights (0.8) less a 0.2 m margin, so that a plot standing on **either** terrace
+ * builds and a plot on the bank slope or in the channel does not.* That is a rule; 0.45 was a
+ * number under 0.8. Adopted here so that the two branches cannot land two different answers to
+ * one question, and it is the stricter of the two by 0.15 m, which is the safe direction for
+ * G22. `MAP-METHOD.md` rule 31 is that pass's.
+ *
+ * `probe-fabric` G22 gates the consequence at 0 m: no solid may have its centre under water,
+ * and it holds. **What would change this number: G22 going red, or the terrain raising the
+ * right bank's terrace, which is `terrain/topography.ts`'s call and not this file's.**
  */
-const QUAY_FREEBOARD = 0.45;
+const QUAY_FREEBOARD = 0.6;
 /** Wide enough that the test does not depend on where the bank blend starts. */
 const CHANNEL_MARGIN = 2;
 

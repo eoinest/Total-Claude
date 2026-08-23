@@ -1068,9 +1068,9 @@ square metre of a block's inset polygon, and **21 % of Rome's ground between str
 monument precinct**, another 8 % was the Tiber and 3 % is an aqueduct corridor. A fabric generator
 graded on that denominator is being asked to build the Baths of Trajan. `probe-fabric` G23 now
 publishes three numbers off one raster of the scene — fabric over the ground the fabric is
-*allowed* (**68.4 %**, and this is what gates), every roof over every square metre between kerbs,
-which is what an orthophoto measures (**58.5 %**), and fabric over all the ground, which is the
-figure phase 4 quoted (**49.6 %**, from 44.1 %). G24 is the other half: a mean can be met with a
+*allowed* (**68.5 %**, and this is what gates), every roof over every square metre between kerbs,
+which is what an orthophoto measures (**58.0 %**), and fabric over all the ground, which is the
+figure phase 4 quoted (**48.9 %**, from 44.1 %). G24 is the other half: a mean can be met with a
 third of the city bare, so it asks per block whether the smallest thing the generator builds would
 have fitted in what was left. See `MAP-METHOD.md` §3, 22 August 2026, Rome phase 5.
 
@@ -1168,9 +1168,9 @@ that does not exist yet is precisely what got forgotten last time (`MAP-METHOD.m
 | z clamp on a monument the frame kept | ≤ 10 m | **7.6 m** (Janiculum) | ok |
 | every monument centre at `worldOf(e, n)` | ≤ 0.5 m | **398.9 m** worst | PENDING phase 2 |
 | zero intersecting solids, min gap 7.0 m | 0 pairs over every solid | 0 monument/monument; **insulae are not in the population at all** | PENDING phases 2 and 5 |
-| roof coverage between street lines | 60–70 % per region | **68.4 % of the ground the fabric is allowed**, city-wide; Regio IX (the Campus Martius) **61 %**, VI 72, XIV 74, V 74, VII 66, VIII 61, IV 85 | ok — `probe-fabric` G23, phase 5 |
+| roof coverage between street lines | 60–70 % per region | **68.5 % of the ground the fabric is allowed**, city-wide; Regio IX (the Campus Martius) **59 %**, IV 88, V 75, XIV 73, VI 71, VII 66, VIII 62, III 48 | ok — `probe-fabric` G23, phase 5 |
 | the Campus Martius builds its frontages | ≥ 60 % | **Regio VII, the Via Lata quarter, 66 %** (2.9 % before the rebuild) | ok — `probe-fabric` G23, phase 5 |
-| every block builds something, or has nowhere to put it | 0 blocks with room for a house and no house | **0 of 299**; 47 blocks have no roof, 44 have nowhere to put one, 3 are *horti* and are gardens by design | ok — `probe-fabric` G24, phase 5 |
+| every block builds something, or has nowhere to put it | 0 blocks with room for a house and no house | **0 of 299**; 49 blocks have no roof, 46 have nowhere to put one, 3 are *horti* and their garden ground is 11.8 % built against the 8 % it declares | ok — `probe-fabric` G24, phase 5 |
 
 ### 7.3 The circuit and the Tiber, re-projected — §5's stated acceptance
 

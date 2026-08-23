@@ -319,6 +319,24 @@ const INJECTIONS = {
       + 'published 1.6 % apart assert no order), and the moment the check is told to grade that '
       + 'noise it goes red on it.',
   },
+  'coverage-naive': {
+    hits: 'G23',
+    what: 'stops subtracting the ground the fabric is not allowed to build on, so G23\'s '
+      + 'denominator goes back to every square metre of a block\'s inset polygon. Proves the '
+      + 'subtraction is load-bearing rather than decorative: 21 % of Rome\'s ground between '
+      + 'street lines is monument precinct, another 3 % aqueduct corridor and 2 % water, and '
+      + 'without the subtraction the city reads 49.6 % against a 60 % gate — which is the '
+      + 'number that scoped a whole phase to close a gap that was mostly not there. '
+      + 'MAP-METHOD.md rule 32.',
+  },
+  'horti-blind': {
+    hits: 'G24',
+    what: 'empties G24\'s horti exclusion, so a garden quarter built at 8 per cent by design '
+      + 'counts as a block the generator gave up on. Proves the exclusion accounting is a '
+      + 'measurement and not an excuse — the same shape as `water-no-exclusions`, and rule 16 '
+      + 'again: an exclusion is a claim, so it needs a count, a gate and a price. The price is '
+      + 'the aggregate limb: the garden ground itself is graded on the 8 % it declares.',
+  },
   'complex-invent': {
     hits: 'G8c, G8d',
     what: 'declares the closest pair of monuments in DIFFERENT complexes to be one complex. '
@@ -579,13 +597,29 @@ const T = {
   ROOF_COVERAGE_MIN_GROUND_M2: 100000,
 
   /**
-   * How many *horti* blocks may come back with nothing on them. They are built at
-   * `HORTI_COVERAGE` = 8 %, so an empty one is the design working — but the exclusion is a
-   * claim and rule 16 says a claim needs a count and a gate, or the next empty quarter joins
-   * a category instead of failing. Six is what the frame carries on this tree; a seventh is a
-   * failure and somebody has to look at it.
+   * **What a garden quarter owes in exchange for being excused.**
+   *
+   * G24 lets an empty *horti* block off the per-block test, because `HORTI_COVERAGE` = 8 % by
+   * design and a garden is meant to have empty blocks in it. Rule 18 says a declared class has
+   * to take on an obligation rather than shed one, so the obligation is the aggregate: **all
+   * the garden ground in the city, graded on that 8 %.** Declare a quarter horti and empty it
+   * and this goes red; declare it horti and build it like a quarter and this goes red too.
+   *
+   * The band is 4-16 %, which is 8 % halved and doubled, **against the block's whole ground**
+   * — the unit `ROME-FABRIC.md` phase 6 states the acceptance in ("building coverage in the
+   * horti <= 8 %"). Not against the ground the fabric is allowed, which is G23's denominator
+   * and the wrong one here: the Janiculum's own precinct is inside three of these blocks and
+   * the two readings differ by a factor of two.
+   *
+   * Wide because the generator's own dice are per-block Bernoulli at 8 % and eleven garden
+   * blocks is a small sample — which is why there is a floor on the population as well
+   * (rule 27), and why an absolute *count* of empty blocks was the wrong shape: it does not
+   * survive `e/city/rome-transtiberim` declaring 20.8 of Regio XIV's 26.6 ha *horti*.
    */
-  HORTI_EMPTY_MAX: 8,
+  HORTI_COVERAGE_BAND: [0.04, 0.16],
+
+  /** Rule 27's floor, in the units the ratio is taken over. Three blocks' worth of garden. */
+  HORTI_MIN_GROUND_M2: 10000,
 
   /**
    * **How far a dry floor stands above the drawn water surface, metres.** The probe's own
@@ -603,10 +637,14 @@ const T = {
    * conversation that ought to happen. `MAP-METHOD.md` rule 6 — an instrument compares against
    * something outside the thing it grades, and a threshold typed here is outside.
    *
+   * 0.6 is `e/city/rome-transtiberim`'s number and its derivation, taken over this branch's
+   * first answer of 0.45: the lower of the terrain's two terrace heights (0.8) less a 0.2 m
+   * margin, so a plot on **either** terrace builds and a plot on a bank slope does not.
+   *
    * What would change it: the terrain raising Rome's right bank, which would move the ground
    * rather than the rule and is `terrain/topography.ts`'s call.
    */
-  DRY_FLOOR_FREEBOARD_M: 0.45,
+  DRY_FLOOR_FREEBOARD_M: 0.6,
 
   /**
    * **RETIRED, and the retirement is the point.** `SCALE_SPREAD_TOL` used to gate G13 —
@@ -2654,6 +2692,10 @@ try {
             + 'graph, so it publishes no ground-between-street-lines polygon to measure against',
         };
       }
+      const NAIVE = injected.has('coverage-naive');
+      const HORTI_BLIND = injected.has('horti-blind');
+      if (NAIVE) injectNotes.push('G23 denominator: the reserved / monument / water subtraction is OFF');
+      if (HORTI_BLIND) injectNotes.push('G24: the horti exclusion is OFF');
       if (!terrain) return { measured: false, why: 'no terrain' };
       let planKeepOut = null;
       try {
@@ -2672,6 +2714,8 @@ try {
       const monGrid = makeGrid(mons);
       const bldGrid = makeGrid(bldgs);
       const T = { all: 0, fabric: 0, monument: 0, reserved: 0, water: 0, free: 0 };
+      /** The garden quarters on their own, because they are the one class G24 excuses. */
+      const H = { all: 0, allowed: 0, roof: 0, blocks: 0 };
       const per = new Map();
       const rows = [];
       let hortiSkipped = 0;
@@ -2701,9 +2745,9 @@ try {
             gridQuery(monGrid, { x0: x, x1: x, z0: z, z1: z }, 0, (i) => {
               if (!hit && inRing(ccw(mons[i].poly), x, z)) hit = true;
             });
-            if (hit) { c.monument += A; continue; }
-            if (planKeepOut.blockedRect(x, z, 0.5, 0.5, 0)) { c.reserved += A; continue; }
-            if (terrain.heightAt(x, z) <= WL) { c.water += A; continue; }
+            if (hit && !NAIVE) { c.monument += A; continue; }
+            if (!NAIVE && planKeepOut.blockedRect(x, z, 0.5, 0.5, 0)) { c.reserved += A; continue; }
+            if (!NAIVE && terrain.heightAt(x, z) <= WL) { c.water += A; continue; }
             c.free += A;
             freeCell[jz * nx + ix] = 1;
           }
@@ -2737,11 +2781,12 @@ try {
           }
         }
         for (const k of Object.keys(T)) T[k] += c[k];
+        if (b.horti) { H.all += c.all; H.allowed += c.fabric + c.free; H.roof += c.fabric; H.blocks++; }
         const e = per.get(b.region) ?? { all: 0, fabric: 0, monument: 0, reserved: 0, water: 0, free: 0 };
         for (const k of Object.keys(c)) e[k] += c[k];
         per.set(b.region, e);
         if (c.fabric > 0) continue;
-        if (b.horti) {
+        if (b.horti && !HORTI_BLIND) {
           hortiSkipped++;
           if (hortiNames.length < 12) hortiNames.push(`${b.region} at (${r2(b.cx)}, ${r2(b.cz)})`);
           continue;
@@ -2783,6 +2828,19 @@ try {
         excludedHorti: hortiSkipped,
         excludedHortiNamed: hortiNames,
         worst: gaveUp.slice(0, 15),
+        hortiBlocks: H.blocks,
+        hortiGroundM2: r2(H.all),
+        hortiAllowedM2: r2(H.allowed),
+        hortiRoofM2: r2(H.roof),
+        /*
+         * **Against the block's whole ground, which is the unit `HORTI_COVERAGE` is stated in.**
+         * The first draft divided by the ground the fabric is *allowed*, which is right for
+         * G23 and wrong here: `ROME-FABRIC.md` phase 6's acceptance is "building coverage in
+         * the horti <= 8 %", and coverage of a garden means roof over the garden, not roof over
+         * the part of the garden nothing else is standing on. The two differ by a factor of two
+         * on this tree, because the Janiculum's own precinct is inside three of these blocks.
+         */
+        hortiCoverage: r3(H.all > 0 ? H.roof / H.all : null),
       };
     })();
 
@@ -3342,8 +3400,25 @@ try {
         skip('G24', 'no block builds nothing while it still has room for a house',
           B.why, '0 blocks with a house\'s worth of free ground and no house');
       } else {
+        /*
+         * **The exclusion has to cost something, or it is an exemption.** `MAP-METHOD.md`
+         * rule 18's test: declaring a class must take on an obligation rather than shed one.
+         * An empty *horti* block is excused from the per-block test — a garden built at 8 % is
+         * meant to have empty blocks in it — and in exchange **the garden ground as a whole is
+         * graded on that 8 %**. So a quarter cannot be quietly emptied by declaring it horti:
+         * do that and its aggregate coverage falls out of the band and this goes red.
+         *
+         * A count of empty horti blocks was the first draft and it does not survive contact
+         * with `e/city/rome-transtiberim`, which declares 20.8 of Regio XIV's 26.6 ha *horti*
+         * and would take the count from three to dozens without anything being wrong. A
+         * fraction of the design figure is the same claim in units that scale.
+         */
+        const hortiOk = B.hortiGroundM2 < TH.HORTI_MIN_GROUND_M2
+          || (B.hortiCoverage !== null
+            && B.hortiCoverage >= TH.HORTI_COVERAGE_BAND[0]
+            && B.hortiCoverage <= TH.HORTI_COVERAGE_BAND[1]);
         gate('G24', 'no block builds nothing while it still has room for a house',
-          B.gaveUp === 0 && B.excludedHorti <= TH.HORTI_EMPTY_MAX,
+          B.gaveUp === 0 && hortiOk,
           `${B.gaveUp} of ${B.blocks} blocks have no roof on them and an ${B.houseWindowM} x`
           + ` ${B.houseWindowM} m square of ground that is not monument, not reserved and not`
           + ` water — the smallest thing the generator builds is ${B.houseM2} m2, and these`
@@ -3353,10 +3428,18 @@ try {
           + (B.worst.length
             ? `; worst: ${B.worst.slice(0, 6).map((e) => `${e.region} at (${e.x}, ${e.z}) ${e.freeM2} m2 free of ${e.insetM2}`).join('; ')}`
             : '')
-          + ` | EXCLUSIONS, named, counted and gated: ${B.excludedHorti} horti block(s), built at`
-          + ` 8 per cent by design [${B.excludedHortiNamed.join(', ') || 'none'}]`,
-          `0 blocks with a house's worth of free ground and no house, and at most`
-          + ` ${TH.HORTI_EMPTY_MAX} empty horti blocks`);
+          + ` | EXCLUSIONS, named, counted and gated: ${B.excludedHorti} of ${B.hortiBlocks}`
+          + ` horti block(s) empty [${B.excludedHortiNamed.join(', ') || 'none'}] — and the`
+          + ` exclusion is paid for in aggregate: the garden ground is`
+          + ` ${B.hortiCoverage === null ? 'n/a' : `${(B.hortiCoverage * 100).toFixed(1)}%`} built`
+          + ` over ${r2(B.hortiGroundM2 / 1e4)} ha`
+          + (B.hortiGroundM2 < TH.HORTI_MIN_GROUND_M2
+            ? ` — under the ${TH.HORTI_MIN_GROUND_M2 / 1e4} ha this limb refuses below, so it is`
+              + ' not graded and the per-block limb carries the check'
+            : ` against the ${(TH.HORTI_COVERAGE_BAND[0] * 100).toFixed(0)}-${(TH.HORTI_COVERAGE_BAND[1] * 100).toFixed(0)}% the 8 % design implies`),
+          `0 blocks with a house's worth of free ground and no house, AND the garden ground`
+          + ` itself built at ${(TH.HORTI_COVERAGE_BAND[0] * 100).toFixed(0)}-${(TH.HORTI_COVERAGE_BAND[1] * 100).toFixed(0)}%`
+          + ` once there is ${TH.HORTI_MIN_GROUND_M2 / 1e4} ha of it`);
       }
     }
     {
