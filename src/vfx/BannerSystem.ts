@@ -68,6 +68,50 @@ const CLOTH_TOP = STAFF_LEN - 0.24;
  */
 const ROUT_DIP = 0.62;
 
+/** Scratch for the nine `standingLevel` samples; module scope so nothing allocates per frame. */
+const LEVEL_SAMPLES = new Float32Array(9);
+
+/**
+ * The level a unit's standard is planted on — the men's, not the terrain's.
+ *
+ * This was `battle.groundAt(x, z)`, and the owner's report is the consequence: *"they get
+ * disconnected from their banner"*. Measured at the storm of Rome, every one of the eleven
+ * units standing on the Aurelian wall-walk at t+43 had its standard **13.0 to 14.0 m below
+ * its own men** — planted in the paving at the foot of the curtain, so the staff and the
+ * cloth are inside the masonry and nothing marks the cohort a player is looking at. At
+ * Carthage the same call errs the other way, **1.7 to 2.4 m above** the walk, because the
+ * graded bench the curtain sits on reads higher than the walkway does. `groundAt` is a
+ * heightfield sample and a wall is not in the heightfield; the sign of the error is an
+ * accident of which map you are on.
+ *
+ * Read from the men, not from `battle.levelOf`. `levelOf` is the sim's own mean foot height
+ * and would answer this exactly — but it is written in `updateUnitCohesion` inside
+ * `fixedUpdate`, which the paused deployment phase never runs, so before BEGIN it reads 0
+ * for every unit on the board and every standard would be planted at sea level. That is the
+ * same trap `src/ui/model.ts` documents for `standY`, and the same way out: ask the pool.
+ *
+ * A **median** of nine evenly spaced living men rather than a mean, for the reason
+ * `src/ui/Banners.ts` gives at length — a cohort halfway up a ladder has men at every height
+ * between the grass and the walk, and the median lands on a height some real soldier has
+ * instead of on the empty air between two crowds. Nine samples because a garrison shares one
+ * y to the centimetre and a formation on a slope varies smoothly.
+ */
+function standingLevel(battle: BattleSystem, u: UnitGroupState, x: number, z: number): number {
+  const pool = battle.pool;
+  const n = u.members.length;
+  let ns = 0;
+  if (!u.destroyed && n > 0) {
+    for (let k = 0; k < 9; k++) {
+      const i = u.members[Math.min(n - 1, Math.floor(((k + 0.5) * n) / 9))];
+      if (pool.aliveAt(i)) LEVEL_SAMPLES[ns++] = pool.y[i];
+    }
+  }
+  if (ns === 0) return battle.groundAt(x, z);
+  const win = LEVEL_SAMPLES.subarray(0, ns);
+  win.sort();
+  return win[ns >> 1];
+}
+
 interface Constraint {
   a: number;
   b: number;
@@ -918,7 +962,7 @@ export class BannerSystem {
       q: new Float32Array(NP * 3),
       rest,
       anchorX: u.x,
-      anchorY: battle.groundAt(u.x, u.z),
+      anchorY: standingLevel(battle, u, u.x, u.z),
       anchorZ: u.z,
       facing: u.facing,
       active: true,
@@ -963,7 +1007,7 @@ export class BannerSystem {
     const z = u.z - fz * back;
     b.anchorX = x;
     b.anchorZ = z;
-    b.anchorY = battle.groundAt(x, z) + (isCavalry(def) ? 1.15 : 0);
+    b.anchorY = standingLevel(battle, u, x, z) + (isCavalry(def) ? 1.15 : 0);
     b.facing = u.facing;
     // A routing unit's standard dips: the clearest single read that a unit has broken.
     // `writePoles` applies the same drop to the staff, so the cloth stays on its crossbar.
