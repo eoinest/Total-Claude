@@ -339,9 +339,37 @@ export const REGIONES: readonly RegioSpec[] = [
     name: 'Transtiberim',
     e: -1400, n: 200,
     minFloors: 2, maxFloors: 4, density: 0.60, grandeur: 0.10, fray: 0.60,
-    hortiNorthOf: null,
+    /**
+     * **North of the Porta Septimiana the right bank is gardens, and that is three quarters of
+     * it.**
+     *
+     * This row carried `null` while the far bank had no way across it, which cost nothing: the
+     * only ground Regio XIV built was a 230 m ribbon off the channel and the flag would have
+     * had almost nothing to classify. With `ways.ts`'s five Trans Tiberim rows authored it
+     * decides the character of most of the region, so it needs a number and a reason.
+     *
+     * The number is the **Porta Septimiana's own northing.** Shepherd puts the gate at
+     * `e −1272 / n −21` and 41.8925 N 12.4670 E puts it at `n 0`; 120 is that, rounded north
+     * past the plate's own error so the quarter keeps its last block. South of it is
+     * Transtiberim — the *Ripa*, the wharves, the insulae of the *Pagus Ianiculensis*. North of
+     * it, in order up the bank: the **Horti Agrippinae**, the **Prata Quinctia** (Shepherd
+     * labels it, and it is meadow), the **Gardens of Domitia** round the Mausoleum of Hadrian,
+     * and the **Ager Vaticanus** with the Circus of Nero and its necropolis. Measured on the
+     * built city, that is **20.8 of the region's 26.6 hectares of ground between street
+     * lines — 78 %** — so the flag is not a fringe treatment here, it is the majority verdict
+     * on the ground, and `probe-fabric` G17's burial floor had to learn to say so.
+     *
+     * `blockCharacter` reads it and `fabric.ts` builds those blocks at `HORTI_COVERAGE` — 8 %
+     * of the ground under a roof against 60–72 % in the core — with the perimeter courtyard
+     * range refused and about three times the trees. That is the difference between a garden
+     * suburb and a second Campus Martius, and it is the one number in this file that decides
+     * which of the two the far bank reads as.
+     */
+    hortiNorthOf: 120,
     bound: 'the whole right bank: Trastevere, the Janiculum and the ager Vaticanus. Its east '
-      + 'edge is the modelled channel, station for station.',
+      + 'edge is the modelled channel, station for station. Everything north of the Porta '
+      + 'Septimiana is horti — the Horti Agrippinae, the Prata Quinctia, the Gardens of '
+      + 'Domitia and the Ager Vaticanus.',
     outline: [
       ...RIVER,
       [-5200, -900],

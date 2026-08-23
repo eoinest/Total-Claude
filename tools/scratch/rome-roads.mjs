@@ -247,8 +247,17 @@ if (argv.includes('--plate')) {
   // The authored ways, parsed out of `src/city/rome/ways.ts` rather than restated here, so
   // the picture can never be of a table the tree no longer carries.
   const WAYS_SURVEY = argv.includes('--nolines') ? [] : readWaysTable();
+  /**
+   * Keyed on `WayClass`, which is what `ways.ts` actually carries.
+   *
+   * It used to be keyed on `ROME-FABRIC.md` §4.2's *rank* names — `processional`, `consular`,
+   * `clivus` — none of which appear in the table this file parses. So `artery` and `secondary`
+   * both fell through to the `?? '#d00'` default and the overlay's colour said nothing: the
+   * Via Lata and the Via Appia were the same red. Only `local` and `vicus` were ever right,
+   * by coincidence of naming.
+   */
   const RANK_COLOUR = {
-    processional: '#c0007a', consular: '#d00000', local: '#e07000', vicus: '#8a6a00', clivus: '#0060c0',
+    artery: '#c0007a', secondary: '#d00000', local: '#e07000', vicus: '#8a6a00',
   };
   const only = arg('only', '');
   const ids = only ? new Set(only.split(',')) : null;

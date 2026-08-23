@@ -41,7 +41,8 @@ writeFileSync(
   `export { worldOf, KX, KZ } from '${resolve(ROOT, 'src/city/rome/survey.ts')}';\n`
   + `export { romeWallZ } from '${resolve(ROOT, 'src/terrain/topography.ts')}';\n`
   + `export { ROME_WAYS, wayBearingAt, nearestWay } from '${resolve(ROOT, 'src/city/rome/ways.ts')}';\n`
-  + `export { WAYS, LANDMARKS, WAY_RANK, WAY_WIDTH, DISTRICTS } from '${resolve(ROOT, 'src/city/rome/layout.ts')}';\n`
+  + `export { WAYS, LANDMARKS, WAY_RANK, WAY_WIDTH } from '${resolve(ROOT, 'src/city/rome/layout.ts')}';\n`
+  + `export { REGIONS } from '${resolve(ROOT, 'src/city/rome/regions.ts')}';\n`
   + `export { assertWaysClearOfMonuments, assertWayGraph } from '${resolve(ROOT, 'src/city/rome/assertions.ts')}';\n`
 );
 
@@ -156,27 +157,28 @@ if (argv.includes('--gates')) {
   }
 }
 
-if (argv.includes('--districts')) {
-  /**
-   * Each quarter's frame angle, where it came from, and what the hash it replaced would have
-   * said. `MAP-METHOD.md` rule 9's before-and-after, per quarter, so a quarter that moved a
-   * long way can be looked at rather than averaged away.
-   */
-  const h2 = (x, y, s2) => {
-    let n2 = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(s2 | 0, 2246822519);
-    n2 = Math.imul(n2 ^ (n2 >>> 13), 1274126177);
-    return ((n2 ^ (n2 >>> 16)) >>> 0) / 4294967296;
-  };
-  console.log('\n=== quarter frame angles: the street field against the hash it replaced ===');
-  console.log('  (the hash column is indicative only — it is re-implemented here, not imported)');
-  for (const d of M.DISTRICTS) {
-    const field = (M.wayBearingAt(d.x, d.z) * 180) / Math.PI;
+/**
+ * **`--districts` is now `--regions`, and the rename is a repair rather than a preference.**
+ *
+ * The flag read `layout.ts`'s `DISTRICTS`, which the phase-4 grid pass deleted when the
+ * seventeen rectangles became `regions.ts`'s fourteen *regiones*. The export went and this
+ * tool did not, so `rome-wayscan.mjs` has thrown on **every** invocation since: the SSR bundle
+ * fails on the missing binding before any of the three checks above can run, including the two
+ * the road table is graded by. Repaired here because this pass needed the graph report, and
+ * `MAP-METHOD.md` rule 29's point stands — the fast instrument is the one people run, so an
+ * instrument that cannot be run is not a slow one, it is an absent one.
+ */
+if (argv.includes('--regions') || argv.includes('--districts')) {
+  console.log('\n=== the street bearing field, sampled at each regio’s own bounding centre ===');
+  for (const r of M.REGIONS) {
+    const cx = (r.bb.x0 + r.bb.x1) / 2;
+    const cz = (r.bb.z0 + r.bb.z1) / 2;
+    const field = (M.wayBearingAt(cx, cz) * 180) / Math.PI;
     console.log(
-      `  ${d.id.padEnd(18)} at (${d.x.toFixed(0)}, ${d.z.toFixed(0)})  hw ${d.hw.toFixed(0)} hd ${d.hd.toFixed(0)}`
-      + `  rot ${((d.rot * 180) / Math.PI).toFixed(1)} deg (field ${field.toFixed(1)}, nearest ranked way ${M.nearestWay(d.x, d.z).distM.toFixed(0)} m)`
+      `  ${r.numeral.padStart(4)} ${r.id.padEnd(30)} bb centre (${cx.toFixed(0)}, ${cz.toFixed(0)})`
+      + `  field ${field.toFixed(1)} deg, nearest ranked way ${M.nearestWay(cx, cz).distM.toFixed(0)} m`
     );
   }
-  void h2;
 }
 
 if (argv.includes('--pairs')) {
