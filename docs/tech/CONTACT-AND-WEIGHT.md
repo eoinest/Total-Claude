@@ -57,12 +57,14 @@ The buffer settles it. `--arms=view` at `roof-close`, 320 shields filling the fr
 The left-hand plate is white from edge to edge. Measured on the buffer itself
 (`--arms=sweep`, which reports its percentiles):
 
-| contact strength | 5th pct | median | share under 0.7 |
-|---|---|---|---|
-| **0** — the pipeline as it stood | **0.70** | 0.85 | 5.0 % |
-| 2.2 | 0.65 | 0.85 | 8.2 % |
-| **5.0** — shipped | **0.44** | 0.84 | 25 % |
-| 7.0 | 0.31 | 0.82 | 29 % |
+| contact strength | 5th pct | median | share under 0.7 | share under 0.5 |
+|---|---|---|---|---|
+| **0** — the pipeline as it stood | **0.698** | 0.851 | 5.0 % | 0.9 % |
+| 2.2 | 0.651 | 0.855 | 8.2 % | 1.2 % |
+| **5.0** — shipped | **0.439** | 0.835 | 22.9 % | 8.1 % |
+| 7.0 | 0.306 | 0.824 | 28.7 % | 14.9 % |
+
+Same ladder at `front-eye`, the §H station: 0.663 → 0.628 → **0.467** → 0.349.
 
 The critics were right and the source reader would have been wrong.
 
