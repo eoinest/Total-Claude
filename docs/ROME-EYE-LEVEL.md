@@ -140,6 +140,13 @@ Every triangle the ground floor adds lands in the `stucco` and `stone` streams t
 submits, so it buys no new draw call anywhere. The one call that moved is the `terrain` camera's,
 +1.
 
+> **Correcting this branch's own record.** Commit `17e885c` says *"triangles 6.63 M → 6.80 M
+> (+2.6 %)"*. That measurement was taken before the last change in the same commit — the pierced
+> elevations — and is stale by 0.03 M. The figure is **6.83 M, +3.0 %**, as measured on the
+> committed tree and as tabled above. `CITY-GROUND-JUDGE.md` §10.8 exists because this project
+> publishes numbers its tree does not carry; this is one of them, caught by re-measuring rather
+> than by re-reading.
+
 ## Scored against `VISUAL-RUBRIC.md` §H
 
 Harsh, as instructed, and comparable with `CITY-GROUND-JUDGE.md` §12 — same rubric, same criteria,
