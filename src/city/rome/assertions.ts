@@ -706,7 +706,9 @@ function surveyFrameIntrusion(): {
     for (let i = 0; i + 1 < spec.path.length; i++) {
       const [ae, an] = spec.path[i];
       const [be, bn] = spec.path[i + 1];
-      const steps = Math.max(1, Math.round(Math.hypot(be - ae, bn - an) / 20));
+      const de0 = be - ae;
+      const dn0 = bn - an;
+      const steps = Math.max(1, Math.round(Math.sqrt(de0 * de0 + dn0 * dn0) / 20));
       for (let t = 0; t <= steps; t++) {
         const e = lerp(ae, be, t / steps);
         const nn = lerp(an, bn, t / steps);

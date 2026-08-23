@@ -706,7 +706,9 @@ function segments(): FieldSeg[] {
       const b = path[i + 1];
       const dx = b.x - a.x;
       const dz = b.z - a.z;
-      const len = Math.hypot(dx, dz);
+      // `sqrt` and not `hypot`: `tools/check-determinism.mjs` measures the two disagreeing on
+      // 37 % of inputs across engines, and src/city was cleared of `hypot` deliberately.
+      const len = Math.sqrt(dx * dx + dz * dz);
       if (len < 1e-3) continue;
       const bearing = Math.atan2(dz, dx);
       const w = RANK_WEIGHT[cls] * len;
