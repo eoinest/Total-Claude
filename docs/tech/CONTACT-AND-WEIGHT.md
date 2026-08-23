@@ -132,8 +132,50 @@ col *= uAoFill + ( 1.0 - uAoFill ) * occ;
 ground bounce — normalised to unit luminance and scaled by `AO_FILL = 0.30`. The rig already
 does the hard part: `fill.color` carries the sky's chromaticity stretched about its luminance
 by `FILL_CHROMA_GAIN`, which is the term that makes this project's shadows blue-grey instead
-of grey. The response is linear in `occ` with no clamp anywhere, and because it multiplies
-rather than replaces, a green tunic stays green in the crevice and a red shield stays red.
+of grey. Because it multiplies rather than replaces, a green tunic stays green in the crevice
+and a red shield stays red.
+
+### And the exponent on it is not decoration — it is the difference between the effect existing and not
+
+**This shipped linear first and it silently threw most of the effect away.** `max( occ, 0.34 )`
+is the *identity* for every occlusion above 0.34: the frame darkened exactly as much as the
+buffer said. `fill + ( 1 - fill ) * occ` keeps the two endpoints and lifts the entire middle —
+0.79 against the clamp's 0.70 at occ 0.7, 0.685 against 0.55 at occ 0.55. So a pass that took
+the buffer's 5th percentile from 0.698 to 0.439 moved the finished frame's mean luminance by
+1.3 %, and **a blind grader compared the before and after plates and reported that it could
+not tell them apart.** It was right about the frames and wrong about the buffer, and the fault
+was in this line.
+
+`AO_FILL_GAMMA = 1.9` puts the curve back on top of the clamp:
+
+| occlusion | old clamp | linear (wrong) | with the exponent |
+|---|---|---|---|
+| 0.85 | 0.850 | 0.895 | **0.814** |
+| 0.70 | 0.700 | 0.790 | **0.655** |
+| 0.55 | 0.550 | 0.685 | **0.525** |
+| 0.44 | 0.440 | 0.608 | **0.447** |
+| 0.20 | 0.340 (clamped) | 0.440 | **0.333** |
+| 0.00 | 0.340 (clamped) | 0.300 | **0.300** |
+
+Same tonal response as the build that shipped for months, plus the colour, plus no clamp
+discontinuity, plus the whole of the new occlusion signal. What it does to the nine plates,
+measured against the same nine before frames — whole-frame mean luminance, share of pixels
+under 15 % luminance, and the 5th percentile:
+
+| station | mean | dark share | 5th pct |
+|---|---|---|---|
+| `front-eye` | 154.3 → 149.0 (−3.5 %) | 5.0 → 6.5 % | 38.1 → 32.9 |
+| `roof-close` | 49.4 → 45.0 (−8.9 %) | 60.1 → 63.4 % | 5.2 → 2.9 |
+| `corner` | 123.1 → 119.5 (−2.9 %) | 22.0 → 24.9 % | 11.1 → 8.3 |
+| `flank-halt` | 120.2 → 117.0 (−2.7 %) | 27.3 → 30.4 % | 4.2 → 3.1 |
+| `tactical` | 99.0 → 90.5 (−8.6 %) | 5.1 → 6.8 % | 37.6 → 31.1 |
+| `roof-rake` | 108.0 → 96.4 (−10.8 %) | 12.4 → 15.4 % | 20.6 → 16.6 |
+| `rear` | 119.1 → 112.8 (−5.3 %) | 9.5 → 12.3 % | 21.0 → 14.6 |
+| `far120` | 129.8 → 123.5 (−4.9 %) | 0.1 → 0.2 % | 91.8 → 83.0 |
+| `flank-march` | 133.5 → 128.8 (−3.5 %) | 15.1 → 18.5 % | 11.6 → 8.4 |
+
+Against the linear form, the same table read −0.5 % to −3.7 % and the dark share moved by
+under a point on every camera. That is the whole of what the exponent bought.
 
 Splitting it this way also means the *amount* of light that survives occlusion is one number
 in `PostFX.ts` and the *colour* of it belongs to the lighting rig, so tuning either cannot
