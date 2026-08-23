@@ -260,6 +260,43 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    and watch the gate move.** Corollary for anyone reading a scorecard: a check that changes state
    when you fix something it does not name is telling you what it was actually measuring.
 
+27. **A gate on a distribution needs a floor on its population, and the floor belongs in the gate.**
+   Rule 12 says a collapsed sample reports a confident number rather than an error; this says whose
+   job it is to notice. `probe-fabric` G13b refuses below `SIZE_ORDER_MIN_PAIRS` and prints why.
+   G20 and G21 have no such floor, and on the first build of Rome's grid they read **PASS, median
+   0.00° over 6 blocks** and **PASS, median 0.00° over 2 pairs** on a city that had six houses in
+   it. The population is something a check can compute about itself, so printing `n` and leaving
+   the reader to spot it is not enough. **Corollary, and it is the half that saved that pass: keep
+   one check whose only possible outcome is failure.** A self-report cannot prove a quarter is
+   full, which is exactly why it is admissible; G17 was the only one of twenty-five checks that
+   could see the empty city.
+28. **A synthetic test case has to be degenerate in the way the real data is, not merely
+   asymmetric.** Rule 24 says to grade a sign against a deliberately asymmetric case, and Rome's
+   `assertBlockBearingSign` does — ±30°, ±12°, ±75° — and passed throughout the pass in which
+   **82 % of the city's frontages were built ninety degrees off their own street**. The fault was
+   that a planariser splits a block's sides at every node a *neighbouring* block puts on them, so
+   a rectangle arrives with sixteen ring edges and "the longest edge" is a fragment of the short
+   side. A four-vertex test ring cannot exhibit a sixteen-vertex ring's failure. **If the
+   handwritten case is tidier than the production input, it is testing a different function.**
+29. **Make it possible for an offline tool to import the module it grades, and treat a
+   re-implementation in a scratch tool as a defect rather than as a convention.** Before Rome's
+   grid pass, *no* offline tool in this repository could import anything under `src/city/rome`:
+   one import of `HALF_EXTENT` from `TerrainSystem`, where it is re-exported, instead of from
+   `topography`, where it is defined, closed a cycle that Vite's evaluation order tolerates and
+   Node's does not. That single line is why `tools/scratch/free-land.mjs` carries its own copy of
+   `districtMask` and why `rome-frame.mjs` re-derives the projection — and `probe-fabric`'s own
+   header names that habit as the shape of this project's most expensive failures. Fixing it gave
+   a harness that grades the shipped `cityPlan()` in **20 ms** against the probe's four minutes
+   and one machine-wide browser slot, and it found three of that pass's four faults. The cost of
+   the alternative is not the duplicated code: it is that the fast instrument and the slow one can
+   disagree, and the fast one is the one people run.
+30. **When a pass introduces a data structure, the invariants of the *structure* are cheaper
+   checks than the invariants of the thing it is for.** A planar graph whose `edges < nodes`
+   cannot be connected with cycles, and one with more than one outer face is in pieces. Neither
+   is a threshold anybody has to choose, both are one line, and together they would have caught —
+   at a glance — a one-metre gap between the wall line and the map frame that disconnected the
+   frame, pruned the Tiber out of existence and took Rome from 354 blocks to 124.
+
 ---
 
 ## 2. The priors going in
@@ -1688,6 +1725,110 @@ marks it: the stations are now in the tree, in the format `film.mjs --check` val
 in a table in a document. Ten are the previous pass's rails unchanged; `r-eye-tabernae` is new and
 is marked as new. Three Carthage stations are shot in the same run, at the pairings
 `CITY-GROUND-JUDGE.md` §2 used, so "Rome improved" can be read against something that did not.
+
+### 22 August 2026 — Rome phase 4: the grid, and four instruments that lied in four different ways
+
+**What we expected.** `ROME-FABRIC.md` §4.3 had already done the design work and §10.5 had already
+proved the negative: the seventeen district rectangles overlapped, so a block's nearest street was
+routinely another quarter's lane, and a sweep of the lattice's only tuning constant found a **floor
+of 6.86°** on `probe-fabric` G20 against a 5° gate. The prediction going in was therefore narrow
+and confident: replace the rectangles with a partition, take blocks as faces of the road graph, and
+G18, G19, G20 and G21 all close at once because they are four readings of one fault. That is what
+happened — Rome **9/25 → 16/25**, seven checks green, G20's median 7.78° → 0.00° and G21's seam
+fraction 13.6 % → 0.8 %, with Carthage unchanged at 13/22.
+
+**What we did not expect is that every one of the four faults on the way was an instrument
+problem rather than a geometry problem**, and each was a different one. They are worth the space
+because three of the four are new shapes.
+
+**1. The gate passed on a sample of six, and rule 12 is not enough on its own.** The first run of
+the new tree read **G20 PASS, median 0.00° over 6 blocks; G21 PASS, median 0.00° over 2 pairs** —
+and the city had six buildings in it. Rule 12 already says a collapsed sample reports a confident
+number rather than an error, and `probe-fabric` G13b already *refuses* below
+`SIZE_ORDER_MIN_PAIRS`. G20 and G21 have no such floor and they went green on a city with no
+houses. The check that caught it was **G17**, which reads the generator's own self-report and
+fired on nine *regiones* at once.
+
+> **Rule, earned: a gate on a distribution needs a floor on its population, and the floor belongs
+> in the gate rather than in the reader.** G13b has one and refuses; G20 and G21 do not and passed.
+> The population is a property the check can compute about itself, so there is no excuse for
+> printing `n` and leaving the reader to notice. And the corollary that actually saved this pass:
+> **keep one check whose only possible outcome is failure.** A self-report cannot prove a quarter
+> is full, which is why G17 is admissible at all, and it is the only thing in twenty-five checks
+> that could see six buildings.
+
+**2. One metre of gap deleted the city, and nothing measured the graph itself.** A planar-graph
+face extractor has to prune degree-1 chains, because a way that ends inside a block turns the face
+around it into a zero-area slit. Pruning is iterative, so a chain that crosses nothing is eaten
+whole. The wall line was authored to `HALF_EXTENT − 3` and the battlefield frame to
+`HALF_EXTENT − 2`: they never touched, the frame was disconnected from everything, and it came
+back as **one four-edged face covering all 7.8 km²**. Blocks fell from 354 to 124 and four
+*regiones* got none.
+
+> **Rule, earned: publish the topology, not just the output.** `planarise` now returns
+> `{ inputSegments, intersections, nodes, edges, prunedStubs, outerFaces, degenerateFaces }` and
+> the two numbers that would have caught this in one glance are **`edges < nodes`** — impossible
+> for a connected planar graph with cycles — and **`outerFaces > 1`**. Neither is a threshold
+> anybody has to choose. When a pass introduces a data structure, the invariants of the
+> *structure* are cheaper checks than the invariants of the thing it is for.
+
+**3. The longest edge is not the longest side, and a symmetric test could not tell.** A block's
+grain is meant to be the bearing of the street that bounds it, so the code took the longest edge of
+the face's ring. But a planariser splits an edge at every node on it — including nodes a
+*neighbouring* block's cross-lanes put there — so a plain rectangular block 84 × 59 m comes back
+with **sixteen** ring edges, and the longest single one can be a 30 m fragment of the short side.
+The block then turns ninety degrees, the terrace turns with it, and every frontage's "depth"
+becomes the block's length: **82 % of frontages took the shallow single-row branch** and the city
+covered 26 % of its own block faces. The deliberately asymmetric sign case rule 24 asks for
+(`assertBlockBearingSign`, +30° and −30° and their mirrors) **passed throughout**, correctly: it
+tests a four-vertex rectangle, and the fault needs sixteen.
+
+> **Rule, earned: a synthetic test case has to be degenerate in the way the real data is.** Rule
+> 24 says to check a sign against an asymmetric case; this adds that the case must also be
+> *complex* enough. A four-vertex ring cannot exhibit a sixteen-vertex ring's failure, and a
+> handwritten test that is tidier than the production input is testing the wrong function.
+
+**4. A guard placed one level too high abandoned every converging block.** `terrace` began by
+asking whether the block was at least `MIN_DEPTH` deep *at its narrowest point over its whole
+length*. A face bounded by two converging streets comes to a point, so its narrowest point is
+nought — and the whole block, including the eighty metres of it that were forty metres deep, was
+thrown away. What a converging block loses is its last frontage, not itself. Generic and worth
+saying once: **a feasibility test belongs at the granularity of the thing being placed.**
+
+**The method note that mattered most, and it is about tooling rather than about maps.** Three of
+those four were found in **twenty milliseconds** by an offline harness that imports the shipped
+`cityPlan()` and prints the face-area distribution, the reject reasons and a plan-side G20/G21.
+The probe takes four minutes, one browser slot of a machine-wide four, and grades a boot. Before
+this pass **no offline tool in this repository could import anything under `src/city/rome`**: a
+single import of `HALF_EXTENT` from `TerrainSystem`, where it is re-exported, rather than from
+`topography`, where it is defined, closed a cycle
+`survey → TerrainSystem → maps → city/rome/fabric → city/rome/layout → survey` that Vite's
+evaluation order tolerates and Node's does not. That one line is why `tools/scratch/free-land.mjs`
+carries its own copy of `districtMask` and why `rome-frame.mjs` re-derives the projection — and
+`probe-fabric`'s own header names that habit as the shape of this project's most expensive
+failures.
+
+> **Rule, earned: make it possible for an offline tool to import the module it grades, and treat
+> a re-implementation in a scratch tool as a defect rather than as a convention.** The cost of the
+> alternative is not the duplicated code; it is that the fast instrument and the slow instrument
+> can disagree, and the fast one is the one people run.
+
+**Two changes to `probe-fabric` that generalised it, with the control's answer.** A *regio* is a
+polygon, and two of the probe's helpers were only correct for convex ones: `inPoly` is an
+all-left test, and `clipArea` is Sutherland–Hodgman, which needs a convex *clip*. Both are
+replaced — a crossing number and a triangulated intersection — and both reduce to the old path on
+a rectangle. Carthage, the control, moved by **one statistic**: G19's claimed area 0.824 → 0.822
+and covered 0.722 → 0.721, 3,520 m² in 1,705,280, all of it grid cells landing exactly on a
+quarter's edge where the old inclusive test counted them in and the new half-open one does not. Its
+overlap areas and every other check are identical. **A generalisation that is not a relaxation
+moves the control by an amount you can name and in the direction the more correct test predicts.**
+
+**And one honest number, because the pass gave something up.** Buildings fell from 1,173 to 944
+and their footprint from 489,618 m² to 308,643 m², which is 44 % of the ground between street
+lines against the AGEA orthophoto's 60–70 %. Measured with the keep-out map switched off entirely
+the same generator reaches **60.9 %**, so the seventeen-point gap is Rome's monuments, its named
+streets' setbacks, its fourteen plazas and its aqueducts — not the grid. Phase 5 owns roof
+coverage and now owns a decomposition of it as well.
 
 <!-- Append new entries above this line. -->
 

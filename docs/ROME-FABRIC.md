@@ -2602,3 +2602,307 @@ It does not cover the Stadium and is not meant to; rule 11 owns that.
   Fiume at `e ~1190`, and Shepherd's own ink at `e ~1390` — 350 m apart, and relative to the Castra
   Praetoria the engine's is 440 m too far west. The gate is built and the road was pinned to it,
   which is the right call for this pass and leaves a real question for the circuit's.
+
+---
+
+## 11. §5 phase 4, as built — the grid
+
+Built on `e/city/rome-grid` from `main` at `e766174`. This is **§5's phase 4**, the grid pass:
+blocks as faces of the road planar graph, and the fourteen Augustan *regiones* as a partition
+carrying attributes and no extent.
+
+### 11.1 The headline
+
+> **`probe-fabric` Rome 9/25 → 16/25. Carthage, the control, 13/22 → 13/22, with one statistic
+> moved by 0.2 % and every gate identical.** Seven checks turn green and all seven are this
+> phase's: G3 and G10 (buildings interpenetrating, negative clearance), G17 (a quarter unable to
+> build), G18 and G19 (the regions partition), G20 and G21 (the grain).
+>
+> **G20, a block's orientation against the street that bounds it: median 7.78° → 0.00°, p90
+> 31.73° → 2.60°, 754 of 1,169 blocks outside tolerance → 76 of 944.** §10.5 swept the old
+> lattice's only tuning constant and found a floor of **6.86°** against a 5° gate. There is no
+> floor here, because the question has stopped being one: a block's long axis *is* one of its
+> bounding streets.
+>
+> **G21, the grain between neighbours: 13.6 % of pairs rotating more than 15° across a 40 m gap
+> → 0.8 %.** The gate is 1 %.
+
+The nine checks still failing are G4, G5, G8c, G8d, G12, G13a, G13b, G14 and G15. Every one is
+about a **monument** — its footprint, its drawn stone, its published dimensions, or the armature
+running through it — and not one is touched by this pass. G4 and G5 are byte-identical to
+`main`, which is the evidence that the 130 generated cross-lanes put no new carriageway under a
+temple: they are clipped against the reservation map at the moment they become paving, and the
+graph that produced them cannot see a monument at all.
+
+### 11.2 What was built, in the order §4.3 states it
+
+| step | what | result |
+|---|---|---|
+| 1 | close the armature into a planar graph | 23 ways + the *via sagularis* + the wall's own crest line + the Tiber's centreline + the battlefield frame → **1,977 input segments, 1,671 crossings, 2,370 nodes, 2,712 edges, 39 pruned stubs, one outer face, 0 degenerate rings** |
+| 2 | insert cross-lanes at the module pitch, in each face's own frame | **130 lanes, 42.5 km authored**; 22.15 km survives the monument clip and is drawn |
+| 3 | take the faces | **463 faces** |
+| 4 | inset each face by its own bounding edges' setbacks | **299 blocks, 122 plazas, 39 pomerium, 3 field** |
+| 5 | subdivide into insulae | **944 buildings, 308,643 m² of footprint** |
+| 6 | reject against the monuments | 33 blocks stand entirely inside a reservation and are named as such |
+
+**The module, and every term of it is a real dimension.** Across a block: `INSULA_DEPTH_MAX` 22
+back to back about a `LIGHT_WELL` of 3.2, two *vicus* frontages of 1.5 and one 8 m *vicus*
+carriageway = **59.2 world metres** between lane centrelines. Along it: four frontages at Ostia's
+own 11–19 m plus a *vicus* = **84 m**. A block therefore encloses about **0.49 ha**, and §5 phase
+4's stated acceptance is a median face of 0.15–1.2 ha.
+
+| phase 4's acceptance | measured |
+|---|---|
+| every face closed | **yes** — one outer face, 0 degenerate rings |
+| no face straddles a road centreline | **0 of 944 plots**, `assertBlocksAreFaces`, worst intrusion 0.00 m |
+| face-area distribution published, p10/p50/p90 | all 463 faces **0.03 / 0.38 / 0.49 ha**; the 299 **blocks** **0.25 / 0.49 / 0.50 ha** |
+| the p50 face between 0.15 and 1.2 ha | **0.49 ha** |
+| zero faces of negative inset area silently discarded | **0 silent** — 81 *the setbacks meet: the face is all street*; 41 *inset narrower than `MIN_DEPTH`*; 39 *inside the pomerium, or outside the curtain*; 3 *beyond the armature's reach* |
+
+And the same discipline one level down, which phase 4 did not ask for and which turned out to be
+the useful half: **blocks that survive every face test and then build nothing** are counted by
+dominant cause too — 33 *a monument, a street reservation or an aqueduct*, 12 *too shallow for a
+house*, 6 *thinned to nothing at the city fringe*. 111 of 463 faces are re-entrant, where the
+half-plane inset is conservative rather than exact; that is reported because it is the one place
+the geometry here is approximate, and the approximation is in the safe direction — it can make a
+block smaller, never larger, so it can never put a building in a street.
+
+### 11.3 The regions partition, and this is what "attributes, not extents" bought
+
+`DISTRICT_PLAN`'s seventeen rectangles, `DISTRICTS`, `DistrictSpec`, `districtFrame`,
+`districtMask`, `planDistrict`, `rowRotOf` and `ROW_TURN` are deleted. `src/city/rome/regions.ts`
+publishes the fourteen Augustan *regiones* as a **shared-node planar subdivision in survey
+metres**: where two regions abut, both rings list the same vertices in opposite order, so the
+partition is exact rather than approximate and an authoring mistake is findable.
+`assertRegionPartition` walks every ring's edges and fails on a dangling edge (a hole), a folded
+one, or two rings that traverse a shared edge in the *same* direction (one is wound backwards).
+It went red four times while the table was being written. `worldOf` is affine, so it takes a
+shared survey-metre vertex to a shared world-metre vertex and the partition survives the
+projection exactly — which is why the table can be authored in the frame the sources are in.
+
+| | `main` `e766174` | here |
+|---|---:|---:|
+| overlapping region pairs | **82** | **0** |
+| double-claimed ground | **4,706,730 m²** | **0 m²** |
+| claimed area / available | **1.462** | **1.000** |
+| covered at least once / available | **0.597** | **1.000** |
+
+The second row of that table is the one nobody had been reading: **two fifths of the ground
+inside the Aurelian circuit was no district's job**, so nothing was ever built there however the
+generator was tuned. G19 gates both limbs and always did.
+
+**Ten of the fourteen have ground on this frame and four do not.** At `KZ` = 0.35 the map's +Z
+edge is survey northing −441, and **I Porta Capena, II Caelimontium, XII Piscina Publica and XIII
+Aventinus** are centred 226 to 1,059 metres past it. They are rows in `REGIONES` with
+`outline: null`, the assertion *checks* that their centres really are off the frame rather than
+assuming it, and a fifth off-frame region is a failure and not a category (rule 16). The list is
+printed by name on every boot and inside G19's own measured text.
+
+**What each regio actually has, in world metres of ground behind the crest:**
+
+| regio | ground | blocks | insulae | roof over the ground between street lines |
+|---|---:|---:|---:|---:|
+| XIV Transtiberim | 1,096,256 m² | 53 | 76 | 24 % |
+| VI Alta Semita | 367,424 | 77 | 314 | **55 %** |
+| IX Circus Flaminius | 234,112 | 53 | 146 | 30 % |
+| V Esquiliae | 214,656 | 48 | 219 | **63 %** |
+| VII Via Lata | 159,680 | 31 | 102 | **58 %** |
+| VIII Forum Romanum | 51,904 | 15 | 28 | 25 % |
+| III Isis et Serapis | 35,904 | 11 | 26 | 24 % |
+| IV Templum Pacis | 33,152 | 7 | 28 | **75 %** |
+| XI Circus Maximus | 12,928 | 3 | 0 | 0 % |
+| X Palatium | 7,232 | 1 | 5 | 36 % |
+
+**Regio VII, the quarter the assault fights through, was 2.9 % built and is 58 %.** That is
+§4.5's own headline number and it is the one this phase existed to move.
+
+**Regio XIV is 49.5 % of the ground behind the crest**, and that is a fact about the frame rather
+than about Rome: at `KX` 0.443 the map runs 6,320 real metres east–west, so it holds the whole
+right bank out to the *ager Vaticanus*. §11.6 is about what is there.
+
+### 11.4 G17 changed shape, and the shape is the finding
+
+The old check was *"fewer than twenty buildings"*, asked of seventeen rectangles of roughly one
+size. It is the wrong question for ten *regiones* whose buildable ground on this frame runs from
+0.30 to 49 hectares: twenty buildings is a full quarter for Regio IV and a rounding error for
+Regio VI. So the criterion is now **roof over the ground between street lines**, against the
+number §4.4 check 4 takes from the AGEA 2012 orthophoto — the historic core is 60–70 % built —
+with the floor at a quarter of that, **15 %**. The warning's wording is unchanged to the word,
+because G17 greps for it and a check that goes dark is worse than one that fails (rule 13).
+
+And two *regiones* fall out of the population, **after** the measurement that justifies it and
+not before (rule 25). X Palatium keeps **one** block with 0.31 ha of buildable ground and XI
+Circus Maximus keeps **three** with 0.30 ha, all of them in the last twenty metres of the map
+against `CITY_Z_MAX` and inside the Theatre of Marcellus's or the Capitol's own reservation. The
+floor for being asked the question at all is **1 hectare of buildable ground**, and it is set
+there rather than higher because Regio IV — the Subura, the densest quarter in the city — has
+only 1.36 ha and builds 75 % of it. A two-hectare floor would have excused the Subura from the
+check, which is precisely the mistake rule 25 is about. `assertRegionsGraded` gates the ungraded
+list at those two by name.
+
+### 11.5 Four faults, each found by an instrument and each fixed where it happened
+
+**1. `spanAt` is tangent at its own bounding box, and G20 and G21 both passed on six buildings.**
+The terrace asks for the buildable polygon's depth at a given `u`; at exactly the bounding box's
+`u0` or `u1` the line is tangent, so the crossing count is nought or one and there is no span.
+`fill` starts by asking for the span over the whole `[u0, u1]` and every recursive halving keeps
+one of the two ends, so **every block in Rome answered "no span"**. The city came back with
+**six** buildings — and on that run `probe-fabric` reported **G20 median 0.00° over 6 blocks and
+G21 median 0.00° over 2 pairs, both PASS.** `MAP-METHOD.md` rule 12 exactly: *a statistic whose
+sample or spread has collapsed reports a confident number rather than an error.* Nothing in the
+grain gates could have caught it. What caught it was G17, which fired on nine *regiones* at once.
+
+**2. The wall line stopped one metre short of the frame, and the frame became the whole map.**
+`planarise` prunes degree-1 chains iteratively, because a way that ends inside a block turns the
+face around it into a zero-area slit. A chain that crosses nothing is therefore eaten whole. With
+the wall line's ends at `HALF_EXTENT − 3` against a frame at `HALF_EXTENT − 2`, the frame was
+disconnected from everything: it came back as **one four-edged face covering all 7.8 km²**, the
+Tiber was pruned out of existence, and the fabric fell from 354 blocks to 124 with four
+*regiones* getting none at all. `FRAME_E` is now one constant and all three producers use it.
+
+**3. `faceBearing` took the longest *edge* where it needed the longest *side*.** The planariser
+splits an edge at every node on it, including nodes a *neighbouring* block's cross-lanes put
+there, so a plain rectangular block 84 × 59 m comes back with **sixteen** ring edges and the
+longest single one can be a 30 m fragment of the short side. Taking that as the grain turned the
+block ninety degrees, which turned the terrace ninety degrees, which made every frontage's depth
+the block's *length*: **82 % of frontages took the shallow single-row branch** and the city
+covered 26 % of its own block faces. Consecutive edges within a degree of each other are now one
+side. A street does not stop being one street because a lane joins it halfway along.
+
+**4. `terrace` refused any block whose narrowest point was under `MIN_DEPTH`.** A face bounded by
+two converging streets comes to a point, so its narrowest point is nought — and the whole block,
+including the eighty metres of it that were forty metres deep, was abandoned. 885 frontages came
+out of 304 blocks against the eight per block the module predicts. What a converging block loses
+is its last frontage, not itself.
+
+Three of the four were found by the offline harness (`tools/scratch/rome-blockcheck.mjs`, run
+with `node --experimental-transform-types --import ./tools/lib/ts-resolve.mjs`), which imports
+`cityPlan()` — the shipped function, not a copy of it — and runs in **20 milliseconds** against
+the probe's four minutes and one browser slot. That harness needed one change to `src/`: a cycle
+`survey → TerrainSystem → maps → city/rome/fabric → city/rome/layout → survey`, closed only
+because `survey.ts` imported `HALF_EXTENT` from `TerrainSystem`, where it is re-exported, rather
+than from `topography`, where it is defined. One line, same value, one fewer cycle — and before
+it no offline tool in this repository could import anything under `src/city/rome` at all, which
+is why every scratch tool this project has re-implements what it grades.
+
+### 11.6 The honest gaps, measured
+
+**Roof coverage is 39 % of the ground between street lines, against 60–70 %.** Per regio it runs
+from 75 % (IV) and 63 % (V) down to 24 % (III and XIV). That is phase 5's acceptance and not this
+one's — phase 4 owes the face set — but the number is here so nobody has to guess. Where it goes:
+of 299 blocks, **51 build nothing** with a named cause each; of the rest, the median built block
+covers a little over half of its own buildable polygon, which the light well, the party-wall
+gaps, the 22 m cap on row depth and the frontage tail all eat into.
+
+**Transtiberim is a 230 m band and nothing beyond it.** Phase 3 authored no way across the right
+bank — the Via Aurelia and the Via Portuensis are not in `ROME_WAYS` — so on the armature test
+alone the whole far bank was one 108-hectare field and Regio XIV built nothing, on 49.5 % of the
+map's city ground. The repair is that **a river bank in a city is a frontage**: the modelled
+channel is a graph edge now, `RIVER_REACH` is 230 m, and 53 blocks line the water. Beyond it the
+Janiculum is country. The alternative — laying a lattice over the whole right bank — would have
+covered a square kilometre with one uniform grid at one bearing, which is less like Transtiberim
+than an empty field is. **What it actually needs is two or three authored ways on the right bank,
+and that is phase 3's module, not this one's.**
+
+**The streets are too wide, and here is the measurement.** The owner's standing complaint,
+answered in the units the complaint is about. `WAY_WIDTH` is in world metres and a cross-section
+does not compress (rule 4), so a carriageway's width in *real* metres depends on which way it
+runs: 42 world m of `artery` is **95 real metres** where the way runs north–south and **120**
+where it runs east–west. The Via Lata between its porticoes was about 25 real metres, of which
+maybe 12 was carriageway. The generated `vicus` at 8 world m is **18–23 real metres** against a
+real *vicus* of 3–6.
+
+So: **yes, by a factor of three to ten, and it is a stated gameplay decision in `WAY_WIDTH`** —
+*"a cohort in line, 35 m, with 3.5 m either side"* — not an accident of the grid, and changing it
+moves G4, G5, G8, G9 and every nav measurement at once. It is named here rather than done for the
+same reason §10.7 named the paving bug rather than fixing it. What this phase *did* change is the
+**share**: carriageway falls from **704,454 m² to 496,608 m²**, from 31.8 % of the ground behind
+the crest to 22.4 %, and the generated lane network from 43.4 km to 22.2 km — because a lattice
+cut inside a face stops where the face does, and the old spines and ribs ran on into open country.
+
+**Buildings are down from 1,173 to 944 and their footprint from 489,618 m² to 308,643 m².** That
+is the one number that went backwards and it should be said first rather than last. What it
+bought: zero interpenetrating pairs against thirteen, a positive worst clearance against −3.36 m,
+a grain that comes from the streets, and 208,000 m² of ground handed back from carriageway to
+city.
+
+### 11.7 The gate, before and after
+
+| | `main` `e766174` | `e/city/rome-grid` |
+|---|---|---|
+| `probe-fabric` **Rome** | **9/25** | **16/25** |
+| `probe-fabric` **Carthage** (control) | **13/22** | **13/22** |
+| G3 no two buildings interpenetrate | 13 pairs, 281.49 m², worst 3.36 m | **0 pairs, 0 m²** |
+| G10 worst building-to-building clearance | −3.36 m | **+0.05 m** |
+| G17 quarters reporting themselves buried | 2 (`emporium`, `forum-boarium`) | **0** |
+| G18 overlapping region pairs | 82 pairs, 4,706,730 m² | **0 pairs, 0 m²** |
+| G19 claimed / covered, against available | 1.462 / 0.597 | **1.000 / 1.000** |
+| G20 median / p90 / over tolerance | 7.78° / 31.73° / 754 of 1,169 | **0.00° / 2.60° / 76 of 944** |
+| G21 median / pairs over 15° | 3.22° / 501 of 3,673 (13.6 %) | **0.00° / 21 of 2,721 (0.8 %)** |
+| G4 monument in a carriageway (plan) | 12,731.32 m² / 24 segments / 10 monuments | **identical** |
+| G5 drawn carriageway under a monument | 3,478 vertices | **identical** |
+| buildings / footprint | 1,173 / 489,618 m² | 944 / 308,643 m² |
+| carriageway | 704,454 m² | **496,608 m²** |
+| generated lanes | 512 / 43.43 km | 994 / 22.15 km |
+| `probe-seams` | PASS both maps | **PASS both maps** |
+| `tsc` / `lint` | clean / 3/3 | **clean / 3/3** |
+
+**The control moved by one statistic and it is explained rather than absorbed.** Carthage's G19
+reads `claimed 0.824 → 0.822` and `covered 0.722 → 0.721`, a difference of 3,520 m² in 1,705,280.
+`probe-fabric`'s point-in-region test was `inPoly`, an all-left test that is only correct for a
+**convex** polygon and counts a point exactly on an edge as inside; a *regio* ring is not convex,
+so it is now a crossing number, which is correct for any simple polygon and half-open on the
+boundary. On Carthage's sixteen rectangles the two disagree only on grid cells landing exactly on
+a quarter's edge, and the new one is the stricter of the two. Its 21 overlapping pairs and every
+other check are identical. The polygon-intersection area got the same treatment —
+Sutherland–Hodgman needs a convex clip polygon, so it is triangulated now — and short-circuits to
+the old path for two quadrilaterals, which is why the overlap areas did not move at all.
+
+### 11.8 The frames
+
+`tools/shots/rome-grid.shot.mjs`, nine cameras, and **every plan camera reuses
+`rome-roads.shot.mjs`'s rail numbers to the digit** so the pair is a before and after of the same
+city rather than two different photographs. `screenshots/rome-grid/` is this tree,
+`screenshots/rome-grid-before/` is `main` at `e766174` shot with the same script.
+
+| frame | camera | what it is for |
+|---|---|---|
+| `grid-plan` | straight down, 2,400 m, north up, centre (450, 950), 1 px = 1.617 m | the whole city; the same rail as `network-plan` |
+| `grid-plan-campus` | straight down, 900 m, centre (100, 950), 1 px = 0.606 m | Regio IX, the lowest-coverage graded regio |
+| `grid-plan-east` | straight down, 1,100 m, centre (700, 1000), 1 px = 0.741 m | the Quirinal and the Viminal, where coverage is 55–63 % |
+| `grid-plan-gate` | straight down, 620 m, centre (200, 800), 1 px = 0.418 m | the 700 m behind the gate: Regio VII, 2.9 % → 58 % |
+| `grid-eye-lane` | eye 1.75 m at (600, 900), 40° lens, 180 m down a generated *vicus* | rule 15: the grain either reads at a standing man's eye or it does not |
+| `grid-eye-lata` | eye 1.75 m at (249, 1000), 32° lens, 420 m | the same rail as `vialata-length` |
+| `grid-eye-subura` | eye 1.75 m at (640, 1230), 46° lens | Regio IV at 75 % coverage, four to six storeys |
+| `grid-block-oblique` | 150 m up, 200 m out, at (820, 900) | one block, so the courtyard reads |
+| `grid-river` | 420 m up, 520 m out, at (−150, 950) | the channel as a block boundary, and where Transtiberim stops |
+
+### 11.9 What phase 5 inherits
+
+- **Roof coverage.** 39 % of the ground between street lines against 60–70 %, and the per-regio
+  table in §11.3 says where. The two levers this pass did not pull: 51 empty blocks with a named
+  cause each, and a median built block covering a little over half of its own polygon.
+- **The Campus Martius specifically.** Regio IX is at 30 %, the lowest of the graded *regiones*
+  with real ground, and it is the quarter behind the gate. Most of the rest of it is monument,
+  which is correct — but §5's own acceptance names it.
+- **Two or three ways on the right bank** — the Via Aurelia, the Via Portuensis, the *Ripa* —
+  which is phase 3's module and would turn a 230 m band into Transtiberim.
+- **The paving resolution** (§10.7), still the cheapest item on the list: `onMonument` is tested
+  once per way segment at its midpoint, and G5 has not moved because of it.
+- **`PLAZAS` is still the fourteen clustered junctions** with `PLAZA_CAP = 14`. §4.3 says the cap
+  goes away once plazas are found by the same operation that finds blocks — and they now are, 122
+  of them, each with its reason — but `PLAZAS` is also a keep-out the manoeuvre budget depends on,
+  so deleting it is a nav change and not a fabric one.
+- **The *horti* are classified but not built.** `RegioSpec.hortiNorthOf` marks the Pincian gardens
+  (VII, north of n 1650) and the Horti Sallustiani and the ground behind the Porta Salaria (VI,
+  north of n 1450); 11 blocks fall in them and they build at 8 % coverage. The dry-stone boundary
+  walls, the terraces and the planted avenues are phase 6.
+- **`regionAt` fell back to the nearest ring twice** in a whole boot — two grid samples landing
+  exactly on a shared edge where both crossing tests rounded the same way. The counter is printed
+  so that a fallback firing thousands of times, which would mean the tiling has a hole, is a
+  number somebody can see.
+- **`urbanWeight` decides where the city ends** and it is two ramps: 150–340 m from the authored
+  armature, weighted by the regio's own `fray`, and 40–230 m from the channel. Those five numbers
+  are the only tuning constants this phase adds, they are all distances to a real feature rather
+  than magnitudes of an invented one, and the sweep that would justify them against roof coverage
+  per region is phase 5's.

@@ -953,7 +953,7 @@ export function cityPlan(): CityPlanOut {
     plotsByRegion: [],
     ungraded: [],
     emptyBlocks: [],
-    plotRejects: { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, perimeterTried: 0, perimeterBuilt: 0 },
+    plotRejects: { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0, perimeterTried: 0, perimeterBuilt: 0 },
     worstFrameErrorDeg: worstFrameErr,
   };
   PLAN = { graph, blocks, cuts, report };
@@ -1012,6 +1012,10 @@ export interface PlotRejects {
   /** Frontages cut, and rows offered to `place`, over the whole city. */
   frontages: number;
   rows: number;
+  /** Rows that produced at least one building. */
+  rowsBuilt: number;
+  /** Frontages whose own span was too shallow for two rows about a light well. */
+  oneRowOnly: number;
   /** Whole-block courtyard ranges tried, and how many stood. */
   perimeterTried: number;
   perimeterBuilt: number;
@@ -1034,7 +1038,8 @@ function planBlock(
    */
   const why: PlotRejects = {
     pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0,
-    wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, perimeterTried: 0, perimeterBuilt: 0,
+    wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0,
+    perimeterTried: 0, perimeterBuilt: 0,
   };
   const plots: Plot[] = [];
   const F = b.frame;
@@ -1208,6 +1213,7 @@ function planBlock(
       const depth = hi - lo;
 
       const rows: [number, number, 1 | -1][] = [];
+      if (depth < TWO_ROW_DEPTH) why.oneRowOnly++;
       if (depth >= TWO_ROW_DEPTH) {
         const rd = Math.min(INSULA_DEPTH_MAX, (depth - LIGHT_WELL) * 0.5);
         rows.push([lo, lo + rd, -1], [hi - rd, hi, 1]);
@@ -1222,7 +1228,9 @@ function planBlock(
           why.thinned++;
           continue;
         }
+        const before = plots.length;
         place(uc, hu, w0, w1, front, 0);
+        if (plots.length > before) why.rowsBuilt++;
       }
     }
   }
@@ -1482,7 +1490,7 @@ export function buildDistricts(
 
   // ---- the plots ----------------------------------------------------------
   const placed = new PlotGrid();
-  const why: PlotRejects = { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, perimeterTried: 0, perimeterBuilt: 0 };
+  const why: PlotRejects = { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0, perimeterTried: 0, perimeterBuilt: 0 };
   const emptyBlocks = new Map<string, number>();
   const byBlock = new Map<number, Plot[]>();
   const perRegion = new Map<string, { blocks: number; plots: number; frontages: number; insetM2: number; roofM2: number }>();
