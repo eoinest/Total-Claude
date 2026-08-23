@@ -1854,6 +1854,25 @@ Named rather than forgotten. Each was considered and refused with a reason.
    permanently-taxed object §5 says every design in the pass underestimated. What is built
    instead is a legible failure: a dropped socket ends the match by name at a stated tick on both
    sides. A socket dropped in the *lobby* reopens the slot, which is the useful behaviour.
+
+   **Corrected 22 August 2026 — this was written as a design intention and shipped as a false
+   claim.** `NetLink.connect` resolves on `welcome` and sets `settled`, and `die` — the only
+   thing `onclose` did with the news — returns immediately once `settled` is true. So after the
+   handshake a dropped socket set a boolean nobody read, and `NetSession.pace` went on re-pinning
+   `Time.tickCeiling` at the last authorised turn for ever. The owner hit it in play: *"all the
+   soldiers have frozen"*, then *"now all animations are running but no characters are moving"* —
+   which is the signature exactly, because animation playheads run off `scaledDt` and positions
+   come out of `fixedUpdate`, so `paused` was false, the top bar read `1x`, and nothing anywhere
+   said a word. Killing the relay under a live match reproduces it in one line
+   (`tools/qa-freeze.mjs --only=net-drop`).
+
+   It now does what this paragraph always said. `NetLink.dropped` is set from `onclose` and
+   `onerror` whether or not the promise had settled, and `NetSession.pace` ends the match through
+   the same `onEnd` a relay-sent `end` uses. There is a second detector for the case `onclose`
+   cannot cover — a half-open socket, which is what a sleeping laptop and a dead wireless link
+   both leave — counted in *rendered frames* rather than wall clock, because `onmessage` runs on
+   the page's main thread and a blocked thread cannot receive a packet that has already arrived.
+   `tools/qa-freeze.mjs --only=net-silent` `SIGSTOP`s the relay to prove it.
 2. **More than two players.** §4.5, unchanged. The desync surface, the slowest-peer coupling and
    simultaneous deployment all scale badly, and `Room` is written for two slots throughout.
 3. **Anti-cheat.** §4.5, unchanged, and lockstep hands both clients the whole world by

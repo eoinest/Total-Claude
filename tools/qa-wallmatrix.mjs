@@ -272,11 +272,12 @@ await page.evaluate(INSTALL);
 await settle(500);
 if (await page.evaluate(() => !!document.querySelector('.dep-begin'))) { await page.click('.dep-begin'); await settle(700); }
 const boot = await page.evaluate(() => ({
-  paused: window.__game.engine.time.paused,
+  // `stopped`, not `paused`: the deployment phase holds the clock in its own name now.
+  stopped: window.__game.engine.time.stopped,
   units: window.__game.battle.units.length,
   city: window.__game.engine.context.tryGet('city')?.cityPlan?.id ?? null,
 }));
-console.log(`  booted: city ${boot.city}, ${boot.units} units, clock paused ${boot.paused}`);
+console.log(`  booted: city ${boot.city}, ${boot.units} units, clock stopped ${boot.stopped}`);
 if (boot.city !== (MAP === 'carthage' ? 'carthage' : 'rome')) {
   console.error(`WRONG CITY: expected ${MAP}, got ${boot.city}`); await browser.close(); process.exit(3);
 }
@@ -490,7 +491,7 @@ async function cell(spec) {
       }
       return { view: window.__view(id), aim: a, under: stack.slice(0, 4),
         overUi: window.__overUi(), simTime: window.__game.simTime(),
-        paused: window.__game.engine.time.paused,
+        stopped: window.__game.engine.time.stopped,
         overlays: [...document.querySelectorAll('#hud-root .interactive')]
           .map((n) => { const r = n.getBoundingClientRect();
             return { c: (n.className || '').toString().slice(0, 30), w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.left), y: Math.round(r.top) }; })
@@ -498,8 +499,8 @@ async function cell(spec) {
     }, spec.unitId);
     record({ ...spec, unitType: before.typeId, pass: false,
       note: `SELECT FAILED — ${sel.why}; aim px ${JSON.stringify(dbg.aim)}, under `
-        + `${JSON.stringify(dbg.under)}, overUi ${dbg.overUi}, t ${dbg.simTime?.toFixed(0)}s paused `
-        + `${dbg.paused}, big overlays ${JSON.stringify(dbg.overlays)}, view ${JSON.stringify(dbg.view)}`,
+        + `${JSON.stringify(dbg.under)}, overUi ${dbg.overUi}, t ${dbg.simTime?.toFixed(0)}s stopped `
+        + `${dbg.stopped}, big overlays ${JSON.stringify(dbg.overlays)}, view ${JSON.stringify(dbg.view)}`,
       before, expect: undefined });
     return null;
   }

@@ -38,10 +38,13 @@ import { RELAY_V, validCode, type ClientMsg, type RelayMsg } from './protocol';
  * Two things carry the news now. `dropped` is the *reason*, set from `onclose` and from
  * `onerror` whether or not the connection ever settled, and `NetSession.pace` reads it every
  * frame and ends the match through the same `onEnd` path a relay-sent `end` uses — halt at a
- * stated tick, with a sentence, on the panel. `lastMessageAt` is the backstop for the case
- * `onclose` cannot cover: a half-open socket, which is what a sleeping laptop and a dead
- * wireless link both produce, where the relay's ten packets a second simply stop arriving and
- * the browser is never told. Neither is a reconnection and neither pretends to be.
+ * stated tick, with a sentence, on the panel. Polled rather than pushed through a callback,
+ * because `pace` already runs every frame and a poll cannot be lost to an ordering hazard
+ * against a socket event that arrives between two of them. `counts.got` and `gapMs` are the
+ * backstop for the case `onclose` cannot cover: a half-open socket, which is what a sleeping
+ * laptop and a dead wireless link both produce, where the relay's ten packets a second simply
+ * stop arriving and the browser is never told. Neither is a reconnection and neither pretends
+ * to be.
  */
 export class NetLink {
   readonly room: string;
@@ -79,8 +82,6 @@ export class NetLink {
    * with whatever cadence the relay actually keeps.
    */
   gapMs = 0;
-  /** Called once, from the socket's own callbacks, when the transport fails after settling. */
-  onDropped: ((why: string) => void) | null = null;
 
   /** Every message, in arrival order, for whoever attaches. Drained by `NetSession`. */
   private queue: RelayMsg[] = [];
@@ -134,7 +135,6 @@ export class NetLink {
         this.closed = true;
         if (this.dropped) return;
         this.dropped = why;
-        try { this.onDropped?.(why); } catch { /* a listener must not break the socket */ }
       };
       ws.onerror = () => {
         clearTimeout(timer);

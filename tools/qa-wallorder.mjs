@@ -185,12 +185,17 @@ if (hadDeploy) {
   await settle(700);
 }
 const inPlay = await page.evaluate(() => ({
-  paused: window.__game.engine.time.paused,
+  // `stopped`, not `paused`: the deployment phase holds the clock with a named hold rather than
+  // the player's own boolean, so `paused` is false throughout it and this check would pass by
+  // measuring nothing. `holders` is the reading that says who, if anyone, still has it.
+  stopped: window.__game.engine.time.stopped,
+  holders: window.__game.engine.time.holders(),
   dep: window.__game.deployment ? window.__game.deployment.active : null,
   scenario: window.__game.battle.units.length,
 }));
-record('in-play', !inPlay.paused, `deployment ${hadDeploy ? 'committed' : 'absent'}`,
-  `clock paused ${inPlay.paused}, deployment.active ${inPlay.dep}, ${inPlay.scenario} units`);
+record('in-play', !inPlay.stopped, `deployment ${hadDeploy ? 'committed' : 'absent'}`,
+  `clock stopped ${inPlay.stopped} (held by ${JSON.stringify(inPlay.holders)}), `
+    + `deployment.active ${inPlay.dep}, ${inPlay.scenario} units`);
 
 // Let the assault develop a little so the world is the one the owner sees.
 await page.evaluate(() => window.__game.engine.advance(20));
