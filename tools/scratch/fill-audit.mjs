@@ -228,6 +228,7 @@ if (ABLATE) {
     return inside;
   };
   const freePer = new Map();
+  const regFree = new Map();
   for (const b of plan.blocks) {
     if (b.kind !== 'block' || b.inset.length < 3) continue;
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
@@ -236,19 +237,27 @@ if (ABLATE) {
       if (p.z < z0) z0 = p.z; if (p.z > z1) z1 = p.z;
     }
     let free = 0;
+    let mon = 0;
     for (let z = z0 + STEP / 2; z < z1; z += STEP) {
       for (let x = x0 + STEP / 2; x < x1; x += STEP) {
         if (!inPoly(b.inset, x, z)) continue;
         tally.total += CELLA;
         let taken = false;
         for (const key of ['mon', 'plaza', 'aq', 'way']) {
-          if (kinds[key].blockedRect(x, z, STEP / 2, STEP / 2, 0)) { tally[key] += CELLA; taken = true; break; }
+          if (kinds[key].blockedRect(x, z, STEP / 2, STEP / 2, 0)) {
+            tally[key] += CELLA; taken = true;
+            if (key === 'mon') mon += CELLA;
+            break;
+          }
         }
         if (!taken && inTheRiverAt(x, z)) { tally.wet += CELLA; taken = true; }
         if (!taken) { tally.free += CELLA; free += CELLA; }
       }
     }
     freePer.set(b.index, free);
+    const a = regFree.get(b.region.numeral) ?? { free: 0, mon: 0 };
+    a.free += free; a.mon += mon;
+    regFree.set(b.region.numeral, a);
   }
   const pct = (v) => `${((v / tally.total) * 100).toFixed(1)}%`;
   console.log('');
@@ -259,8 +268,17 @@ if (ABLATE) {
   console.log(`   a way own reservation   ${(tally.way / 1e4).toFixed(1).padStart(6)} ha  ${pct(tally.way)}`);
   console.log(`   the Tiber               ${(tally.wet / 1e4).toFixed(1).padStart(6)} ha  ${pct(tally.wet)}`);
   console.log(`   FREE for fabric         ${(tally.free / 1e4).toFixed(1).padStart(6)} ha  ${pct(tally.free)}`);
-  console.log(`roof / free ground = ${((c.roofTotal / tally.free) * 100).toFixed(1)}%`
-    + `   (roof / all ground = ${((c.roofTotal / tally.total) * 100).toFixed(1)}%)`);
+  console.log(`FABRIC roof / free ground   = ${((c.roofTotal / tally.free) * 100).toFixed(1)}%   <- grades the generator`);
+  console.log(`ALL roof / all ground       = ${(((c.roofTotal + tally.mon) / tally.total) * 100).toFixed(1)}%   <- what an orthophoto measures`);
+  console.log(`fabric roof / all ground    = ${((c.roofTotal / tally.total) * 100).toFixed(1)}%   <- the number phase 4 quoted`);
+  console.log('by regio, free ground and what the fabric did with it:');
+  for (const [num, a] of [...byRegion.entries()].sort((x, y) => y[1].inset - x[1].inset)) {
+    const f = regFree.get(num) ?? { free: 0, mon: 0 };
+    console.log(`   ${num.padStart(4)}  all ${(a.inset / 1e4).toFixed(1).padStart(5)} ha`
+      + `  free ${(f.free / 1e4).toFixed(1).padStart(5)} ha  monument ${(f.mon / 1e4).toFixed(1).padStart(5)} ha`
+      + `  fabric/free ${((a.roof / Math.max(1, f.free)) * 100).toFixed(0).padStart(3)}%`
+      + `  all-roof/all ${(((a.roof + f.mon) / a.inset) * 100).toFixed(0).padStart(3)}%`);
+  }
 
   // Of the blocks that build nothing, how many have free ground in them?
   const emptyFree = empties.map((p) => freePer.get(p.b.index) ?? 0).sort((a, b) => b - a);
@@ -268,4 +286,21 @@ if (ABLATE) {
   console.log(`empty blocks with >= 200 m2 of FREE ground in them: ${gaveUp.length} of ${empties.length}`
     + `, holding ${(gaveUp.reduce((s, v) => s + v, 0) / 1e4).toFixed(2)} ha`);
   console.log(`   the other ${empties.length - gaveUp.length} are genuinely occupied or wet`);
+
+  // Name them. A count of give-ups is not actionable; a list with a cause is.
+  const byIndex = new Map(out.diag.map((d) => [d.index, d]));
+  const rows = empties
+    .map((p) => ({ p, free: freePer.get(p.b.index) ?? 0, d: byIndex.get(p.b.index) }))
+    .filter((r) => r.free >= 200)
+    .sort((a, b) => b.free - a.free);
+  console.log('the give-ups, by name:');
+  for (const r of rows) {
+    const w = r.d?.why ?? {};
+    const top = Object.entries(w).filter(([k]) => ['reserved', 'narrow', 'thinned', 'pomerium', 'neighbour', 'shortFrontage', 'tooSmall'].includes(k))
+      .sort((a, b2) => b2[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${v}`).join(' ');
+    console.log(`   free ${String(Math.round(r.free)).padStart(5)} m2  ${r.p.b.region.numeral.padStart(4)}`
+      + ` at (${r.p.b.face.cx.toFixed(0)},${r.p.b.face.cz.toFixed(0)})  inset ${(r.p.b.insetAreaM2 / 1e4).toFixed(2)} ha`
+      + `  urban ${r.p.b.urban.toFixed(2)} horti ${r.p.b.horti ? 'y' : 'n'}`
+      + `  drowned ${r.d?.drowned ?? '?'}  "${r.d?.emptyBecause}"  [${top}]`);
+  }
 }

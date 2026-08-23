@@ -20,6 +20,7 @@ import {
   regionalPlain,
   riverInfluence,
   riverOffset,
+  riverHalfWidthAt,
   riverProfile,
   romeWallZ,
   worldOf,
@@ -129,6 +130,17 @@ export interface DistrictOutput {
   lanes: Lane[];
   /** What the grid did, by the numbers, for the report and for the assertions. */
   report: BlockReport;
+  /**
+   * Per block, what it built and what refused it. Not logged and not in `stats()`: it exists
+   * so an offline audit can ask *which* block gave up rather than only how many did, and so
+   * that the question is asked of the shipped generator rather than of a copy of it
+   * (`MAP-METHOD.md` rule 29).
+   */
+  diag: {
+    index: number; region: string; x: number; z: number;
+    insetM2: number; plots: number; drowned: number; urban: number; horti: boolean;
+    emptyBecause: string | null; why: PlotRejects;
+  }[];
 }
 
 type Ground = (x: number, z: number) => number;
@@ -539,6 +551,12 @@ export interface BlockReport {
   plotRejects: PlotRejects;
   /** Blocks that survived every face test and then built nothing, by dominant cause. */
   emptyBlocks: { reason: string; n: number }[];
+  /**
+   * How many there were. Printed beside the list so the two can be compared: the list is a
+   * claim about a population and the count is the population. They disagreed by 34 for as
+   * long as the reason was computed before the river filter ran.
+   */
+  emptyBlockCount: number;
   /** `blockFrame`'s answer against its own face, in degrees. Should be exactly zero. */
   worstFrameErrorDeg: number;
 }
@@ -953,6 +971,7 @@ export function cityPlan(): CityPlanOut {
     plotsByRegion: [],
     ungraded: [],
     emptyBlocks: [],
+    emptyBlockCount: 0,
     plotRejects: { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0, perimeterTried: 0, perimeterBuilt: 0 },
     worstFrameErrorDeg: worstFrameErr,
   };
@@ -1028,7 +1047,7 @@ function planBlock(
   wallZAt: (x: number) => number,
   placed: PlotGrid,
   total: PlotRejects
-): { plots: Plot[]; frontages: number; emptyBecause: string | null } {
+): { plots: Plot[]; frontages: number; why: PlotRejects } {
   /*
    * Counted per block as well as per city, so a block that builds **nothing** can say which
    * of the six causes did it. Phase 4's acceptance asks for every rejected face to be reported
@@ -1063,7 +1082,11 @@ function planBlock(
    */
   u0 += 0.6;
   u1 -= 0.6;
-  if (u1 - u0 < MIN_FRONTAGE) return { plots: [], frontages: 0, emptyBecause: 'narrower than one frontage' };
+  if (u1 - u0 < MIN_FRONTAGE) {
+    why.shortFrontage++;
+    for (const k of Object.keys(why) as (keyof PlotRejects)[]) total[k] += why[k];
+    return { plots: [], frontages: 0, why };
+  }
   const R = { rows: 0, ok: 0 };
   /**
    * How much of a block actually gets built. Measured on the AGEA orthophoto of the historic
@@ -1072,20 +1095,48 @@ function planBlock(
   const keep = b.horti ? HORTI_COVERAGE : 0.9 + b.region.density * 0.1;
   const fade = (m: number): number => keep * (0.68 + 0.32 * m);
 
-  const buildable = (u: number, v: number, hu: number, hv: number): number => {
+  /**
+   * `count` is false on every rung of the depth ladder except the last, so the rejection
+   * tallies stay a count of *plots lost* rather than of attempts. Without it a single plot
+   * beside the Baths of Trajan reports four `reserved` rejections and the report's biggest
+   * number becomes a measure of how hard the placer tried.
+   */
+  const buildable = (u: number, v: number, hu: number, hv: number, count = true): number => {
     const x = F.x(u, v);
     const z = F.z(u, v);
     const zReach = Math.abs(Math.sin(F.rot)) * hu + Math.abs(Math.cos(F.rot)) * hv;
     if (z - zReach < wallZAt(x) + POMERIUM) {
-      why.pomerium++;
+      if (count) why.pomerium++;
       return 0;
     }
     if (keepOut.blockedRect(x, z, hu, hv, F.rot)) {
-      why.reserved++;
+      if (count) why.reserved++;
       return 0;
     }
     if (placed.hits(x, z, hu, hv, F.rot)) {
-      why.neighbour++;
+      if (count) why.neighbour++;
+      return 0;
+    }
+    /*
+     * **The river is a reservation, not a delete, and that is the difference between a hole
+     * and a bank.**
+     *
+     * `inTheRiver` used to run once over the finished block and drop whatever stood in water.
+     * A drop is all-or-nothing at the granularity of the thing dropped, which for a
+     * whole-block courtyard range is the whole block: one wet corner of a 74 x 46 m ring took
+     * 3,400 m² of dry ground with it, and because the ring stays registered in the plot grid
+     * (deliberately — see `buildDistricts`) nothing else could come back for it. Measured, one
+     * such block in Transtiberim reported 80 `neighbour` rejections and built nothing on
+     * 2,388 m² of dry ground.
+     *
+     * Asked here instead, the water is just another thing in the way: the greedy width walk
+     * steps round it and the depth ladder shortens against it, exactly as they do for a
+     * monument. `inTheRiver` survives as the safety net over the finished plot list, and
+     * `plotRejects.wet` is now a count of what the net caught rather than of what the river
+     * cost.
+     */
+    if (wetRect(x, z, hu, hv, F.rot)) {
+      if (count) why.wet++;
       return 0;
     }
     return b.urban;
@@ -1104,33 +1155,116 @@ function planBlock(
     return hi - lo >= MIN_DEPTH ? [lo, hi] : null;
   };
 
-  function place(
-    uc: number, hu: number, v0: number, v1: number, front: 1 | -1, level: number
-  ): void {
+  /**
+   * **A plot's depth is asked at the plot, not at the frontage, and this is phase 4's own
+   * lesson one level further down.**
+   *
+   * Phase 4 found `terrace` refusing a whole block because its narrowest point was nought,
+   * and moved the feasibility test down to the frontage. The frontage had exactly the same
+   * fault: `spanOver(pa, pb)` is the intersection of the spans at three `u` values, so a
+   * sixteen-metre frontage that is forty metres deep at one end and twelve at the other was
+   * built twelve deep along its whole length — and if the shallow end fell under `MIN_DEPTH`
+   * the frontage was refused entire (157 of 1,075 of them). What a converging frontage loses
+   * is the *back* of its last house, not the house.
+   *
+   * So each emitted plot takes the span over **its own** `u` interval, sets its front line to
+   * that span's own edge, and takes as much depth as that span allows. Two plots side by side
+   * on a bending street therefore step, which is what a terrace on a bending street does.
+   *
+   * The second all-or-nothing, and it is `MAP-METHOD.md`'s "shrink a block by a plot rather
+   * than delete it" applied to depth: when the keep-out refuses the full-depth rectangle the
+   * plot is **not** abandoned. It gives up its back and keeps its frontage, down a ladder, so
+   * a block that a monument clips gets a shallow terrace along the street instead of bare
+   * ground. That is what real fabric beside a precinct does.
+   */
+  function place(uc: number, hu: number): boolean {
     const w = hu * 2;
-    const dep = v1 - v0;
-    if (w < MIN_PLOT || dep < MIN_PLOT) {
+    if (w < MIN_PLOT) {
       why.tooSmall++;
-      return;
+      return false;
     }
-    const vc = (v0 + v1) * 0.5;
-    const hv = dep * 0.5 - 0.12;
 
-    const run: { i: number; u0: number; u1: number }[] = [];
-    const emit = (u: number, halfW: number): boolean => {
-      if (halfW * 2 < MIN_PLOT) return false;
-      const mask = buildable(u, vc, halfW, hv);
-      if (mask <= 0) return false;
-      R.ok++;
-      run.push({ i: plots.length, u0: u - halfW, u1: u + halfW });
-      plots.push({
-        x: F.x(u, vc), z: F.z(u, vc), rot: F.rot, hw: halfW, hd: hv,
-        frontSide: front, edge: mask, abut: 0,
-      });
-      return true;
+    /** Party-wall bookkeeping, one run per side of the light well. */
+    const runs: { i: number; u0: number; u1: number }[][] = [[], []];
+
+    /**
+     * One plot at `u`, half-width `halfW`, on the given side of the block's own local span.
+     * Returns false only when nothing at all stands there.
+     */
+    const emitRow = (
+      u: number, halfW: number, lo: number, hi: number, rd: number, front: 1 | -1
+    ): boolean => {
+      // The ladder: full depth, then two thirds, then a shop-deep strip. The front line does
+      // not move — a plot gives up its back, never its street.
+      const rungs = [rd, rd * 0.66, rd * 0.42, MIN_PLOT];
+      for (let k = 0; k < rungs.length; k++) {
+        const d = rungs[k];
+        if (d < MIN_PLOT) continue;
+        if (k > 0 && d >= rungs[k - 1] - 0.01) continue;
+        const v0 = front < 0 ? lo : hi - d;
+        const v1 = front < 0 ? lo + d : hi;
+        const vc = (v0 + v1) * 0.5;
+        const hv = (v1 - v0) * 0.5 - 0.12;
+        if (hv <= 0) continue;
+        const mask = buildable(u, vc, halfW, hv, k === rungs.length - 1);
+        if (mask <= 0) continue;
+        R.ok++;
+        const idx = plots.length;
+        runs[front < 0 ? 0 : 1].push({ i: idx, u0: u - halfW, u1: u + halfW });
+        const plot: Plot = {
+          x: F.x(u, vc), z: F.z(u, vc), rot: F.rot, hw: halfW, hd: hv,
+          frontSide: front, edge: mask, abut: 0,
+        };
+        plots.push(plot);
+        // Registered the moment it exists, so the next plot in this block sees it. Until this
+        // pass a block's own plots were only added to the grid after the whole block was
+        // planned, which was safe only because nothing in a block could ever revisit ground it
+        // had already used. Two things here can: the depth ladder and the ring that no longer
+        // ends the fill.
+        placed.add(plot);
+        return true;
+      }
+      return false;
     };
 
-    if (emit(uc, hu)) return;
+    /**
+     * One `u` cell: the street row, and the back row across the light well if it fits.
+     *
+     * `'thin'` is a distinct answer from `'no'` and the difference is not cosmetic. `fade` is
+     * the fringe dice — how much of a quarter near the country is yard rather than house —
+     * and it is rolled once for the cell. If a thinned cell reported "did not fit" the greedy
+     * walker would step three metres and try the same ground again, which both churns the
+     * dice and turns a yard into a scatter of slivers. A thinned cell is *consumed*: the
+     * walker advances past it, and the yard is the width of a house.
+     */
+    const emit = (u: number, halfW: number): 'built' | 'thin' | 'no' => {
+      if (halfW * 2 < MIN_PLOT) return 'no';
+      const span = spanOver(u - halfW, u + halfW);
+      if (!span) {
+        why.narrow++;
+        return 'no';
+      }
+      const [lo, hi] = span;
+      const depth = hi - lo;
+      R.rows++;
+      why.rows++;
+      if (rng.next() > fade(b.urban)) {
+        why.thinned++;
+        return 'thin';
+      }
+      let any = false;
+      if (depth >= TWO_ROW_DEPTH) {
+        const rd = Math.min(INSULA_DEPTH_MAX, (depth - LIGHT_WELL) * 0.5);
+        for (const front of [-1, 1] as const) {
+          if (emitRow(u, halfW, lo, hi, rd, front)) any = true;
+        }
+      } else {
+        why.oneRowOnly++;
+        if (emitRow(u, halfW, lo, hi, Math.min(INSULA_DEPTH_MAX, depth), -1)) any = true;
+      }
+      if (any) why.rowsBuilt++;
+      return any ? 'built' : 'no';
+    };
 
     /*
      * **Bisection is not good enough and the measurement says so.** A frontage clipped eight
@@ -1141,30 +1275,33 @@ function planBlock(
      * ladder that fits, advance past it, repeat. That is how a terrace of houses actually
      * grows along an awkward plot, and it walks the façade right up to whatever is in the way.
      */
-    const uEnd = uc + hu;
-    let u = uc - hu;
-    let any = false;
-    for (let guard = 0; guard < 12 && uEnd - u >= MIN_PLOT; guard++) {
-      let took = 0;
-      for (const want of [w * 0.7, w * 0.45, MIN_PLOT * 1.7, MIN_PLOT]) {
-        const ww = Math.min(want, uEnd - u);
-        if (ww < MIN_PLOT) continue;
-        if (emit(u + ww * 0.5, ww * 0.5)) {
+    const whole = emit(uc, hu);
+    let any = whole === 'built';
+    if (whole === 'no') {
+      const uEnd = uc + hu;
+      let u = uc - hu;
+      for (let guard = 0; guard < 12 && uEnd - u >= MIN_PLOT; guard++) {
+        let took = 0;
+        for (const want of [w * 0.7, w * 0.45, MIN_PLOT * 1.7, MIN_PLOT]) {
+          const ww = Math.min(want, uEnd - u);
+          if (ww < MIN_PLOT) continue;
+          const r = emit(u + ww * 0.5, ww * 0.5);
+          if (r === 'no') continue;
           took = ww;
+          any = any || r === 'built';
           break;
         }
+        u += took > 0 ? took + PARTY_GAP : MIN_PLOT * 0.5;
       }
-      u += took > 0 ? took + PARTY_GAP : MIN_PLOT * 0.5;
-      any = any || took > 0;
     }
-    for (let i = 1; i < run.length; i++) {
-      if (run[i].u0 - run[i - 1].u1 > PARTY_GAP * 1.6) continue;
-      plots[run[i - 1].i].abut |= FACE_X1;
-      plots[run[i].i].abut |= FACE_X0;
+    for (const run of runs) {
+      for (let i = 1; i < run.length; i++) {
+        if (run[i].u0 - run[i - 1].u1 > PARTY_GAP * 1.6) continue;
+        plots[run[i - 1].i].abut |= FACE_X1;
+        plots[run[i].i].abut |= FACE_X0;
+      }
     }
-    if (any || level >= 2) return;
-    place(uc, hu, v0, vc - PARTY_GAP * 0.5, -1, level + 1);
-    place(uc, hu, vc + PARTY_GAP * 0.5, v1, 1, level + 1);
+    return any;
   }
 
   function terrace(ua: number, ub: number): void {
@@ -1204,34 +1341,7 @@ function planBlock(
         continue;
       }
       why.frontages++;
-      const local = spanOver(pa, pb);
-      if (!local) {
-        why.narrow++;
-        continue;
-      }
-      const [lo, hi] = local;
-      const depth = hi - lo;
-
-      const rows: [number, number, 1 | -1][] = [];
-      if (depth < TWO_ROW_DEPTH) why.oneRowOnly++;
-      if (depth >= TWO_ROW_DEPTH) {
-        const rd = Math.min(INSULA_DEPTH_MAX, (depth - LIGHT_WELL) * 0.5);
-        rows.push([lo, lo + rd, -1], [hi - rd, hi, 1]);
-      } else {
-        const rd = Math.min(INSULA_DEPTH_MAX, depth);
-        rows.push([lo, lo + rd, -1]);
-      }
-      for (const [w0, w1, front] of rows) {
-        R.rows++;
-        why.rows++;
-        if (rng.next() > fade(b.urban)) {
-          why.thinned++;
-          continue;
-        }
-        const before = plots.length;
-        place(uc, hu, w0, w1, front, 0);
-        if (plots.length > before) why.rowsBuilt++;
-      }
+      place(uc, hu);
     }
   }
 
@@ -1261,6 +1371,14 @@ function planBlock(
      * between, i.e. both of the things the perimeter range was there for. So the ring is now
      * the minority case it should always have been: about one block in four, more in the
      * packed quarters, and the rest get the finer grain.
+     *
+     * **And it no longer ends the fill.** "`fill` stops as soon as this returns true, so
+     * nothing ever comes back for the rest" was written as a diagnosis and left standing as
+     * behaviour. The inscribed rectangle is `[ua, ub]` by the span's *narrowest* crossing, so
+     * on any block that is not a rectangle it leaves the two ends and both splays bare, and
+     * on 39 blocks that was the whole of the fabric. The ring now registers itself in the plot
+     * grid like every other plot and the terrace runs over the same ground afterwards; what
+     * the ring already covers comes back as `neighbour` and what it missed gets houses.
      */
     why.perimeterTried++;
     if (rng.next() > 0.14 + b.region.density * 0.16) {
@@ -1278,17 +1396,19 @@ function planBlock(
     if (mask <= 0) return false;
     R.ok++;
     why.perimeterBuilt++;
-    plots.push({
+    const ring: Plot = {
       x: F.x(uc, vc), z: F.z(uc, vc), rot: F.rot,
       hw: blockW * 0.5 - 0.2, hd: blockD * 0.5 - 0.2,
       frontSide: -1, edge: mask, perimeter: true, abut: 0,
-    });
+    };
+    plots.push(ring);
+    placed.add(ring);
     return true;
   }
 
   function fill(ua: number, ub: number, level = 0): void {
-    if (ub - ua < 13) return;
-    if (!b.horti && tryPerimeter(ua, ub)) return;
+    if (ub - ua < MIN_FRONTAGE) return;
+    if (!b.horti) tryPerimeter(ua, ub);
     // 66 m is two frontages plus a party wall either side of a 14 m lane: below it, halving
     // produces blocks too short to read as blocks and the terrace is the honest answer. Split
     // off-centre so the grain does not come out as powers of two.
@@ -1303,20 +1423,41 @@ function planBlock(
 
   fill(u0, u1);
   for (const k of Object.keys(why) as (keyof PlotRejects)[]) total[k] += why[k];
-  let emptyBecause: string | null = null;
-  if (plots.length === 0) {
-    const causes: [string, number][] = [
-      ['a monument, a street reservation or an aqueduct', why.reserved],
-      ['the pomerium', why.pomerium],
-      ['too shallow for a house', why.narrow],
-      ['thinned to nothing at the city fringe', why.thinned],
-      ['no frontage wide enough', why.shortFrontage + why.tooSmall],
-      ["a neighbour's building", why.neighbour],
-    ];
-    causes.sort((a, b) => b[1] - a[1]);
-    emptyBecause = causes[0][1] > 0 ? causes[0][0] : 'no frontage was offered at all';
-  }
-  return { plots, frontages: R.rows, emptyBecause };
+  return { plots, frontages: R.rows, why };
+}
+
+/**
+ * **Why a block ended with nothing on it — asked after the river has taken its share.**
+ *
+ * This used to be computed inside `planBlock`, which runs *before* `inTheRiver` drops the
+ * plots that stand in water. So a block whose every plot was planned and then drowned
+ * reported no reason at all, and the self-report named **51** of the **85** blocks that
+ * actually ended with no roof on them. `MAP-METHOD.md` rule 16: an exclusion is a claim, and
+ * a claim whose count does not match the population it claims to cover is not a measurement.
+ * The two numbers now come from the same place and cannot drift.
+ */
+function emptyReason(b: CityBlock, why: PlotRejects, planned: number, drowned: number): string {
+  /*
+   * **A garden is not a give-up, and the gate has to be able to tell them apart.** A *horti*
+   * block is built at `HORTI_COVERAGE` — 8 % — by design, and 8 % of a block is nought about
+   * one block in three. Reported as "thinned to nothing at the city fringe" it looks exactly
+   * like a failure, and phase 5's acceptance is "zero blocks building nothing for a reason
+   * that is not a deliberate open space". So the deliberate ones say so, first, before any
+   * count can outvote them.
+   */
+  if (b.horti) return 'a garden quarter, built at 8 per cent by design';
+  if (planned > 0 && drowned === planned) return 'every plot in it stood in the Tiber';
+  const causes: [string, number][] = [
+    ['a monument, a street reservation or an aqueduct', why.reserved],
+    ['the pomerium', why.pomerium],
+    ['too shallow for a house', why.narrow],
+    ['thinned to nothing at the city fringe', why.thinned],
+    ['no frontage wide enough', why.shortFrontage + why.tooSmall],
+    ["a neighbour's building", why.neighbour],
+    ['the Tiber', drowned],
+  ];
+  causes.sort((a, b) => b[1] - a[1]);
+  return causes[0][1] > 0 ? causes[0][0] : 'no frontage was offered at all';
 }
 
 /**
@@ -1336,7 +1477,40 @@ function planBlock(
  * The Tiber Island is land and is excluded from the test rather than from the map: the Insula
  * Tiberina, the Pons Fabricius and the Pons Cestius all stand on it.
  */
-const RIVER_FREEBOARD = 2.8;
+/**
+ * **The freeboard was the cut bank's crest, applied to both banks, and it condemned the
+ * other one.**
+ *
+ * `riverProfile` models the two sides of a meander differently, as a river does:
+ *
+ *     const terraceH = WATER_LEVEL + (onCutBank ? 2.8 : 0.8) - ford * 0.55;
+ *
+ * The outside of a bend is undercut and its terrace stands 2.8 m over the water in fifteen
+ * metres; the inside silts into a bar and its terrace reaches 0.8 m in eighty-two. This test
+ * required 2.8 m everywhere, which is the cut bank's own number — so **every point bar in
+ * Rome was reported as water by a constant taken from the opposite bank.** Measured: 52.9 %
+ * of Regio XIV's ground between street lines and 19.6 % of Regio IX's stood under
+ * `WATER_LEVEL + 2.8`, and the distribution has no gradient in it at all — 12.7 % of the
+ * city's block ground sits between 0 and 1 m over the water and 1.0 % between 1 and 2.8 —
+ * because the ground being condemned *is* the modelled terrace, flat, at +0.8.
+ *
+ * `MAP-METHOD.md` rule 22 in a new place: one number, two banks. And rule 18's test for a
+ * repair — the new form has to be able to fail. It can, in a way the old one could not:
+ * being **inside the channel** is now a geometric fact asked of `riverHalfWidthAt`, not a
+ * consequence of a height threshold, so a plot over the water is refused even if some future
+ * terrain edit raises the channel floor.
+ *
+ * What is left as a number is the **quay**: how far a dry floor stands above the drawn water
+ * surface. 0.45 m, and it is deliberately below the point bar's own 0.8 m terrace so that
+ * the terrace is land rather than tangent to the test (rule 12 — a test tangent to its own
+ * threshold answers by rounding). `probe-fabric` G22 gates the consequence at 0 m: no solid
+ * may have its centre under water. **What would change this number: G22 going red, or the
+ * terrain raising the right bank's terrace, which is `terrain/topography.ts`'s call and not
+ * this file's.** Raising the terrace is the better fix and it is not on this branch.
+ */
+const QUAY_FREEBOARD = 0.45;
+/** Wide enough that the test does not depend on where the bank blend starts. */
+const CHANNEL_MARGIN = 2;
 
 /**
  * The same question at one point. Exported so an offline audit can rasterise the river's
@@ -1346,22 +1520,29 @@ const RIVER_FREEBOARD = 2.8;
 export function inTheRiverAt(x: number, z: number): boolean {
   if (islandMask(x, z) > 0.4) return false;
   const d = riverOffset(x, z);
+  // In the channel is where the water is, not a height. Asked first and independently.
+  if (Math.abs(d) < riverHalfWidthAt(z) + CHANNEL_MARGIN) return true;
   const inf = riverInfluence(d, z);
   if (inf <= 0.001) return false;
   const plain = regionalPlain(x, z);
   const g = plain + (riverProfile(d, z, plain) - plain) * inf;
-  return g < WATER_LEVEL + RIVER_FREEBOARD;
+  return g < WATER_LEVEL + QUAY_FREEBOARD;
 }
 
-function inTheRiver(p: Plot): boolean {
-  const ah = Math.abs(p.hw * Math.cos(p.rot)) + Math.abs(p.hd * Math.sin(p.rot));
-  const ad = Math.abs(p.hw * Math.sin(p.rot)) + Math.abs(p.hd * Math.cos(p.rot));
+/** Nine samples over an oriented rectangle's world-axis bounding box. */
+function wetRect(x: number, z: number, hw: number, hd: number, rot: number): boolean {
+  const ah = Math.abs(hw * Math.cos(rot)) + Math.abs(hd * Math.sin(rot));
+  const ad = Math.abs(hw * Math.sin(rot)) + Math.abs(hd * Math.cos(rot));
   for (const [su, sv] of [
     [0, 0], [-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1],
   ] as const) {
-    if (inTheRiverAt(p.x + ah * su, p.z + ad * sv)) return true;
+    if (inTheRiverAt(x + ah * su, z + ad * sv)) return true;
   }
   return false;
+}
+
+function inTheRiver(p: Plot): boolean {
+  return wetRect(p.x, p.z, p.hw, p.hd, p.rot);
 }
 
 /**
@@ -1500,6 +1681,8 @@ export function buildDistricts(
   const placed = new PlotGrid();
   const why: PlotRejects = { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0, perimeterTried: 0, perimeterBuilt: 0 };
   const emptyBlocks = new Map<string, number>();
+  const diag: DistrictOutput['diag'] = [];
+  let emptyCount = 0;
   const byBlock = new Map<number, Plot[]>();
   const perRegion = new Map<string, { blocks: number; plots: number; frontages: number; insetM2: number; roofM2: number }>();
   let plotCount = 0;
@@ -1514,13 +1697,23 @@ export function buildDistricts(
     const brng = rng.fork(`block:${b.index}`);
     const out = planBlock(b, brng, keepOut, wallZAt, placed, why);
     acc.frontages += out.frontages;
-    if (out.emptyBecause) emptyBlocks.set(out.emptyBecause, (emptyBlocks.get(out.emptyBecause) ?? 0) + 1);
     // **Nothing stands in the Tiber.** The graph has never been told where the water is. The
-    // wet plots still claim their ground: dropping them outright frees the river's own
+    // wet plots still claim their ground — they were registered in `placed` as they were
+    // emitted and they stay registered: dropping them outright frees the river's own
     // footprint and something else fills it. The river is a hole in the city.
     const dry = out.plots.filter((p) => !inTheRiver(p));
-    why.wet += out.plots.length - dry.length;
-    for (const p of out.plots) placed.add(p);
+    const drowned = out.plots.length - dry.length;
+    why.wet += drowned;
+    const reason = dry.length === 0 ? emptyReason(b, out.why, out.plots.length, drowned) : null;
+    if (reason) {
+      emptyBlocks.set(reason, (emptyBlocks.get(reason) ?? 0) + 1);
+      emptyCount++;
+    }
+    diag.push({
+      index: b.index, region: b.region.numeral, x: b.face.cx, z: b.face.cz,
+      insetM2: b.insetAreaM2, plots: dry.length, drowned, urban: b.urban, horti: b.horti,
+      emptyBecause: reason, why: out.why,
+    });
     byBlock.set(b.index, dry);
     acc.plots += dry.length;
     for (const q of dry) acc.roofM2 += 4 * q.hw * q.hd;
@@ -1531,6 +1724,7 @@ export function buildDistricts(
   report.plots = plotCount;
   report.plotRejects = why;
   report.emptyBlocks = [...emptyBlocks.entries()].sort((a, b) => b[1] - a[1]).map(([reason, n]) => ({ reason, n }));
+  report.emptyBlockCount = emptyCount;
   report.plotsByRegion = [...perRegion.entries()]
     .sort((a, b) => b[1].plots - a[1].plots)
     .map(([id, v]) => ({
@@ -1748,7 +1942,7 @@ export function buildDistricts(
     },
   });
 
-  return { chunks, trees, footprints, lanes, report };
+  return { chunks, trees, footprints, lanes, report, diag };
 }
 
 /**
