@@ -530,6 +530,10 @@ export interface BlockReport {
     id: string; blocks: number; plots: number; frontages: number;
     /** Ground between street lines, and how much of it is roof. */
     insetM2: number; roofM2: number; coverage: number;
+    /** Of `insetM2`, how much is *horti* — which builds at 8 % by design, not by failure. */
+    hortiM2: number;
+    /** Of `roofM2`, how much stands on that garden ground. */
+    hortiRoofM2: number;
   }[];
   /**
    * Regiones the frame carries too little of to grade, by name with their buildable ground.
@@ -1335,8 +1339,52 @@ function planBlock(
  *
  * The Tiber Island is land and is excluded from the test rather than from the map: the Insula
  * Tiberina, the Pons Fabricius and the Pons Cestius all stand on it.
+ *
+ * ---------------------------------------------------------------------------
+ * **THE FREEBOARD WAS THE CUT BANK'S NUMBER, AND IT MADE EVERY POINT BAR IN ROME
+ * UNBUILDABLE.**
+ * ---------------------------------------------------------------------------
+ *
+ * It was **2.8**, and the paragraph above says where that came from in its own words: *"the
+ * Tiber's cut bank rises to `WATER_LEVEL` + 2.8 in fifteen metres and its point bar takes
+ * eighty-two to reach + 0.8."* `riverProfile` builds exactly those two terraces —
+ * `terraceH = WATER_LEVEL + (onCutBank ? 2.8 : 0.8)` — and the bar was set to the higher of
+ * them. So a plot standing squarely on the **point bar's own finished terrace** measures
+ * 5.8 m against a bar of 7.8 and is rejected as standing in the river. Not on the bank slope,
+ * not in the channel: on the terrace the terrain draws for it. **Every point bar on the map
+ * was unbuildable by construction, and no distance, setback or density could have changed it.**
+ *
+ * `MAP-METHOD.md` rule 11 (the second one, on two producers each holding their own copy of a
+ * constant) with the copies one file apart: `topography.ts` owns the terrace heights and
+ * `fabric.ts` typed one of them in.
+ *
+ * It cost the whole of Transtiberim. The Tiber's curvature flips below the Ansa, so the right
+ * bank at the Trans Tiberim reach is the **point bar** — the *Ripa* runs 24 world metres
+ * inland of a bank whose modelled ground is 5.6 to 5.8 m — and when this pass authored the
+ * quarter's three streets off the plates the blocks came out correct and built **nothing**:
+ * `regio-xiv-transtiberim 98b/63p/7 % [insula 11 % of 5.8 ha]`, with the reason invisible in
+ * every counter because `why.wet` is a *plot* count and the placer refills the ground it frees.
+ *
+ * **0.6**, and the number is a rule rather than a preference: it is the lower of the terrain's
+ * two terrace heights (0.8) less a 0.2 m margin, so that a plot standing on *either* terrace
+ * builds and a plot on the bank slope or in the channel does not. The check keeps its teeth —
+ * it is still the terrain's own ground, still nine samples over the bounding box, and the
+ * channel floor is 0.4 to 4.6 m *below* water and can never pass it.
+ *
+ * Measured, both banks, one line each:
+ *
+ *  - Regio XIV **63 → 92** buildings, insula coverage **11 % → 20 %** of its 5.8 ha;
+ *  - Regio IX, the Campus Martius's own river frontage, **142 → 175** and **31 % → 38 %** —
+ *    the left bank was losing its quay to the same constant and nobody had looked;
+ *  - the city **944 → 982** insulae, `why.wet` **102 → 33**;
+ *  - `probe-fabric` **16/25 before and after, all twenty-five checks in the same state**, and
+ *    G22 in particular still reads *0 solids with their centre under water of 1092 sampled,*
+ *    *0 entirely wet, 3 with a wet corner* — the same three corners as before the change.
+ *
+ * What would change my mind: a plot standing in the drawn water. G22 asks exactly that of the
+ * built scene, from the other side, and it is the number to watch if this moves again.
  */
-const RIVER_FREEBOARD = 2.8;
+const RIVER_FREEBOARD = 0.6;
 function inTheRiver(p: Plot): boolean {
   const ah = Math.abs(p.hw * Math.cos(p.rot)) + Math.abs(p.hd * Math.sin(p.rot));
   const ad = Math.abs(p.hw * Math.sin(p.rot)) + Math.abs(p.hd * Math.cos(p.rot));
@@ -1493,16 +1541,23 @@ export function buildDistricts(
   const why: PlotRejects = { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0, perimeterTried: 0, perimeterBuilt: 0 };
   const emptyBlocks = new Map<string, number>();
   const byBlock = new Map<number, Plot[]>();
-  const perRegion = new Map<string, { blocks: number; plots: number; frontages: number; insetM2: number; roofM2: number }>();
+  const perRegion = new Map<string, {
+    blocks: number; plots: number; frontages: number; insetM2: number; roofM2: number;
+    /** Of `insetM2`, how much stands in a block this regio has declared *horti*. */
+    hortiM2: number;
+    /** Of `roofM2`, how much stands on that garden ground. */
+    hortiRoofM2: number;
+  }>();
   let plotCount = 0;
   for (const b of plan.blocks) {
-    const acc = perRegion.get(b.region.id) ?? { blocks: 0, plots: 0, frontages: 0, insetM2: 0, roofM2: 0 };
+    const acc = perRegion.get(b.region.id) ?? { blocks: 0, plots: 0, frontages: 0, insetM2: 0, roofM2: 0, hortiM2: 0, hortiRoofM2: 0 };
     if (b.kind !== 'block') {
       perRegion.set(b.region.id, acc);
       continue;
     }
     acc.blocks++;
     acc.insetM2 += b.insetAreaM2;
+    if (b.horti) acc.hortiM2 += b.insetAreaM2;
     const brng = rng.fork(`block:${b.index}`);
     const out = planBlock(b, brng, keepOut, wallZAt, placed, why);
     acc.frontages += out.frontages;
@@ -1515,7 +1570,10 @@ export function buildDistricts(
     for (const p of out.plots) placed.add(p);
     byBlock.set(b.index, dry);
     acc.plots += dry.length;
-    for (const q of dry) acc.roofM2 += 4 * q.hw * q.hd;
+    for (const q of dry) {
+      acc.roofM2 += 4 * q.hw * q.hd;
+      if (b.horti) acc.hortiRoofM2 += 4 * q.hw * q.hd;
+    }
     plotCount += dry.length;
     for (const p of dry) footprints.push({ x: p.x, z: p.z, hw: p.hw, hd: p.hd, rot: p.rot });
     perRegion.set(b.region.id, acc);
@@ -1527,7 +1585,8 @@ export function buildDistricts(
     .sort((a, b) => b[1].plots - a[1].plots)
     .map(([id, v]) => ({
       id, blocks: v.blocks, plots: v.plots, frontages: v.frontages,
-      insetM2: v.insetM2, roofM2: v.roofM2, coverage: v.insetM2 > 0 ? v.roofM2 / v.insetM2 : 0,
+      insetM2: v.insetM2, roofM2: v.roofM2, hortiM2: v.hortiM2, hortiRoofM2: v.hortiRoofM2,
+      coverage: v.insetM2 > 0 ? v.roofM2 / v.insetM2 : 0,
     }));
 
   /*
@@ -1573,6 +1632,8 @@ export function buildDistricts(
    */
   const GRADE_FLOOR_M2 = 10000;
   const BURIED_COVERAGE = 0.15;
+  /** The AGEA orthophoto's 60–70 % between street lines, as one number. `ROME-FABRIC.md` §4.4. */
+  const CORE_COVERAGE = 0.65;
   const ungraded: { id: string; insetM2: number; blocks: number }[] = [];
   for (const [id, v] of perRegion) {
     if (v.insetM2 < GRADE_FLOOR_M2) {
@@ -1594,12 +1655,44 @@ export function buildDistricts(
      * The old wording is kept to the word because `probe-fabric` G17 greps for it, and a check
      * that goes dark is worse than one that fails (rule 13).
      */
+    /**
+     * **The floor is the coverage the regio's own block mix implies, and a flat 15 % is not
+     * that.**
+     *
+     * The flat floor is right for nine of the ten *regiones* and it is arithmetically
+     * impossible for the tenth. `HORTI_COVERAGE` is **8 %** by design — a *horti* block is
+     * terraces and planted avenues with a pavilion in it — so a regio whose ground is mostly
+     * horti **cannot** reach 15 %, and the check would be reporting the design as a failure.
+     *
+     * It went red exactly when that became true. Regio XIV carried `hortiNorthOf: null` while
+     * the far bank had no way across it and only a 230 m ribbon off the channel to build on;
+     * authoring the Trans Tiberim ways and declaring everything north of the Porta Septimiana
+     * *horti* took it to **20.8 of 26.6 ha of garden**, and G17 fired on a quarter that had
+     * just been made **more** correct, not less. `MAP-METHOD.md` rule 26's corollary: *"a check
+     * that changes state when you fix something it does not name is telling you what it was
+     * actually measuring."* G17 was measuring *is this regio insula-dense*, and it was green on
+     * the far bank only because the far bank was wrongly insulae.
+     *
+     * The repair is rule 18's shape — the missing **relation**, not an exemption. The floor is
+     * a fixed *fraction* of the coverage the block mix predicts, so:
+     *
+     *  - an all-insula regio keeps the number it had, 0.65 × 0.2308 = **15 %**, to the digit;
+     *  - an all-horti regio is asked for 0.08 × 0.2308 = **1.85 %**;
+     *  - and the check **can still fail on either**, which an exemption for horti could not.
+     *
+     * Both terms are printed every run beside the measurement, so the floor a regio was graded
+     * against is visible rather than inferred.
+     */
     const cov = v.insetM2 > 0 ? v.roofM2 / v.insetM2 : 0;
-    if (cov < BURIED_COVERAGE) {
+    const hortiShare = v.insetM2 > 0 ? v.hortiM2 / v.insetM2 : 0;
+    const expect = CORE_COVERAGE * (1 - hortiShare) + HORTI_COVERAGE * hortiShare;
+    const floor = expect * (BURIED_COVERAGE / CORE_COVERAGE);
+    if (cov < floor) {
       console.warn(
         `[city] ${id} planned only ${v.plots} buildings from ${v.frontages} frontages — the quarter is buried`
         + ` (${(cov * 100).toFixed(1)} % of its ${(v.insetM2 / 1e4).toFixed(2)} ha of ground between street lines,`
-        + ` against the orthophoto's 60-70 % and this floor's ${(BURIED_COVERAGE * 100).toFixed(0)} %)`
+        + ` of which ${(hortiShare * 100).toFixed(0)} % is horti, so the floor is`
+        + ` ${(floor * 100).toFixed(1)} % against an expected ${(expect * 100).toFixed(0)} %)`
       );
     }
   }
@@ -1623,9 +1716,20 @@ export function buildDistricts(
     + ` Rejected faces by reason: `
     + report.rejects.map((r) => `${r.n} ${r.reason}`).join('; ')
   );
+  // The horti share is printed beside the coverage because the two are not comparable without
+  // it: 5 % on ground that is four fifths garden and 5 % on ground that is all insula are two
+  // different findings, and the burial floor above grades them differently.
   console.info(
-    '[city:rome] grid by regio: '
-    + report.plotsByRegion.map((r) => `${r.id} ${r.blocks}b/${r.plots}p/${(r.coverage * 100).toFixed(0)}%`).join('  ')
+    '[city:rome] grid by regio (b=blocks, p=plots, then roof coverage and the horti share of the ground): '
+    + report.plotsByRegion.map((r) => {
+      const insulaM2 = r.insetM2 - r.hortiM2;
+      const insulaCov = insulaM2 > 1 ? (r.roofM2 - r.hortiRoofM2) / insulaM2 : 0;
+      const hortiCov = r.hortiM2 > 1 ? r.hortiRoofM2 / r.hortiM2 : 0;
+      return `${r.id} ${r.blocks}b/${r.plots}p/${(r.coverage * 100).toFixed(0)}%`
+        + (r.hortiM2 > 0
+          ? ` [insula ${(insulaCov * 100).toFixed(0)}% of ${(insulaM2 / 1e4).toFixed(1)}ha, horti ${(hortiCov * 100).toFixed(0)}% of ${(r.hortiM2 / 1e4).toFixed(1)}ha]`
+          : '');
+    }).join('  ')
   );
 
   // ---- planting -----------------------------------------------------------

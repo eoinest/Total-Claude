@@ -243,6 +243,33 @@ for (let i = 0; i < BANDS.length; i++) {
     + `${((100 * t.horti) / t.cells).toFixed(1).padStart(5)} %`);
 }
 
+// ---- every non-horti block on the far bank, because 11 % roof needs a cause ----
+say('');
+say('=== Regio XIV, the blocks that are NOT horti: where they are and what they carry ===');
+say('    idx      cx       cz   inset ha  minW  urban  faceHa  n(survey)');
+const xivBlocks = plan.blocks
+  .filter((b) => b.region.numeral === 'XIV' && b.kind === 'block' && !b.horti)
+  .sort((a, b) => b.insetAreaM2 - a.insetAreaM2);
+const minWidth = (poly) => {
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i]; const b = poly[(i + 1) % poly.length];
+    const ex = b.x - a.x; const ez = b.z - a.z;
+    const l = Math.sqrt(ex * ex + ez * ez);
+    if (l < 1e-6) continue;
+    let hi = 0;
+    for (const p of poly) { const d = ((p.x - a.x) * -ez + (p.z - a.z) * ex) / l; if (d > hi) hi = d; }
+    if (hi < best) best = hi;
+  }
+  return best === Infinity ? 0 : best;
+};
+for (const b of xivBlocks) {
+  say(`  ${String(b.index).padStart(6)} ${b.face.cx.toFixed(0).padStart(7)} ${b.face.cz.toFixed(0).padStart(8)}`
+    + `  ${(b.insetAreaM2 / 1e4).toFixed(3).padStart(8)}  ${minWidth(b.inset).toFixed(1).padStart(5)}`
+    + `  ${b.urban.toFixed(2).padStart(5)}  ${(b.face.areaM2 / 1e4).toFixed(2).padStart(6)}  ${nOf(b.face.cz).toFixed(0).padStart(6)}`);
+}
+say(`  ${xivBlocks.length} non-horti block(s), ${(xivBlocks.reduce((s, b) => s + b.insetAreaM2, 0) / 1e4).toFixed(2)} ha of inset`);
+
 // ---- the plan, drawn, because a percentage cannot show a hole's shape ----
 const png = arg('png', '');
 if (png) {

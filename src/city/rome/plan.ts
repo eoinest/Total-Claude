@@ -238,8 +238,41 @@ export const ROME_PLAN: CityPlan = {
     const MON_AMBITUS = 4;
     for (const l of LANDMARKS) {
       keepOut.addRect(l.x, l.z, l.hw + MON_AMBITUS, l.hd + MON_AMBITUS, l.rot);
-      // A mound is bigger in plan than the building on it.
-      if (l.mound) keepOut.addCircle(l.x, l.z, (l.moundRadius ?? l.clear) * 1.02);
+      /**
+       * **A mound is bigger in plan than the building on it — and it is the shape of the
+       * building, not a circle.**
+       *
+       * This was `addCircle(l.x, l.z, (l.moundRadius ?? l.clear) * 1.02)`, and
+       * `src/terrain/topography.ts` has been naming it as a fault for two passes: *"That row
+       * is authored `len: 520, wid: 240` and its keep-out is still `addCircle(x, z,
+       * moundRadius * 1.02)` — a circle of radius 234.6 m standing for a hill whose
+       * semi-minor axis is 96.4 m. **A radius cannot say what a length and a width say.**"*
+       *
+       * The row it names is the **Janiculum**, and the cost of the circle was invisible until
+       * the far bank had a quarter on it. `monuments.ts` already *draws* the mound elliptical
+       * — `buildMound(batch, detail, m.hw * k, m.hd * k, …)` with `k = moundRadius / clear` —
+       * so the drawn ridge is 418 × 193 world metres on its own 74.9° bearing, and the ground
+       * reserved for it was a **469 m circle**. The difference is 6.9 hectares of Transtiberim,
+       * and measured on this tree it was the whole of it: Regio XIV's non-*horti* ground came
+       * back at **0 % roof over 5.8 ha** with `reserved` as the reason, on a quarter that had
+       * just been given three streets off the plates.
+       *
+       * So the reservation is now the same ellipse the builder draws, as an oriented rectangle
+       * at its own semi-axes. That is `MAP-METHOD.md` rule 11 in its own words — *derive the
+       * reserved rectangle from the geometry builder's own extents rather than typing it into
+       * a survey table* — applied to a mound instead of to a wall.
+       *
+       * It is a rectangle and not an ellipse because `KeepOut` has `addRect` and `addCircle`
+       * and no third thing, and a rectangle circumscribing the ellipse is the conservative
+       * direction: it reserves 4/π more ground than the mound covers and can therefore never
+       * put a house on the hillside. The four other mounded rows — the Capitol, the Palatine,
+       * the Aventine temples, the Caelian — are all within 15 % of round, so this moves them
+       * by a few metres and moves the Janiculum by a quarter of a kilometre.
+       */
+      if (l.mound) {
+        const k = (l.moundRadius ?? l.clear) / l.clear;
+        keepOut.addRect(l.x, l.z, l.hw * k * 1.02, l.hd * k * 1.02, l.rot);
+      }
     }
     // The whole armature, not just the nine named viae: the military road behind the curtain,
     // the ring round every monument and the feeders that connect them all reserve their

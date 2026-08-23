@@ -296,6 +296,21 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    is a threshold anybody has to choose, both are one line, and together they would have caught —
    at a glance — a one-metre gap between the wall line and the map frame that disconnected the
    frame, pruned the Tiber out of existence and took Rome from 354 blocks to 124.
+31. **A constant lifted out of a two-sided thing keeps the side it was lifted from, and the
+   other side then becomes impossible rather than merely wrong.** `riverProfile` builds two
+   terraces — `WATER_LEVEL + 2.8` on the cut bank, `+ 0.8` on the point bar — and `inTheRiver`'s
+   freeboard was **2.8**, with its own docstring naming it *"the cut bank's own terrace height"*.
+   So a plot standing squarely on the point bar's finished terrace measured 5.8 against a bar of
+   7.8 and was rejected as standing in the river: **every point bar on the map was unbuildable by
+   construction**, and no setback, density or way could have changed it. The Tiber's curvature
+   flips below the Ansa, so that is the whole of Transtiberim and the Campus Martius's own quay.
+   Nothing could see it, because the counter is a *plot* count and the placer immediately refills
+   the ground a rejection frees — the fault presents as a low coverage number with no cause
+   attached. **Two tests: does the constant have a name that mentions one side of the thing it
+   bounds; and can you state, in the units of the source, what the other side's value is?** If
+   the second has an answer and the constant is not it, the constant is a copy and the copy is
+   wrong for half the map. (Rule 11's "two producers, one constant" with the producers one file
+   apart, and rule 4's "cross-sections do not compress" is the same shape one axis over.)
 
 ---
 
@@ -1829,6 +1844,138 @@ lines against the AGEA orthophoto's 60–70 %. Measured with the keep-out map sw
 the same generator reaches **60.9 %**, so the seventeen-point gap is Rome's monuments, its named
 streets' setbacks, its fourteen plazas and its aqueducts — not the grid. Phase 5 owns roof
 coverage and now owns a decomposition of it as well.
+
+### 22 August 2026 — Trans Tiberim: four ways off the plates, and the far bank could not have been built on
+
+**What we expected.** Phase 3's own note named the hole and the fix in one sentence: *"the Via
+Aurelia and the Via Portuensis are not in `ROME_WAYS`… two or three authored ways would fix it,
+and that is phase 3's module."* So the plan was to read the far bank's streets off Shepherd, put
+them in `ways.ts`, and let the machinery that already turns streets into blocks and blocks into
+buildings do the rest. The prediction was that Regio XIV — **47.2 % of the map's city ground and
+12.7 % of it under fabric** — would come up to something like the left bank's 40–52 %.
+
+**What happened.** The ways went in and they are right: four rows, each cited, and the overlay of
+the parsed table on the plate sits on the ink. The far bank went from 53 blocks to 98 and from
+13.82 to 26.57 hectares of ground between street lines. And it built **41 buildings**, against 76
+before. Everything downstream of the streets was broken, in three separate ways, and none of the
+three had anything to do with roads.
+
+**1. Three quarters of the far bank was never Transtiberim, and the frame is why.** Measured band
+by band before anything was authored (`tools/scratch/rome-farbank.mjs`), Regio XIV's 108.9 ha
+divides into four almost equal pieces, and only the southernmost is the quarter:
+
+| survey n | world z | ha | what the plates put there |
+|---|---|---:|---|
+| −367 … 300 | 1245–1374 | 35.5 | Transtiberim, the *Ripa*, the Janiculum's east foot |
+| 300 … 900 | 1030–1245 | 22.9 | the Prata Quinctia and the Horti Agrippinae — meadow |
+| 900 … 1400 | 755–1030 | 22.0 | the Gardens of Domitia, the Mausoleum of Hadrian |
+| 1400 … 2006 | 543–755 | 28.5 | the Ager Vaticanus — the Circus of Nero, tombs, gardens |
+
+`CITY_Z_MAX` is survey northing **−367**, and S. Maria in Trastevere is at **−445**. The middle of
+the real quarter is off the +Z edge for the same reason four whole *regiones* are. So the honest
+target for this ground was never 46 %: it is a dense lip on the water and *horti* behind it, and
+Regio XIV took `hortiNorthOf: 120` — the Porta Septimiana's own northing — to say so. That is
+**78 % of the region's buildable ground** declared garden.
+
+> **What we would do differently:** measure the *bands* of a region before deciding what it should
+> look like. The brief, the phase-3 note and this pass's own first plan all assumed "the far bank"
+> was one thing. It is four, and three of them are correct as country.
+
+**2. The first version of the answer was the fault the brief warned about, and the instrument
+could not see it.** With a `via-cornelia` running 2.3 km west to the frame, the Ager Vaticanus
+came back **46.7 % inside a block** and the generated cross-lane total went **42.5 km → 59.9 km**:
+seventeen kilometres of new lane at a 59 m pitch over the imperial gardens. `crossLanesFor`'s
+`emit` already refuses to lattice open country, and it did not refuse here because **the road made
+the country urban** — `urbanWeight` is a distance to the armature and it does not know what the
+road was for. The road west to the circus is now a deletion with its coordinates in the comment,
+and the Vatican gets a corridor 365 m either side of one line, which is the shape a street of
+tombs actually has.
+
+Worse, the first coverage instrument could not have told the two apart: it counted *cells inside a
+block* and reported the Ager Vaticanus at 46.7 % against Transtiberim's 25 %, which says the
+imperial gardens are twice as built as the quarter. A *horti* block is 8 % roof and an insula
+block is 60–72 %; an instrument that adds them up is measuring the wrong thing (rule 6). It now
+splits them, and so does the boot log.
+
+**3. `probe-fabric` G17 went red on the quarter that had just been made correct.** *"No quarter
+reports itself unable to build"* is a coverage floor of a flat 15 %, and `HORTI_COVERAGE` is 8 % by
+design — so a regio that is 78 % garden **cannot** reach the floor and the check was reporting the
+design as a failure. It had been green on the far bank only because the far bank was wrongly
+insulae. Rule 26's corollary, exactly: *a check that changes state when you fix something it does
+not name is telling you what it was actually measuring.* Repaired the way rule 18 asks — the
+missing relation, not an exemption: the floor is now a fixed fraction of the coverage the region's
+own block mix predicts, so an all-insula regio keeps 15 % to the digit, an all-horti regio is asked
+for 1.85 %, and **both can still fail**.
+
+**4. The Janiculum's keep-out was a circle, and it was standing on Transtiberim.**
+`src/terrain/topography.ts` has named this for two passes — *"a circle of radius 234.6 m standing
+for a hill whose semi-minor axis is 96.4 m… a radius cannot say what a length and a width say"* —
+and it cost nothing until the far bank had a quarter to lose. `monuments.ts` already **draws** the
+mound elliptical, `hw · k` by `hd · k`; `plan.ts` reserved a circle of its circumradius. The
+difference is 6.9 hectares of Transtiberim and it was all of it: the region's non-*horti* ground
+came back at **0 % roof over 5.8 ha**, with `reserved` as the reason. The reservation is now the
+same ellipse the builder draws, which is rule 11 in its own words — *derive the reserved rectangle
+from the geometry builder's own extents* — applied to a mound. It bought 41 → 63 buildings.
+
+**5. And the one that mattered: the far bank could not be built on at all.** With the ways in, the
+keep-out fixed and the character right, Regio XIV's insula ground still read **11 %**. The cause
+was two files and one number apart. `riverProfile` builds two terraces — `WATER_LEVEL + 2.8` on the
+cut bank, `+ 0.8` on the point bar — and `inTheRiver`'s freeboard was **2.8**, with its own
+docstring naming it *"the cut bank's own terrace height"*. The Tiber's curvature flips below the
+Ansa, so the right bank at Transtiberim is the **point bar**: the *Ripa* runs 24 world metres
+inland of ground the terrain finishes at **5.6–5.8 m** against a bar of **7.8**. Every plot on it
+was rejected as standing in the river — not on the bank slope, not in the channel, on the terrace
+the terrain draws for it. At 0.6 (the lower terrace less a 0.2 m margin, so both terraces build and
+the slope does not):
+
+| | before | after |
+|---|---:|---:|
+| Regio XIV buildings / insula coverage | 63 / 11 % | **92 / 20 %** |
+| Regio IX (the Campus Martius quay) | 142 / 31 % | **175 / 38 %** |
+| city insulae | 944 | **982** |
+| `why.wet` | 102 | **33** |
+| `probe-fabric` Rome | 16/25 | **16/25**, all twenty-five in the same state |
+| G22, nothing under water | 0 of 1054, 3 wet corners | **0 of 1092, the same 3 corners** |
+
+**The gate, before and after, on both maps.** Rome `probe-fabric` **16/25 → 16/25** with no check
+changing state; Carthage, the control, **13/22 → 13/22** at 188 draws and 0.79 M triangles, digit
+for digit. `probe-seams` PASS both maps, `probe-wall` 19/19, `probe-ground` clean, `qa-deploy`
+33/33, `tsc` clean, `lint` 3/3. Headcounts held at **8632 / 3072 / 3440**; the Rome assault's
+checkpoint hashes moved because the far bank now carries obstacles the pathing can see, and were
+re-recorded in the same commit. **The draw budget did not move: 96 calls of 220 whole-frame, before
+and after.** Triangles 3.418 M → 3.559 M, visible 2.26 → 2.34 M — 4 %, for a quarter of the map.
+
+**Verdict — the ways were the easy half.** Four rows off a plate took an afternoon and are
+verifiable against the ink. The other four faults were all *downstream* of the streets, all in
+code that had shipped green for passes, and every one of them was a number that was right about
+one case and silently impossible for another: a circle for a ridge, a flat floor for a garden, a
+cut bank's freeboard for a point bar, a block count for two kinds of block. **The brief's
+prediction that authored ways would fix the far bank was correct about the cause and wrong about
+the work: four ways, four instrument repairs.**
+
+**What is still owed, with numbers, because none of it is this module's.**
+
+- **Transtiberim builds 20 % of its insula ground against the core's 60–70 %.** What is left is
+  the Janiculum's *footprint*, which is 556 × 257 **world** metres for a ridge authored 520 × 240
+  **real** — monument footprints are held at true scale (rule 4) and a landform's plan is ground,
+  not a cross-section. Projected through the frame at its own 12° bearing the ridge is **184 × 105
+  world m**; it is drawn **2.8× too wide in x** and it covers 8 of the quarter's 29 blocks. That
+  is rule 4's third category and it belongs to whoever owns the survey.
+- **The Janiculum renders as a tiered pale cake**, 40 m in 96 of half-width, with a stepped
+  revetment visible from the city bank at 1.75 m. `screenshots/rome-transtiberim/film2/` has it
+  from three cameras.
+- **No bridge is authored anywhere on this map.** All four Trans Tiberim rows are `local` and not
+  `secondary` for that reason: `buildWays` drapes a carriageway on `heightAt`, so a way across the
+  channel dives into the river bed, and a `secondary` on the right bank puts `assertWayGraph`'s
+  ranked armature in two pieces — correctly. The debt is five decks (Aelius, Neronianus, Aurelius,
+  Aemilius, Sublicius) with their survey coordinates in `tools/scratch/tiber-bridges.json`.
+- **`via-portuensis` is not authored and the measurement is the reason**: the Porta Portuensis is
+  at survey n −1057, which is 690 m past the last northing `CITY_Z_MAX` can draw. Its coordinates
+  are in the table's comment for the day the +Z cap moves.
+- **`tools/scratch/rome-wayscan.mjs` had thrown on every invocation** since the phase-4 grid pass
+  deleted `layout.ts`'s `DISTRICTS`, and **`rome-roads.mjs`'s `RANK_COLOUR`** was keyed on rank
+  names the table does not carry, so `artery` and `secondary` drew the same red. Both repaired.
+  Rule 29's point again, sharper: an instrument that cannot be run is not a slow instrument.
 
 <!-- Append new entries above this line. -->
 

@@ -122,7 +122,14 @@ const HILL_FILL: Record<string, string> = {
 
 for (const l of LANDMARKS) {
   if (l.mound) {
-    push(el('circle', { cx: l.x, cy: l.z, r: l.moundRadius ?? l.clear, fill: 'rgba(120,150,90,0.22)', stroke: '#7d9455', 'stroke-width': 2 }));
+    // An ellipse on the monument's own bearing, because that is what `buildMound` draws and
+    // what `plan.ts`'s keep-out now reserves. A circle here drew the Janiculum 469 m across.
+    const k = (l.moundRadius ?? l.clear) / l.clear;
+    push(el('ellipse', {
+      cx: l.x, cy: l.z, rx: l.hw * k, ry: l.hd * k,
+      transform: `rotate(${((-l.rot * 180) / Math.PI).toFixed(2)} ${l.x.toFixed(1)} ${l.z.toFixed(1)})`,
+      fill: 'rgba(120,150,90,0.22)', stroke: '#7d9455', 'stroke-width': 2,
+    }));
   }
   push(
     el('rect', {
@@ -195,7 +202,13 @@ for (const g of REGIONS) {
 const keepOut = new KeepOut();
 for (const l of LANDMARKS) {
   keepOut.addRect(l.x, l.z, l.hw, l.hd, l.rot);
-  if (l.mound) keepOut.addCircle(l.x, l.z, (l.moundRadius ?? l.clear) * 1.02);
+  // The mound's own ellipse, not a circle of its circumradius. See the long note in
+  // `src/city/rome/plan.ts`, which is the copy the shipped city uses; this one is the plan
+  // diagnostic and has to agree with it or the picture is of a different city.
+  if (l.mound) {
+    const k = (l.moundRadius ?? l.clear) / l.clear;
+    keepOut.addRect(l.x, l.z, l.hw * k * 1.02, l.hd * k * 1.02, l.rot);
+  }
 }
 for (const st of STREETS) keepOut.addPath(st.path, st.width * 0.5 + 2.5);
 for (const a of AQUEDUCTS) keepOut.addPath(a.path, 8);

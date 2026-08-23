@@ -355,8 +355,9 @@ export const REGIONES: readonly RegioSpec[] = [
      * it, in order up the bank: the **Horti Agrippinae**, the **Prata Quinctia** (Shepherd
      * labels it, and it is meadow), the **Gardens of Domitia** round the Mausoleum of Hadrian,
      * and the **Ager Vaticanus** with the Circus of Nero and its necropolis. Measured on the
-     * 8 m sweep, that is **73.4 of the region's 108.9 ha** — so the flag is not a fringe
-     * treatment here, it is the majority verdict on the ground.
+     * built city, that is **20.8 of the region's 26.6 hectares of ground between street
+     * lines — 78 %** — so the flag is not a fringe treatment here, it is the majority verdict
+     * on the ground, and `probe-fabric` G17's burial floor had to learn to say so.
      *
      * `blockCharacter` reads it and `fabric.ts` builds those blocks at `HORTI_COVERAGE` — 8 %
      * of the ground under a roof against 60–72 % in the core — with the perimeter courtyard
