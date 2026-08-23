@@ -423,7 +423,9 @@ against the same frame with `ssao` off.
 | `flank-march` | 10.2 | 9.2 | 1.0 |
 
 The same measurement before the change put the group at 0.7–0.8 ms, so **the near-field
-contact term is 0.1–0.2 ms**. Twelve full-resolution taps are that cheap because they are
+contact term is 0.1–0.2 ms**. A second timed run of the same nine stations later the same
+session, with two other agents on the machine, read the group at 0.6–1.2 ms with a much wider
+p90 spread — same conclusion, and a reminder that only the *pair* is worth anything. Twelve full-resolution taps are that cheap because they are
 tightly clustered: at the shipped radius the whole disc fits inside a few dozen pixels and
 every tap after the first is a cache hit. Note the absolute numbers are only comparable
 *within* a session — two workstreams have measured the same camera at 21.78 ms and 9.14 ms in
@@ -501,7 +503,7 @@ scope.
 | `npm run lint` | 3/3 PASS |
 | `node tools/qa-deploy.mjs` | 33/33 |
 | `node tools/probe-seams.mjs` | PASS, both maps, 23 seams each, 0 faults |
-| `node tools/qa-determinism.mjs`, three arms | red against the baseline; **bit-identical to the same tree with `main`'s sources**, see §6 |
+| `node tools/qa-determinism.mjs`, three arms | red against the baseline; **bit-identical to the same tree with `main`'s sources**, see §6. Re-run on the final tree after the response fix: `4c88901a / 0ab3d928 / d8edb985 / 8c47a0c8 / 9c2d74f8 / 8ecb3dbc / ce190944`, which is the control's sequence to the bit, A and B identical |
 
 ### The GL feedback loop, diagnosed and not fixed
 
@@ -572,6 +574,14 @@ diagnosis and a handover, not a fix.
   There are exactly two free cells in the emblem atlas and a third row costs 2048x256x4 bytes
   three times over.
 - **One face on every soldier in the game.** The largest remaining C1 item and untouched here.
+- **A testudo raises almost none of the wake, and that is arithmetic rather than a bug.**
+  It advances at 0.36 x walk, so it clears the 0.45 m/s gate — but its frontage closes to
+  11.3 m in the formation, and 11.3 x 0.5 x 0.30 is under two puffs a second. The nine
+  testudo plates therefore still show no dust, and a grader looking only at them will still
+  score E1 at 0 or 1. The wake is built for a formed line at a walk and a squadron at a
+  canter, which is where E1's own wording points, and `wake-quarter` and `wake-rear` are the
+  stations that show it. Whether a shell grinding forward at half a metre a second *should*
+  raise a visible band is a judgement I would not defend either way.
 - **The wake does not deform the ground.** `DustEmitter.trample` already stamps the damage
   buffer for moving units, and a marching formation should leave a visibly churned band
   behind it as well as an airborne one. Not attempted.
