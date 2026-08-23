@@ -652,16 +652,25 @@ export class UnitRenderSystem implements Subsystem {
   private smVz!: Float32Array;
   private smAccel!: Float32Array;
   /**
-   * How hard and how promptly this particular man leans, packed as `gain + lag`.
+   * How hard and how promptly this particular man leans.
    *
    * The first build of the acceleration lean measured `min` and `max` over 320 men agreeing
    * to five decimal places: every man in the cohort tipped by the same 8.5 degrees at the
    * same instant, which is criterion C2's fatal tell — synchronised breathing — wearing a
    * different hat. Whole units do start together, so the *event* is shared; what is not is
-   * how quickly a given man's weight follows it. Integer part is the gain (0.80-1.20 stored
-   * with a +1 bias so zero still means unresolved), fraction is the low-pass scale.
+   * how hard and how quickly a given man's weight follows it.
+   *
+   * **Two arrays and not one packed float, and that is a bug fixed rather than a style
+   * choice.** The second build packed them as `( 2 + gain ) + lag * 0.5` and unpacked with
+   * `floor` and the remainder, copying the idiom `kit.ts` uses for `metalClass + kept * 0.9`.
+   * It does not work here, because that idiom needs the integer part to *be* an integer: with
+   * a gain in 0.6 to 1.4 and a fraction in 0.36 to 0.50 the sum straddles 3.0, so `floor`
+   * returned 2 for some men and 3 for others and the gain came out as **0 or 1** — a share of
+   * every cohort was drawn with no acceleration lean at all. Ninety-six kilobytes at the pool
+   * capacity is not worth a packing that has to be reasoned about.
    */
-  private leanResp!: Float32Array;
+  private leanGain!: Float32Array;
+  private leanLag!: Float32Array;
   /**
    * The testudo layer: which board of the shell a man is holding, and how far into it he is.
    *
@@ -856,7 +865,8 @@ export class UnitRenderSystem implements Subsystem {
     this.smVx = new Float32Array(cap);
     this.smVz = new Float32Array(cap);
     this.smAccel = new Float32Array(cap);
-    this.leanResp = new Float32Array(cap);
+    this.leanGain = new Float32Array(cap);
+    this.leanLag = new Float32Array(cap);
     // Zero means "not yet resolved"; `ensureGait` fills it on first sight.
     this.rateMul = new Float32Array(cap);
     this.gaitRung = new Uint8Array(cap);
@@ -2176,12 +2186,11 @@ export class UnitRenderSystem implements Subsystem {
     // at 1.62 m, which is what a hundred and sixty conscripts actually look like, and it
     // is a stable per-man appearance choice so it belongs on `variant`.
     this.heightMul[i] = 1 + (hash01(seed, 74) - 0.5) * 0.075;
-    // Lean gain and lag. See `leanResp`. A drilled cohort's spread is narrower than a
+    // Lean gain and lag. See `leanGain`. A drilled cohort's spread is narrower than a
     // warband's for the same reason its breathing is, so `variance` scales it.
     const leanSpread = 0.16 + variance * 0.24;
-    const gain = 1 + (hash01(seed, 94) - 0.5) * 2 * leanSpread;
-    const lag = 0.72 + hash01(seed, 95) * 0.56;
-    this.leanResp[i] = (2 + gain) + Math.min(0.999, lag * 0.5);
+    this.leanGain[i] = 1 + (hash01(seed, 94) - 0.5) * 2 * leanSpread;
+    this.leanLag[i] = 0.72 + hash01(seed, 95) * 0.56;
   }
 
   /** Grid cell key for a ground position. Biased so negative coordinates pack cleanly. */
@@ -2358,8 +2367,7 @@ export class UnitRenderSystem implements Subsystem {
       : x > LEAN_ACCEL_MAX ? LEAN_ACCEL_MAX : x);
     // The per-man gain is applied here too, so what this reports is the angle actually
     // written into the instance buffer and not the term before its owner's share of it.
-    const at = (i: number): number => cap(this.smAccel[i] * LEAN_ACCEL
-      * (Math.floor(this.leanResp[i]) - 2));
+    const at = (i: number): number => cap(this.smAccel[i] * LEAN_ACCEL * this.leanGain[i]);
     if (members) {
       for (const i of members) v.push(at(i));
     } else {
@@ -2573,10 +2581,7 @@ export class UnitRenderSystem implements Subsystem {
          */
         let lean = p.lean[i];
         {
-          const resp = this.leanResp[i];
-          const leanGain = Math.floor(resp) - 2;
-          // Stored halved so it fits the fraction; see `leanResp`.
-          const leanLag = (resp - Math.floor(resp)) * 2;
+          const leanLag = this.leanLag[i];
           const kv = leanDt > 0 ? Math.min(1, leanDt * LEAN_V_LP * leanLag) : 0;
           const pvx = this.smVx[i];
           const pvz = this.smVz[i];
@@ -2593,7 +2598,7 @@ export class UnitRenderSystem implements Subsystem {
             const ka = Math.min(1, leanDt * LEAN_A_LP * leanLag);
             this.smAccel[i] += (along - this.smAccel[i]) * ka;
           }
-          const la = this.smAccel[i] * LEAN_ACCEL * leanGain;
+          const la = this.smAccel[i] * LEAN_ACCEL * this.leanGain[i];
           lean += la < -LEAN_ACCEL_MAX ? -LEAN_ACCEL_MAX : la > LEAN_ACCEL_MAX ? LEAN_ACCEL_MAX : la;
         }
         if (onElephant) {

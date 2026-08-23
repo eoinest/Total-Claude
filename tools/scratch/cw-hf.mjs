@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 // High-frequency RMS inside a box: how much of the signal is per-pixel noise rather than shading.
-const box = [132, 650, 176, 720];   // the shield face the critic measured, corner.png
+const box = process.env.TC_HF_BOX ? process.env.TC_HF_BOX.split(',').map(Number)
+  : [132, 650, 176, 720];   // the shield face the critic measured, corner.png
 async function hf(file, b) {
   const im = await sharp(file).removeAlpha().raw().toBuffer({ resolveWithObject: true });
   const W = im.info.width;
