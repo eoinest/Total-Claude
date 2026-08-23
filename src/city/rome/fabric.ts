@@ -972,7 +972,7 @@ export function cityPlan(): CityPlanOut {
     ungraded: [],
     emptyBlocks: [],
     emptyBlockCount: 0,
-    plotRejects: { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0, perimeterTried: 0, perimeterBuilt: 0 },
+    plotRejects: { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0, perimeterTried: 0, perimeterBuilt: 0, lastResort: 0 },
     worstFrameErrorDeg: worstFrameErr,
   };
   PLAN = { graph, blocks, cuts, report };
@@ -1038,6 +1038,12 @@ export interface PlotRejects {
   /** Whole-block courtyard ranges tried, and how many stood. */
   perimeterTried: number;
   perimeterBuilt: number;
+  /**
+   * Blocks that came back empty from the terrace and were given one house by the last-resort
+   * sweep. Counted because it is a **symptom**: a high number means the block plan is cutting
+   * faces across monuments rather than around them, not that the terrace is working well.
+   */
+  lastResort: number;
 }
 
 function planBlock(
@@ -1058,7 +1064,7 @@ function planBlock(
   const why: PlotRejects = {
     pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0,
     wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0,
-    perimeterTried: 0, perimeterBuilt: 0,
+    perimeterTried: 0, perimeterBuilt: 0, lastResort: 0,
   };
   const plots: Plot[] = [];
   const F = b.frame;
@@ -1421,7 +1427,59 @@ function planBlock(
     terrace(ua, ub);
   }
 
+  /**
+   * **One house, anywhere it fits, for a block that would otherwise be bare.**
+   *
+   * The terrace pins every plot to its own street line — that is what makes a street wall —
+   * and the depth ladder shortens a plot from the *back*. Both are right and together they
+   * have one blind spot: a block whose obstruction is at the **front**. A precinct that takes
+   * the street side of a block leaves ground at the back that no rung of the ladder can reach,
+   * because every rung starts at the kerb. Measured after the ladder landed, sixteen blocks
+   * still came back empty holding an eight-metre square of ground apiece — `probe-fabric` G24,
+   * which is the check that exists to ask exactly this.
+   *
+   * So a block that ends with nothing gets one last sweep: step along `u`, and at each step
+   * walk a minimum house *through* the span from front to back until it fits. It is
+   * deliberately the last thing tried and deliberately not part of the terrace — a house
+   * standing back from the kerb is worse urbanism than one on it, and better than nothing at
+   * all on ground a city would have used. It cannot interpenetrate: it goes through the same
+   * `buildable` as every other plot, against the same grid.
+   *
+   * **What would retire it:** a block plan that cuts its faces around the monuments instead of
+   * across them, which is `graph.ts`'s work and phase 6's. If this ever places more than a
+   * handful of houses, the block plan is wrong rather than the terrace.
+   */
+  function lastResort(): void {
+    const hw = MIN_PLOT * 0.5;
+    let best: { u: number; v: number; hw: number; hv: number; mask: number } | null = null;
+    for (let u = u0 + hw; u <= u1 - hw && !best; u += 2.5) {
+      const span = spanOver(u - hw, u + hw);
+      if (!span) continue;
+      const [lo, hi] = span;
+      // Front to back: the kerb first, and only then further in.
+      for (let v = lo; v + MIN_DEPTH <= hi + 1e-6; v += 2) {
+        const d = Math.min(INSULA_DEPTH_MAX, hi - v);
+        if (d < MIN_DEPTH) break;
+        const hv = d * 0.5 - 0.12;
+        const mask = buildable(u, v + d * 0.5, hw, hv, false);
+        if (mask <= 0) continue;
+        best = { u, v: v + d * 0.5, hw, hv, mask };
+        break;
+      }
+    }
+    if (!best) return;
+    why.lastResort++;
+    R.ok++;
+    const plot: Plot = {
+      x: F.x(best.u, best.v), z: F.z(best.u, best.v), rot: F.rot,
+      hw: best.hw, hd: best.hv, frontSide: -1, edge: best.mask, abut: 0,
+    };
+    plots.push(plot);
+    placed.add(plot);
+  }
+
   fill(u0, u1);
+  if (plots.length === 0) lastResort();
   for (const k of Object.keys(why) as (keyof PlotRejects)[]) total[k] += why[k];
   return { plots, frontages: R.rows, why };
 }
@@ -1679,7 +1737,7 @@ export function buildDistricts(
 
   // ---- the plots ----------------------------------------------------------
   const placed = new PlotGrid();
-  const why: PlotRejects = { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0, perimeterTried: 0, perimeterBuilt: 0 };
+  const why: PlotRejects = { pomerium: 0, reserved: 0, neighbour: 0, thinned: 0, notPerimeter: 0, tooSmall: 0, wet: 0, narrow: 0, shortFrontage: 0, frontages: 0, rows: 0, rowsBuilt: 0, oneRowOnly: 0, perimeterTried: 0, perimeterBuilt: 0, lastResort: 0 };
   const emptyBlocks = new Map<string, number>();
   const diag: DistrictOutput['diag'] = [];
   let emptyCount = 0;
