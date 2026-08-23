@@ -629,9 +629,73 @@ diagnosis and a handover, not a fix.
 
 ---
 
+## 7.5 What three blind graders said, including about this build
+
+Three independent critics were given plate sets and the rubric and told to be harsh, each
+calibrated on real Rome II frames first, each also given the corresponding *before* set
+unlabelled and in a shuffled order. None was told what had changed.
+
+| pass | what it graded | before | after | verdict |
+|---|---|---|---|---|
+| 1 | nine stations, the build before the response fix | 2.29 | 2.29 | tie |
+| 2 | nine stations, the build after the response fix | 2.08 | 1.96 | *before* ahead by 0.12 |
+| 3 | **twelve stations**, the build with sixteen samples and three hands | 2.04 | 2.04 | tie |
+
+For scale, the three passes on the previous branch scored 2.00, 1.93 and 2.07 on the nine.
+
+**Read that honestly: no grader can separate the before and after sets, and one put the before
+set ahead.** Four things are going on and only one of them is a compliment.
+
+1. **The nine stations are structurally blind to two of the three fixes.** They are of a
+   halted or constant-speed block. A correct acceleration lean at constant speed is *zero*,
+   and a testudo at 0.5 m/s over an 11 m frontage raises under two puffs a second. Passes 1
+   and 2 scored C6 and E1 off frames that could not contain them. Pass 3 was given the three
+   motion stations for exactly that reason.
+2. **The pairs are not pixel-registered** (§4), so a grader comparing them is partly grading
+   a different instant of the same battle — different men in different stride phases, a block
+   0.15 m wider. Pass 2 explicitly scored C4 and A6 on that, one band each, in the *before*
+   set's favour. Those two grade steps are the whole of its 0.12.
+3. **Two of the three graders ran a whole-frame numerical diff and were misled by it in
+   opposite directions**, which is the same failure this file's §0 is about. A mean-luminance
+   delta over a frame is a terrible proxy for a local contact term, and it was the tell that
+   sent pass 1 looking for differences it then dismissed as noise.
+4. **And the honest part: A7 is still 1 on the ground.** See below.
+
+What every pass agreed on, and what is therefore worth acting on: **C1 was the worst thing in
+the set** until pass 3 (which scored it 2, the only criterion any grader moved off the
+previous branch's 1), **E1 is 0**, and **the front rank does not sit in the turf.**
+
 ## 8. What is still wrong
 
-- **The grass takes the contact term hardest, and the obvious guard does not work.** A field
+- **The contact term does not work on grass, and that is the largest single thing left.**
+  A blind grader named it as the worst remaining fault in the build and quoted the rows:
+  *"the grass at the foot of every shield is the same value as the grass two metres out"*.
+  Measured with `tools/scratch/cw-band.mjs` on the rows it named — mean luminance of the band
+  at the shield foot over the band two metres out, `rear.png`:
+
+  | | foot | 2 m out | ratio |
+  |---|---|---|---|
+  | before | 77.3 | 81.6 | 0.946 |
+  | after | 68.5 | 73.8 | **0.929** |
+
+  Both bands got darker and the *relative* pool moved by 1.7 points. The grader is right that
+  there is no contact well at the sandals.
+
+  The cause is diagnosable and it is not the strength. **A grass pixel has no usable normal.**
+  `tcNormalFromDepth` reconstructs the normal from the depth neighbourhood, and at a grass
+  pixel that neighbourhood is blade, gap, blade — so `dot( N, V )` is sign-noise and a
+  cosine-weighted disc averages to nothing. It is the same defect from the other side as the
+  self-occlusion that darkens a lawn: on grass the term is simultaneously too strong (mass)
+  and absent (junction). Everywhere the ground is a *surface* it works — the Rome street pair
+  in §4 shows a clean band along the base of every frontage, because paving has a normal.
+
+  Two fixes, neither of them screen-space arithmetic. A real normal buffer, which is the
+  geometry pass this whole chain exists to avoid. Or a per-man **contact decal** — a small
+  dark ellipse projected on the terrain under each man, one instanced draw for the whole
+  army, immune to the grass-normal problem because it does not ask the depth buffer anything.
+  The second is what I would build next and it is not a post-processing change.
+
+- **The grass also takes the term too hard as a mass, and the obvious guard does not work.** A field
   of thin blades occludes itself everywhere, so the near-field disc finds solid matter at the
   base of every blade. It is physically right and it is the single artefact I would look at
   next: at strength 7 with the old clamp it was a black mat, and the coloured fill is what
