@@ -264,6 +264,19 @@ none was on the previous frame.
 
 ---
 
+## 6.3 Forming up
+
+`--settle=0.5` and `--settle=1.5` photograph the order being obeyed rather than the formation
+being held, which is the case a still frame is worst at catching and the one a glitch would
+live in. Half a second after the order the boards are already up and the roof already reads,
+on a block that is still 33.5 m wide because it has not closed yet; at 1.5 s the front rank is
+locked and the roof is going up behind it. The blend is `TESTUDO_FORM` = 0.55 s and it carries
+the flank men's ninety-degree turn, the dressing, the stature evening and the lean, so nothing
+in the change is instantaneous except the kit swap — which happens at the halfway point, when
+the arms are already most of the way to the roof and it is least visible.
+
+---
+
 ## 7. What is still wrong
 
 - **Legs.** The flank and rear boards cover 0.72–1.77 m, so a broadside at eye level shows
