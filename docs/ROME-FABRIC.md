@@ -2845,6 +2845,13 @@ city.
 | carriageway | 704,454 m² | **496,608 m²** |
 | generated lanes | 512 / 43.43 km | 994 / 22.15 km |
 | `probe-seams` | PASS both maps | **PASS both maps** |
+| `probe-wall` | 19/19 | **19/19** (against a dev server; against a built `dist/` it reads 18/19 on a 404 the fallback server cannot serve, which is what the tool's own comment warns about) |
+| `probe-ground` | PASS | **PASS** — 0 men in water, 0 on the far bank, 0 outside a deployment box, 13 of 13 graded frames; the city camera draws 89 calls against a 220 whole-frame cap |
+| `qa-deploy` | 33/33 | **33/33** |
+| `probe-plan` (external, against the plate) | 6/9 | **6/9** — and its P2 now reads *"8 of 971 solids overlap a carriageway… 8 of them on the named armature and **0 on district lanes only**"*, which is the plate-side statement that the 130 generated cross-lanes put nothing new in a street |
+| determinism, `default` 8,632 | pinned | **bit-identical**, all 7 checkpoints, 4 tiers |
+| determinism, Carthage 3,440 | pinned | **bit-identical**, all 7 checkpoints, 4 tiers |
+| determinism, Rome siege 3,072 | pinned | **t+0 unchanged, t+30 onward re-recorded in the commit that moved it**; survivors at t+400 2,173 → 2,201 |
 | `tsc` / `lint` | clean / 3/3 | **clean / 3/3** |
 
 **The control moved by one statistic and it is explained rather than absorbed.** Carthage's G19
