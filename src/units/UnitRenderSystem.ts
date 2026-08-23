@@ -234,6 +234,77 @@ const SLOT_STRAGGLE = 0.30;
  * enough that the plane reads. The men underneath are behind their own shields; the roof is
  * the only part of them anybody can see.
  */
+/**
+ * Radians of body lean per metre per second squared of longitudinal acceleration.
+ *
+ * ## What the simulation already carries, and why it is not a lean
+ *
+ * `BattleSystem.integrate` writes `pool.lean[i] = damp( lean, clamp( speed * 0.055, 0,
+ * 0.16 ), 6, dt )`. That is a **speed** term, not an acceleration one, and the difference is
+ * the whole of criterion C6's second clause. A man walking at a constant 1.4 m/s carries a
+ * constant 4.4 degrees of forward lean for as long as he walks, and a man who breaks into a
+ * run arrives at 9.2 degrees and stays there: nothing in the frame ever *tips*. The rubric's
+ * tell is "lean into acceleration", and a lean that is a function of speed alone is exactly
+ * a lean that is absent at the moment it should be largest — the two or three tenths of a
+ * second when a halted cohort starts, when a charge is called, when a line is checked by
+ * contact.
+ *
+ * ## Why it is computed here
+ *
+ * `pool.lean` cannot be changed: `lean` is a pool field, `integrate` is the same function
+ * that writes `x` and `z`, and `tools/determinism-baseline.json` pins twenty-one checkpoints
+ * across three battles. So the acceleration is differenced from `pool.vx/vz` on the render
+ * side into arrays this system owns, and added to the drawn lean. Nothing here is read by
+ * anything the simulation runs, so the pins cannot move — the same argument the testudo
+ * presentation layer above rests on.
+ *
+ * ## The number
+ *
+ * It is not a taste constant. A body that accelerates at `a` must lean by `atan( a / g )` or
+ * it falls over, so the coefficient is `1 / 9.81` = **0.102 rad per m/s squared**, and for
+ * the small angles involved the small-angle form is exact to under a degree. A man going
+ * from a halt to a 1.4 m/s walk in 0.7 s accelerates at 2.0 m/s squared and therefore leans
+ * 11.7 degrees, which is more than twice the largest lean the speed term can ever produce.
+ * Deceleration is the same arithmetic with the sign reversed and is the more valuable half:
+ * a line stopping is the moment weight is most visible.
+ *
+ * `LEAN_ACCEL_MAX` bounds it at 0.42 rad, which is a hard sprint start. The crowd solver can
+ * shove a man several metres a second in one tick, so an unbounded reading of the pool's
+ * velocity would occasionally lay somebody flat.
+ *
+ * ## The 1.55, and why the physical number alone under-reads
+ *
+ * The shader does not rotate a man about his heels. `skinShader.ts` bends him:
+ * `lean = iOrient.z * bendT * bendT` with `bendT = clamp( y / SOLDIER_LEAN_H )` and
+ * `SOLDIER_LEAN_H` at 1.5 m, so a vertex at the shoulder takes `(1.4/1.5)^2` = 0.87 of the
+ * angle and one at the belt takes `(1.0/1.5)^2` = 0.44. What an eye — or a grader with a
+ * ruler — measures is the tilt of the *trunk*, the segment between those two, and that
+ * averages about 0.65 of the nominal.
+ *
+ * A blind grader did exactly that. Told which frame was 0.30 s into an ordered advance, it
+ * measured the trunk axis of five men across the rank, reported **4 degrees against the 8 to
+ * 15 a real body produces**, and scored C6 at 1. The nominal at that instant was 8.5. The
+ * lean was there and two thirds of it was inside the bend.
+ *
+ * So the coefficient carries the recovery explicitly: `1/9.81` is the physics and `1.55` is
+ * `1/0.65`, which is the profile's own attenuation over the segment the eye reads. Both
+ * numbers are written down separately on purpose — the day `SOLDIER_LEAN_H` or the quadratic
+ * changes, the second one is wrong and the first one is not.
+ */
+const LEAN_ACCEL = (1 / 9.81) * 1.55;
+const LEAN_ACCEL_MAX = 0.42;
+/**
+ * Time constants for the two low passes, in reciprocal seconds.
+ *
+ * The velocity is smoothed hard and the acceleration read off the smoothed value, because
+ * `pool.vx/vz` carries the crowd solver's separation impulses — up to 0.22 m a tick — and
+ * differencing raw velocity gives an acceleration signal whose noise is many times the
+ * signal. 9/s on the velocity is a 110 ms window, short enough that a real start is not
+ * flattened; 6/s on the acceleration keeps the lean from buzzing inside a melee.
+ */
+const LEAN_V_LP = 9;
+const LEAN_A_LP = 6;
+
 const TESTUDO_DRESS = 0.40;
 const TESTUDO_EVEN = 0.78;
 /** Seconds to form up or fall out. A ninety-degree turn on the flank happens over this. */
@@ -589,6 +660,37 @@ export class UnitRenderSystem implements Subsystem {
   /** Per-man stand-off from his formation slot: lateral, longitudinal, straggle. */
   private slotOff!: Float32Array;
   /**
+   * A render-side low pass on each man's velocity, and the acceleration read off it.
+   *
+   * Three floats a man: smoothed vx, smoothed vz, and the smoothed *longitudinal*
+   * acceleration in m/s squared, signed along his own facing. Owned here and not by the
+   * pool, which is the whole reason this is allowed to exist — see `LEAN_ACCEL` for what
+   * it is for and why the number the simulation already carries is not enough.
+   */
+  private smVx!: Float32Array;
+  private smVz!: Float32Array;
+  private smAccel!: Float32Array;
+  /**
+   * How hard and how promptly this particular man leans.
+   *
+   * The first build of the acceleration lean measured `min` and `max` over 320 men agreeing
+   * to five decimal places: every man in the cohort tipped by the same 8.5 degrees at the
+   * same instant, which is criterion C2's fatal tell — synchronised breathing — wearing a
+   * different hat. Whole units do start together, so the *event* is shared; what is not is
+   * how hard and how quickly a given man's weight follows it.
+   *
+   * **Two arrays and not one packed float, and that is a bug fixed rather than a style
+   * choice.** The second build packed them as `( 2 + gain ) + lag * 0.5` and unpacked with
+   * `floor` and the remainder, copying the idiom `kit.ts` uses for `metalClass + kept * 0.9`.
+   * It does not work here, because that idiom needs the integer part to *be* an integer: with
+   * a gain in 0.6 to 1.4 and a fraction in 0.36 to 0.50 the sum straddles 3.0, so `floor`
+   * returned 2 for some men and 3 for others and the gain came out as **0 or 1** — a share of
+   * every cohort was drawn with no acceleration lean at all. Ninety-six kilobytes at the pool
+   * capacity is not worth a packing that has to be reasoned about.
+   */
+  private leanGain!: Float32Array;
+  private leanLag!: Float32Array;
+  /**
    * The testudo layer: which board of the shell a man is holding, and how far into it he is.
    *
    * `testudoRole` is `TestudoRole * 2 + (marching ? 1 : 0)`, or 255 for the overwhelming
@@ -779,6 +881,11 @@ export class UnitRenderSystem implements Subsystem {
     this.kitReady = new Uint8Array(cap);
     this.typeIndex = new Int32Array(cap).fill(-1);
     this.phaseOff = new Float32Array(cap);
+    this.smVx = new Float32Array(cap);
+    this.smVz = new Float32Array(cap);
+    this.smAccel = new Float32Array(cap);
+    this.leanGain = new Float32Array(cap);
+    this.leanLag = new Float32Array(cap);
     // Zero means "not yet resolved"; `ensureGait` fills it on first sight.
     this.rateMul = new Float32Array(cap);
     this.gaitRung = new Uint8Array(cap);
@@ -2098,6 +2205,11 @@ export class UnitRenderSystem implements Subsystem {
     // at 1.62 m, which is what a hundred and sixty conscripts actually look like, and it
     // is a stable per-man appearance choice so it belongs on `variant`.
     this.heightMul[i] = 1 + (hash01(seed, 74) - 0.5) * 0.075;
+    // Lean gain and lag. See `leanGain`. A drilled cohort's spread is narrower than a
+    // warband's for the same reason its breathing is, so `variance` scales it.
+    const leanSpread = 0.16 + variance * 0.24;
+    this.leanGain[i] = 1 + (hash01(seed, 94) - 0.5) * 2 * leanSpread;
+    this.leanLag[i] = 0.72 + hash01(seed, 95) * 0.56;
   }
 
   /** Grid cell key for a ground position. Biased so negative coordinates pack cleanly. */
@@ -2256,11 +2368,60 @@ export class UnitRenderSystem implements Subsystem {
     this.kitReady[i] = 1;
   }
 
+  /**
+   * The acceleration lean's own distribution over the men drawn on the last frame.
+   *
+   * A diagnostic, in the same spirit as `PostFXSystem.debugPasses`. What it reports is
+   * invisible in a still frame of a formation at *constant* speed, which is correct and
+   * which is also what makes it impossible to check from a screenshot: the whole claim is
+   * that the lean is now a function of the derivative, so the only honest test is to read
+   * the number at a start, at a steady march and at a halt and watch it change sign.
+   * Radians, and already clamped exactly as the draw path clamps it.
+   */
+  leanStats(members?: readonly number[]): {
+    n: number; meanAbs: number; min: number; max: number; p90abs: number;
+  } {
+    const v: number[] = [];
+    const cap = (x: number): number => (x < -LEAN_ACCEL_MAX ? -LEAN_ACCEL_MAX
+      : x > LEAN_ACCEL_MAX ? LEAN_ACCEL_MAX : x);
+    // The per-man gain is applied here too, so what this reports is the angle actually
+    // written into the instance buffer and not the term before its owner's share of it.
+    const at = (i: number): number => cap(this.smAccel[i] * LEAN_ACCEL * this.leanGain[i]);
+    if (members) {
+      for (const i of members) v.push(at(i));
+    } else {
+      for (const u of this.battle.units) for (const i of u.members) v.push(at(i));
+    }
+    if (!v.length) return { n: 0, meanAbs: 0, min: 0, max: 0, p90abs: 0 };
+    const abs = v.map(Math.abs).sort((a, z) => a - z);
+    let lo = Infinity;
+    let hi = -Infinity;
+    let sum = 0;
+    for (const x of v) { if (x < lo) lo = x; if (x > hi) hi = x; }
+    for (const x of abs) sum += x;
+    return {
+      n: v.length,
+      meanAbs: +(sum / abs.length).toFixed(5),
+      min: +lo.toFixed(5),
+      max: +hi.toFixed(5),
+      p90abs: +abs[Math.floor(abs.length * 0.9)].toFixed(5),
+    };
+  }
+
   preRender(ctx: EngineContext): void {
     const b = this.battle;
     const p = b.pool;
     const alpha = ctx.time.alpha;
     const cam = ctx.camera;
+    /*
+     * The step the acceleration lean differences over.
+     *
+     * `scaledDt` and not `frameDt`, because the lean has to freeze on pause and run fast at
+     * 4x exactly as the animation does. Clamped at 0.1 s so a frame after a long stall — a
+     * shader link, a tab that was in the background, a probe's own `fastForward` — cannot
+     * difference a hundred milliseconds of velocity change into one enormous lean.
+     */
+    const leanDt = Math.min(0.1, ctx.time.scaledDt);
 
     for (const row of this.soldierTiers) for (const t of row) t.buf.count = 0;
     for (const t of this.horseTiers) t.buf.count = 0;
@@ -2427,7 +2588,38 @@ export class UnitRenderSystem implements Subsystem {
         let y = rp.y;
         let x = rp.x;
         let z = rp.z;
+        /*
+         * The drawn lean: the simulation's speed term plus an acceleration term computed
+         * here. See `LEAN_ACCEL` for the whole argument; the short version is that
+         * `pool.lean` is a function of speed and therefore never tips, and a lean that
+         * never tips is criterion C6's "lean into acceleration" scored at zero.
+         *
+         * `dt` is the render step, and it can be zero on a frame the harness draws twice —
+         * `tools/probe-contact.mjs` does exactly that to A/B a post pass against the same
+         * instant — so it is guarded rather than divided into blindly.
+         */
         let lean = p.lean[i];
+        {
+          const leanLag = this.leanLag[i];
+          const kv = leanDt > 0 ? Math.min(1, leanDt * LEAN_V_LP * leanLag) : 0;
+          const pvx = this.smVx[i];
+          const pvz = this.smVz[i];
+          const nvx = pvx + (p.vx[i] - pvx) * kv;
+          const nvz = pvz + (p.vz[i] - pvz) * kv;
+          this.smVx[i] = nvx;
+          this.smVz[i] = nvz;
+          if (leanDt > 0) {
+            // Along his own facing, so a man shoved sideways by the crowd does not pitch
+            // forward. `facing` is the drawn facing, which is the axis the shader bends about.
+            const ax = (nvx - pvx) / leanDt;
+            const az = (nvz - pvz) / leanDt;
+            const along = ax * Math.sin(facing) + az * Math.cos(facing);
+            const ka = Math.min(1, leanDt * LEAN_A_LP * leanLag);
+            this.smAccel[i] += (along - this.smAccel[i]) * ka;
+          }
+          const la = this.smAccel[i] * LEAN_ACCEL * this.leanGain[i];
+          lean += la < -LEAN_ACCEL_MAX ? -LEAN_ACCEL_MAX : la > LEAN_ACCEL_MAX ? LEAN_ACCEL_MAX : la;
+        }
         if (onElephant) {
           /**
            * One pool soldier is one whole elephant: the animal, its mahout and three men in

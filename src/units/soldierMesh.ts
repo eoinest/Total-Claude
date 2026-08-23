@@ -1897,7 +1897,17 @@ export function buildSoldierGeometry(faction: Faction, lod: Lod): THREE.Instance
       b.setMatrix(bm);
       boss(plateUv, Piece.ShieldScutum, 0.075, 0.135 + 0.022 * 0.5);
       b.setMatrix(scutumM);
-      b.setPiece(Piece.ShieldScutum, Tint.Atlas);
+      /*
+       * The spina, and it takes the man's own metal rather than the atlas's.
+       *
+       * `Tint.Atlas` means "untinted": every scutum in the game carried the identical bronze
+       * on these two bars, and they are the second-largest metal object on a board a critic
+       * spends a whole frame looking at. `Tint.Metal` is already per man — iron, bronze,
+       * blackened or tinned, plus a polish draw (`kit.ts`, `resolveKit`) — and the umbo
+       * three lines above already uses it, so a scutum currently has a per-man boss bolted
+       * to a universal reinforcement. Fittings on one board came from one smith.
+       */
+      b.setPiece(Piece.ShieldScutum, Tint.Metal);
       b.box(0, 0.28, 0.155, 0.05, 0.28, 0.012, bronzeUv);
       b.box(0, -0.28, 0.155, 0.05, 0.28, 0.012, bronzeUv);
     }

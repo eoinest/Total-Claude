@@ -13,13 +13,15 @@ Each entry records the commit that was deployed and the Vercel deployment that c
 are not taken on trust: every commit below through r5 was matched to its deployment by comparing the
 SHA-1 of every tracked file in the commit against the file digests Vercel holds for that deployment
 — r1 to r4 at 100% of tracked files, and r5 at 567 of 568 with zero digest mismatches, the one
-absent file being `.gitignore`, which the CLI reads rather than uploads. `r4` through `r8` were
+absent file being `.gitignore`, which the CLI reads rather than uploads. `r4` through `r9` were
 verified by rebuilding the commit in a pinned worktree and diffing the output against the bytes the
-live site serves — for r6, r7 and r8, `index.html` byte-identical and the bundle's SHA-256 matching
+live site serves — for r6 through r9, `index.html` byte-identical and the bundle's SHA-256 matching
 exactly — and by booting all three maps against the live URL and confirming the simulation clock
-advances on each. For r8 the comparison was taken further: all nine build outputs matched on
+advances on each. For r8 and r9 the comparison was taken further: all nine build outputs matched on
 SHA-256, and the SHA-1 digest Vercel holds for every one of the deployment's **86 files matched the
-rebuild's, in both directions, with nothing deployed that is not in `dist/`.** See
+rebuild's, in both directions, with nothing deployed that is not in `dist/`.** For r9 the three
+live maps were additionally read twice five seconds apart and the clock had moved 5.0 s on each,
+with zero page errors and zero console errors. See
 [`docs/RELEASING.md`](docs/RELEASING.md) for the procedure.
 
 Every figure quoted here comes from a commit message, from `docs/HANDOFF.md`, or from a measurement
@@ -40,10 +42,666 @@ text than as a frame that half-supports them.
 
 ---
 
+## r9 — two clients, three browser engines, and a Rome that stands where the survey puts it
+
+**22 August 2026** · commit [`9b9c5f0`](https://github.com/eoinest/Total-Claude/commit/9b9c5f0) ·
+deployment `total-claude-1zztomfa3` · **live now**
+
+The largest release this project has had — 173 commits — and its shape is three new capabilities
+rather than a list of repairs. **Two people can now fight the same battle over a relay**: real
+lockstep, bit-identical, with the desync detector proved by feeding one client a corruption and
+watching that client go red. **And they no longer have to be using the same browser**: a float32 firewall
+on the unit layer makes all three battles bit-identical in Chromium, Firefox and WebKit at every
+checkpoint to t+400, where the field battle used to fork at t+205.5 and two engines ended 289 men
+apart. **And Rome was rebuilt from the ground up** — its monuments, its river, its terrain, its
+streets, its doorways and its city blocks, each measured against a georeferenced 1901 plate rather
+than against ourselves.
+
+Under that, the game stopped telling the player things that were not true, and the machine this is
+built on stopped being something a careless agent could take down.
+
+**The gate, re-measured on the deployed commit rather than inherited:** `tsc` clean, `npm run lint`
+3/3, `qa-deploy` 33/33, `probe-seams` PASS on both maps, `qa-replay` 27/27, `qa-net` 38/38,
+`qa-freeze` 32/32, and all three determinism arms unchanged at all seven checkpoints and identical
+at all four quality tiers — **8,632 / 3,072 / 3,440**.
+
+### New
+
+- **Multiplayer. Two clients, one relay, one battle, both armies under human command.** Lockstep,
+  JSON on a WebSocket, **three ticks to a turn and two turns of delay**. The relay stamps every
+  operation `(slot, seq)` and closes turns on its own clock, and there is **no drop path** — a
+  late op lands in the next open turn rather than being discarded, so latency policy cannot cause
+  a divergence. One pure `Room` state machine drives both hosts: `tools/relay.mjs`, about ninety
+  lines of hand-rolled RFC 6455 with no dependencies, and a Cloudflare Worker that is written,
+  reads the same protocol file, and **has never run** — there is no account, and its cost
+  arithmetic is unverified.
+
+  **Proved by two clients driven through the real menu with a real mouse: bit-identical at tick
+  2103 on all four hash layers, with a byte-identical merged order log.** The siege arm is the
+  same thing on `campus-martius / assault` — tick 1365, 3,072 alive on both, pool `caa88bc8`,
+  `uf64` `d62dcbaa`, `uctl` `50c56120`, 17 order events byte-identical.
+
+  **Input delay, click to the tick that executes it, through a real mouse.** Re-measured for this
+  release: **3.5 ticks — 117 ms — at a 157.5 ms round trip, and zero stalls**; the gate's three
+  published runs agree at 3.0–3.7 ticks (100–122 ms) on a free link, rising to about 185 ms at a
+  232 ms round trip. The floor is the assertion that matters: an order cannot execute before the
+  next scheduled turn, so **anything under three ticks would mean an order reached the simulation
+  without going through the relay.**
+
+  **Six arms are failures injected on purpose, and each of them is a failure if it goes green.**
+
+  | broken on purpose | caught |
+  |---|---|
+  | one order dropped from one client's turn packet | tick 90, on `uf64`, naming 2 of 37 units |
+  | **a deployment operation delivered twice** | **tick 0 — before a tick of battle has run** |
+  | two same-slot orders in one turn exchanged | tick 90, on `uf64`, naming 2 of 37 units |
+  | one `UnitGroupState` float64 field moved by **1 ULP** | tick 60, attributed to one regiment of thirty-five |
+  | a third client joining mid-battle | refused by name |
+  | one client's socket closing | the survivor told at a stated tick, and stopped |
+
+  Two of those arms first passed while demonstrating the opposite of what they claimed — **a
+  duplicated *move* order is idempotent** in this simulation and **a swap of two orders on
+  *different* regiments commutes** — so both were retargeted at cases where the hazard is real.
+  A negative arm that cannot fail is not a negative arm.
+
+  **Pairing is decided by a libm fingerprint, not a version string.** `Math.sin` and its relatives
+  are implementation-approximated: ECMA-262 recommends fdlibm and requires nothing. Eight builds
+  were measured over 4,096 integer-generated inputs per function — Firefox 153, WebKit 26.5 and
+  six Chromium majors — and the generations that share a libm are `{130}`, `{143, 147, 149}` and
+  `{151, 152}`. **One of them spans six major versions**, so a version check would refuse pairings
+  that work. The fingerprint is an FNV-1a hash over **6,144 approximated `Math` results** plus
+  1,024 from two correctly-rounded controls, and costs about 0.5 ms in the lobby. What is at stake
+  is not subtle: across the 149 → 151 step, which moved twelve of fourteen functions, the same
+  field battle ended **42% apart** at t+600.
+
+  On a desync both clients halt at the last agreed tick with a stated result — not a resync, because
+  a fork between two libms is systematic and would fork again on the next contested tick. The relay
+  asks both clients for per-unit digests at that tick, **35 units × one 32-bit hash, about 300
+  bytes**, and names the regiments that differ.
+
+  Everything above is two browsers on one laptop. Two machines is still the premise the product
+  rests on and is still untested.
+
+- **And it works across browser engines, which is what the whole design was written around.**
+  `SoldierPool` is typed arrays — read float32, compute float64, write float32 — and that round
+  trip is a quantisation firewall which is why three engines have long agreed on eight thousand
+  men. **`UnitGroupState` was on the other side of it**: position, bearing, morale, fatigue and
+  nine more fields integrated in place as plain doubles with no quantisation step anywhere.
+  `src/sim/quantise.ts` gives that layer the same firewall in **one file of 125 lines, ninety of
+  which are the comment**, and it imports its field list from `stateHash.ts` so that the state
+  which is hashed is by construction the state which is quantised.
+
+  **Chromium 151, Firefox 153 and WebKit 26.5 now run all three battles bit-identically at all
+  seven checkpoints to t+400** — the 8,632-man field battle, Rome's assault and Carthage's — on
+  the pool hash and both unit hashes. Before it, the field battle was identical to t+200 and apart
+  at t+250 and t+400, at **5,849 / 5,560 / 5,886 survivors**, and Carthage parted company at t+0
+  on 26 float64 fields of 1,020, every one of them 1 ULP and every one a bearing. Four extra seeds
+  agree in all three engines too. **The control is what makes it mean anything:** with the firewall
+  reverted and nothing else changed, the shipped seed and two of the four extra seeds go red again
+  between Chromium and Firefox — three of five, not all five, because the run covering the other
+  two was invalidated when the tree moved under it and refused to report rather than reporting a
+  number.
+
+  The other half of it is arithmetic that never should have been there. **The last 27
+  `Math.hypot` calls are gone** — eleven in `src/terrain`, fifteen in `src/maps`, one in Rome's
+  circuit — and with them **838 of Carthage's 3,440 men differing between Chromium and Firefox at
+  t+0, and 713 between Chromium and WebKit, went to zero.** `hypot` now appears nowhere the
+  portability linter scans; a hit anywhere in that scope is a regression rather than a backlog
+  item.
+
+  The quantum is **0.12 mm on a position against a 0.72 m rank pitch** and 1.2e-7 radians on a
+  bearing. This is a firewall and not a proof: it drops the chance of two doubles straddling a
+  rounding boundary to about 2e-9 per field per tick, which is not zero.
+
+- **Rome was rebuilt from the ground up, and graded against a plate rather than against itself.**
+  `tools/probe-plan.mjs` renders the map into the georeferenced 1901 *Forma Urbis Romae*'s own
+  frame and compares — the one instrument in the pass whose ruler is not ours. It scores the
+  assembled city **6 of 9**, and the row that matters reads **mean 0 and worst 0 real metres of
+  monument displacement**, against the previous rubric's largest single loss: a median of 227 m
+  and a worst of 1,031 m.
+
+  ![Oblique aerial view of the reconstructed Campus Martius at hazy morning: the Tiber curving through the middle distance, the colonnaded Saepta and the Theatre of Pompey among dense red-tiled insula blocks, the Via Lata running north to the Aurelian Wall, and open centuriated farmland beyond](docs/images/releases/r9-rome-city.jpg)
+
+  *The city the rest of this section is about, from the `oblique-campus` camera on the shipped
+  battle — `campus-martius`, `assault`, seed 4265438264, 3,072 men.*
+
+  - **The monuments stand where the survey puts them, because the solver that moved them is
+    deleted.** `resolveOverlaps` ran at boot, pushed every intersecting monument footprint apart
+    until nothing intersected, and succeeded. **The price was a mean displacement of 141.9 world
+    metres and a worst of 398.9 — 351 and 1,098 real metres** — with the Theatre of Pompey drawn
+    nearly a kilometre north of itself, on top of a road. Nothing overlapped because everything
+    had been pushed out of place. The deletion is only possible because the survey was corrected
+    first: **fourteen of thirty-five survey rows were in the wrong place, five of them by more
+    than 100 m** — the Baths of Nero by 181 m with its bearing 82 degrees out, the Porticus
+    Octaviae by 123 m because the coordinate on record was its propylon.
+
+  - **The Tiber, re-surveyed as 451 stations.** The owner: *"i think we may need to kind of start
+    over because the river is kind of bending the wrong way honestly."* The old channel was twelve
+    transcribed control knots and a function `x = f(z)`, **which cannot describe a river that
+    turns**: at the Tiber Island the course runs 76 degrees off the z axis, so the drawn channel
+    reached 385 world metres across a row that declared 94. The new course is a least-cost path
+    through gated water on a 50 cm orthophoto, 451 stations at 25 m, cross-checked against
+    Lanciani at a **median of 2.6 survey metres apart over 354 stations**, and held as a polyline
+    and a signed distance field in real metres so re-projecting the map cannot leave it stale.
+    Of the twelve knots it replaces, the median stood **115 real metres** from the traced channel,
+    the worst 1,166 — **and one of them stood on the water.** The channel is now **102.1 real
+    metres wide against the plate's 100.8, a ratio of 1.01 where it was 2.31**, and **0.00% of the
+    city's built footprint changes bank** between plate and engine.
+
+    ![The Tiber seen obliquely from the north-west, its great bend curving past the Mausoleum of Augustus and the Theatre of Pompey, with the Janiculum's wooded ridge and the Circus of Nero on the far bank and no building standing in the water](docs/images/releases/r9-rome-tiber.jpg)
+
+    *`oblique-river`. **Zero buildings stand in the river, from 78** — seventy-seven insula solids
+    and the Theatre of Marcellus — measured as centre-wet over 1,207 solids, with the three that
+    keep a corner in the wetted band named rather than rounded away.*
+
+  - **The Pantheon came off a 37.8-metre hill it should never have had.** The terrain's upland
+    terms were gated on northing alone, so they saturated behind the crest **at every x on the
+    map** and the Tiber flood plain — where the code publishes exactly zero rise — inherited 13 m
+    of lift and up to ±27.5 m of ridged multifractal. The comment above the line claimed the
+    opposite. Down the Via Lata the ground climbed **6 → 45.5 → 8 m**; it now goes **6 → 16.5 →
+    8**. Median relief over a 120 m window falls **33.69 m → 9.26 m** and the implied datum
+    against sea level **+21.9 m → −1.7 m**, which is what a floodplain reads. Two more of the same
+    class went with it: 903 real metres of Pincian garden inside the curtain, and **a four-metre
+    metalled cart track on every parcel line of the centuriated farmland — across the Forum** —
+    because the exemption that was meant to stop the countryside growing through the city
+    evaluated to zero everywhere inside the circuit. Vegetation in one insula-quarter frame goes
+    **12.6% → 0.0%** with Carthage unchanged at 7.0% as the control.
+
+  - **Real doorways.** The generator has modelled arched tabernae for two passes, and the arch's
+    0.55 m reveal opened onto **the same box's own painted face 40 mm behind it**. Every shop
+    front in Rome was blind arcading; the fallback door was worse, a dark box standing 20 mm
+    *proud* of the wall. The repair is an ordering rather than more geometry — a wing works out
+    its street faces first, omits them from the box, and rebuilds each as a pierced elevation with
+    a real recess behind every opening. **Openings per 10 m of frontage 0.26 → 0.74** against a
+    target of 1.2 and Ostia's Via di Diana at about 2.5; **street faces with no opening at all
+    54.6% → 23.6%**; 454 openings over 6,098 m of graded frontage where 1,971 m was graded before.
+    It costs **no draw calls at all** and 3.0% more triangles. The pass declined to raise the door
+    pitch to hit its own target, on the grounds that tuning a constant against the gate that
+    judges it is what makes the gate meaningless. **Carthage is the control and made the identical
+    mistake independently**: 20,637 m of frontage, 896 faces, 100% blank.
+
+    ![Looking down a paved street in the rebuilt fabric: a terrace of insulae on the right whose ground storeys are an arcade of recessed arches, a framed doorway with a threshold in the near corner block, and the carriageway and its kerbs running away to the left](docs/images/releases/r9-rome-doorways.jpg)
+
+    *`grid-eye-lane`. **No before-twin exists at this camera** — it is a new station in this pass —
+    so this frame shows the after state only, and the counts above are what measures the change.
+    What it does show at any coordinate is that the arches are holes with shade behind them and
+    the doorway has a sill.*
+
+  - **Twenty-three streets, authored from the plates, and no code path that can bend one.**
+    `deflect`, `monumentRings` and `feeders` are deleted. The ways are 11.6 km in a new file, each
+    row carrying the plate it was read off; identification came from Shepherd plate 22 fitted by a
+    six-parameter affine on eight monuments at **28.5 real metres RMS**, geometry from a
+    georectified raster good to 1.26 m over 7 km. What that replaced was **41 ways and 14.2 km, of
+    which 17 were 42-metre `feeder-*` links nobody had authored** and the rest were rings drawn
+    round monuments. Ranked street length running through a monument falls from the plan's 24% to
+    **1.5%** in survey metres, and the armature is now one connected component with **four of four
+    gate mouths on a consular-or-better way, against one of four.**
+
+    **And the conflict the old armature was built around did not exist.** The Via Lata was
+    supposed to be unroutable past the Mausoleum of Augustus; three independent sources agree
+    within 5 m that the real street passes **53 real metres clear** of the tomb. The old armature
+    ran 100 to 150 m west of the real street, and both the "85 m of masonry across the
+    carriageway" and the "360 m bow" that had been authored to dodge it were fixes for a fault
+    that was never there.
+
+  - **A city block is a face of the street graph.** Seventeen hand-placed district rectangles and
+    their lattices are gone. The ways, the wall's crest line, the Tiber's centreline and the map
+    frame are intersected into a planar graph — 1,977 input segments, 1,671 crossings, 2,712
+    edges, 463 faces — and the faces are inset into **299 blocks, 122 plazas and 39 strips of
+    pomerium**. The fourteen Augustan *regiones* now carry attributes and no extent at all.
+
+    | | before | after |
+    |---|---|---|
+    | block grain against the street that bounds it, median | **7.78°** | **0.00°** |
+    | blocks outside tolerance | 754 of 1,169 | 76 of 944 |
+    | neighbouring blocks rotating more than 15° across a 40 m gap | 13.6% | 0.8% |
+    | overlapping *regio* pairs · double-claimed ground | 82 · 4,706,730 m² | 0 · 0 m² |
+    | **ground inside the walls belonging to no region at all** | **40%** | **0%** |
+    | Regio VII, the quarter the assault fights through | 2.9% built | 58% |
+
+    That second-to-last row is the one nobody had been reading: **two fifths of the ground inside
+    the Aurelian circuit was no district's job, so nothing was ever built there however the
+    generator was tuned.** The honest cost is that the city has **fewer buildings than it did —
+    944 against 1,173, and 308,643 m² of footprint against 489,618** — and what that bought is
+    **zero interpenetrating pairs against thirteen**, a worst building-to-building clearance of
+    +0.05 m where it was −3.36, and 208,000 m² handed back from carriageway.
+
+    ![Near-vertical plan view of the Campus Martius: the Tiber curving in from the left, the Saepta and Stadium of Domitian as large pale rectangles, and around them dense city blocks whose long axes all run parallel to the streets that bound them](docs/images/releases/r9-rome-plan.jpg)
+
+    ![Oblique low view over a quarter of insula blocks: rows of tiled roofs squared onto the paved streets that enclose them, arcaded ground floors facing the carriageway, and an aqueduct arcade running away to the right](docs/images/releases/r9-rome-blocks.jpg)
+
+    *`grid-plan-campus` and `grid-block-oblique`. The blocks are the faces the streets close, which
+    is why every long axis in both frames is a street's.*
+
+  - **The fabric gate went from 5 of 23 to 16 of 25 on Rome, with Carthage steady at 13 of 22 as
+    the control.** The gate itself is new in this release, and the first thing it did was falsify
+    the brief that produced it: the owner's complaint was that landmarks and buildings overlap,
+    and on the shipped city **there were zero intersecting monument pairs and zero buildings inside
+    a monument.** At the projected positions there were 31 conflicting pairs, all discharged by the
+    resolver. **Not applicable is a third outcome and it is not a pass** — Carthage's three
+    inapplicable rows print as `n/a`, because a vacuous pass is worse than a missing check.
+
+- **The testudo is a shell, and two formations finally got their own spacing.** The formation had
+  one property — men holding their shields in front of them — no roof, a pilum standing through
+  where the roof would have been, and a block **14.4 × 13.5 m: exactly the ground a line of the
+  same strength stands on.** The reason is the best finding in the branch. `resolveCrowding`
+  separates every man in the game to a fixed 0.84 m centre to centre, and **`testudo` has been
+  asking for 0.516 m and `shieldwall` for 0.636 m since the day they were written.** A 0.66 m
+  scutum cannot close a rank whose men are 0.84 m apart however it is held. Both formations now
+  carry their own body radius, and the sum of two *default* radii is bit-identical to the constant
+  it replaces, so nothing else in the game moves by a ULP.
+
+  One 320-man cohort left to settle for thirty seconds: **14.39 × 13.47 m at 0.606 m² a man →
+  11.06 × 8.91 m at 0.308**, with the median man **2.00 m off his own slot → 0.05 m**, against the
+  10.80 × 8.85 m the formation asks for. Above that, five solved poses: the front rank plants
+  boards upright, the second tips back to close the band at head height, and **the interior
+  alternates two nearly-level tile courses at 1.74 and 1.77 m so that boards lap by 0.43 m instead
+  of butting.** The flanks and the back are two courses now as well, because **a man holds one
+  1.06 m board and stands 1.75 m, so one course cannot reach from the grass to above his helmet** —
+  three passes measured that: low and his legs are out, high and his head is. It costs no
+  geometry; draw calls are identical at eight of nine cameras and the close roof is **18.7%
+  cheaper in triangles**, because a block standing on a third of the ground occludes more of
+  itself.
+
+  | before | after |
+  |---|---|
+  | ![320 legionaries at a raking overhead angle standing in an oval crowd in a wheat field, helmets and individual soldiers plainly visible from above, a red vexillum in the middle, shields held at their sides](docs/images/releases/r9-testudo-before.jpg) | ![The same cohort from the same camera, now a rectangular block whose top is a continuous lapped roof of shields with the vexillum rising through it, the outer files' boards forming a vertical wall down to the grass](docs/images/releases/r9-testudo-after.jpg) |
+
+  *The `roof-rake` station, the same named camera on both arms. **This is a balance change and it
+  is labelled as one**: all three determinism arms were re-recorded in the same commit, `hash`,
+  `uf64` and `uctl` all unchanged at t+0 on all three, and survivors at t+400 move field **4,973
+  → 5,408**, Rome's assault **2,272 → 2,293**, Carthage's **2,330 → 2,258**.*
+
+- **Contact darkening, at full resolution and with a colour.** Three blind grading passes scored
+  the "no contact darkening anywhere" criterion at 1 out of 4, with the same sentence each time —
+  while the renderer had carried both an HBAO pass and a screen-space contact-shadow pass all
+  along. Photographing **the occlusion buffer** rather than the graded frame settled it: over 320
+  shields the buffer's 5th percentile was **0.70**, white from edge to edge. Two structural
+  reasons, both now fixed: the ambient term is half-resolution with a blur wider than the three-to-
+  eight-pixel join it is graded on, and the contact-shadow pass **returns white outright for any
+  surface facing away from the sun**, which is exactly the set of surfaces the criterion is about.
+  The near-field term is now a **sixteen-sample cosine-weighted disc at 0.30 m in the full-
+  resolution pass**, and the composite's flat grey floor became **the colour of the fill light**,
+  so a green tunic stays green in the crevice instead of going to a black mat.
+
+  | before | after |
+  |---|---|
+  | ![The occlusion buffer at a close raking view of a shield roof: an almost uniformly white image in which the shields, their bosses and the grass beneath are barely separated from the background](docs/images/releases/r9-occlusion-before.jpg) | ![The same buffer after the change: the same shields now carry grey shading in every lap and join, the gaps between boards read dark, and the grass under them is grey rather than white](docs/images/releases/r9-occlusion-after.jpg) |
+
+  *The occlusion buffer, not the finished frame — which is the point, because a graded frame is the
+  wrong place to read an occlusion term off. Over 320 shields at the close-roof station the buffer's
+  5th percentile reads **0.706** with the term off and **0.467** at the shipped strength, while the
+  median barely moves; the finished frame's mean luminance falls **2.7% to 10.8%** across nine
+  cameras. The whole occlusion group costs **0.2 to 1.2 ms** over six stations, against 0.7 to 1.0
+  before the work — inside one session's own spread.*
+
+- **No two shields are the same picture, and a formation leaves a wake.** The shield's wear was a
+  scalar, so two boards at the same wear were the same image at two exposures; it is now a *field*
+  evaluated per man, and a campaign board loses about a quarter of its device to somewhere in
+  particular. Then two blind graders, given the plates independently, both reached for the same
+  phrase — *"you can trace a whole diagonal file of shields that differ only in tint"* — because
+  rotation, scale, offset and wear are all transforms of **one image** and a grader is looking for
+  a **different image**. So the winged thunderbolt is now painted by **three hands**: different
+  wing sweep, one heavy bolt or two thin ones, three field lots, picked per man. **The first hand
+  reduces exactly to the device that shipped**, deliberately — the issued pattern was not what was
+  wrong. It costs no VRAM, no draw calls and no triangles, and the emblem atlas is now full at 16
+  cells of 16. In the same pass, the scutum's two spina bars had been drawn untinted, so **every
+  scutum in the game carried the identical bronze on the second-largest metal object on the
+  board**, under a boss that was already per man.
+
+  A marching formation now raises dust as **frontage × speed** — square metres of ground disturbed
+  a second — rather than per man, so a forty-man screen and a four-hundred-man phalanx of the same
+  frontage plough the same furrow, and a melee of two thousand men shuffling with a still anchor
+  raises none of it: at the melee camera the wake covers **0.48%** of the frame. And bodies lean
+  into their acceleration rather than into their speed, which is what the code did — a man at a
+  constant walk carried a constant 4.1 degrees for as long as he walked and **nothing in the frame
+  ever tipped.**
+
+  | before | after |
+  |---|---|
+  | ![A Roman battle line seen at eye level from the front, every shield carrying the same thunderbolt device in a range of tints, the grass at the men's feet the same brightness as the grass in front of them](docs/images/releases/r9-boards-before.jpg) | ![The same line from the same camera: the boards now carry visibly different blazons and paint loss from man to man, and the turf darkens where it meets the front rank](docs/images/releases/r9-boards-after.jpg) |
+
+  *`front-eye`, the same named camera on both arms. **Two honest caveats.** This pair carries the
+  whole branch and not one change — the boards, the contact term and the per-man pose are all in it.
+  And **these pairs are not pixel-registered and never were**, because the page runs a live frame
+  loop until it is ready, so the two arms photograph slightly different instants of the same battle.
+  The block below on the blind graders is about what happened when three critics were asked to tell
+  such pairs apart.*
+
+- **A trailer.** *War Machine* — **28.267 s, eleven shots, every cut but one hung off an event in
+  the simulation rather than a clock**, which is what let the same script survive Rome's circuit
+  moving 157 m between the studio's measurements and the shoot. Cut to measured music:
+  **"Song Of The Forge" by [Scott Buckley](https://www.scottbuckley.com.au/library/song-of-the-forge/),
+  released under CC BY 4.0**, excerpted and faded, with the attribution burned into the end card
+  and recorded in `ASSETS.md`. Not a game asset, not in the manifest — the game's own sound is
+  still 100% procedural.
+
+### Fixed
+
+- **The result card no longer says "The wall was carried" over a wall that was held.** As shipped
+  it read DEFEAT, gate never struck, breaches 0, **780 of the player's men holding the parapet, the
+  roll of honour saying HELD five times** — and forty pixels under its own numbers, *"The wall was
+  carried."* One `reason` value covered two conditions that are not the same event, and the
+  sentence named the one that has never fired in a completed battle. The card now publishes which
+  condition ended the siege, and the sentence comes from a **total map over that type**, so a third
+  way of taking a wall will not compile until somebody writes the card text for it. This is the
+  fourth time this project has shipped that class of defect.
+
+  Two more lies went with it. **"Units lost 3 of 19" over a roll of honour where nothing had
+  happened**, because the arbiter counted a unit under a quarter strength as lost while the roll
+  printed *Held* at four men of a hundred and sixty — the missing word was **Mauled**. And
+  **Pydna's dispatch named an enemy that cannot be in the battle**, praising Macedon's pikes in a
+  game whose three armies are Rome, the Juthungi and Carthage; every dispatch line is now a
+  function handed the enemy actually fought, and no line contains a faction literal.
+
+  ![The end-of-battle dispatch: DEFEAT in large letters over the line BY OBJECTIVE — THE GROUND THAT MATTERED HAS BEEN LOST, columns for Rome and the Juthungi with committed, surviving and fallen counts, a wall panel reading The gate Broken – 26 blows, Breaches in the curtain 0, On the parapet at the end 67 storming 609 holding, Inside the walls 19 of 60 needed, the sentence The wall was carried, and a roll of honour of five Wall Ballistarii units marked HELD or ROUTED](docs/images/releases/r9-result-card.jpg)
+
+  *Shot for this release from a hands-off run of Rome's assault, which ended at t+263. Here the
+  sentence is true and the panel above it says why: the gate is broken on 26 blows, nineteen of the
+  sixty men needed are inside, and two of the five wall cohorts have routed. The point of the fix
+  is that the sentence is now a function of that panel.*
+
+- **Routing men no longer decide a siege.** The census that answers *is the storm inside the city*
+  tested a man for the right faction, for being on the ground and for being alive — and **not for
+  whether his unit was running away.** A fix for it had been designed and half-wired: it reached
+  the condition that has never fired and not the condition every siege actually ends on. Wired
+  through, on eight seeds of Carthage, hands off, same seeds:
+
+  | | before | after |
+  |---|---|---|
+  | first man inside | **t+92.8–95.6** | **t+236–262** |
+  | decided at | 133–308 s, median 271 | 244–800 s, median 331 |
+  | outcomes | Victory 8 of 8 | Victory 7, **Defeat/repulsed 1** |
+
+  **The gate ram finishes at t+216.** The break-in used to happen 123 seconds before the ram
+  landed its last blow and now happens after it. Seven of eight seeds land later, one is unmoved
+  and none is earlier, which is a translation rather than a reshuffle.
+
+Rome is the other half, and the credit is not this fix's alone: measured by a judge run over
+  twelve seeds against the honesty merge, on the integrated tree that also carries the storm
+  doctrine, both rams and the widened deployment boxes, **Rome's siege runs 2.6× longer — median
+  109 s → 300 s — and its spread quadrupled**, with every one of the twelve verdicts falling
+  outside the entire before-range. The outcome mix did not move: **Defeat 12 of 12 in both arms.**
+  The garrison now breaks in 12 of 12 seeds where it used to survive untouched in three, and the
+  median battle is past the gate at t+220 for the first time.
+
+- **A unit that has scaled a wall can be selected, keeps its banner, and can be told to attack.**
+  The owner: *"they get disconnected from their banner that allows me to control them. and then
+  they just generally dont follow any instructions"*. Three faults, all of them a record that had
+  outlived the thing it describes.
+
+  - **The standard was under the wall.** `BannerSystem` sampled the ground height, and a wall is
+    not in the heightfield: at the storm of Rome, **all eleven units on the Aurelian walk had
+    their standard 13.0 to 14.0 m below their own men**, staff and cloth inside the masonry at the
+    foot of the curtain. Carthage erred the other way by 1.7 to 2.4 m. It now reads a median of
+    nine living men's own height: **0 to 2.4 m above their feet, on 11 of 11, on both maps.**
+  - **Two clicks in three disarmed the player.** Picking built one field rectangle per unit from
+    its frontage and rank count, which on a 3.25 m walkway is wrong in both axes — a 106-man
+    cohort reads 20 m of frontage and 6 m of depth where its men occupy 27 stations of a walk.
+    Sampled over a grid of pixels on each unit's own drawn men, **21% to 62% hovered the unit under
+    them, mean 45%**, and 13% for a ladder lodgement — and a miss clears the selection. Built from
+    the men's actual positions, that becomes **37% to 89%, mean 68–72%.** A unit on a wall carries
+    a specificity term so the tighter box wins; it is zero on open ground, so **field picking is
+    unchanged to the bit.**
+  - **There was no verb.** The siege never wrote a target, the approach-to-contact returned early
+    for siege-owned units, and an attack order was filtered out of the file's only subscription.
+    A garrison ordered at a ladder party now takes **+25 kills in 30 s, taking their 83 men down to
+    14**, and stays on the wall.
+
+  **The honest summary of that branch is that the gap did not open**: across four arms the verdict
+  is Defeat 12 of 12 and the decision time is still inside noise. What moved is the fight on the
+  stone — seconds with an enemy on the player's wall go from **−9.6 ± 13.2 to −15.8 ± 10.4**, and
+  the sign test from 2 of 10 up at p=0.109 to **0 of 11 up at p=0.0010**. The player has a decisive
+  grip on the wall fight and no measurable grip on the war.
+
+- **The host never stormed.** `Siege.escalade` had exactly one caller in the whole project — a
+  right-click. So the Juthungi host at the Aurelian Wall, **six warbands and 1,080 men, 63% of the
+  storming army, was never given a storm order in its life**, and the entire assault was four
+  ladder parties. The tactical AI has the missing half of its wall doctrine now: men on the parapet
+  go **72–94 → 113–287**, ladder crossings **154–188 → 297–319**, and the route into the city is
+  over the wall in 12 of 12 seeds where it used to be through the building site in all of them.
+
+- **The storm could win Rome from open country.** A man's depth inside the city was read along a
+  bay's outward normal, and a normal defines a half-plane that runs to the edge of the map while
+  the wall is 37 m of it. At the tick the break-in condition fired on the shipped seed, **86 men
+  were counted inside, of which 50 were one squadron of horse standing 112 m past the west end of
+  the circuit.** Requiring the man to be within the bay's own frontage costs two multiplies in the
+  same loop and moves the same seed's break-in from t+72 to t+118, on 61 men who are actually
+  behind bays 5, 6 and 7.
+
+- **Both rams work, and the reason the gate ram had never landed a blow was ours.** The reported
+  defect — the crew shot to pieces sixteen metres short of the Porta Flaminia with nothing landed
+  by t+520 — **did not reproduce**, and the graphics tier was never the mechanism. The real cause
+  was one integer: making Rome's gate bay garrisonable put the Porta Flaminia at bay 1 of 36 with
+  footings either side, and the garrison fan tried offsets −1, +1, +2, +3 and **never offered
+  offset 0**, so the nearest crossbow landed 134 m away and **no defender stood within 130 m of the
+  gate the whole battle.** With the fan starting at 0, 108 ballistarii hold the gate bay's own 19
+  stations at 65 m, the crew absorbs one to three thousand points of missile fire — and still lands
+  **26 of 26 blows with the gate open at t+220 on 8 of 8 seeds**, eleven seeds across two trees
+  with no variance in either the blow count or the hour.
+
+  **The great ram had never been fielded at all** — `spawnGreatRam` had no caller in `src/`. It has
+  a 48-man crew, paid for out of one Juthungi cavalry squadron so both sides stay at exactly the
+  unit cap, and it is spawned at the first holdable bay outward from the gate. Its blow count was
+  **timed rather than chosen**: at 74 blows the breach landed at t+620 and three units ordered
+  through put six men and zero men inside before the window ran out; at 44 it lands at **t+420 on
+  6 of 6 seeds**, which is 5 min 08 s of battering against the gate ram's 1 min 54 s — the wall is
+  plainly 2.7× the job the door is. Two foot units ordered at the hole put **412, 197 and 312 men
+  inside the curtain** on three seeds of three. **Named and not fixed: the curtain is still drawn
+  standing over the hole**, because a bay's masonry is baked into one of five chunks at load.
+
+- **A graphics setting was choosing how many men fought.** The owner: *"definitely graphics
+  settings should not change outcome of battle lol."* Same map, same scenario, same seed, on the tree
+  of the day: **ultra fielded 3,074 men and the ram crew died sixteen metres short; medium fielded
+  3,009, landed 26 blows and opened the gate.** The chain ran from a quality setting through the soldier pool's
+  capacity into a unit-size scale that the simulation reads. The pool is now one capacity at every
+  tier, the quality type that carried it is deleted, and the low and medium field battles go from
+  **1,515 and 3,012 men to 8,632** — with high and ultra not moving at all and all 21 pinned
+  checkpoints bit-identical. It cost about 16 MB allocated once at boot. **A second, quieter leak
+  in the same place**: how many units a player was allowed to add depended on their graphics tier.
+
+- **The battle lines now fit the ground they stand on.** The Roman line measured **684 m across its
+  own men inside a 500 m box** and the host 783 m inside a 760 m one: **562 Roman and 182 Juthungi
+  men stood outside their own deployment box**, and 440 men were fighting outside the corridor the
+  terrain prepares. The owner's ruling was to widen east rather than narrow frontages, so no unit's
+  composition, strength or count moved and the control hash at t+0 is unchanged. Men outside their
+  own box: **562 → 0 and 182 → 0.** Ground flattened and cleared **+14.67 ha**; the weakest
+  corridor value under any man **0.000 → 0.343**. Left with no margin and said so: the defender's
+  box is still under-sized north to south, and widening it would put its south edge 26.9 m past the
+  toe of the Pincian.
+
+- **Small ones with long shadows.** The loss counter **read `−0` for a whole battle** if the player
+  used ADD UNITS, because the baseline strength was latched on the first frame — thirteen samples
+  across 267 seconds while the arbiter recorded 244 dead. The field battle's plaque **had one line
+  for nineteen minutes** — about 120 samples across three battles of Pydna all reading *"The lines
+  are dressing"* — because the branch that shows the phase note could not be reached in a battle
+  with no wall. And a refusal is now addressed to the player rather than broadcast: at the storm of
+  Rome, **a lodgement with nine of its eighty-four men over the parapet is refused every time its
+  own general points it at the player's cohort**, and the player was being told about it.
+
+### Safety
+
+- **A stopped simulation announces itself.** The owner: *"i was in middle of game and all the
+  soldiers have frozen. idk why this happened"*, and then — this is the diagnosis — *"now all
+  animations are running but no characters are moving."* Animation runs off the frame clock and
+  positions come out of the fixed step, so a world that animates and does not move is a render loop
+  in perfect health being handed zero fixed steps. The cause was a lockstep client whose socket had
+  closed: the connection recorded the fact in a boolean nobody read, and the pacer went on pinning
+  the tick ceiling at the last authorised turn for ever. Reproduced exactly — **tick 105, ceiling
+  105, not paused, `1x` on the top bar, nothing on the console and nothing on screen.**
+
+  Three things landed. A **pause with an owner** that can answer *are you still holding* and *is
+  this normal*; a **tick ceiling with an owner**; and a watchdog that measures the stall in
+  **rendered frames rather than wall clock**, so a backgrounded tab cannot accumulate an hour of
+  false stall and a stopped frame loop is silent rather than screaming. It reports four different
+  things — an orphaned hold, which it also repairs; an unexplained one, named with its owner's own
+  sentence; a clock that is not stopped and still not moving; and a subsystem whose fixed update
+  threw, which no clock-watcher can see because the tick keeps advancing. It ignores the three
+  legitimate stops, and it tells a lockstep client waiting on a slow opponent from a dead relay **by
+  a fact about the transport rather than by a duration.** `tools/qa-freeze.mjs` induces each of
+  those freezes on purpose and asserts on the report, the console line and the words on the screen:
+  **32/32**.
+
+- **A cap on concurrent headless browsers that survives a reboot.** On 22 August this machine went
+  to **load average 160 on 16 cores with 136 concurrent `vite` and `chrome-headless-shell`
+  processes** and had to be recovered by hand; nineteen orphaned dev servers had been swept off it
+  the same morning, several of them more than a day old. The cause is not one bad tool — a survey
+  found **303 runnable entry points that open a browser and 92 files that spawn `npx vite`**, none
+  of which knew any of the others existed.
+
+  The cap is four, and four is measured rather than guessed. Running the real gate shape at N
+  concurrent jobs, throughput is nearly linear all the way up — but **load per core goes 0.45 at
+  N=4, 0.67 at N=6 and 1.09 at N=8**, and the CPU and GPU arms independently agree at N=4, which is
+  why the number is 4 and not a compromise between two numbers. The lock lives on the filesystem
+  because every agent is a separate process, and **a holder that dies releases its slot** on three
+  independent tests: the kernel's boot generation, a liveness check on the PID, and a heartbeat.
+  The boot generation is the one that matters, because the event this exists for *was* a crash —
+  every lock held at load 160 would otherwise still be held, and the first thing a naive cap would
+  do on reboot is refuse every launch for ever. Proved by killing a holder with no exit hook and
+  watching the next waiter take the slot **0.43 s later**.
+
+  The other half is the servers. `npm run dev` through `npx` puts a wrapper two processes above the
+  one holding the port, so killing the handle you have leaves the server running; Vite now runs
+  in-process under `node` in its own process group and **polls its parent every two seconds**, which
+  bounds an orphan's life at about two seconds and survives a SIGKILL, which no exit hook does. It
+  also answers which worktree it is serving, so a gate cannot silently measure another agent's
+  branch. `npm run lint` is **three checks now, not two**; the third is a ratchet with 91 files in
+  `tools/` still on its allowlist, and the allowlist may shrink and must not grow.
+
+### Corrections to the record
+
+The corrections have usually been more useful than the findings, and this release is the clearest
+case of it yet.
+
+- **A merge silently deleted every district street in Rome, and every gate still passed.** The
+  Tiber branch added one line where `for (const l of out.lanes) lanes.push(l)` stood, and git took
+  the deletion as a clean hunk. The lane list stayed empty, so nothing was near a lane, the way
+  builder was handed nothing, and **the water checks that same commit added all still passed** —
+  because a quarter with no streets in it is invisible to a gate that grades solids against solids.
+  Typecheck, lint and the new gates were all green.
+
+- **Three sign errors survived for as long as they did because a hash is its own mirror image.**
+  A district's plan rotation and a street's world bearing are not the same quantity and the code
+  treated them as one, so **every quarter's lattice pointed at the mirror of the street it was
+  meant to follow**; a second added a slope where it had to subtract it, so **every terrace in Rome
+  had been built to the reflection of its own street, out by up to 14.6 degrees, since the lattice
+  was written**; a third folded an angle modulo 90 degrees and read a road crossing the wall at 70
+  degrees as 20. None of them could be found while the rotation came from a hash, because **a
+  symmetric random draw is its own mirror image — and an axis-aligned control cannot see it
+  either.** The same formula has now been got wrong three times by three different authors, and it
+  has a comment.
+
+- **A blind grading could not separate the before and after sets, and that is on the record as a
+  negative result.** Three independent critics were each given the rubric, the after plates *and*
+  the before plates unlabelled and shuffled. They scored **2.29 against 2.29, 2.08 against 1.96
+  with the *before* set ahead, and 2.04 against 2.04.** Four reasons, and only the first is a
+  compliment: the nine standing stations are structurally blind to two of the three changes (a
+  correct acceleration lean at constant speed is *zero*, and a testudo at half a metre a second
+  raises under two puffs of dust a second); the pairs are not pixel-registered, so a grader is
+  partly grading a different instant; two of the three ran a whole-frame numerical diff and were
+  misled by it **in opposite directions**; and the fourth is real — **the contact term does not
+  work on grass.** A grass pixel has no usable normal, so at the foot of a shield the band reads
+  0.946 of the grass two metres out before and 0.929 after: **1.7 points.** Everywhere the ground
+  is a surface it works, and the Rome street pair is the proof. The fix is not a post-processing
+  change and is named rather than attempted.
+
+- **The float32 firewall's cost was re-measured after it met `main`, and it is smaller than
+  published.** Survivors at t+200 fall **6.7%, not 10.0%**, and at t+400 **2.2%, not 18.2%**. The
+  original pair was taken on the branch before `main` moved the field battle's deployment onto its
+  own ground and widened both boxes east — **the pair was stale in a way that is invisible from the
+  number itself, and it is the number the owner is being asked to ratify.** For scale, survivors at
+  t+400 across five seeds of the same battle span 14.2% of their own mean, so the t+400 figure is
+  well inside seed noise.
+
+- **Rome's victory condition A still does not fire, and the standing explanation for why is
+  backwards.** It is 0 of 12 on the shipped garrison, and the reason is measured rather than
+  guessed: Rome garrisons the assaulted bays with 108 to 160 men each and the whole campaign kills
+  110 to 170 of 810. Against three slinger units instead of five ballistarii it fires in 5 of 12.
+  A judge run that spent the player's reinforcement budget did make it fire — and found that **the
+  condition needs the storm to stand still on a run, and the storm only stands still when something
+  fights it.** So the condition is reachable, the garrison is what blocks it, and **that makes it
+  balance, which makes it the owner's.**
+
+- **A measurement was withdrawn rather than restated.** "Carthage moves 3.3 s" was published in the
+  commit that fixed the result card; it was taken on the half-wired tree with the break-in count
+  untouched, so it cannot have been the census that moved it, and it is withdrawn without being
+  re-derived. The rule the same session earned: **assert the behaviour you shipped, not the
+  behaviour you intended.**
+
+- **`qa-replay` reported 21/21 for weeks while every siege replay in the project was being refused
+  by its own t+0 checkpoint.** It had recorded `campus-martius / field` and nothing else from the
+  day it landed. The divergence under it was real and specific: a `?replay=` boot built **the Punic
+  circuit on the Campus Martius heightfield**, moving exactly the ten Punic garrison units — 1,340
+  men of 3,440, whole units at a time — 3.96 m along one axis. Bisected over seven boots rather
+  than guessed. Its new arm reads the shipped `(map, scenario)` set **out of the product** and
+  fails if the run did not cover it: **27/27.** The multiplayer gate then made the identical
+  mistake, in all ten arms, on the day the old one was fixed — closing that found three more
+  faults, the sharpest being a check that compared two clients' accumulated clocks and **reported
+  two clients agreeing bit-for-bit over 1,365 identical ticks as red, on 3.6e-14 of a number the
+  simulation never reads.**
+
+- **Instruments that could not have seen the thing they were for.** The playability rig polled nine
+  selectors for the end-of-battle panel and **none of them was the panel's class**, so no
+  playability run in this project's history had ever seen a battle finish and none of them said so;
+  it also stepped the clock coarsely enough to run 901 ticks where the game runs 900, so every
+  figure it ever printed came off a run nothing else can reproduce. The gate ran the siege probe
+  **against a stale `dist/`** and would have passed. The siege probe's great-ram assertions had a
+  loop that started at −5 and **never ran: six assertions were not failing, they were not being
+  taken.** The wall-command instrument found four of its own bugs in its own output, including two
+  runs reporting that a plaque is not clickable about a plaque that is perfectly clickable. And the
+  testudo probe wrote a string where the code wanted an enum, so for two passes **the "marching"
+  camera was photographing a halted block** — and a critic correctly scored the animation 1 out of
+  4 for *"flank-march and flank-halt are the same legs"*. They were the same legs.
+
+- **Numbers that were in comments rather than in measurements.** The street armature had been
+  described as "42 ways and 19 km" since it was written and nothing had ever counted it; it was
+  **41 and 14.2**, of which seventeen were 42-metre links nobody authored. A triangle budget was
+  published at 6.80 M and the committed tree carries **6.83 M**, because it was measured before the
+  last change in its own commit. Camera pitches were published without being computed and **two of
+  the three had the sign wrong.** And a claim that the shipped map draws the Colosseum twelve metres
+  past the edge of the ground **is true of no tree that has ever been built** — among the things the
+  deleted resolver was doing was keeping the map's signature building on the map.
+
+- **A retraction of a retraction.** Rome's
+  determinism headcount was published as 3,072, "corrected" to 3,074 on the strength of two
+  documents that said so, and then measured at **3,072**. *"Two documents agreeing is not a
+  measurement when they can share an ancestor — the same failure as a check comparing a thing
+  against itself, one level up."*
+
+- **An assertion that passed by decimal-rounding luck.** A schedule check was written symmetric —
+  absolute difference against one tick — when the only thing that can actually happen is landing
+  one tick *short*, and the failure it exists to catch adds ticks. At exactly one tick short the
+  test sat on its own boundary to the last bit, and **passed only because the caller had rounded
+  the clock to three decimals before handing it over.** It would have started failing the day
+  somebody printed four, which another tool in the same directory already does.
+
+- **A number nobody can reproduce, kept as a number nobody can reproduce.** The network gate was
+  recorded at 30/30 from a branch and measured 32/32 on the merged tree before any new work.
+  Diffing the two runs by check name accounts for every difference between 32 and 38 as the six
+  additions and nothing else, so **the 30 is unexplained, not explained** — and an earlier draft of
+  that commit invented a cause, which the diff does not support. Read the printed total.
+
+- **Two things built, measured, and taken back out.** A discriminator meant to stop the new contact
+  term over-darkening grass moved the buffer by 0.008 and attenuated the corners as hard as the
+  grass: **reverted rather than shipped at zero, because a knob that halves the effect is worse
+  than a known limitation.** And a rival mechanism for tracking dev servers was deleted in favour of
+  the enforced one, with its 74 conversions reverted — two mechanisms for one job is how a port
+  collision killed another agent's server in the first place.
+
+- **A merge inherits its branch's base.** Rome's phase-1 re-projection reached `main` inside a merge
+  of a branch that "only touched `tools/`", carrying about two thousand lines of survey, layout and
+  monuments the owner had asked to review first — and left `main` in the worst available state,
+  because raising the projection without deleting the overlap solver gives the solver more room and
+  **made monument displacement worse than either endpoint.** Backing it out set its own trap: a
+  plain revert leaves the reverted commits as ancestors of `main` with none of their content in it,
+  so re-merging them brings back nothing at all and reports success.
+
+---
+
 ## r8 — the owner filed six reports and every one of them was about the wall
 
 **21 August 2026** · commit [`5338249`](https://github.com/eoinest/Total-Claude/commit/5338249) ·
-deployment `total-claude-ndeeo9sap` · **live now**
+deployment `total-claude-ndeeo9sap`
 
 Six things the owner reported, filed as six different problems, turned out to be one place. A
 cohort that cannot stand on a wall. A tower party that cannot be ordered along one. Men who break
