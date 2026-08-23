@@ -1337,21 +1337,29 @@ function planBlock(
  * Tiberina, the Pons Fabricius and the Pons Cestius all stand on it.
  */
 const RIVER_FREEBOARD = 2.8;
+
+/**
+ * The same question at one point. Exported so an offline audit can rasterise the river's
+ * share of a block's ground without carrying its own copy of the blend — `MAP-METHOD.md`
+ * rule 29, and the nine-sample box test below is now the only caller inside this file.
+ */
+export function inTheRiverAt(x: number, z: number): boolean {
+  if (islandMask(x, z) > 0.4) return false;
+  const d = riverOffset(x, z);
+  const inf = riverInfluence(d, z);
+  if (inf <= 0.001) return false;
+  const plain = regionalPlain(x, z);
+  const g = plain + (riverProfile(d, z, plain) - plain) * inf;
+  return g < WATER_LEVEL + RIVER_FREEBOARD;
+}
+
 function inTheRiver(p: Plot): boolean {
   const ah = Math.abs(p.hw * Math.cos(p.rot)) + Math.abs(p.hd * Math.sin(p.rot));
   const ad = Math.abs(p.hw * Math.sin(p.rot)) + Math.abs(p.hd * Math.cos(p.rot));
   for (const [su, sv] of [
     [0, 0], [-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1],
   ] as const) {
-    const x = p.x + ah * su;
-    const z = p.z + ad * sv;
-    if (islandMask(x, z) > 0.4) continue;
-    const d = riverOffset(x, z);
-    const inf = riverInfluence(d, z);
-    if (inf <= 0.001) continue;
-    const plain = regionalPlain(x, z);
-    const g = plain + (riverProfile(d, z, plain) - plain) * inf;
-    if (g < WATER_LEVEL + RIVER_FREEBOARD) return true;
+    if (inTheRiverAt(p.x + ah * su, p.z + ad * sv)) return true;
   }
   return false;
 }
