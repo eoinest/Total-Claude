@@ -740,7 +740,7 @@ const TINT_BODY = /* glsl */ `
    * mapped into the atlas cell, and clamped there, so a rotated device can never sample its
    * neighbour in the emblem grid.
    */
-  vSoldierEmblem = vec3( 0.0 );
+  vSoldierEmblem = vec4( 0.0 );
   if ( slot > 5.5 && slot < 6.5 ) {
     float e = iCol0.w;
     vec2 tile = vec2( mod( e, SOLDIER_EMBLEM_COLS ), floor( e / SOLDIER_EMBLEM_COLS ) );
@@ -751,10 +751,22 @@ const TINT_BODY = /* glsl */ `
     pan = vec2( pan.x * ec - pan.y * es, pan.x * es + pan.y * ec ) / eScl
       + vec2( fract( v * 163.1 ) - 0.5, fract( v * 173.9 ) - 0.5 ) * 0.055 + 0.5;
     pan = clamp( pan, 0.0, 1.0 );
-    vSoldierEmblem = vec3(
+    vSoldierEmblem = vec4(
       SOLDIER_EMBLEM_ORIGIN + vec2( tile.x + pan.x, pan.y - tile.y ) * SOLDIER_EMBLEM_TILE,
       // 1 + wear: the flag and the man's own weathering in one component.
-      1.0 + fract( v * 181.7 ) );
+      1.0 + fract( v * 181.7 ),
+      /*
+       * Where this man's paint has come off, as opposed to how much.
+       *
+       * The wear above is a scalar and it fades and dulls the whole device evenly, so two
+       * boards at the same wear are still the same picture at two exposures. A grader
+       * counting repeats sees through that immediately, and one did: "a device that is
+       * pixel-identical on all 320 boards". This is the seed of a noise field the fragment
+       * stage evaluates in board space, so the *pattern* of loss is the man's own — one
+       * board is scuffed across the top arm of the bolt, the next along the left edge, and
+       * no two are the same image at any exposure.
+       */
+      fract( v * 197.3 ) * 91.0 );
   }
 }
 `;
@@ -770,7 +782,34 @@ varying vec3 vSoldierTint;
  * w: material class -- 0 stock, 1 flesh, 2 cloth. See the vertex side for why it is free.
  */
 varying vec4 vSoldierSurf;
-varying vec3 vSoldierEmblem;
+varying vec4 vSoldierEmblem;
+
+/*
+ * A two-octave value noise, for the one thing in this shader that needs a *field* rather
+ * than a scalar: where a board has lost its paint.
+ *
+ * Self-contained rather than imported from common.glsl, because this material is a
+ * patched MeshStandardMaterial and that hash block is written for the
+ * fullscreen passes, which have their own preamble. Four texel-free hashes and two lerps is
+ * cheaper than the texture fetch an equivalent detail map would cost, and it costs no
+ * atlas space at all — which matters, because the emblem grid has exactly two free cells.
+ */
+float tcSkinH12( vec2 p ) {
+  vec3 q = fract( vec3( p.xyx ) * 0.1031 );
+  q += dot( q, q.yzx + 33.33 );
+  return fract( ( q.x + q.y ) * q.z );
+}
+
+float tcSkinNoise( vec2 p ) {
+  vec2 i = floor( p );
+  vec2 f = fract( p );
+  f = f * f * ( 3.0 - 2.0 * f );
+  float a = tcSkinH12( i );
+  float b = tcSkinH12( i + vec2( 1.0, 0.0 ) );
+  float c = tcSkinH12( i + vec2( 0.0, 1.0 ) );
+  float d = tcSkinH12( i + vec2( 1.0, 1.0 ) );
+  return mix( mix( a, b, f.x ), mix( c, d, f.x ), f.y );
+}
 `;
 
 /**
@@ -1101,7 +1140,23 @@ diffuseColor.rgb *= vSoldierTint;
     // belongs to the unit; the state of it belongs to the man.
     float ew = clamp( vSoldierEmblem.z - 1.0, 0.0, 1.0 );
     vec3 paint = mix( emblem.rgb, emblem.rgb * 0.70 + vec3( 0.15, 0.12, 0.10 ) * 0.30, ew );
-    diffuseColor.rgb = mix( diffuseColor.rgb, paint * vSoldierTint, emblem.a * ( 1.0 - 0.42 * ew ) );
+    /*
+     * Where the paint has gone, not just how much of it.
+     *
+     * The atlas coordinate is used as the board coordinate: inside a cell it is the panel's
+     * own UV scaled by the cell size, so a field evaluated on it is a field on the board.
+     * The per-man seed in the w component slides that field, and the two boards either
+     * side of this one therefore lose paint somewhere else entirely.
+     *
+     * The threshold is driven by the man's own wear so a fresh board loses nothing and a
+     * campaign board loses about a quarter of its device. Smoothstepped over a wide band
+     * because a hard threshold on a value noise is a jigsaw edge, and paint flakes.
+     */
+    vec2 wp = vSoldierEmblem.xy * 340.0 + vSoldierEmblem.w;
+    float wn = tcSkinNoise( wp ) * 0.62 + tcSkinNoise( wp * 2.7 + 11.3 ) * 0.38;
+    float lost = smoothstep( 1.02 - ew * 0.62, 1.42 - ew * 0.62, wn );
+    diffuseColor.rgb = mix( diffuseColor.rgb, paint * vSoldierTint,
+      emblem.a * ( 1.0 - 0.42 * ew ) * ( 1.0 - lost ) );
   }
 #endif
 // Blood and dust: pull value and saturation down toward a dry earth colour rather than
@@ -1195,7 +1250,7 @@ function patch(
 
     let v = shader.vertexShader;
     v = `${defines(o)}\n${DECLS}\nvec3 gSoldierPos;\n${
-      withNormal ? 'varying vec3 vSoldierTint;\nvarying vec4 vSoldierSurf;\nvarying vec3 vSoldierEmblem;\n' : ''
+      withNormal ? 'varying vec3 vSoldierTint;\nvarying vec4 vSoldierSurf;\nvarying vec4 vSoldierEmblem;\n' : ''
     }${v}`;
 
     if (withNormal) {
