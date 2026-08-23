@@ -22,6 +22,7 @@ import {
   WAYS,
 } from './layout';
 import { GATE_X, KX, KZ, ROME, worldOf, type RomeMonument } from './survey';
+import { ROME_WAYS } from './ways';
 
 /**
  * Build-time checks on Rome's plan.
@@ -595,6 +596,13 @@ export function assertWaysClearOfMonuments(): {
   inside: number;
   worst: { id: string; pct: number } | null;
   byWay: { id: string; pct: number; inside: number; samples: number; hit: string[] }[];
+  /** The same question asked in the survey frame. See `surveyFrame` below. */
+  survey: {
+    samples: number;
+    inside: number;
+    pct: number;
+    byWay: { id: string; pct: number; inside: number; samples: number; hit: string[] }[];
+  };
 } {
   const solids = LANDMARKS.filter((l) => !l.soft);
   const pt: Obb = { x: 0, z: 0, hw: 0.1, hd: 0.1, rot: 0 };
@@ -636,7 +644,400 @@ export function assertWaysClearOfMonuments(): {
     if (!worst || pct > worst.pct) worst = { id: w.id, pct: +pct.toFixed(0) };
   }
   byWay.sort((a, b) => b.pct - a.pct);
-  return { ok: inside === 0, samples, inside, worst, byWay };
+  return { ok: inside === 0, samples, inside, worst, byWay, survey: surveyFrameIntrusion() };
+}
+
+/**
+ * **The same question, asked of the real city instead of the projected one — and the two
+ * answers are different for a reason that is not the road's fault.**
+ *
+ * The measurement above is in world metres, against the boxes the game collides with, and it
+ * is the one that matters for play. It is also **dominated by the frame**, and until this pass
+ * nobody had separated the two. `MAP-METHOD.md` rule 4: positions compress, cross-sections do
+ * not. Rome's easting compresses by `KX` = 0.443 and its northing by `KZ` = 0.35, while a
+ * monument keeps its true size in world metres. So a street and a building **150 real metres
+ * apart** end up **66 world metres** apart, against a building still drawn 93 world metres
+ * across — and they overlap, correctly, in a city where they never touched.
+ *
+ * The Via Lata and the Mausoleum of Augustus are exactly that case and are the reason this
+ * limb exists: 148 real metres between centres, 53 real metres of clear ground between the
+ * tomb's masonry and the carriageway's kerb, and **18.8 world metres of overlap**. Both numbers
+ * are right. Only one of them is a statement about where the road was drawn.
+ *
+ * So this asks: **in survey metres, against each monument's own published `len × wid × bearing`,
+ * does the authored centreline plus a *real* half-carriageway run through the building?** A
+ * real *via* is about 4.8 m between kerbs and the Via Lata perhaps twelve (`ways.ts`), so the
+ * half-widths here are the real ones and not the game's. A non-zero answer means a way was
+ * authored through a building that stood there, which is a fault in the survey. A zero answer
+ * with a non-zero world answer means the frame stacked them, which is `ROME-FABRIC.md` §4.5's
+ * problem and not phase 3's.
+ *
+ * It reads `ROME` — the published table — and not `LANDMARKS`, which is `ROME` already put
+ * through the projection and the `draw` scales. That is the point: the reference has to be
+ * outside the thing being measured.
+ */
+const REAL_WAY_HALF: Readonly<Record<string, number>> = {
+  artery: 6,
+  secondary: 4,
+  local: 2.5,
+  vicus: 2.4,
+};
+
+function surveyFrameIntrusion(): {
+  samples: number;
+  inside: number;
+  pct: number;
+  byWay: { id: string; pct: number; inside: number; samples: number; hit: string[] }[];
+} {
+  const rows = ROME.filter((m) => !m.soft);
+  let samples = 0;
+  let inside = 0;
+  const byWay: { id: string; pct: number; inside: number; samples: number; hit: string[] }[] = [];
+  for (const w of WAYS) {
+    if (WAY_RANK[w.cls] < WAY_RANK.secondary) continue;
+    // The pomerium road is generated from the wall crest and has no survey-frame line to test.
+    if (w.id === 'via-sagularis') continue;
+    const spec = ROME_WAYS.find((r) => r.id === w.id);
+    if (!spec) continue;
+    const half = REAL_WAY_HALF[w.cls] ?? 4;
+    let n = 0;
+    let bad = 0;
+    const hit = new Set<string>();
+    for (let i = 0; i + 1 < spec.path.length; i++) {
+      const [ae, an] = spec.path[i];
+      const [be, bn] = spec.path[i + 1];
+      const de0 = be - ae;
+      const dn0 = bn - an;
+      const steps = Math.max(1, Math.round(Math.sqrt(de0 * de0 + dn0 * dn0) / 20));
+      for (let t = 0; t <= steps; t++) {
+        const e = lerp(ae, be, t / steps);
+        const nn = lerp(an, bn, t / steps);
+        n++;
+        // The sample counts once however many monuments it is inside; the names are collected
+        // separately, because "24 % of the Via Recta" and "the Stadium of Domitian" are two
+        // different pieces of information and the second is the one that can be acted on.
+        let here = false;
+        for (const m of rows) {
+          const th = (m.bearing * Math.PI) / 180;
+          // The row's long axis points (sin th east, cos th north); `len` is measured along it.
+          const de = e - m.e;
+          const dn = nn - m.n;
+          const u = Math.abs(de * Math.sin(th) + dn * Math.cos(th));
+          const v = Math.abs(de * Math.cos(th) - dn * Math.sin(th));
+          if (u <= m.len * 0.5 + half && v <= m.wid * 0.5 + half) {
+            hit.add(m.id);
+            here = true;
+          }
+        }
+        if (here) bad++;
+      }
+    }
+    if (!n) continue;
+    samples += n;
+    inside += bad;
+    byWay.push({ id: w.id, pct: +((100 * bad) / n).toFixed(0), inside: bad, samples: n, hit: [...hit] });
+  }
+  byWay.sort((a, b) => b.pct - a.pct);
+  return { samples, inside, pct: +((100 * inside) / Math.max(1, samples)).toFixed(1), byWay };
+}
+
+/**
+ * **Phase 3's own acceptance: is the armature one graph, and is every gate on it?**
+ *
+ * `docs/ROME-FABRIC.md` §5's phase 3 states three measurements that close it, and this is two
+ * of them. The third — ranked street length inside a monument — is `assertWaysClearOfMonuments`
+ * above, which already existed.
+ *
+ * **1. One connected component.** The armature is authored as a table of polylines, and two
+ * polylines are joined only where they share a node or cross. That is a claim about a table,
+ * and a claim about a table is exactly the kind of thing that rots the first time somebody
+ * edits a coordinate. Before this pass connectivity was *manufactured* by `feeders`, which
+ * joined every loose end to its nearest neighbour with a 42 m link — so the property could
+ * never fail, and a check on it would have been a check that had never gone red. With
+ * `feeders` deleted the property is a real one and it can fail: it does, immediately, if the
+ * Clivus Argentarius is deleted, which is the way that closes the 350 m between the Via Lata's
+ * southern end and the Forum.
+ *
+ * **2. Every gate's inner mouth on a way of rank `consular` or better.** §4.2's third
+ * membership rule, and the one the plan says was one-of-four before. The mouth is the point
+ * `MOUTH_IN` world metres inside the curtain on the gate's own x; a way qualifies if its
+ * carriageway covers that point.
+ *
+ * **What this compares against, since that is the question that matters.** The gate list is the
+ * wall builder's own x values; the way list is the road builder's. Neither producer knows about
+ * the other, which is the two-producer structure `probe-fabric`'s header argues for. The
+ * connectivity limb uses no reference at all — it is a property of the geometry.
+ *
+ * Dangling ends are **reported with a reason rather than gated**, on `MAP-METHOD.md` rule 16's
+ * discipline that an exclusion is a claim. Three categories are legitimate and are named: an
+ * end at the map edge, an end at a gate, and an end outside the curtain. Anything else is a
+ * stub in the middle of the city, and that is a fault.
+ */
+const JOIN_M = 26;
+const MOUTH_IN = 26;
+const EDGE_M = 60;
+
+/** The four apertures, by world x. The wall builder's numbers, not the road builder's. */
+const ROME_GATES: readonly { id: string; x: number }[] = [
+  { id: 'porta-flaminia', x: GATE_X },
+  { id: 'posterula-pinciana', x: worldOf(530, 1789).x },
+  { id: 'porta-salaria', x: worldOf(1036, 1784).x },
+  { id: 'porta-nomentana', x: worldOf(1831, 1784).x },
+];
+
+/** True where (x, z) lies under a way's carriageway. */
+function coversPoint(
+  w: { path: readonly { x: number; z: number }[]; width: number },
+  x: number,
+  z: number
+): boolean {
+  const half = w.width * 0.5;
+  for (let i = 0; i + 1 < w.path.length; i++) {
+    const a = w.path[i];
+    const b = w.path[i + 1];
+    const ax = b.x - a.x;
+    const az = b.z - a.z;
+    const len2 = ax * ax + az * az;
+    const t = len2 < 1e-6 ? 0 : Math.max(0, Math.min(1, ((x - a.x) * ax + (z - a.z) * az) / len2));
+    const px = a.x + ax * t;
+    const pz = a.z + az * t;
+    if ((x - px) * (x - px) + (z - pz) * (z - pz) <= half * half) return true;
+  }
+  return false;
+}
+
+/**
+ * Smallest angle between two undirected lines, in [−90°, +90°].
+ *
+ * **Not `foldToAxis`, and the difference is the whole check.** `foldToAxis` folds modulo 90°
+ * because a block parallel and a block perpendicular to its street are both *aligned* to it —
+ * which is right for grain and exactly wrong here, where perpendicular is the thing being
+ * looked for. Using it made a road crossing the curtain at 70° read as 20° and every gate
+ * failed. Two folds, two questions, and they are not interchangeable.
+ */
+function angleFold180(d: number): number {
+  let a = d % Math.PI;
+  if (a > Math.PI / 2) a -= Math.PI;
+  if (a < -Math.PI / 2) a += Math.PI;
+  return a;
+}
+
+/** The curtain's own tangent bearing at `x`, from the terrain's crest function. */
+function wallTangentAt(x: number): number {
+  const d = 12;
+  return Math.atan2(wallCrestZ(x + d) - wallCrestZ(x - d), 2 * d);
+}
+
+/** The bearing of the way's segment nearest (x, z). */
+function wayBearingNear(
+  w: { path: readonly { x: number; z: number }[] },
+  x: number,
+  z: number
+): number {
+  let best = 0;
+  let bd = Infinity;
+  for (let i = 0; i + 1 < w.path.length; i++) {
+    const a = w.path[i];
+    const b = w.path[i + 1];
+    const mx = (a.x + b.x) * 0.5;
+    const mz = (a.z + b.z) * 0.5;
+    const d = (mx - x) * (mx - x) + (mz - z) * (mz - z);
+    if (d < bd) {
+      bd = d;
+      best = Math.atan2(b.z - a.z, b.x - a.x);
+    }
+  }
+  return best;
+}
+
+/** True where two polylines cross between nodes. */
+function polylinesCross(
+  p: readonly { x: number; z: number }[],
+  q: readonly { x: number; z: number }[]
+): boolean {
+  const side = (
+    a: { x: number; z: number },
+    b: { x: number; z: number },
+    c: { x: number; z: number }
+  ): number => (b.x - a.x) * (c.z - a.z) - (b.z - a.z) * (c.x - a.x);
+  for (let i = 0; i + 1 < p.length; i++) {
+    for (let j = 0; j + 1 < q.length; j++) {
+      const d1 = side(p[i], p[i + 1], q[j]);
+      const d2 = side(p[i], p[i + 1], q[j + 1]);
+      const d3 = side(q[j], q[j + 1], p[i]);
+      const d4 = side(q[j], q[j + 1], p[i + 1]);
+      if (d1 > 0 !== d2 > 0 && d3 > 0 !== d4 > 0) return true;
+    }
+  }
+  return false;
+}
+
+export function assertWayGraph(): {
+  ok: boolean;
+  ways: number;
+  rankedComponents: number;
+  gates: { id: string; x: number; on: string | null; cls: string | null }[];
+  gatesOk: boolean;
+  dangling: { way: string; x: number; z: number; why: string }[];
+  faults: string[];
+} {
+  const ranked = WAYS.filter((w) => WAY_RANK[w.cls] >= WAY_RANK.local);
+  const parent = ranked.map((_, i) => i);
+  const find = (i: number): number => {
+    let r = i;
+    while (parent[r] !== r) {
+      parent[r] = parent[parent[r]];
+      r = parent[r];
+    }
+    return r;
+  };
+  const union = (a: number, b: number): void => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[ra] = rb;
+  };
+  const near = (a: { x: number; z: number }, b: { x: number; z: number }): boolean =>
+    (a.x - b.x) * (a.x - b.x) + (a.z - b.z) * (a.z - b.z) <= JOIN_M * JOIN_M;
+  for (let i = 0; i < ranked.length; i++) {
+    for (let j = i + 1; j < ranked.length; j++) {
+      let hit = false;
+      for (const p of ranked[i].path) {
+        for (const q of ranked[j].path) {
+          if (near(p, q)) {
+            hit = true;
+            break;
+          }
+        }
+        if (hit) break;
+      }
+      // ...and where one crosses the other between nodes, which a node-to-node test misses on
+      // two long ways meeting at a shallow angle.
+      if (!hit) hit = polylinesCross(ranked[i].path, ranked[j].path);
+      if (hit) union(i, j);
+    }
+  }
+  const rankedRoots = new Set(
+    ranked.map((w, i) => ({ w, i })).filter((e) => WAY_RANK[e.w.cls] >= WAY_RANK.secondary).map((e) => find(e.i))
+  );
+
+  const gates = ROME_GATES.map((g) => {
+    const mx = g.x;
+    const mz = wallCrestZ(mx) + MOUTH_IN;
+    let on: string | null = null;
+    let cls: string | null = null;
+    let bestRank = -1;
+    for (const w of WAYS) {
+      if (WAY_RANK[w.cls] < WAY_RANK.secondary) continue;
+      if (!coversPoint(w, mx, mz)) continue;
+      /**
+       * **The way has to be going *through* the gate, not past it — and the first version of
+       * this check did not say so, so it passed on all four for the wrong reason.**
+       *
+       * `via-sagularis` is a 42 m artery that runs the whole length of the curtain 30 m
+       * inside it, which means its carriageway covers every gate mouth on the map by
+       * construction. A test that only asked "is a consular way here" therefore reported four
+       * of four the moment the military road existed, which it has since phase 1 — a check
+       * that cannot fail, which is the exact failure mode `probe-fabric`'s header and
+       * `MAP-METHOD.md` rule 6 are about, and it is worth recording that it was caught by
+       * reading the output rather than by the check itself.
+       *
+       * The relation the check was missing is **transverse**: a road out of a gate crosses the
+       * wall, so its bearing at the mouth is far from the wall's tangent there. 35° is a wide
+       * bar and it is meant to be: the point is to exclude a road running *along* the curtain,
+       * not to police the angle of one running out of it.
+       */
+      if (Math.abs(angleFold180(wayBearingNear(w, mx, mz) - wallTangentAt(mx))) < (35 * Math.PI) / 180) continue;
+      if (WAY_RANK[w.cls] > bestRank) {
+        bestRank = WAY_RANK[w.cls];
+        on = w.id;
+        cls = w.cls;
+      }
+    }
+    return { id: g.id, x: +mx.toFixed(1), on, cls };
+  });
+  const gatesOk = gates.every((g) => g.on !== null);
+
+  const dangling: { way: string; x: number; z: number; why: string }[] = [];
+  for (const w of ranked) {
+    for (const end of [w.path[0], w.path[w.path.length - 1]]) {
+      let joined = false;
+      for (const o of WAYS) {
+        if (o.id === w.id) continue;
+        for (const q of o.path) {
+          if (near(end, q)) {
+            joined = true;
+            break;
+          }
+        }
+        if (!joined && coversPoint(o, end.x, end.z)) joined = true;
+        if (joined) break;
+      }
+      if (joined) continue;
+      const atEdge = Math.abs(end.x) > 1400 - EDGE_M || Math.abs(end.z) > 1400 - EDGE_M;
+      const atGate = ROME_GATES.some(
+        (g) => Math.abs(g.x - end.x) < 40 && Math.abs(end.z - wallCrestZ(end.x)) < 60
+      );
+      const outside = end.z < wallCrestZ(end.x) - 20;
+      /**
+       * Two more legitimate categories, and both are claims that had to be named rather than
+       * quietly absorbed (`MAP-METHOD.md` rule 16).
+       *
+       * *The military road.* `via-sagularis` is a ring behind the curtain and its two ends are
+       * the curtain's own ends. There is nothing for them to join to, and there never will be.
+       *
+       * *A terminus at a monument.* A street that runs up to a precinct and stops is a street,
+       * not a stub — the Clivus Capitolinus ends at the Area Capitolina in front of the Temple
+       * of Jupiter, which is where it ended.
+       */
+      const isPomerium = w.id === 'via-sagularis';
+      const atMonument = LANDMARKS.some((l) => {
+        if (l.soft) return false;
+        const dx = end.x - l.x;
+        const dz = end.z - l.z;
+        const cs = Math.cos(l.rot);
+        const sn = Math.sin(l.rot);
+        return Math.abs(dx * cs - dz * sn) <= l.hw + 45 && Math.abs(dx * sn + dz * cs) <= l.hd + 45;
+      });
+      const why = isPomerium
+        ? 'the military road, which ends where the curtain does'
+        : atEdge
+          ? 'map edge'
+          : atGate
+            ? 'gate'
+            : outside
+              ? 'outside the curtain'
+              : atMonument
+                ? 'terminates at a monument'
+                : 'STUB';
+      dangling.push({ way: w.id, x: +end.x.toFixed(0), z: +end.z.toFixed(0), why });
+    }
+  }
+  const stubs = dangling.filter((d) => d.why === 'STUB');
+
+  const faults: string[] = [];
+  if (rankedRoots.size !== 1) {
+    faults.push(`the consular-and-above armature is in ${rankedRoots.size} pieces, not one`);
+  }
+  if (!gatesOk) {
+    faults.push(
+      `gate mouth not on a consular way: ${gates.filter((g) => !g.on).map((g) => g.id).join(', ')}`
+    );
+  }
+  if (stubs.length) {
+    faults.push(
+      `${stubs.length} way end(s) stop inside the circuit joined to nothing: `
+      + stubs.map((d) => `${d.way} at (${d.x}, ${d.z})`).join('; ')
+    );
+  }
+  return {
+    ok: faults.length === 0,
+    ways: WAYS.length,
+    rankedComponents: rankedRoots.size,
+    gates,
+    gatesOk,
+    dangling,
+    faults,
+  };
 }
 
 /**

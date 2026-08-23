@@ -2329,3 +2329,276 @@ answered honestly against the merged terrain, which is where it belongs.
   cap is honoured only because a human transcribed the allocator's answer into `draw`. Either wire
   it in as an assertion or delete it, but a function whose docstring says *"it is asserted at boot
   rather than trusted"* and which nothing calls is worse than neither.
+
+---
+
+## 10. §5 phase 3, as built — the roads
+
+Built on `e/city/rome-roads` from `main` at `d1e85c0`. This is **§5's phase 3**, the road pass —
+not §9, which is the landmark work's own phase 3 and is a different numbering that nobody should
+have allowed to collide.
+
+**The one-line verdict:** the armature is now authored in survey metres off the plates, projected
+once, and there is no code path left anywhere that can move a way after it is drawn. `deflect`,
+`monumentRings` and `feeders` are deleted. In the survey frame — against each monument's own
+published footprint — **1.5 %** of ranked street length runs through a building, and thirteen of
+the sixteen offending samples are the Via Sacra crossing the Forum Romanum, which is what the Via
+Sacra did. §5's acceptance asked for ≤ 2 % against the plan's 24 %.
+
+### 10.1 The Mausoleum of Augustus was never on the Via Lata
+
+This was posed as the one conflict phase 3 had to resolve rather than dodge: the tomb, at its
+surveyed position, puts **85 unbroken metres of masonry across the carriageway**, and the same
+frame is the best view the map has produced. §9.6 treated it as a genuine trade and bent the last
+hundred metres of the street round the tomb's eastern flank.
+
+**Three independent sources say the street is 140–160 real metres east of the tomb and always
+was.**
+
+| source | Via Lata's easting at the Mausoleum's northing (n 1500) |
+|---|---:|
+| **[PLATE AGEA]** the georectified 2012 orthophoto, Via del Corso's centreline | **e −338** |
+| **[PLATE Shepherd]** the road labelled "Flaminian Way" / "Via Lata (Broad Way)", through the affine fitted in `tools/scratch/rome-roads.mjs` | **e −341** |
+| **[DER]** the straight line between the two termini — the Porta Flaminia at `(−497, 2045)`, which is this projection's own anchor, and the Capitol's north foot at `(0, 367)` | **e −336** |
+| the Mausoleum's surveyed centre | **e −481** |
+
+Three readings inside **5 metres** of each other, on a plate whose own fit is good to 28.5, and
+**148 metres** from the tomb. The tomb's masonry is 87 m across, so its east face is at `e −437`
+and the carriageway's west kerb at `e −357`: **53 real metres of clear ground.** The road runs
+past the tomb, on the east, exactly as the modern Corso runs past the Piazza Augusto Imperatore.
+
+So the 85 metres of masonry were never a conflict between a street and a building. **The old
+armature ran `[−470, 1560] → [−440, 1080]` — 100 to 150 metres west of the real street — and it
+was authored, not surveyed.** The bow was a fix for a fault that did not exist, and the fault it
+was fixing was in the road.
+
+**What does not change, and is the better half of the finding.** The **gate's own outward normal**
+is not the road. The circuit runs east–west at the Porta Flaminia, so its normal is due south in
+world terms; the Via Lata leaves at 16.4° off it. The Mausoleum stands **16 real metres** off that
+normal, 545 m in. The ground judge's frame is untouched: the tomb still closes the view straight
+out of the breach, and the street is now visibly the *other* line, peeling away east round it.
+`assertGateAxisClear` measures the normal (20.6 % solid over the first 700 m, blocked by
+`mausoleum-augustus` 145–235 m and `porticus-pompei` 590–635 m) and `assertWaysClearOfMonuments`
+measures the carriageway, both at every boot, and the record no longer quotes either as the other.
+
+The frame that shows it is `gate-axis-tomb` in `tools/shots/rome-roads.shot.mjs`.
+
+### 10.2 The two frames the intrusion number can be quoted in, and why they differ
+
+Until this pass "ranked street length inside a monument" had one number. It needs two, and the
+gap between them is not the road's fault.
+
+| | world metres (what the game collides with) | survey metres (what the city was) |
+|---|---:|---:|
+| all ranked ways | **99 / 685 = 14.5 %** | **16 / 1037 = 1.5 %** |
+| worst way | `via-sacra` 54 % (`forum-romanum`) | `via-sacra` 39 % (`forum-romanum`) |
+| next | `via-labicana` 27 %, `via-recta` 24 %, `via-lata` 21 %, `alta-semita` 16 % | `via-appia` 9 % (`palatine`), `via-labicana` 2 % (`colosseum`) |
+| clear | 7 of 13 (the twelve ranked ways plus the military road, which runs through the Castra Praetoria's drawn box at 9 %) | **9 of 12** |
+
+`MAP-METHOD.md` rule 4: **positions compress, cross-sections do not.** Rome's easting compresses
+by `KX` = 0.443 and its northing by `KZ` = 0.35 while a monument keeps its true size in world
+metres. The Via Lata and the Mausoleum are the clean instance — **148 real metres apart, 66 world
+metres apart, against a tomb still drawn 93 world metres across** — and every one of the world
+column's entries above is that same arithmetic:
+
+- **`via-recta` × `stadium-domitian`.** The Stadium is 275 real metres long and is drawn 247 world
+  metres long; 275 real metres of northing projects to 96 world metres. So the drawn Stadium
+  occupies **706 real metres of northing** and swallows the northern Campus Martius. The Via Recta
+  ran along its north side; there is no line 200 real metres north of its centre that clears it.
+  Clearing it needs the way 165 survey metres north of where three sources put it, which is six
+  times the plate's own error.
+- **`via-labicana` in the Colosseum valley.** The Colosseum's drawn box spans `x 599..729`, the
+  Baths of Titus `699..792`, the Ludus Magnus `704..796`, the Baths of Trajan `735..907`, and their
+  `z` ranges overlap throughout. **There is no ranked corridor east of the amphitheatre in this
+  frame at all**, north or south, and the nearest one is at `n −480`, 340 real metres off the
+  street's line.
+- **`via-sacra` × `forum-romanum`.** The Via Sacra crosses the Forum Romanum because that is what
+  the Via Sacra is. The Forum is a paved enclosure and the survey publishes it as a solid.
+
+**None of the four is fixable by moving a road.** Two are fixable by the frame (§4.5) and one by
+giving the survey an `open` class for a paved enclosure a street may cross — which is rule 18's
+shape, is a monument change and not a road change, and is the single largest item phase 4 or 5
+inherits from this pass.
+
+### 10.3 What was authored, and off which plate
+
+Twenty-three ways, 11.6 km, in `src/city/rome/ways.ts`, each row carrying its plate in a `cite`
+field. Against **41 ways and 14.2 km** before, as `probe-fabric` reads it off the built scene — of
+which 17 were `feeder-*` links at 42 m that nobody authored and the rest were monument rings.
+(`layout.ts`'s own comment claimed "42 ways and 19 km"; the measured figure is 41 and 14.2, and
+the comment is corrected in the same commit. A number in a comment is a claim.)
+
+- **Identification** comes from **Shepherd pl. 22** (`ASSETS.md` item 9), the only plate in the
+  pool that names the streets. It is not georeferenced; `tools/scratch/rome-roads.mjs --fit` fits
+  a 6-parameter affine from its pixels to this survey frame by least squares **on eight monuments
+  whose coordinates come out of `survey.ts`**, and prints the residual: **RMS 28.5 real metres,
+  worst 56.7 (the Colosseum)**, plate scale 2.147 m/px against the 2.100 `ASSETS.md` measures off
+  its own bars, plate rotation −1.58° off survey north.
+- **Geometry** for ways that survive as modern streets comes off the **AGEA orthophoto / Lanciani
+  georectified** raster (`src/city/overlay.ts`'s affine, 1.26 m over 7 km).
+- **Topology** — which road enters which gate — from **ColdEel** (item 11), which `ASSETS.md`
+  forbids measuring.
+- **Endpoints** that must meet an engine-fixed feature are **pinned**, and the rows say so.
+
+§4.2's four demotions are done (`via-appia`, `via-triumphalis`, `via-sacra` from `artery` to
+`consular`; the `feeder-*` arteries deleted rather than demoted). §4.2's six additions are all
+present: `clivus-suburanus`, `argiletum`, `via-tecta`, `clivus-capitolinus`, `subura`,
+`via-pinciana`. A seventh, `clivus-argentarius`, had to be added: without it the Via Lata's
+southern end stops 350 real metres short of the Forum and the graph is in two pieces.
+
+Two rows were **deleted**, and the reason is the frame's south edge rather than the plate.
+`CITY_Z_MAX` is 1374 world metres, which is survey northing **−367**; `via-ostiensis` and
+`clivus-aventinus` were authored entirely south of it, so every node clamped to the same `z` and
+what the map drew was two carriageways lying flat along its own boundary. Four more ways cross the
+edge and are truncated at `n −365` instead. That also removed 15 % of the Via Appia's reported
+intrusion: its four southern nodes were collapsing onto `z 1374` and the pile-up landed inside the
+Colosseum's drawn footprint.
+
+### 10.4 Three sign errors, and only one of them was mine
+
+The grain work turned up three, all of the same family, and they had been invisible for the same
+reason: **nothing in Rome's fabric had ever pointed at anything.**
+
+1. **A plan rotation is not a world bearing.** `makeRotationY(r)` points a box's long axis along
+   **−r**, and `CitySystem`'s `occRot` is the only place in the tree that already said so — it
+   negates on the way into the obstacle list, which is why `probe-fabric` is entitled to compare
+   `getObstacles().rot` with a street bearing directly. `DistrictSpec.rot = wayBearingAt(...)`
+   without the minus sign pointed every quarter's lattice at the **mirror** of its own street. The
+   hash it replaced was immune: a symmetric random draw is its own mirror image.
+2. **`rowRotOf` added the spine slope where it had to subtract it.** A spine's world bearing works
+   out to `−d.rot + atan(slope)`; a plot's drawn axis points along `−rot`; so a row written
+   `d.rot + atan(slope)` draws at the reflection of the very street it fronts, off by
+   `2·atan(slope)` — **up to 14.6°** at the amplitude this file used. That has been in `fabric.ts`
+   since the lattice was written. It is a large part of what G20 has been reporting, and the record
+   read all of it as evidence for the hash.
+3. **`assertWayGraph`'s transverse test used the 90° fold.** A road crossing the curtain at 70°
+   read as 20° and every gate failed. Two folds, two questions: the grain question folds modulo 90°
+   because a block parallel and a block perpendicular to its street are both aligned to it, and the
+   gate question must not, because perpendicular is the thing it is looking for.
+
+### 10.5 The grain: what moved, what did not, and why it cannot close here
+
+`DISTRICTS[].rot` was `(hash2(round(d.e), round(d.n), 0x5c1) − 0.5) * 0.7` — ±20° per quarter,
+drawn from a hash. It is now `−wayBearingAt(x, z)`, the road network's own bearing field, sampled
+at the quarter's centre **after** the +Z clamp (four quarters are surveyed south of the edge and
+are pulled back onto it by up to 300 m; sampling before the clamp gave the Emporium a frame 75°
+off the street it stands on). Each row then turns up to 12° further toward the street under it.
+
+| | before | after |
+|---|---:|---:|
+| **G20** median block orientation off the nearest street | **9.17°** | **7.78°** |
+| G20 p90 | 26.77° | 31.73° |
+| **G21** median between neighbours within 40 m | **5.14°** | **3.22°** |
+| **G21** neighbour pairs rotating > 15° across a 40 m gap | **20.9 %** | **13.6 %** |
+
+**Both still fail, and phase 3 cannot close them.** The measurement that says why is
+`ROW_TURN`, the bound on the per-row correction, swept on this tree:
+
+| `ROW_TURN` | G20 median | G21 median | G21 seams |
+|---:|---:|---:|---:|
+| 0° | **6.86** | 6.34 | 24.5 % |
+| 12° (shipped, with the spine amplitude halved) | 7.78 | **3.22** | **13.6 %** |
+
+The two checks pull in opposite directions and there is a structural reason. A block's nearest
+street is almost always **its own quarter's lane**, which is cut in the quarter's `(u, v)` frame;
+turning the block toward the street network turns it away from that lane, which is what G20
+measures. Not turning it leaves two blocks either side of a quarter boundary at their two
+quarters' angles, which is what G21 measures. **Both are satisfied only when the lanes turn too —
+that is, when a block is a face of the road graph rather than a rib of a lattice, which is §4.3
+and phase 4.** Even at `ROW_TURN` 0 the floor is 6.86° with a p90 of 35°, because the seventeen
+quarters overlap (G18: 82 pairs, 1.46× the ground claimed) and a block in one quarter is routinely
+nearest a *different* quarter's lane. **G20 cannot pass while the regions do not partition.**
+
+What phase 3 has delivered is the field those faces will be derived from, and the sharpest
+evidence that it is real is the picture: `network-plan-east` shows the Alta Semita, the Vicus
+Longus, the Vicus Patricius and the Clivus Suburanus running parallel up the Viminal with the
+fabric between them grained the same way.
+
+### 10.6 The armature is one graph, and every gate is on it
+
+`assertWayGraph`, new, runs at every boot:
+
+- **one connected component** among consular-and-above ways, against two before the Clivus
+  Argentarius was added. This is a property that can now fail: `feeders` used to *manufacture* it
+  by joining every loose end to its nearest neighbour with a 42 m link, so a check on it before
+  this pass would have been a check that had never gone red.
+- **four of four gate mouths on a way of rank consular or better**, against §4.2's one of four.
+  The first version of this check reported four of four for the wrong reason — `via-sagularis` is
+  a 42 m artery running the length of the curtain 30 m inside it, so its carriageway covers every
+  mouth by construction. The relation it was missing is **transverse**.
+- **zero dangling ends inside the circuit.** Thirteen ends are joined to nothing and every one is
+  categorised and counted: 7 at the map edge, 3 outside the curtain, 2 the military road's own ends
+  where the curtain ends, 1 terminating at a monument (the Clivus Capitolinus, at the Area
+  Capitolina, which is where it ended).
+
+`tools/probe-plan.mjs`, which is an external instrument and does not read the way table, agrees:
+monuments standing on the **named armature** go **15 → 8**, and its P9 count of ways leaving each
+gate goes `flaminia 3 / salaria 1 / nomentana 2` → `3 / 2 / 3`.
+
+### 10.7 The gate, before and after
+
+| | `main` `d1e85c0` | `e/city/rome-roads` |
+|---|---|---|
+| `probe-fabric` **Rome** | **10/25** | **10/25** |
+| `probe-fabric` **Carthage** (control) | **13/22** | **13/22**, every check identical |
+| G4 monument in a carriageway (plan) | 15,106.7 m² / 53 segments / 19 monuments | **12,731.3 m² / 24 / 10** |
+| G5 drawn carriageway under a monument | 1,207 vertices of 75,053 | **3,478 of 68,113 — worse, see below** |
+| G17 quarters that report themselves buried | 1 (`forum-boarium`) | **2 (`forum-boarium`, `emporium`) — worse** |
+| G20 / G21 | 9.17° / 20.9 % | **7.78° / 13.6 %** |
+| `probe-plan` | 6/9 | 6/9; P2's named-armature count 15 → 8 |
+| `qa-deploy` | 33/33 | 33/33 |
+| `probe-seams` | PASS both maps | PASS both maps |
+| `probe-wall` | 19/19 | 19/19 |
+| `tsc` / `lint` | clean / 3/3 | clean / 3/3 |
+| determinism | — | `default` 8,632 **unchanged**; Carthage 3,440 **unchanged**; Rome siege 3,072 re-recorded, t+0 identical, survivors at t+400 2,284 → 2,291 |
+
+**Two regressions, both named rather than tuned away.**
+
+- **G5 got worse, and it is a paving bug rather than a routing one.** The reservation through a
+  monument costs nothing — the monument is already there — but `buildWays` must not *pave* the
+  temple's floor, and `onMonument` is tested **once per segment at its midpoint**. `deflect` used
+  to resample every way to 30 m spacing, so the midpoint test was fine-grained by accident; a
+  straight authored way has segments 300–400 m long, and one whose midpoint is clear paves straight
+  across a monument at both ends. **The fix is to sample the paving test at the paving's own
+  resolution, not the way's**, and it is four lines in `fabric.ts`'s `buildWays`. It is named here
+  rather than done because it is a change to the road *mesh* and this branch is already the largest
+  change to the road *plan* the project has had.
+- **G17 gained a buried quarter.** `emporium` and `forum-boarium` are both `eastBank` rows whose
+  `x` is overridden 300 m from their surveyed position and whose `z` is clamped to the +Z edge, so
+  half of each lies off the map whatever angle it takes. Deleting `via-ostiensis` removed the
+  street they fronted. Both rectangles are deleted outright by §4.3, so the honest repair is phase
+  4's and not a tuning of this one.
+
+`MON_AMBITUS` went 2.5 → 4.0 m in the same pass, and the extra 1.5 m is off a measurement rather
+than off an instance: re-laying the armature moved every quarter's grain, an insula landed where
+the Baths of Trajan's drawn stone oversails its own box, and G16 went red at 0.94 m. §9.7 had
+already said G16 *"was passing on where an insula happened to fall"*. Tuning until that insula
+cleared would be the same fault again, so the number comes from G14's own table: six of
+twenty-seven monuments draw stone outside their box, by 2.52 m (the Tabularium) to 13.65 m (the
+Stadium of Domitian), and below `1.5 + 2.52` the reservation is provably too small for all six.
+It does not cover the Stadium and is not meant to; rule 11 owns that.
+
+### 10.8 What phase 4 inherits
+
+- **The regions.** G18/G19 are untouched and are the reason G20 cannot pass: seventeen rectangles
+  claiming 1.46× the ground, so a block in one quarter is routinely nearest another quarter's lane.
+  §4.3 deletes them for the fourteen Augustan regions as a partition, and that is now the binding
+  item.
+- **Faces.** The field is in place and the lattice reads it; what is left is for the lanes to be
+  edges of the graph rather than ribs of a frame. The sweep in §10.5 is the evidence that nothing
+  short of that closes G20 and G21 together.
+- **The paving resolution** (§10.7), which is the cheapest item on this list and is worth doing
+  before anybody takes another aerial.
+- **An `open` class in the survey** for a paved enclosure a street may cross — the Forum Romanum,
+  the Saepta, the great porticoes' courtyards. It is 39 % of the Via Sacra's survey-frame residual
+  and all of `via-sacra`'s world-frame one, it is rule 18's shape rather than an exemption, and it
+  will also give a cohort the Forum to march across, which it should have.
+- **The stepped *clivus*.** §4.2 wants four ways quantised to 0.17 m risers as Carthage's
+  `streets.ts` does. They carry `local` rank and ordinary paving here; a flag nothing reads is
+  worse than no flag (§9.9 on `maxDrawAt`), so there is no flag.
+- **The regional boundaries as `vicus`-rank edges** (§4.3 step 1). Not traced: without the regions
+  themselves they would be streets with no consumer.
+- **The Porta Salaria is in three places.** The engine puts it at `e 1036`, the geodesy of Piazza
+  Fiume at `e ~1190`, and Shepherd's own ink at `e ~1390` — 350 m apart, and relative to the Castra
+  Praetoria the engine's is 440 m too far west. The gate is built and the road was pinned to it,
+  which is the right call for this pass and leaves a real question for the circuit's.

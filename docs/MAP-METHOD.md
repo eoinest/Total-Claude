@@ -199,6 +199,34 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    only clamping them with the river, took the resolver's worst displacement from **690 m to 118 m**
    — better than the frame change that preceded it managed. **A gate downstream of a solver reports
    the solver.**
+24. **A symmetric input hides an asymmetric bug, and replacing it is what reveals the bug.** Rome
+   drew every quarter's rotation from a hash at ±20°. A symmetric random draw is its own mirror
+   image, so two opposite-handed rotation conventions could disagree under it indefinitely — and
+   they did: `makeRotationY(r)` points a box's long axis along **−r**, `DistrictSpec.rot` is a plan
+   rotation, `wayBearingAt` returns a world bearing, and `rowRotOf` added a spine's slope where the
+   geometry required it subtracted. Every terrace in Rome was built to the **reflection** of its own
+   street, off by up to **14.6°**, since the lattice was written. Neither the fabric gate nor the
+   Carthage control could see it, for the same reason: Carthage's blocks are axis-aligned, and an
+   axis-aligned control is symmetric under reflection too. **When you replace a random or symmetric
+   parameter with a meaningful one, expect the meaningful one to be blamed first, and suspect the
+   consumer before the new value.**
+25. **A measurement taken in a compressed frame needs both frames, or a sentence saying which one
+   it is.** "Ranked street length inside a monument" was one number for three passes. It is two:
+   **14.5 %** in world metres against the boxes the game collides with, **1.5 %** in survey metres
+   against the published footprints. Positions compress by `KX` 0.443 and `KZ` 0.35, cross-sections
+   do not (rule 4), so a street and a building **148 real metres apart** are **66 world metres**
+   apart against a building still drawn **93 world metres** across. The two numbers have different
+   owners: the survey figure grades whoever authored the line, the world figure grades the
+   projection. Reported as one, it sends the wrong person to fix it — and it did, for a whole
+   phase.
+26. **A mechanism that guarantees a property destroys the ability to measure it.** Rome's `feeders`
+   joined every loose way end to its nearest neighbour with a 42 m link, so *"the armature is one
+   connected component"* was true by construction and a check on it could never have gone red.
+   Rome's military road runs the length of the curtain 30 m inside it, so *"every gate's mouth is
+   on a consular way"* passed four of four the moment it was written, for a road that leaves no
+   gate. Deleting the mechanism is what makes the check worth having, and the test for whether you
+   have written a real one is the same as rule 18's: **it must be able to fail, and you must be
+   able to say what would make it.**
 
 ---
 
@@ -1368,4 +1396,138 @@ point of consumption when empty is not a legal state**, and that **a merge touch
 conflict was reported in still needs its own diff read**. The second half is the one that would
 have caught this in ten seconds, and it is a habit rather than a tool.
 
+### 22 Aug 2026 — Rome's roads, authored off the plates, and three sign errors nobody could have seen before
+
+**What I did.** §5 phase 3 of the fabric rebuild, on `e/city/rome-roads` from `main` at `d1e85c0`.
+Moved the way table out of `layout.ts` into `src/city/rome/ways.ts` — above the fabric rather than
+below the monuments — re-authored all of it in survey metres against Shepherd pl. 22, the AGEA
+orthophoto and the georectified Lanciani raster, and deleted `deflect`, `monumentRings` and
+`feeders`. Wrote `assertWayGraph` and a survey-frame limb on `assertWaysClearOfMonuments`. Full
+record in `docs/ROME-FABRIC.md` §10.
+
+**What I expected.** That the Mausoleum of Augustus really was standing on the Via Lata and I
+would have to choose between the monument and the street, as the brief and §9.6 both framed it.
+That the road work would move `probe-fabric` G20 and G21 a long way, because the doc names
+`hash2` as the cause of the quilt and I was replacing it. That the biggest risk was breaking
+Carthage.
+
+**All three were wrong, and the first two are the entry.**
+
+**1. The conflict was a survey error in the road, not a conflict.** Three independent sources —
+the modern Corso on the georectified orthophoto, Shepherd's own labelled "Via Lata (Broad Way)"
+through an affine I fitted to the monument survey, and the straight line between the two termini
+as coordinates — agree within **5 metres** that the street passes `e −338` at the tomb's northing.
+The tomb is at `e −481`. **148 metres apart, and 53 metres of clear ground between masonry and
+kerb.** The old armature ran 100–150 m west of the real street, straight through a building that
+stands beside it, and §9.6's bend was a 360-metre fix for a fault that did not exist. The lesson is
+not about Rome: **when a monument and a street collide, measure the street's own position before
+accepting that the collision is real.** The monument had been re-surveyed to zero displacement two
+phases earlier and the road had never been surveyed at all, so the road was overwhelmingly the more
+likely of the two to be wrong — and nobody had asked, because the monument was the thing that had
+just been worked on.
+
+**2. Making the grain mean something exposed three sign errors, two of which predate this pass.**
+Rome's block rotation came from a hash. A hash is symmetric, so **a mirrored rotation is
+indistinguishable from a correct one**, and two conventions had been quietly disagreeing under it
+for as long as the lattice has existed:
+
+- `makeRotationY(r)` points a box's long axis along **−r**. `CitySystem`'s `occRot` is the only
+  place in the tree that says so, and it says so at the obstacle boundary. Setting
+  `DistrictSpec.rot = wayBearingAt(...)` — a world bearing — pointed every quarter at the *mirror*
+  of its street.
+- `rowRotOf` added the spine's slope where the geometry required it subtracted, so every terrace
+  in Rome has been built to the reflection of its own street, off by `2·atan(slope)` — up to
+  **14.6°**. This is a large part of what `probe-fabric` G20 has been reporting since it was
+  written, and the record read all of it as evidence for the hash.
+- and my own first draft of the gate-mouth check folded angles modulo 90° when the question needed
+  180°, so a road crossing the curtain at 70° read as 20° and all four gates failed.
+
+**The rule this earns: a symmetric input hides an asymmetric bug, and replacing the symmetric input
+is what reveals it.** Randomness, ±20° of it, is symmetric under reflection. So is an axis-aligned
+control — which is exactly why Carthage scores 0.00° on G20 and cannot distinguish the two
+conventions either. Two instruments and a control, all blind to the same fault, for the same
+reason. **Before replacing a random or symmetric parameter with a meaningful one, expect the
+meaningful one to fail first, and suspect the consumer rather than the new value.** I spent four
+probe runs assuming my field was wrong.
+
+**3. One number needed to be two, and neither was wrong.** "Ranked street length inside a
+monument" has been quoted as a single figure since `ROME.md` §6.2 (24 %). It cannot be. Measured
+in **world** metres, against the boxes the game collides with, it is **14.5 %**; measured in
+**survey** metres, against each monument's own published footprint, it is **1.5 %**. Both are
+correct and they measure different things, because positions compress by `KX` 0.443 / `KZ` 0.35
+and cross-sections do not (rule 4). The Via Lata and the Mausoleum are 148 real metres apart and
+19 world metres overlapping. The survey number is what the road survey is responsible for; the
+world number is the frame's, and three of its four largest entries are unfixable by any road:
+
+> the Stadium of Domitian is 275 real metres long, is drawn 247 world metres long, and 275 real
+> metres of northing projects to 96 — so the drawn Stadium occupies **706 real metres of northing**
+> and there is no line along its north side that clears it. The Colosseum valley has **no ranked
+> corridor east of the amphitheatre at all**: four drawn monuments occupy a continuous 200 world
+> metres of a gap that is 140 wide.
+
+**The rule: report a compressed-frame measurement in both frames, or say which one you mean.** A
+single percentage for "is the road in the right place" conflates a survey question with a
+projection question, and the two have different owners and different fixes.
+
+**4. Connectivity that is manufactured cannot be checked.** `feeders` joined every loose way end to
+its nearest neighbour with a 42 m link, so "the armature is one connected component" was true by
+construction and a check on it would never have gone red. With `feeders` deleted the property is
+real: it fails immediately if the Clivus Argentarius is removed, which is the way that closes the
+350 metres between the Via Lata's southern end and the Forum. Same shape as the gate-mouth check,
+which passed four of four the moment I wrote it — because the military road runs the length of the
+curtain 30 m inside it and covers every mouth by construction. **A mechanism that guarantees a
+property also destroys the ability to measure it; deleting the mechanism is what makes the check
+worth having.**
+
+**What it cost, honestly.** `probe-fabric` Rome is **10/25 before and after**. G4 improves
+(15,107 → 12,731 m², 53 → 24 segments, 19 → 10 monuments), G20 9.17° → 7.78°, G21 20.9 % → 13.6 %
+of neighbour pairs seaming — and **G5 gets worse** (1,207 → 3,478 street vertices under a
+monument) because `onMonument` tests the paving once per way *segment* at its midpoint, which was
+fine when `deflect` resampled every way to 30 m and is not fine on a straight authored way with
+400 m segments. That is a four-line fix in `buildWays` and it is named rather than done, because
+this branch is already the largest change to the road plan the project has had. **G17 also gains a
+buried quarter** for a reason phase 4 deletes outright. Carthage is **13/22, every check
+identical**, and bit-identical on the determinism gate at 3,440 men; the field battle at 8,632 did
+not move either; the Rome siege arm at 3,072 was re-recorded in the commit that moved it, with t+0
+byte-identical and survivors at t+400 going 2,284 → 2,291.
+
+**And the thing I did not manage.** G20 and G21 pull against each other and phase 3 cannot close
+either. Swept on this tree: at zero per-row correction G20 is 6.86° and G21 seams 24.5 %; at 12°
+G20 is 7.78° and G21 seams 13.6 %. The reason is structural — a block's nearest street is its own
+quarter's lane, so turning the block toward the network turns it away from the thing the check
+measures it against, and two blocks either side of a quarter boundary have nothing pulling them
+together unless it does. **Both are satisfied only when the lanes turn too, which is a block being
+a face of the road graph rather than a rib of a lattice.** Even at zero the floor is 6.86°, because
+the seventeen quarters overlap and claim 1.46× the ground: a block in one is routinely nearest
+another's lane. **G20 cannot pass while the regions do not partition**, which makes G18/G19 the
+binding item and not the grain.
+
+**Instruments.** `tools/scratch/rome-roads.mjs` fits Shepherd to the survey frame (RMS 28.5 real
+m, worst 56.7) and draws the authored table back onto the plate it came off, **parsing
+`ways.ts` rather than restating it**. `tools/scratch/rome-wayscan.mjs` runs the tree's own
+assertions over the tree's own modules with no browser, in about eight seconds — it bundles
+through Vite rather than re-implementing anything, and its first output was checked line for line
+against the boot log before it was used for anything. One alias is declared in it and is an
+identity: `survey.ts` reads `HALF_EXTENT` from `TerrainSystem`, which imports every map and closes
+a cycle a bundle cannot evaluate, and `TerrainSystem` gets that constant from `topography` on its
+own line 14.
+
+**Frames.** `tools/shots/rome-roads.shot.mjs`, twelve cameras, every coordinate in the file:
+`vialata-length` (249, 1000) dist 420 yaw 0.362; `vialata-length-low` (100, 606) dist 400 yaw
+3.5036; `vialata-oblique` (150, 800) eye 260 dist 480 yaw 3.5036; `gate-axis-tomb` (79, 720) dist
+165 yaw 0; `mausoleum-kerb` (60, 720) dist 85 yaw 4.7124; `junction-recta` (222, 929) dist 60 yaw
+3.927; `junction-recta-above` (222, 929) eye 130 dist 150 yaw 3.6; `junction-capitol` (292, 1117)
+eye 90 dist 170 yaw 5.5; `network-plan` (450, 950) eye 2400 dist 0 yaw π, 1 px = 1.617 world m;
+`network-plan-campus` (100, 950) eye 900, 1 px = 0.606 m; `network-plan-east` (700, 1000) eye 1100,
+1 px = 0.741 m; `network-approach` on the gate anchor, stand −200, eye 25, dist 420.
+
+**One camera lesson worth the line.** `dist` puts the eye *behind* the focus along the view
+direction, so `stand: -200, dist: 420, yaw: 'in'` on the gate anchor is a focus 200 m inside the
+wall and an eye **220 m outside it**. Half my first take was photographing the approach when it
+meant to be photographing the street. The approach frame turned out to be one of the two best in
+the set, because the Via Flaminia outside the gate had never been drawn before — every way node
+was clamped to 18 world metres outside the curtain — so **the ground the assault forms up on has a
+road on it for the first time.**
+
 <!-- Append new entries above this line. -->
+

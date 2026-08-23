@@ -13,6 +13,7 @@ import {
   assertRomeFrame,
   assertTopology,
   assertGateAxisClear,
+  assertWayGraph,
   assertWaysClearOfMonuments,
 } from './assertions';
 import { buildWall } from './circuit';
@@ -214,8 +215,26 @@ export const ROME_PLAN: CityPlan = {
      * and that is a *plaza* — an authored piece of the plan with its own shape and paving — not a
      * uniform margin, and it belongs to phase 5 with the rest of the fabric. This is the floor,
      * not the answer.
+     *
+     * **Phase 3 raised it from 2.5 to 4.0, and the extra 1.5 m comes off a measurement rather
+     * than off an instance.** Re-laying the road armature moved every quarter's grain, which
+     * moved the insulae, and one of them landed where the Baths of Trajan's drawn stone
+     * oversails its own declared box — G16 went red at **0.94 m** of intrusion. §9.7 predicted
+     * exactly that: it said G16 *"was passing on where an insula happened to fall"*, and this is
+     * the pass that made it fall somewhere else. Tuning the constant until that one insula
+     * clears would be the same fault again, so the number is taken from `probe-fabric` G14's own
+     * table instead: six of twenty-seven monuments draw stone outside their box, by **2.52 m**
+     * (the Tabularium) to **13.65 m** (the Stadium of Domitian). 2.52 is the *smallest* oversail
+     * any monument has, so below `1.5 + 2.52` the reservation is provably too small for every
+     * one of the six — that is the floor, and 4.0 m is it.
+     *
+     * **It does not cover the Stadium's 13.65 m and is not meant to.** The fix for that is
+     * `MAP-METHOD.md` rule 11 — derive the reserved rectangle *from the geometry builder's own
+     * extents* instead of typing it into a survey table — and it is monument work, not road
+     * work. `buildLandmarks` already runs in this function; it runs *after* the keep-out is
+     * built, and swapping those two lines is the whole of the plumbing.
      */
-    const MON_AMBITUS = 2.5;
+    const MON_AMBITUS = 4;
     for (const l of LANDMARKS) {
       keepOut.addRect(l.x, l.z, l.hw + MON_AMBITUS, l.hd + MON_AMBITUS, l.rot);
       // A mound is bigger in plan than the building on it.
@@ -309,14 +328,52 @@ export const ROME_PLAN: CityPlan = {
       );
     }
     /**
+     * **And the same question in survey metres, printed beside it, because they are different
+     * questions and the record kept quoting one as the other.**
+     *
+     * The world-frame number above is what the game collides with and is dominated by the
+     * projection: `KX` 0.443 and `KZ` 0.35 compress the *distance* between a street and a
+     * building while the building keeps its true cross-section. The survey number is what the
+     * road survey is actually responsible for. See `surveyFrameIntrusion`.
+     */
+    const sf = wayClearance.survey;
+    console.info(
+      `[city:rome] ranked ways inside a monument: ${wayClearance.inside}/${wayClearance.samples} = ` +
+        `${((100 * wayClearance.inside) / Math.max(1, wayClearance.samples)).toFixed(1)}% in WORLD metres ` +
+        `(the frame's number), ${sf.inside}/${sf.samples} = ${sf.pct}% in SURVEY metres against the ` +
+        `published footprints (the road survey's number)` +
+        (sf.byWay.some((w) => w.inside)
+          ? `; survey-frame residual: ${sf.byWay
+              .filter((w) => w.inside > 0)
+              .map((w) => `${w.id} ${w.pct}% (${w.hit.join('+')})`)
+              .join(', ')}`
+          : '')
+    );
+    /**
      * The gate axis, printed beside the carriageway rather than instead of it. A ground judge's
      * headline is measured on this line and the record could not re-derive it; now it can, and
      * the difference between the two numbers is visible in one place. See `assertGateAxisClear`.
      */
+    /**
+     * Phase 3's acceptance, printed at every boot: is the armature one graph, and is every gate
+     * mouth on a consular way? `feeders` used to manufacture the first and nothing checked the
+     * second. See `assertWayGraph`.
+     */
+    const graph = assertWayGraph();
+    console.info(
+      `[city:rome] armature: ${graph.ways} ways, consular-and-above in ${graph.rankedComponents} ` +
+        `piece(s); gate mouths: ${graph.gates.map((g) => `${g.id} -> ${g.on ?? 'NOTHING'}${g.cls ? ` (${g.cls})` : ''}`).join(', ')}` +
+        `; ends joined to nothing: ${graph.dangling.length} (` +
+        `${['map edge', 'gate', 'outside the curtain', 'STUB']
+          .map((k) => `${graph.dangling.filter((d) => d.why === k).length} ${k}`)
+          .join(', ')})`
+    );
+    for (const f of graph.faults) console.warn(`[city:rome] armature fault: ${f}`);
     const axis = assertGateAxisClear();
     console.info(
       `[city:rome] gate axis (the straight normal out of the Porta Flaminia, NOT the ` +
-        `carriageway, which deflect bends): ${axis.inside}/${axis.samples} = ${axis.pct}% ` +
+        `carriageway, which is a different line and is measured above): ` +
+        `${axis.inside}/${axis.samples} = ${axis.pct}% ` +
         `inside masonry over the first 700 m` +
         (axis.blockers.length
           ? `; blocked by ${axis.blockers.map((b) => `${b.id} ${b.from}-${b.to} m`).join(', ')}`
