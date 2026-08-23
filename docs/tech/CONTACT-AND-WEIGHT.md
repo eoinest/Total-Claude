@@ -481,24 +481,25 @@ against the same frame with `ssao` off.
 
 | station | ssao on | ssao off | the group |
 |---|---|---|---|
-| `front-eye` | 9.3 | 8.4 | 0.9 |
-| `roof-rake` | 9.7 | 9.0 | 0.7 |
-| `flank-halt` | 11.0 | 10.1 | 0.9 |
-| `corner` | 9.0 | 8.3 | 0.7 |
-| `tactical` | 8.2 | 7.4 | 0.8 |
-| `roof-close` | 8.0 | 7.1 | 0.9 |
-| `rear` | 10.7 | 9.8 | 0.9 |
-| `far120` | 6.8 | 6.0 | 0.8 |
-| `flank-march` | 10.2 | 9.2 | 1.0 |
+| `front-eye` | 10.4 | 9.2 | 1.2 |
+| `roof-close` | 8.9 | 8.1 | 0.8 |
+| `corner` | 9.9 | 8.9 | 1.0 |
+| `tactical` | 9.0 | 8.4 | 0.6 |
+| `far120` | 8.0 | 7.0 | 1.0 |
+| `rear` | 12.2 | 12.0 | 0.2 |
 
-The same measurement before the change put the group at 0.7–0.8 ms, so **the near-field
-contact term is 0.1–0.2 ms**. A second timed run of the same nine stations later the same
-session, with two other agents on the machine, read the group at 0.6–1.2 ms with a much wider
-p90 spread — same conclusion, and a reminder that only the *pair* is worth anything. Twelve full-resolution taps are that cheap because they are
-tightly clustered: at the shipped radius the whole disc fits inside a few dozen pixels and
-every tap after the first is a cache hit. Note the absolute numbers are only comparable
-*within* a session — two workstreams have measured the same camera at 21.78 ms and 9.14 ms in
-consecutive runs on this machine under contention.
+**The whole occlusion group is 0.2 to 1.2 ms** — HBAO at half resolution, the full-resolution
+contact pass with its 16-sample disc and its eight-step sun march, and four blurs, in six
+draw calls. Before any of this work the same measurement at the same stations put the group
+at 0.7 to 1.0 ms, so the near-field term and its four extra taps are inside the noise of a
+single session's spread. A third timed run of all nine stations, taken while two other agents
+were on the machine, read 0.6 to 1.2 with a much wider p90 — same conclusion, and the reason
+every figure here is an in-session pair and never an absolute: two workstreams have measured
+the same camera at 21.78 ms and 9.14 ms in consecutive runs on this machine under contention.
+
+Twelve, then sixteen full-resolution taps are this cheap because they are tightly clustered:
+at the shipped radius the whole disc fits inside a few dozen pixels and every tap after the
+first is a cache hit.
 
 The wake and the lean cost CPU, not GPU: one extra pass over `battle.units` a frame for the
 anchor velocity, a bounded spawn loop, and three float writes per drawn man.
