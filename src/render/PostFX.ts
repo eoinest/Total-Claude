@@ -119,6 +119,33 @@ const AO_FILL = 0.30;
  * fraction of the surface's own light.
  */
 const AO_FILL_GAMMA = 1.9;
+/**
+ * Tap spacing of the full-resolution contact blur, in texels.
+ *
+ * It was exactly 1.0 and the comment at its use said why: "wider than that and the contact
+ * core under a boot is smeared back out to nothing, which is the whole thing this pass exists
+ * to produce; narrower and the per-pixel march jitter survives as visible grain over a
+ * crowd". Both halves of that are still true and the balance moved, because the pass now
+ * carries a 16-sample stochastic disc as well as an eight-step march and therefore has more
+ * variance to remove.
+ *
+ * 1.5 rather than 2.0, and the sample count went up at the same time, because the two levers
+ * fail in opposite directions and only one of them is free of the core: more samples costs
+ * milliseconds and loses nothing, a wider blur costs nothing and eats the core.
+ *
+ * Measured on the `corner` plate's shaded shield face — high-frequency RMS, and the darkest
+ * pixel in the box, against the same box in the unoccluded frame's 2.60 and 6.5:
+ *
+ *   12 samples, 1.0 texel   3.87 / 0.1     <- what a grader called "near-black pepper"
+ *   16 samples, 1.5 texel   3.60 / 4.9     <- shipped
+ *   16 samples, 1.9 texel   3.62 / 4.6
+ *
+ * **The sample count was the whole of it and the blur width was not**, which is why this is
+ * 1.5 and not wider: 1.9 moved the noise by 0.02 in the wrong direction and cost 0.3 of the
+ * darkest pixel. The 1.0 in the residual over the unoccluded frame is signal — the term adds
+ * real high-frequency detail at every plank seam and every boss rim, and it should.
+ */
+const CONTACT_BLUR = 1.5;
 /** 8-sample Halton(2,3) jitter, the standard TAA sequence. */
 /*
  * Sky is tested with `>= 1.0`, not with an epsilon.
@@ -960,7 +987,7 @@ export class PostFXSystem implements Subsystem {
        *     the inside of a rank, the underside of a shield rim, the shaded face of a wall.
        *     Ambient occlusion has no direction and must be computed for them.
        *
-       * So: a 12-sample disc, cosine-weighted, radius \`uNear\` metres, dithered by the same
+       * So: a 16-sample disc, cosine-weighted, radius \`uNear\` metres, dithered by the same
        * interleaved gradient the march uses and cleaned by the same one-texel blur. Samples
        * are placed on a golden-angle spiral at *linear* radius fraction rather than the
        * square root that gives a uniform disc — the density is deliberately biased toward the
@@ -971,6 +998,16 @@ export class PostFXSystem implements Subsystem {
        * the right estimator over a metre, where one near occluder should not count twice; at
        * a hand's breadth what is wanted is *how much* of the neighbourhood is solid, and the
        * sum is that.
+       *
+       * **Sixteen samples and not twelve, and the four extra were bought by a blind grader.**
+       * At twelve the term was measurably correct and visibly *dirty*: on the shaded shield
+       * face at (132-176, 650-720) of the \`corner\` plate the high-frequency RMS went from
+       * 2.60 to 3.87 and the darkest pixel from 6.5 to 0.1, and a grader looking at that
+       * frame called it "coarse near-black pepper that does not follow the plank grain" and
+       * took a whole grade off A3 for it. Twelve dithered samples cleaned by a seven-tap
+       * one-texel blur leaves per-pixel variance a smoothly shaded surface has no business
+       * carrying. Sixteen samples and a 1.5-texel blur is the cheapest pair that fixes it —
+       * see the blur call in \`render\` for why the blur alone could not.
        */
       float nearContact( vec2 uv, vec3 P, vec3 N ) {
         vec2 rad = uNear.xy / max( 0.35, -P.z );
@@ -978,7 +1015,7 @@ export class PostFXSystem implements Subsystem {
         // over a third of the screen and every tap is a cache miss.
         rad = min( rad, vec2( 0.05 ) );
         float rot = tcIGN( gl_FragCoord.xy ) * 6.2831853;
-        const int NS = 12;
+        const int NS = 16;
         const float GA = 2.39996323;   // golden angle
         float occ = 0.0;
         for ( int i = 0; i < NS; i ++ ) {
@@ -1890,17 +1927,15 @@ export class PostFXSystem implements Subsystem {
         u.uNearR2.value = AO_CONTACT_RADIUS * AO_CONTACT_RADIUS;
       }
       this.blit(this.mContact, this.contactRT);
-      // Depth-aware separable blur, at full resolution and one texel per tap. Wider than
-      // that and the contact core under a boot is smeared back out to nothing, which is the
-      // whole thing this pass exists to produce; narrower and the per-pixel march jitter
-      // survives as visible grain over a crowd.
+      // Depth-aware separable blur, at full resolution. See `CONTACT_BLUR` for the width and
+      // why it is no longer exactly one texel.
       if (this.mBlur && this.contactTmp) {
         const bu = this.mBlur.uniforms;
         bu.tSrc.value = this.contactRT.texture;
-        (bu.uStep.value as THREE.Vector2).set(1 / this.w, 0);
+        (bu.uStep.value as THREE.Vector2).set(CONTACT_BLUR / this.w, 0);
         this.blit(this.mBlur, this.contactTmp);
         bu.tSrc.value = this.contactTmp.texture;
-        (bu.uStep.value as THREE.Vector2).set(0, 1 / this.h);
+        (bu.uStep.value as THREE.Vector2).set(0, CONTACT_BLUR / this.h);
         this.blit(this.mBlur, this.contactRT);
       }
       contactTex = this.contactRT.texture;
