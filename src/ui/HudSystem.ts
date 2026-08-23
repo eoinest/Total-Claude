@@ -549,7 +549,9 @@ export class HudSystem implements Subsystem {
         `draws ${info.render.calls}  tris ${(info.render.triangles / 1000).toFixed(0)}k  ` +
         `prog ${info.programs?.length ?? 0}\n` +
         `men ${men}  units ${units}  sel ${this.model.selection.length}  ` +
-        `${t.paused ? 'PAUSED' : `${t.gameSpeed}x`} t+${t.simTime.toFixed(0)}s`
+        // `stopped`, not `paused`: this line has always meant "the clock is not running", and
+        // a deployment hold now stops it without touching the player's own pause.
+        `${t.stopped ? 'PAUSED' : `${t.gameSpeed}x`} t+${t.simTime.toFixed(0)}s`
     );
   }
 

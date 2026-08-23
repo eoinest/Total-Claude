@@ -3,6 +3,7 @@ import { AdaptiveQualitySystem } from './AdaptiveQuality';
 import { EventBus } from './EventBus';
 import { Input } from './Input';
 import { RTSCamera } from './RTSCamera';
+import { SimWatchdog } from './SimWatchdog';
 import { Time } from './Time';
 import type { GameEvents } from './events';
 
@@ -24,6 +25,18 @@ export interface EngineContext {
   /** Canvas size in CSS pixels. */
   readonly viewW: number;
   readonly viewH: number;
+  /**
+   * True while `advance`/`advanceTicks` is running synthetic frames.
+   *
+   * `Engine.isAdvancing` has said for some time that this is "published because a subsystem
+   * cannot otherwise tell a frame the player will see from one of the thousands `advance`
+   * fires" — and it was published on the engine, which no subsystem holds. This is the same
+   * fact where a subsystem can reach it. Anything that reasons about *wall clock* has to sit
+   * those frames out: a fast-forward runs at whatever rate the CPU manages, and
+   * `NetSession.linkFault` reading a 60-second fast-forward as sixty seconds of silence from
+   * the relay is exactly the false alarm this field prevents.
+   */
+  readonly advancing: boolean;
   /** Resolve another subsystem by name. Throws if absent. */
   get<T extends Subsystem>(name: string): T;
   /** Resolve another subsystem, or undefined if not registered. */
@@ -226,6 +239,14 @@ export class Engine {
   }
 
   /**
+   * The thing that notices the battle has stopped, and the thing a thrown `fixedUpdate` is
+   * reported to. Owned by the engine rather than registered as a subsystem, on purpose:
+   * a watchdog that is one of the systems it watches is a watchdog with a hole in it, and
+   * this one has to survive `HudSystem` throwing. See `SimWatchdog`.
+   */
+  readonly watchdog = new SimWatchdog(this.time);
+
+  /**
    * Installed by the post-processing subsystem. When present the engine calls this
    * instead of `renderer.render`, so the composer owns the final image.
    */
@@ -291,6 +312,7 @@ export class Engine {
       get quality() { return self.quality; },
       get viewW() { return self.viewW; },
       get viewH() { return self.viewH; },
+      get advancing() { return self.advancing; },
       get: (name) => {
         const s = self.byName.get(name);
         if (!s) throw new Error(`[Engine] required subsystem "${name}" is not registered`);
@@ -422,8 +444,43 @@ export class Engine {
     this.input.beginFrame(this.time.frameDt, this.viewW, this.viewH);
 
     const fdt = this.time.fixedDt;
+    /*
+     * One `try` per system per tick, and the decision it encodes.
+     *
+     * Unguarded, a throw here propagated out of `frame()` — past every `update`, past
+     * `preRender`, past the submit — so the picture froze on the last frame that completed.
+     * `start`'s loop reschedules before it calls `frame`, so the loop survived and the page
+     * repainted nothing, for ever, with an exception per frame going to a console nobody had
+     * open. That is a second flavour of the same silent freeze this pass exists to end.
+     *
+     * The behaviour is **report loudly once and keep the frame alive**, and the three
+     * alternatives were each worse:
+     *
+     * - *Let it propagate.* The player gets a frozen picture and no explanation. This is what
+     *   shipped.
+     * - *Catch and swallow.* The battle keeps drawing and keeps being wrong and nobody is ever
+     *   told, which is the failure mode this whole pass is about. `SimWatchdog.fault` reports
+     *   the first occurrence of each distinct (phase, system, message) to the console *and to
+     *   the screen*, counts the rest, and re-throws once asynchronously so `window.onerror`
+     *   still fires and every `pageerror` collector in `tools/` still sees it exactly once.
+     * - *Disable the offending system.* Tempting and wrong. Dropping `BattleSystem` out of the
+     *   loop converts a crash into a battle that is quietly not the battle — the exact trade
+     *   that produced this bug report. A system that throws is called again next tick; if the
+     *   fault was transient it recovers on its own, and if it is not the counter on the banner
+     *   says so.
+     *
+     * Per system rather than per tick so one bad system cannot take the other twenty-four
+     * with it, which is the difference between a broken feature and a broken battle.
+     */
     for (let n = 0; n < steps; n++) {
-      for (const s of this.systems) s.fixedUpdate?.(fdt, this.ctx);
+      for (const s of this.systems) {
+        if (!s.fixedUpdate) continue;
+        try {
+          s.fixedUpdate(fdt, this.ctx);
+        } catch (err) {
+          this.reportFault('fixedUpdate', s.name, err);
+        }
+      }
     }
 
     /*
@@ -502,6 +559,26 @@ export class Engine {
     if (!this.advancing) {
       this.adaptive?.sample(this.lastRenderMs, linked, this.time.frameDt * 1000, this.lastSimMs);
     }
+
+    // Last, and after the submit, so it is measuring a frame that actually reached the screen.
+    this.watchdog.observe({ advancing: this.advancing, running: this.running });
+  }
+
+  /**
+   * Report a subsystem fault, and make sure it still reaches every instrument that was
+   * watching for it.
+   *
+   * The asynchronous re-throw is the part worth explaining. Swallowing the exception would
+   * make `page.on('pageerror')` — which every gate in `tools/` collects, and several fail on —
+   * blind to a class of failure it used to catch, so a change made to stop a silent freeze
+   * would have introduced a silent regression detector. Re-throwing out of a `setTimeout`
+   * reaches `window.onerror` on its own stack, once per distinct fault rather than thirty
+   * times a second, and cannot take the frame with it.
+   */
+  private reportFault(where: string, system: string, err: unknown): void {
+    const rep = this.watchdog.fault(where, system, err);
+    if (rep.count !== 1) return;
+    setTimeout(() => { throw err; }, 0);
   }
 
   private lastProgramCount = 0;
@@ -638,7 +715,8 @@ export class Engine {
   advanceTicks(ticks: number, stepMs = 1000 / 60, opts: AdvanceOptions = {}): number {
     const target = this.time.tick + Math.max(0, Math.round(ticks));
     const prevCeiling = this.time.tickCeiling;
-    this.time.tickCeiling = target;
+    const prevOwner = this.time.ceilingOwner;
+    this.time.setCeiling(target, 'engine.advanceTicks');
     let t = this.time.elapsed * 1000;
     this.time.rebase(t);
     const wasAdvancing = this.advancing;
@@ -659,7 +737,9 @@ export class Engine {
     } finally {
       this.advancing = wasAdvancing;
       this.skipSubmit = wasSkipping;
-      this.time.tickCeiling = prevCeiling;
+      // Hand the ceiling back to whoever had it, name and all. A nested `advanceTicks` inside
+      // a lockstep battle must not leave `net`'s ceiling attributed to the harness.
+      this.time.setCeiling(prevCeiling, prevOwner);
     }
     this.time.rebase();
     return frames;

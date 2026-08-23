@@ -34,7 +34,15 @@ import {
  *    deployment verb to the relay, and applies only what comes back in a turn packet.
  * 2. **The client may not simulate past the last turn it has.** `Time.tickCeiling` — which
  *    exists for the replay gate — is set to `turnTick(readyTurn + 1)` every frame. A missing
- *    packet stalls the battle; it never lets it guess.
+ *    packet stalls the battle; it never lets it guess. **And a stall has to end.** Rule 2 is
+ *    correct and it is also the thing that froze the owner's battle: with the relay gone the
+ *    last authorised ceiling stood for ever, `paused` false and `gameSpeed` 1, so the world
+ *    animated and nothing moved and nothing said why. `linkFault` is the missing half — the
+ *    socket having closed, or the relay's own ten-a-second turn packets having stopped — and it
+ *    ends the match through `onEnd` exactly as a relay-sent `end` does. `Time.explainCeiling`
+ *    is the other half: this session tells `SimWatchdog`, in its own words, whether the stop it
+ *    is imposing right now is a lockstep wait or a fault, so the watchdog can be loud about the
+ *    second without ever being loud about the first.
  * 3. **Wall clock is a pacing device and nothing else.** It decides how fast this client is
  *    allowed to *catch up*, through `time.gameSpeed`, which scales the accumulator and never
  *    the step. `docs/MULTIPLAYER.md` §1.10 lists "pause and speed are raw writes to the clock"
@@ -123,6 +131,33 @@ const DIGEST_HISTORY = 12;
  * times speed to reach t+300 inside a minute.
  */
 const STALL_MS = (TICKS_PER_TURN / 30) * 1000 * 1.5;
+/**
+ * Silence from the relay that stops being a hitch and starts being a dead link.
+ *
+ * The relay's turn scheduler is a wall clock: `Room.tick` closes every turn whose deadline has
+ * passed and emits a packet to both slots, `turnMs` apart — 100 ms by default — regardless of
+ * what either client is doing. Ten packets a second, unconditionally. So six seconds of total
+ * silence is roughly **sixty consecutive missed turns**, which is not a slow peer and is not
+ * jitter; the peer's speed does not enter into it, because the peer is not what sends this.
+ *
+ * It exists at all because `onclose` is not guaranteed. A laptop that sleeps and a wireless
+ * link that drops both leave a half-open TCP connection whose browser-side `WebSocket` sits in
+ * `readyState 1` until something times out, and that is exactly the shape of "I was in the
+ * middle of a game and everything froze".
+ *
+ * **In rendered seconds, not in `performance.now()`, and that distinction cost `qa-net` an arm.**
+ * The first version differenced wall clock against the last inbound frame, and on a machine
+ * running three determinism gates at once it ended a perfectly healthy match with `linkLost`
+ * mid-desync-test. Nothing was wrong with the socket: `onmessage` runs on the page's main
+ * thread, so a main thread that is blocked cannot *receive* a packet that has already arrived,
+ * and six seconds of blocked thread read identically to six seconds of dead relay.
+ *
+ * `Time.frameDt` cannot tell that lie. It is clamped at 0.25 s and it only advances on a frame
+ * that ran, so a stalled page contributes a quarter of a second to this total however long it
+ * was stalled, and a page that is drawing normally contributes real time. The same reasoning
+ * `SimWatchdog` uses for the same reason.
+ */
+const LINK_SILENT_S = 6;
 
 export class NetSession implements Subsystem {
   readonly name = 'net';
@@ -163,6 +198,9 @@ export class NetSession implements Subsystem {
   private stallSince = 0;
   /** When this client first ran out of authorised ticks. Not yet a stall; see `STALL_MS`. */
   private waitingSince = 0;
+  /** Rendered seconds since an inbound frame last arrived. See `LINK_SILENT_S`. */
+  private quietFor = 0;
+  private lastGot = -1;
   private perturbed = -1;
   /** The tick this client was on when it announced. -1 until `announce` runs. */
   private tick0 = -1;
@@ -195,7 +233,51 @@ export class NetSession implements Subsystem {
      * construction rather than by hope. `BootPrint.tick0` then *asserts* it, so a future change
      * that reintroduces the window is refused in the lobby instead of desyncing at t+30.
      */
-    ctx.time.tickCeiling = 0;
+    ctx.time.setCeiling(0, 'net');
+    /*
+     * And say, once, how this session answers for the ceiling it holds.
+     *
+     * `SimWatchdog` asks whenever the simulation has been still for more than a moment, and
+     * this is the answer that keeps a safety net from becoming a false alarm in every match.
+     * The judgement is deliberately *not* a duration: a lockstep client is supposed to sit on
+     * its ceiling, and how long is a question about the other player, which nothing here is
+     * entitled to have an opinion about. It is a fact about the transport instead — see
+     * `linkFault`. A client waiting on a live relay is quiet; a client whose relay is gone is
+     * not, and by the time the watchdog asks, `pace` has usually already ended the match.
+     */
+    ctx.time.explainCeiling('net', () => {
+      /*
+       * `over` first, and the order is a check this gate caught.
+       *
+       * A match that has ended has a result on screen: `NetPanel` prints "linkLost: the relay
+       * closed the connection" the moment `pace` names it. Asking about the link before asking
+       * about the phase reported the *same event twice* — a red banner over a session strip that
+       * had already explained itself — and two notices for one event is how a player learns to
+       * ignore both. The watchdog is for the case where nothing else speaks.
+       */
+      if (this.phase === 'over') {
+        return {
+          held: true, expected: true,
+          why: `the match is over (${this.ended || 'ended'}): ${this.message}`,
+        };
+      }
+      // Belt as well as braces: `pace` ends the match on a link fault within a frame of it
+      // happening, so reaching this means something stopped that from working.
+      const fault = this.linkFault();
+      if (fault) return { held: true, expected: false, why: fault };
+      if (this.phase !== 'battle') {
+        return {
+          held: true, expected: true,
+          why: this.phase === 'deploy'
+            ? 'both armies are still being laid out'
+            : 'waiting for the other player to join',
+        };
+      }
+      return {
+        held: true, expected: true,
+        why: `waiting for turn ${this.readyTurn + 1} from the relay`,
+      };
+    });
     this.battle = ctx.get<Subsystem>('battle') as unknown as BattleSystem;
     this.replay = ctx.get<Subsystem>('replay') as unknown as ReplaySystem;
     const sink: NetSink = {
@@ -266,8 +348,32 @@ export class NetSession implements Subsystem {
    */
   private pace(): void {
     const t = this.ctx.time;
+    /*
+     * How long the relay has been silent, counted in frames that actually ran.
+     *
+     * `link.counts.got` rather than a timestamp taken in `onmessage`, and `time.frameDt` rather
+     * than `performance.now()`, because both halves of the measurement have to be blind to a
+     * blocked main thread — see `LINK_SILENT_S`. Synthetic frames are excluded outright: a
+     * fast-forward runs thousands of frames with no event loop in between, and every one of
+     * them is a frame during which nothing could possibly have arrived.
+     */
+    if (!this.ctx.advancing) {
+      const got = this.link.counts.got;
+      if (got !== this.lastGot) { this.lastGot = got; this.quietFor = 0; }
+      else this.quietFor += t.frameDt;
+    }
+    /*
+     * The link, before anything else, because a client with no link has no business waiting.
+     *
+     * This is the fix for the freeze the pass was opened on. There is no reconnection —
+     * §4.5 refuses it and §9.6 prices it — so the honest behaviour when the wire fails is
+     * exactly the one a relay-sent `end` already produces: halt at a stated tick, name the
+     * reason, and leave the record. What was missing was anybody noticing.
+     */
+    const fault = this.linkFault();
+    if (fault && this.phase !== 'over') this.onEnd('linkLost', this.ctx.time.tick, fault);
     if (this.phase === 'over') {
-      t.tickCeiling = t.tick;
+      t.setCeiling(t.tick, 'net');
       t.gameSpeed = 1;
       return;
     }
@@ -277,7 +383,7 @@ export class NetSession implements Subsystem {
      * the whole point — see `init`.
      */
     const ceiling = turnTick(this.readyTurn + 1);
-    t.tickCeiling = ceiling;
+    t.setCeiling(ceiling, 'net');
     /*
      * The deployment phase is not a stall and must not be counted as one.
      *
@@ -325,6 +431,45 @@ export class NetSession implements Subsystem {
      */
     t.gameSpeed = behind > TICKS_PER_TURN * 4 ? MAX_CATCHUP_SPEED
       : behind > TICKS_PER_TURN * 2 ? 2 : 1;
+  }
+
+  /**
+   * Is the wire broken? The one question that separates a correct lockstep stall from a freeze.
+   *
+   * This is the discriminator the whole safety net rests on, so it is worth being exact about
+   * what it is *not*. It is not "how long has this client been at its ceiling" — a client at
+   * its ceiling is a client doing lockstep properly, and at a 100 ms turn it is there for most
+   * of every second of every match. It is not "how long since the peer did anything" — the
+   * peer is allowed to think, and a deployment phase legitimately lasts minutes. Timing out on
+   * either of those would put a red banner on a healthy game, which is worse than no banner at
+   * all because the next real one would be ignored.
+   *
+   * It is two facts about the transport, and nothing else:
+   *
+   * 1. **The socket said it was gone.** `NetLink.dropped`, set from `onclose` or `onerror`
+   *    whether or not the handshake had settled. Instant, unambiguous, and until this pass it
+   *    was set and never read.
+   * 2. **The relay has stopped sending.** `Room.tick` emits a turn packet to both slots every
+   *    `turnMs` off its own wall clock, unconditionally, so inbound traffic is a heartbeat
+   *    nobody has to arrange. This is the case `onclose` cannot cover: a half-open socket after
+   *    a sleep or a dropped wireless link, where the browser still believes it is connected.
+   *
+   *    The threshold is **eight observed gaps or `LINK_SILENT_S`, whichever is longer**, and
+   *    the multiple matters more than the floor. `turnMs` belongs to the relay —
+   *    `tools/relay.mjs --turn-ms=` sets it — so a constant tuned against the 100 ms default
+   *    would report a deliberately slow relay as a dead one, which is the false alarm this
+   *    whole design is trying not to be. `NetLink.gapMs` is what the link is actually doing.
+   *
+   * Both are only asked once the handshake is behind us — before `announce` there is nothing
+   * to be silent about.
+   */
+  private linkFault(): string {
+    if (this.link.dropped) return this.link.dropped;
+    if (this.tick0 < 0 || !this.link.lastMessageAt) return '';
+    const limit = Math.max(LINK_SILENT_S, (this.link.gapMs * 8) / 1000);
+    if (this.quietFor < limit) return '';
+    return `nothing has arrived from the relay in ${this.quietFor.toFixed(1)} s of `
+      + `drawing, against a ${Math.round(this.link.gapMs)} ms turn — the link is gone`;
   }
 
   // -------------------------------------------------------------------------
@@ -499,7 +644,7 @@ export class NetSession implements Subsystem {
     this.phase = 'over';
     this.ended = 'desync';
     this.endedAtTick = m.lastAgreedTick;
-    this.ctx.time.tickCeiling = this.ctx.time.tick;
+    this.ctx.time.setCeiling(this.ctx.time.tick, 'net');
     this.message = `the two battles parted at tick ${m.tick} (${m.layer})`;
     console.error(`[net] desync at tick ${m.tick}: ${m.layer} ${m.mine} vs ${m.theirs}; `
       + `last agreed tick ${m.lastAgreedTick}`);
@@ -511,7 +656,7 @@ export class NetSession implements Subsystem {
     this.endedAtTick = atTick;
     this.phase = 'over';
     this.message = detail;
-    this.ctx.time.tickCeiling = this.ctx.time.tick;
+    this.ctx.time.setCeiling(this.ctx.time.tick, 'net');
     console.warn(`[net] session ended (${why}) at tick ${atTick}: ${detail}`);
   }
 

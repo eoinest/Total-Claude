@@ -290,7 +290,10 @@ export class TopBar {
       setClass(this.advantage, 'bad', swing < -0.04);
     }
 
-    const speed = ctx.time.paused ? '0' : String(ctx.time.gameSpeed);
+    // `stopped`, so the pause button still lights while the deployment phase holds the clock:
+    // that hold used to be `paused` itself, and the readout must not change because its
+    // owner did.
+    const speed = ctx.time.stopped ? '0' : String(ctx.time.gameSpeed);
     for (const [k, b] of this.speedBtns) setClass(b, 'on', k === speed);
   }
 
