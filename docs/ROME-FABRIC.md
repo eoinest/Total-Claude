@@ -2393,7 +2393,7 @@ gap between them is not the road's fault.
 | all ranked ways | **99 / 685 = 14.5 %** | **16 / 1037 = 1.5 %** |
 | worst way | `via-sacra` 54 % (`forum-romanum`) | `via-sacra` 39 % (`forum-romanum`) |
 | next | `via-labicana` 27 %, `via-recta` 24 %, `via-lata` 21 %, `alta-semita` 16 % | `via-appia` 9 % (`palatine`), `via-labicana` 2 % (`colosseum`) |
-| clear | 6 of 12 | **9 of 12** |
+| clear | 7 of 13 (the twelve ranked ways plus the military road, which runs through the Castra Praetoria's drawn box at 9 %) | **9 of 12** |
 
 `MAP-METHOD.md` rule 4: **positions compress, cross-sections do not.** Rome's easting compresses
 by `KX` = 0.443 and its northing by `KZ` = 0.35 while a monument keeps its true size in world
