@@ -2,7 +2,7 @@ import { Faction } from '../../sim/types';
 import { buildCarthageWall, CARTHAGE_SECTION } from '../carthageWall';
 import { activeFortification } from '../fortification';
 import type { CityAssertion, CityBuild, CityPlan } from '../cityPlan';
-import { assertNoFabricOverlaps, KeepOut } from '../layout';
+import { assertNoFabricOverlaps } from '../layout';
 import { buildTreeChunks } from '../props';
 import { type CityChunkSpec, type TreeRequest } from '../wall';
 import { GATE_OPEN_WIDTH } from './apertures';
@@ -19,7 +19,7 @@ import {
 import { buildWall } from './circuit';
 import { assertBlockBearingSign, assertBlocksAreFaces, buildDistricts } from './fabric';
 import { assertRegionPartition, OFF_FRAME_REGIONES, regionFallbacks } from './regions';
-import { AQUEDUCTS, LANDMARKS, PLAZAS, WAY_FRONTAGE, wayMix, WAYS } from './layout';
+import { LANDMARKS, romeKeepOut, wayMix, WAYS } from './layout';
 import { buildLandmarks } from './monuments';
 import { WALL } from './section';
 
@@ -194,9 +194,13 @@ export const ROME_PLAN: CityPlan = {
     // generated. A circle is not good enough: the Circus Maximus is 621 × 118 m, and the
     // circle that used to stand in for it left five sixths of its footprint free for the
     // fabric to grow through — which is precisely what happened.
-    const keepOut = new KeepOut();
     /**
      * **A monument gets a keep-out, not a non-intersection, and that margin is the whole point.**
+     *
+     * The map itself is `romeKeepOut()` in `layout.ts`, beside the things it reserves, because
+     * `tools/scratch/rome-blockcheck.mjs` was assembling a second one that differed — see the
+     * note there. What follows is why the reservation is the size it is; it moved, it did not
+     * change.
      *
      * `l.hw`/`l.hd` are already the precinct box, but `PRECINCT` = 1.07 buys a monument 3.5 % of
      * its own half-width — about 1.3 m on the Pantheon — and two separate instruments say that is
@@ -206,16 +210,11 @@ export const ROME_PLAN: CityPlan = {
      * a building, and it fails wherever a builder's cornice or podium oversails its own box,
      * which G14 measures separately and independently.
      *
-     * Reserving the *ambitus* plus a metre of oversail here makes both pass **by construction**
+     * Reserving the *ambitus* plus a metre of oversail there makes both pass **by construction**
      * rather than by where an insula happened to fall — which is how they were passing, as this
      * pass discovered by moving the Janiculum 404 m and watching an unrelated insula land on the
      * Theatre of Pompey. A ground judge asked for this in as many words: *"a monument needs a
      * keep-out, not a non-intersection… G9 is right and too weak."*
-     *
-     * It is deliberately small. The same judge also wants the Pantheon's 60 m paved forecourt,
-     * and that is a *plaza* — an authored piece of the plan with its own shape and paving — not a
-     * uniform margin, and it belongs to phase 5 with the rest of the fabric. This is the floor,
-     * not the answer.
      *
      * **Phase 3 raised it from 2.5 to 4.0, and the extra 1.5 m comes off a measurement rather
      * than off an instance.** Re-laying the road armature moved every quarter's grain, which
@@ -234,53 +233,12 @@ export const ROME_PLAN: CityPlan = {
      * extents* instead of typing it into a survey table — and it is monument work, not road
      * work. `buildLandmarks` already runs in this function; it runs *after* the keep-out is
      * built, and swapping those two lines is the whole of the plumbing.
+     *
+     * The ways reserve their carriageway plus a margin by rank (`WAY_FRONTAGE`), the fourteen
+     * squares reserve their paving, and an aqueduct reserves eight metres either side of its
+     * arcade.
      */
-    const MON_AMBITUS = 4;
-    for (const l of LANDMARKS) {
-      keepOut.addRect(l.x, l.z, l.hw + MON_AMBITUS, l.hd + MON_AMBITUS, l.rot);
-      /**
-       * **A mound is bigger in plan than the building on it — and it is the shape of the
-       * building, not a circle.**
-       *
-       * This was `addCircle(l.x, l.z, (l.moundRadius ?? l.clear) * 1.02)`, and
-       * `src/terrain/topography.ts` has been naming it as a fault for two passes: *"That row
-       * is authored `len: 520, wid: 240` and its keep-out is still `addCircle(x, z,
-       * moundRadius * 1.02)` — a circle of radius 234.6 m standing for a hill whose
-       * semi-minor axis is 96.4 m. **A radius cannot say what a length and a width say.**"*
-       *
-       * The row it names is the **Janiculum**, and the cost of the circle was invisible until
-       * the far bank had a quarter on it. `monuments.ts` already *draws* the mound elliptical
-       * — `buildMound(batch, detail, m.hw * k, m.hd * k, …)` with `k = moundRadius / clear` —
-       * so the drawn ridge is 418 × 193 world metres on its own 74.9° bearing, and the ground
-       * reserved for it was a **469 m circle**. The difference is 6.9 hectares of Transtiberim,
-       * and measured on this tree it was the whole of it: Regio XIV's non-*horti* ground came
-       * back at **0 % roof over 5.8 ha** with `reserved` as the reason, on a quarter that had
-       * just been given three streets off the plates.
-       *
-       * So the reservation is now the same ellipse the builder draws, as an oriented rectangle
-       * at its own semi-axes. That is `MAP-METHOD.md` rule 11 in its own words — *derive the
-       * reserved rectangle from the geometry builder's own extents rather than typing it into
-       * a survey table* — applied to a mound instead of to a wall.
-       *
-       * It is a rectangle and not an ellipse because `KeepOut` has `addRect` and `addCircle`
-       * and no third thing, and a rectangle circumscribing the ellipse is the conservative
-       * direction: it reserves 4/π more ground than the mound covers and can therefore never
-       * put a house on the hillside. The four other mounded rows — the Capitol, the Palatine,
-       * the Aventine temples, the Caelian — are all within 15 % of round, so this moves them
-       * by a few metres and moves the Janiculum by a quarter of a kilometre.
-       */
-      if (l.mound) {
-        const k = (l.moundRadius ?? l.clear) / l.clear;
-        keepOut.addRect(l.x, l.z, l.hw * k * 1.02, l.hd * k * 1.02, l.rot);
-      }
-    }
-    // The whole armature, not just the nine named viae: the military road behind the curtain,
-    // the ring round every monument and the feeders that connect them all reserve their
-    // carriageway plus a margin, so the fabric presents a frontage to the street instead of
-    // growing into it. See `WAY_FRONTAGE` for why the margin is by rank.
-    for (const w of WAYS) keepOut.addPath(w.path, w.width * 0.5 + WAY_FRONTAGE[w.cls]);
-    for (const p of PLAZAS) keepOut.addRect(p.x, p.z, p.hw + 2, p.hd + 2, p.rot);
-    for (const a of AQUEDUCTS) keepOut.addPath(a.path, 8);
+    const keepOut = romeKeepOut();
 
     // Build-time assertion: no two monuments interpenetrate. Reported in `stats()` and logged
     // once, because a layout regression is otherwise invisible until someone notices a temple

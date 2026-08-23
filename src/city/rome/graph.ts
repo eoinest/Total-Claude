@@ -239,21 +239,61 @@ export function faceBearing(poly: readonly Pt[]): number {
       break;
     }
   }
+  /*
+   * **The longest side is not enough either, and the tie is where the seams came from.**
+   *
+   * The longest *single* side breaks a near-tie by a coin flip. Measured on the built city:
+   * of the 29 blocks involved in a `probe-fabric` G21 grain seam, **14 had a second side at a
+   * different bearing within 80 % of the longest**, and five of those within 95 % — block 95
+   * in Regio IX is 93.7 m one way and 88.6 m the other, nineteen degrees apart. Which of the
+   * two streets that block "fronts" is then decided by five metres, and the block next to it
+   * decides the same question the other way, and the two turn nineteen degrees apart across a
+   * lane. That is the definition of a seam and none of it is a fact about the city.
+   *
+   * So the answer is the **mode over bearing classes** rather than the max over sides: sum the
+   * lengths of every side within a degree of each other — which for a rectangle is the front
+   * *and* the back — and take the class with the most street on it. It is not the mean this
+   * function's own note rejects, and the distinction matters: a mean over a quadrilateral
+   * whose ends splay is the 45 degrees between them, whereas a mode is always one of the
+   * bearings the block actually has, so the answer is still a street's bearing and G20 still
+   * reads zero. What it adds is that a block 86 m by 66 m no longer has to decide between 86
+   * and 66; it decides between 172 of frontage and 132, which is the same question asked with
+   * twice the evidence and is decisive where the other was a toss-up.
+   *
+   * The bearing returned is the longest single side *within* the winning class, so it is a
+   * line the city has rather than an average of two.
+   */
+  const classes: { total: number; bestLen: number; bearing: number }[] = [];
   let runLen = 0;
   let runBearing = bearingOf(start);
+  const fileRun = (): void => {
+    let cl = classes.find((c) => near(c.bearing, runBearing));
+    if (!cl) {
+      cl = { total: 0, bestLen: -1, bearing: runBearing };
+      classes.push(cl);
+    }
+    cl.total += runLen;
+    if (runLen > cl.bestLen) {
+      cl.bestLen = runLen;
+      cl.bearing = runBearing;
+    }
+  };
   for (let k = 0; k <= n; k++) {
     const i = (start + k) % n;
     if (k < n && (k === 0 || near(bearingOf(i), runBearing))) {
       runLen += lenOf(i);
       continue;
     }
-    if (runLen > bestLen) {
-      bestLen = runLen;
-      best = runBearing;
-    }
+    fileRun();
     if (k >= n) break;
     runBearing = bearingOf(i);
     runLen = lenOf(i);
+  }
+  for (const c of classes) {
+    if (c.total > bestLen) {
+      bestLen = c.total;
+      best = c.bearing;
+    }
   }
   // Fold: a block fronting its street and a block gable-end to it are the same grain, and
   // `probe-fabric` G20 folds the answer the same way.

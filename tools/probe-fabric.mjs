@@ -214,6 +214,16 @@
  *            whichever quarter was planned first and the buildings come out disjoint.
  *   G20-G21  the fabric's GRAIN comes from the street network, not from `hash2`. A block's
  *            orientation against the street that bounds it, and against its own neighbours.
+ *   G23      the ground between street lines is BUILT, at the AGEA orthophoto's 60-70%. Phase
+ *            5. The denominator is the whole difficulty and it comes from the scene: region,
+ *            minus carriageway, minus monument precinct — because a fabric generator is not
+ *            responsible for the ground the Baths of Trajan stand on, and 21% of Rome's
+ *            ground between street lines is monument precinct.
+ *   G24      no block builds NOTHING while it still has room for a house. The other half of
+ *            G23: a mean coverage can be met with a third of the city empty and the rest
+ *            solid. A block's own inset polygon minus monument, carriageway and water is the
+ *            ground it could have used; a block with a house's worth of it and no house is
+ *            the failure, and a garden quarter is the one exclusion, counted and gated.
  *
  * **Today's Rome fails it comprehensively, and that is the point.** Those numbers are the
  * "before" column the rebuild is measured against.
@@ -308,6 +318,24 @@ const INJECTIONS = {
       + 'of G13b at once on Carthage: the refusal is a fact about the population (two harbours '
       + 'published 1.6 % apart assert no order), and the moment the check is told to grade that '
       + 'noise it goes red on it.',
+  },
+  'coverage-naive': {
+    hits: 'G23',
+    what: 'stops subtracting the ground the fabric is not allowed to build on, so G23\'s '
+      + 'denominator goes back to every square metre of a block\'s inset polygon. Proves the '
+      + 'subtraction is load-bearing rather than decorative: 21 % of Rome\'s ground between '
+      + 'street lines is monument precinct, another 3 % aqueduct corridor and 2 % water, and '
+      + 'without the subtraction the city reads 49.6 % against a 60 % gate — which is the '
+      + 'number that scoped a whole phase to close a gap that was mostly not there. '
+      + 'MAP-METHOD.md rule 32.',
+  },
+  'horti-blind': {
+    hits: 'G24',
+    what: 'empties G24\'s horti exclusion, so a garden quarter built at 8 per cent by design '
+      + 'counts as a block the generator gave up on. Proves the exclusion accounting is a '
+      + 'measurement and not an excuse — the same shape as `water-no-exclusions`, and rule 16 '
+      + 'again: an exclusion is a claim, so it needs a count, a gate and a price. The price is '
+      + 'the aggregate limb: the garden ground itself is graded on the 8 % it declares.',
   },
   'complex-invent': {
     hits: 'G8c, G8d',
@@ -541,6 +569,82 @@ const T = {
    * seventeen lattices.
    */
   GRAIN_SEAM_FRACTION: 0.01,
+
+  /**
+   * **Roof over the ground between street lines.** `ROME-FABRIC.md` §4.4 check 4 takes
+   * **60-70 %** from the AGEA 2012 orthophoto of the historic core, and this is a floor at
+   * that band's bottom rather than a window at both ends. A window would be the wrong shape
+   * twice over: the measurement is of *footprints* and a courtyard insula's footprint is the
+   * whole block, so the number reads high against a photograph by an amount nothing here has
+   * measured; and there is no failure mode in which a city is too dense that some other check
+   * does not catch first — G3 and G10 fail on interpenetration, G9 on the *ambitus*, G17 on a
+   * quarter with no streets left in it.
+   *
+   * Applied to `fabricOverAllowed`: the fabric over the ground the fabric is *allowed* —
+   * a block's own inset polygon minus the monument precincts, minus everything the plan's
+   * `KeepOut` reserves, minus water. On Rome, monument precinct alone is 21 % of the ground
+   * between street lines, so grading the fabric against a denominator that includes it asks
+   * the insulae to build the Baths of Trajan. Phase 4's 44 % was that number and it is still
+   * printed, beside this one, so the two passes can be compared.
+   */
+  ROOF_COVERAGE_MIN: 0.6,
+
+  /**
+   * Rule 27: a gate on a distribution needs a floor on its population, and the floor belongs
+   * in the gate. Ten hectares is about thirty blocks at Rome's own median inset; under it the
+   * ratio is a statement about a handful of cells.
+   */
+  ROOF_COVERAGE_MIN_GROUND_M2: 100000,
+
+  /**
+   * **What a garden quarter owes in exchange for being excused.**
+   *
+   * G24 lets an empty *horti* block off the per-block test, because `HORTI_COVERAGE` = 8 % by
+   * design and a garden is meant to have empty blocks in it. Rule 18 says a declared class has
+   * to take on an obligation rather than shed one, so the obligation is the aggregate: **all
+   * the garden ground in the city, graded on that 8 %.** Declare a quarter horti and empty it
+   * and this goes red; declare it horti and build it like a quarter and this goes red too.
+   *
+   * The band is 4-16 %, which is 8 % halved and doubled, **against the block's whole ground**
+   * — the unit `ROME-FABRIC.md` phase 6 states the acceptance in ("building coverage in the
+   * horti <= 8 %"). Not against the ground the fabric is allowed, which is G23's denominator
+   * and the wrong one here: the Janiculum's own precinct is inside three of these blocks and
+   * the two readings differ by a factor of two.
+   *
+   * Wide because the generator's own dice are per-block Bernoulli at 8 % and eleven garden
+   * blocks is a small sample — which is why there is a floor on the population as well
+   * (rule 27), and why an absolute *count* of empty blocks was the wrong shape: it does not
+   * survive `e/city/rome-transtiberim` declaring 20.8 of Regio XIV's 26.6 ha *horti*.
+   */
+  HORTI_COVERAGE_BAND: [0.04, 0.16],
+
+  /** Rule 27's floor, in the units the ratio is taken over. Three blocks' worth of garden. */
+  HORTI_MIN_GROUND_M2: 10000,
+
+  /**
+   * **How far a dry floor stands above the drawn water surface, metres.** The probe's own
+   * copy of the requirement, and the copy is deliberate.
+   *
+   * G24 asks whether a block had anywhere to put a house, so it has to know what ground is
+   * water — and "not submerged" is not the same as "dry". `riverProfile` models the inside of
+   * a Tiber meander as a point bar whose terrace reaches `WATER_LEVEL + 0.8`; the cells this
+   * catches on Rome are the last twenty centimetres of that run, ground standing 0.02 to
+   * 0.25 m over the river, which is a mudflat and not a quay.
+   *
+   * `src/city/rome/fabric.ts` holds the same number as `QUAY_FREEBOARD` and the two are
+   * **not** shared on purpose: if the generator raises its freeboard above this, the ground it
+   * refuses stops being water here and G24 goes red with the blocks named, which is the
+   * conversation that ought to happen. `MAP-METHOD.md` rule 6 — an instrument compares against
+   * something outside the thing it grades, and a threshold typed here is outside.
+   *
+   * 0.6 is `e/city/rome-transtiberim`'s number and its derivation, taken over this branch's
+   * first answer of 0.45: the lower of the terrain's two terrace heights (0.8) less a 0.2 m
+   * margin, so a plot on **either** terrace builds and a plot on a bank slope does not.
+   *
+   * What would change it: the terrain raising Rome's right bank, which would move the ground
+   * rather than the rule and is `terrain/topography.ts`'s call.
+   */
+  DRY_FLOOR_FREEBOARD_M: 0.6,
 
   /**
    * **RETIRED, and the retirement is the point.** `SCALE_SPREAD_TOL` used to gate G13 —
@@ -1424,6 +1528,15 @@ try {
      * ruler: the question asked of it is "are these the five that were agreed?".
      */
     let declaredOffFrame = null;
+    /**
+     * The **block plan** — the faces of the road graph, their inset polygons and whether each
+     * one is a garden by design. Read as the object under test, exactly as `regions` is: the
+     * question asked of it is "does every block that ends with no roof on it have somewhere
+     * for the roof to have gone?", and the roof is counted from the SCENE's obstacle set,
+     * which the plan has never seen. Rome only; Carthage's fabric has no face plan and G24
+     * reads NOT MEASURED with that as its reason.
+     */
+    let blockPlan = null;
     const importNotes = [];
     try {
       if (MAPID === 'campus-martius') {
@@ -1450,6 +1563,16 @@ try {
         regions = RG.REGIONS.map((r) => ({ id: r.id, poly: r.poly.map((p) => ({ x: p.x, z: p.z })) }));
         regionsOffFrame = (RG.OFF_FRAME_REGIONES ?? []).map((r) => `${r.numeral} ${r.name}`);
         declaredOffFrame = (L.OFF_MAP_SOUTH ?? []).map((m) => m.id);
+        // `cityPlan()` is memoised and the game has already called it, so this is the same
+        // object the scene was built from and not a second evaluation of it.
+        const FB = await import('/src/city/rome/fabric.ts');
+        blockPlan = FB.cityPlan().blocks
+          .filter((b) => b.kind === 'block' && b.inset.length >= 3)
+          .map((b) => ({
+            index: b.index, region: b.region.numeral, horti: !!b.horti,
+            cx: b.face.cx, cz: b.face.cz, insetAreaM2: b.insetAreaM2,
+            inset: b.inset.map((q) => ({ x: q.x, z: q.z })),
+          }));
       } else if (MAPID === 'carthage') {
         const L = await import('/src/city/carthage/layout.ts');
         armature = L.PUNIC_WAYS.map((w) => ({ id: w.id, cls: w.cls, path: w.path, width: w.width }));
@@ -2317,6 +2440,7 @@ try {
       return circuit[circuit.length - 1].z;
     };
     const terrain = ctx.tryGet ? ctx.tryGet('terrain') : null;
+    const terrainWaterLevel = terrain ? (terrain.waterLevel ?? 0) : null;
 
     // =====================================================================
     // G22 — nothing stands under the water surface.
@@ -2423,6 +2547,7 @@ try {
       }
       const TOPO = await import('/src/terrain/topography.ts');
       const EXT = TOPO.HALF_EXTENT;
+      const WATER_DATUM = terrain.waterLevel ?? 0;
       /*
        * A region is a **polygon** here, not a rectangle. Carthage still publishes
        * `{x, z, hw, hd, rot}` quarters and they go through `planPoly` exactly as before, so
@@ -2446,7 +2571,18 @@ try {
         for (let x = -EXT; x <= EXT; x += STEP) {
           const crest = circuitZAt(x);
           if (!(z > crest)) continue;
-          if (terrain.heightAt(x, z) < 0.2) continue;  // water
+          /*
+           * **`< 0.2` was a dead exclusion and it has never fired on Rome.** `heightAt` is
+           * metres above datum and Rome's `WATER_LEVEL` is 5.0, so "water" was being tested
+           * four and a half metres under the deepest point of the Tiber's own thalweg
+           * (`WATER_LEVEL - 4.6 = 0.4`). Every square metre of the river counted as available
+           * ground in G19's denominator. `MAP-METHOD.md` rule 13: a check that goes dark is
+           * worse than a check that fails, and an exclusion that can never fire is the same
+           * fault inside a denominator. The map publishes its own level and both maps have a
+           * different one — Rome 5.0, Carthage's `SEA_LEVEL` — so it is read from the terrain
+           * rather than typed.
+           */
+          if (terrain.heightAt(x, z) <= WATER_DATUM) continue;
           // A monument's own ground is not a region's responsibility, so it is not in the
           // denominator. Taken from the SCENE's obstacle set, which the region list has never
           // seen, so removing it cannot flatter the region list.
@@ -2512,6 +2648,203 @@ try {
     })();
 
     /**
+     * **How much of the ground between street lines is under a roof, whose ground the rest of
+     * it is, and which block gave up.** G23 and G24, from one raster.
+     *
+     * `ROME-FABRIC.md` §4.4 check 4 takes 60-70 % from the AGEA 2012 orthophoto of the
+     * historic core. Nothing in this file measured it until phase 5, and the reason it is
+     * hard is the **denominator**, which the first draft of this check got wrong by 2.7x:
+     * "the ground between street lines" is not the ground inside a *regio*. A regio contains
+     * the pomerium band, the gardens, the far bank and everything beyond the armature's
+     * reach. It is the ground inside a **block** — a face of the road graph, inset from its
+     * own bounding streets by their setbacks — and that polygon is exactly what the plan
+     * publishes.
+     *
+     * So the raster walks each block's own inset at 4 m and files every cell:
+     *
+     *   - **fabric roof** — inside a building box from the scene's obstacle set;
+     *   - **monument roof** — inside a monument box from the same set. An orthophoto counts
+     *     the Baths of Caracalla as roof and a fabric generator is not responsible for
+     *     building them, so this is reported on both sides and taken out of the number that
+     *     grades the generator;
+     *   - **reserved** — the plan's own `KeepOut`, which is the *input* to the generator and
+     *     not its output: monument precincts and their ambitus, the ways' setbacks, the
+     *     fourteen squares, the aqueduct corridors and the soft landscape rows. Asking the
+     *     keep-out rather than re-deriving it is `MAP-METHOD.md` rule 29; asking the *input*
+     *     rather than the *output* is what keeps this from being circular. The generator can
+     *     still fail: it did, on twelve blocks, while this was being written;
+     *   - **water** — `terrain.heightAt` at or below `WATER_LEVEL`. The terrain's own answer,
+     *     not the generator's, so the generator's 0.45 m quay freeboard is *visible* as
+     *     disagreement rather than hidden by agreement;
+     *   - **free** — what is left, and what the fabric is answerable for.
+     *
+     * **It is a footprint measurement, not a roof measurement, and that is stated rather than
+     * hidden.** A courtyard insula's footprint is the whole block and its roof is the ring;
+     * `MAP-METHOD.md` rule 11 is the same distinction one level up. So this reads high against
+     * a photograph, by an amount nothing here has measured, and the honest reading of a pass
+     * is the *change* in it.
+     */
+    const fillAndAbandon = await (async () => {
+      if (!blockPlan) {
+        return {
+          measured: false,
+          why: 'no block plan for this map: Carthage\'s fabric is not cut as faces of a road '
+            + 'graph, so it publishes no ground-between-street-lines polygon to measure against',
+        };
+      }
+      const NAIVE = injected.has('coverage-naive');
+      const HORTI_BLIND = injected.has('horti-blind');
+      if (NAIVE) injectNotes.push('G23 denominator: the reserved / monument / water subtraction is OFF');
+      if (HORTI_BLIND) injectNotes.push('G24: the horti exclusion is OFF');
+      if (!terrain) return { measured: false, why: 'no terrain' };
+      let planKeepOut = null;
+      try {
+        const L = await import('/src/city/rome/layout.ts');
+        planKeepOut = L.romeKeepOut();
+      } catch (e) {
+        return { measured: false, why: `romeKeepOut() did not import: ${e && e.message ? e.message : String(e)}` };
+      }
+      // The map's own level, not Rome's constant: `terrain.waterLevel` is `map.terrain.waterLevel`.
+      // Plus the freeboard a dry floor needs — see `TH.DRY_FLOOR_FREEBOARD_M`.
+      const WL = (terrain.waterLevel ?? 0) + TH.DRY_FLOOR_FREEBOARD_M;
+      /** `MIN_PLOT` 7.5 m by `MIN_DEPTH` 9 m: the smallest thing the generator will build. */
+      const HOUSE_M2 = 68;
+      const STEP = 4;
+      const A = STEP * STEP;
+      const monGrid = makeGrid(mons);
+      const bldGrid = makeGrid(bldgs);
+      const T = { all: 0, fabric: 0, monument: 0, reserved: 0, water: 0, free: 0 };
+      /** The garden quarters on their own, because they are the one class G24 excuses. */
+      const H = { all: 0, allowed: 0, roof: 0, blocks: 0 };
+      const per = new Map();
+      const rows = [];
+      let hortiSkipped = 0;
+      const hortiNames = [];
+      for (const b of blockPlan) {
+        const ring = ccw(b.inset);
+        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (const q of ring) {
+          if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x;
+          if (q.z < z0) z0 = q.z; if (q.z > z1) z1 = q.z;
+        }
+        const c = { all: 0, fabric: 0, monument: 0, reserved: 0, water: 0, free: 0 };
+        const nx = Math.max(1, Math.ceil((x1 - x0) / STEP));
+        const nz = Math.max(1, Math.ceil((z1 - z0) / STEP));
+        const freeCell = new Uint8Array(nx * nz);
+        for (let jz = 0; jz < nz; jz++) {
+          const z = z0 + STEP / 2 + jz * STEP;
+          for (let ix = 0; ix < nx; ix++) {
+            const x = x0 + STEP / 2 + ix * STEP;
+            if (!inRing(ring, x, z)) continue;
+            c.all += A;
+            let hit = false;
+            gridQuery(bldGrid, { x0: x, x1: x, z0: z, z1: z }, 0, (i) => {
+              if (!hit && inRing(ccw(bldgs[i].poly), x, z)) hit = true;
+            });
+            if (hit) { c.fabric += A; continue; }
+            gridQuery(monGrid, { x0: x, x1: x, z0: z, z1: z }, 0, (i) => {
+              if (!hit && inRing(ccw(mons[i].poly), x, z)) hit = true;
+            });
+            if (hit && !NAIVE) { c.monument += A; continue; }
+            if (!NAIVE && planKeepOut.blockedRect(x, z, 0.5, 0.5, 0)) { c.reserved += A; continue; }
+            if (!NAIVE && terrain.heightAt(x, z) <= WL) { c.water += A; continue; }
+            c.free += A;
+            freeCell[jz * nx + ix] = 1;
+          }
+        }
+        /*
+         * **Room for a house is a *window*, not a total, and the first draft of this check got
+         * that wrong twice.** A block 60 % under a monument can have twelve hundred square
+         * metres of free ground and no two adjacent square metres of it: the generator is then
+         * right to build nothing and a gate on the total calls it a give-up. So the question
+         * is asked as the generator asks it — does the smallest thing it will build actually
+         * fit?
+         *
+         * The window is **three cells square, 12 x 12 m**, and the number is geometry rather
+         * than taste: the smallest plot is `MIN_PLOT` 7.5 by `MIN_DEPTH` 9, whose diagonal is
+         * 11.71 m, so a 12 m square contains it **at whatever bearing the block has** and the
+         * probe never needs the block's frame. That makes the test *sufficient* and not
+         * necessary — a 7.5 x 9 house can also fit in less, when it happens to line up — which
+         * is the right polarity for a gate: it fires only where the generator provably could
+         * have built and did not. A 2 x 2 window (8 m) was the first draft and it is 1 m
+         * shorter than `MIN_DEPTH` in its own units, so it accused six blocks of giving up on
+         * ground no house fits on.
+         */
+        let window = false;
+        for (let jz = 0; jz + 2 < nz && !window; jz++) {
+          for (let ix = 0; ix + 2 < nx; ix++) {
+            let all = true;
+            for (let a = 0; a < 3 && all; a++) for (let b2 = 0; b2 < 3; b2++) {
+              if (!freeCell[(jz + a) * nx + ix + b2]) { all = false; break; }
+            }
+            if (all) { window = true; break; }
+          }
+        }
+        for (const k of Object.keys(T)) T[k] += c[k];
+        if (b.horti) { H.all += c.all; H.allowed += c.fabric + c.free; H.roof += c.fabric; H.blocks++; }
+        const e = per.get(b.region) ?? { all: 0, fabric: 0, monument: 0, reserved: 0, water: 0, free: 0 };
+        for (const k of Object.keys(c)) e[k] += c[k];
+        per.set(b.region, e);
+        if (c.fabric > 0) continue;
+        if (b.horti && !HORTI_BLIND) {
+          hortiSkipped++;
+          if (hortiNames.length < 12) hortiNames.push(`${b.region} at (${r2(b.cx)}, ${r2(b.cz)})`);
+          continue;
+        }
+        rows.push({ region: b.region, x: r2(b.cx), z: r2(b.cz), insetM2: r2(c.all), freeM2: r2(c.free), roomForAHouse: window });
+      }
+      const allowed = T.fabric + T.free;
+      const gaveUp = rows.filter((e) => e.roomForAHouse).sort((a, b) => b.freeM2 - a.freeM2);
+      return {
+        measured: true,
+        stepM: STEP,
+        blocks: blockPlan.length,
+        betweenStreetLinesM2: r2(T.all),
+        fabricRoofM2: r2(T.fabric),
+        monumentRoofM2: r2(T.monument),
+        reservedM2: r2(T.reserved),
+        waterM2: r2(T.water),
+        freeGroundM2: r2(T.free),
+        allowedGroundM2: r2(allowed),
+        /** What grades the generator: fabric over the ground the fabric is allowed. */
+        fabricOverAllowed: r3(allowed > 0 ? T.fabric / allowed : null),
+        /** What an orthophoto measures: every roof over every square metre between kerbs. */
+        allRoofOverAll: r3(T.all > 0 ? (T.fabric + T.monument) / T.all : null),
+        /** The number phase 4 quoted, kept so the two passes can be compared. */
+        fabricOverAll: r3(T.all > 0 ? T.fabric / T.all : null),
+        perRegion: [...per.entries()].sort((a, b) => b[1].all - a[1].all).map(([id, e]) => ({
+          id,
+          betweenM2: r2(e.all),
+          fabricOverAllowed: r3(e.fabric + e.free > 0 ? e.fabric / (e.fabric + e.free) : null),
+          allRoofOverAll: r3(e.all > 0 ? (e.fabric + e.monument) / e.all : null),
+        })),
+        // ---- G24 -----------------------------------------------------------
+        houseM2: HOUSE_M2,
+        houseWindowM: STEP * 3,
+        emptyBlocks: rows.length + hortiSkipped,
+        occupiedOrWet: rows.length - gaveUp.length,
+        gaveUp: gaveUp.length,
+        gaveUpGroundM2: r2(gaveUp.reduce((t, e) => t + e.freeM2, 0)),
+        excludedHorti: hortiSkipped,
+        excludedHortiNamed: hortiNames,
+        worst: gaveUp.slice(0, 15),
+        hortiBlocks: H.blocks,
+        hortiGroundM2: r2(H.all),
+        hortiAllowedM2: r2(H.allowed),
+        hortiRoofM2: r2(H.roof),
+        /*
+         * **Against the block's whole ground, which is the unit `HORTI_COVERAGE` is stated in.**
+         * The first draft divided by the ground the fabric is *allowed*, which is right for
+         * G23 and wrong here: `ROME-FABRIC.md` phase 6's acceptance is "building coverage in
+         * the horti <= 8 %", and coverage of a garden means roof over the garden, not roof over
+         * the part of the garden nothing else is standing on. The two differ by a factor of two
+         * on this tree, because the Janiculum's own precinct is inside three of these blocks.
+         */
+        hortiCoverage: r3(H.all > 0 ? H.roof / H.all : null),
+      };
+    })();
+
+    /**
      * Grain: where does a block's plan orientation come from?
      *
      * Two independent readings of the same question.
@@ -2557,6 +2890,17 @@ try {
       // file is meant to catch, so it does not get to have one.
       const bldgGrid = makeGrid(bldgs);
       const neigh = [];
+      /**
+       * **Where the seams are, not only how many.** The threshold's own note licenses "a
+       * handful of pairs [that] legitimately straddle a genuine grain change", and a grain
+       * change in a real city happens where two streets meet: the AGEA figure this file
+       * quotes is *15-40 degrees across a street*. A fraction alone cannot tell a city that
+       * changes grain at twelve junctions from a quilt that changes it everywhere, so the
+       * offenders are clustered at 60 m and each cluster's distance to the nearest crossing of
+       * two carriageways is measured. Reported, **not** gated — the gate is still the
+       * fraction, because a decomposition that excused the number would be an exemption.
+       */
+      const seams = [];
       for (let i = 0; i < bldgs.length; i++) {
         const a = bldgs[i];
         gridQuery(bldgGrid, a.bb, TH.GRAIN_NEIGHBOUR_M, (j) => {
@@ -2564,9 +2908,45 @@ try {
           const b = bldgs[j];
           const d = Math.hypot(a.o.x - b.o.x, a.o.z - b.o.z);
           if (d > TH.GRAIN_NEIGHBOUR_M) return;
-          neigh.push(foldDeg(a.o.rot - b.o.rot));
+          const f = foldDeg(a.o.rot - b.o.rot);
+          neigh.push(f);
+          if (f > 15) seams.push({ f, x: (a.o.x + b.o.x) / 2, z: (a.o.z + b.o.z) / 2 });
         });
       }
+      // Junctions of the drawn network: every pair of carriageway segments whose rectangles
+      // overlap and whose bearings differ. Taken from `roadSegs`, which is the same population
+      // the street-bearing test above uses.
+      const junctions = [];
+      {
+        const jg = makeGrid(roadSegs);
+        for (let i = 0; i < roadSegs.length; i++) {
+          gridQuery(jg, roadSegs[i].bb, 0, (j) => {
+            if (j <= i) return;
+            if (roadSegs[i].id === roadSegs[j].id) return;
+            if (bbClear(roadSegs[i].bb, roadSegs[j].bb)) return;
+            if (clipArea(roadSegs[i].poly, roadSegs[j].poly) <= TH.NOISE_M2) return;
+            junctions.push({
+              x: (roadSegs[i].poly[0].x + roadSegs[j].poly[0].x) / 2,
+              z: (roadSegs[i].poly[0].z + roadSegs[j].poly[0].z) / 2,
+            });
+          });
+        }
+      }
+      const clusters = [];
+      for (const e of seams.slice().sort((a, b) => b.f - a.f)) {
+        const near = clusters.find((c) => Math.hypot(c.x - e.x, c.z - e.z) < 60);
+        if (near) { near.n++; near.worst = Math.max(near.worst, e.f); }
+        else clusters.push({ x: e.x, z: e.z, n: 1, worst: e.f });
+      }
+      for (const c of clusters) {
+        let best = Infinity;
+        for (const j of junctions) {
+          const q = Math.hypot(j.x - c.x, j.z - c.z);
+          if (q < best) best = q;
+        }
+        c.toJunctionM = Number.isFinite(best) ? best : null;
+      }
+      clusters.sort((a, b) => b.n - a.n);
       neigh.sort((a, b) => a - b);
       return {
         blocks: bldgs.length,
@@ -2582,6 +2962,15 @@ try {
           max: r2(neigh[neigh.length - 1]),
           over15deg: neigh.filter((v) => v > 15).length,
           overTolerance: neigh.filter((v) => v > TH.GRAIN_SEAM_TOL_DEG).length,
+        },
+        seamPlaces: {
+          clusters: clusters.length,
+          junctionsFound: junctions.length,
+          atAJunctionWithin60m: clusters.filter((c) => c.toJunctionM !== null && c.toJunctionM <= 60).length,
+          worst: clusters.slice(0, 12).map((c) => ({
+            pairs: c.n, worstDeg: r2(c.worst), at: { x: r2(c.x), z: r2(c.z) },
+            toJunctionM: c.toJunctionM === null ? null : r2(c.toJunctionM),
+          })),
         },
         /**
          * The hash signature. A uniform draw over [0°, 45°] has a median of 22.5 and a mean
@@ -2964,8 +3353,94 @@ try {
         g.n > 0 && (g.median ?? 99) <= TH.GRAIN_SEAM_TOL_DEG && seamFrac <= TH.GRAIN_SEAM_FRACTION,
         `${g.n} neighbouring block pairs within ${TH.GRAIN_NEIGHBOUR_M} m: median ${g.median} deg apart,`
         + ` p90 ${g.p90}, max ${g.max}; ${g.over15deg} (${(seamFrac * 100).toFixed(1)}%) rotate more than`
-        + ` 15 deg across a 40 m gap`,
+        + ` 15 deg across a 40 m gap`
+        + (grain.seamPlaces
+          ? `; in ${grain.seamPlaces.clusters} place(s), ${grain.seamPlaces.atAJunctionWithin60m} of them`
+            + ` within 60 m of a crossing of two carriageways`
+            + (grain.seamPlaces.worst.length
+              ? `: ${grain.seamPlaces.worst.slice(0, 6).map((c) => `${c.pairs} pairs at (${c.at.x}, ${c.at.z})`
+                + ` worst ${c.worstDeg} deg, ${c.toJunctionM === null ? 'no junction' : `${c.toJunctionM} m from a junction`}`).join('; ')}`
+              : '')
+            + ' — reported, not gated'
+          : ''),
         `median <= ${TH.GRAIN_SEAM_TOL_DEG} deg AND seams <= ${(TH.GRAIN_SEAM_FRACTION * 100).toFixed(0)}%`);
+    }
+    {
+      const F = fillAndAbandon;
+      if (!F.measured) {
+        skip('G23', 'the ground between street lines is built at the orthophoto\'s density',
+          F.why, `fabric over the ground it is allowed >= ${(TH.ROOF_COVERAGE_MIN * 100).toFixed(0)}%`);
+      } else {
+        gate('G23', 'the ground between street lines is built at the orthophoto\'s density',
+          F.fabricOverAllowed !== null && F.fabricOverAllowed >= TH.ROOF_COVERAGE_MIN
+            && F.betweenStreetLinesM2 >= TH.ROOF_COVERAGE_MIN_GROUND_M2,
+          `${(F.fabricOverAllowed * 100).toFixed(1)}% of the ground the fabric is allowed`
+          + ` — ${r2(F.allowedGroundM2 / 1e4)} ha of the ${r2(F.betweenStreetLinesM2 / 1e4)} ha`
+          + ` between street lines over ${F.blocks} blocks; the rest is`
+          + ` ${r2(F.monumentRoofM2 / 1e4)} ha monument, ${r2(F.reservedM2 / 1e4)} ha reserved`
+          + ` (setback, square, aqueduct, soft landscape) and ${r2(F.waterM2 / 1e4)} ha water`
+          + ` (at or under ${r2((terrainWaterLevel ?? 0) + TH.DRY_FLOOR_FREEBOARD_M)} m, the drawn`
+          + ` surface plus the ${TH.DRY_FLOOR_FREEBOARD_M} m a dry floor needs)`
+          + `. Every roof over every square metre between kerbs, which is what an orthophoto`
+          + ` measures: ${(F.allRoofOverAll * 100).toFixed(1)}%`
+          + `; fabric over ALL the ground, the figure phase 4 quoted: ${(F.fabricOverAll * 100).toFixed(1)}%`
+          + `. FOOTPRINT, not roof — a courtyard insula's footprint is the whole block, so this`
+          + ` reads high against a photograph by an amount nothing here measures`
+          + `. By regio (fabric/allowed, all-roof/all): `
+          + F.perRegion.slice(0, 14).map((e) => `${e.id}`
+            + ` ${e.fabricOverAllowed === null ? '-' : (e.fabricOverAllowed * 100).toFixed(0)}%/`
+            + `${e.allRoofOverAll === null ? '-' : (e.allRoofOverAll * 100).toFixed(0)}%`).join(' '),
+          `fabric over the ground it is allowed >= ${(TH.ROOF_COVERAGE_MIN * 100).toFixed(0)}%,`
+          + ` over at least ${TH.ROOF_COVERAGE_MIN_GROUND_M2 / 1e4} ha of ground between street lines`);
+      }
+    }
+    {
+      const B = fillAndAbandon;
+      if (!B.measured) {
+        skip('G24', 'no block builds nothing while it still has room for a house',
+          B.why, '0 blocks with a house\'s worth of free ground and no house');
+      } else {
+        /*
+         * **The exclusion has to cost something, or it is an exemption.** `MAP-METHOD.md`
+         * rule 18's test: declaring a class must take on an obligation rather than shed one.
+         * An empty *horti* block is excused from the per-block test — a garden built at 8 % is
+         * meant to have empty blocks in it — and in exchange **the garden ground as a whole is
+         * graded on that 8 %**. So a quarter cannot be quietly emptied by declaring it horti:
+         * do that and its aggregate coverage falls out of the band and this goes red.
+         *
+         * A count of empty horti blocks was the first draft and it does not survive contact
+         * with `e/city/rome-transtiberim`, which declares 20.8 of Regio XIV's 26.6 ha *horti*
+         * and would take the count from three to dozens without anything being wrong. A
+         * fraction of the design figure is the same claim in units that scale.
+         */
+        const hortiOk = B.hortiGroundM2 < TH.HORTI_MIN_GROUND_M2
+          || (B.hortiCoverage !== null
+            && B.hortiCoverage >= TH.HORTI_COVERAGE_BAND[0]
+            && B.hortiCoverage <= TH.HORTI_COVERAGE_BAND[1]);
+        gate('G24', 'no block builds nothing while it still has room for a house',
+          B.gaveUp === 0 && hortiOk,
+          `${B.gaveUp} of ${B.blocks} blocks have no roof on them and an ${B.houseWindowM} x`
+          + ` ${B.houseWindowM} m square of ground that is not monument, not reserved and not`
+          + ` water — the smallest thing the generator builds is ${B.houseM2} m2, and these`
+          + ` blocks hold ${r2(B.gaveUpGroundM2)} m2 of free ground between them`
+          + `; ${B.emptyBlocks} blocks have no roof at all, of which ${B.occupiedOrWet}`
+          + ` have nowhere to put one`
+          + (B.worst.length
+            ? `; worst: ${B.worst.slice(0, 6).map((e) => `${e.region} at (${e.x}, ${e.z}) ${e.freeM2} m2 free of ${e.insetM2}`).join('; ')}`
+            : '')
+          + ` | EXCLUSIONS, named, counted and gated: ${B.excludedHorti} of ${B.hortiBlocks}`
+          + ` horti block(s) empty [${B.excludedHortiNamed.join(', ') || 'none'}] — and the`
+          + ` exclusion is paid for in aggregate: the garden ground is`
+          + ` ${B.hortiCoverage === null ? 'n/a' : `${(B.hortiCoverage * 100).toFixed(1)}%`} built`
+          + ` over ${r2(B.hortiGroundM2 / 1e4)} ha`
+          + (B.hortiGroundM2 < TH.HORTI_MIN_GROUND_M2
+            ? ` — under the ${TH.HORTI_MIN_GROUND_M2 / 1e4} ha this limb refuses below, so it is`
+              + ' not graded and the per-block limb carries the check'
+            : ` against the ${(TH.HORTI_COVERAGE_BAND[0] * 100).toFixed(0)}-${(TH.HORTI_COVERAGE_BAND[1] * 100).toFixed(0)}% the 8 % design implies`),
+          `0 blocks with a house's worth of free ground and no house, AND the garden ground`
+          + ` itself built at ${(TH.HORTI_COVERAGE_BAND[0] * 100).toFixed(0)}-${(TH.HORTI_COVERAGE_BAND[1] * 100).toFixed(0)}%`
+          + ` once there is ${TH.HORTI_MIN_GROUND_M2 / 1e4} ha of it`);
+      }
     }
     {
       const W = water;
@@ -3123,7 +3598,7 @@ try {
       },
       water,
       geometryRead: { ...geomStats, monumentsWithGeometry: drawn.size },
-      fabric, partition, grain, resolver, selfReport, importNotes,
+      fabric, partition, fill: fillAndAbandon, grain, resolver, selfReport, importNotes,
       faults: chosen.map((f) => ({ cls: f.cls, label: f.label, m2: r2(f.m2), depthM: r2(f.depth), at: { x: r2(f.cx), z: r2(f.cz) }, spanM: r2(f.span), yaw: f.pairYaw })),
     };
   }, {

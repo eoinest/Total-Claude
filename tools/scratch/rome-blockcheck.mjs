@@ -162,22 +162,19 @@ for (const b of plan.blocks.slice().sort((a, b2) => b2.face.areaM2 - a.face.area
 }
 
 // ---- and the fabric itself, with the monuments in the way ---------------
-// The same `KeepOut` `src/city/plan.ts` assembles, so the plot count here is the one the
-// engine gets. Geometry is never built: the chunk `build` closures are not invoked.
+// The same `KeepOut` `rome/plan.ts` assembles — literally the same function — so the plot
+// count here is the one the engine gets. Geometry is never built: the chunk `build` closures
+// are not invoked.
 {
-  const { KeepOut } = await import('../../src/city/layout.ts');
   const { buildDistricts, assertBlocksAreFaces, assertBlockBearingSign } =
     await import('../../src/city/rome/fabric.ts');
-  const { AQUEDUCTS, LANDMARKS, PLAZAS, STREETS } = await import('../../src/city/rome/layout.ts');
+  const { romeKeepOut } = await import('../../src/city/rome/layout.ts');
   const { romeWallZ } = await import('../../src/terrain/topography.ts');
-  const keepOut = new KeepOut();
-  for (const l of LANDMARKS) {
-    keepOut.addRect(l.x, l.z, l.hw, l.hd, l.rot);
-    if (l.mound) keepOut.addCircle(l.x, l.z, (l.moundRadius ?? l.clear) * 1.02);
-  }
-  for (const st of STREETS) keepOut.addPath(st.path, st.width * 0.5 + 2.5);
-  for (const a of AQUEDUCTS) keepOut.addPath(a.path, 8);
-  for (const pz of PLAZAS) keepOut.addRect(pz.x, pz.z, pz.hw + 2, pz.hd + 2, pz.rot);
+  // `romeKeepOut()`, not a copy of it. This block used to assemble its own beside a comment
+  // claiming it was the one `plan.ts` builds; it reserved monuments with no ambitus and
+  // `STREETS` at a flat 2.5 m instead of `WAYS` by rank, so the fast instrument was grading a
+  // city with twenty more buildings than the engine builds. `MAP-METHOD.md` rule 29.
+  const keepOut = romeKeepOut();
   const t1 = Date.now();
   const out = buildDistricts(() => 20, keepOut, 'rome-fabric', romeWallZ);
   console.log(`buildDistricts in ${Date.now() - t1} ms: ${out.footprints.length} plots,`

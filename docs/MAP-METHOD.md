@@ -312,6 +312,59 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    wrong for half the map. (Rule 11's "two producers, one constant" with the producers one file
    apart, and rule 4's "cross-sections do not compress" is the same shape one axis over.)
 
+31. **A constant lifted out of a two-sided thing keeps the side it was lifted from, and the
+   other side then becomes impossible rather than merely wrong.** `riverProfile` builds two
+   terraces — `WATER_LEVEL + 2.8` on the cut bank, `+ 0.8` on the point bar — and `inTheRiver`'s
+   freeboard was **2.8**. So a plot standing squarely on the point bar's finished terrace
+   measured 5.8 against a bar of 7.8 and was rejected as standing in the river: **every point
+   bar on the map was unbuildable by construction.** *Found and written up by
+   `e/city/rome-transtiberim`, from the far bank; found independently by `e/city/rome-fill`,
+   from the coverage figure, which is a fair test of whether a rule is real. That branch's
+   number and derivation are the ones that shipped — the lower of the two terrace heights less
+   a 0.2 m margin — and the entry below it is theirs. Placed here rather than renumbered
+   because their branch numbered it first.*
+32. **A coverage figure is a claim about responsibility, and the denominator is where the claim
+   lives.** Rome's fabric was reported as covering **44 %** of the ground between street lines
+   against an orthophoto's 60–70, and a whole phase was scoped to close the gap. Rasterised and
+   asked *whose ground it is*, the denominator is **21 % monument precinct, 8 % Tiber, 3 %
+   aqueduct corridor** — and the fabric already covered **67.6 %** of what was left. Before
+   grading a generator on a ratio, subtract the ground it is not allowed to touch and **print
+   the subtraction**. Publish the other readings beside it: what the source actually measured
+   (an orthophoto counts the Baths of Caracalla as roof) and what the previous pass quoted, so
+   the two can be compared at all.
+
+33. **A mean over a city can be met with a third of it empty, so gate the distribution's floor
+   as well as its middle — and ask the floor's question in the units of the thing being
+   placed.** `probe-fabric` G24 asks, per block, whether *the smallest thing the generator
+   builds* would have fitted in the ground left over after the monuments, the reservations and
+   the water. Two drafts of it were wrong in instructive ways: a **total** of free ground says a
+   block with 1,264 m² of it in slivers gave up, and a window one metre shorter than the
+   minimum depth accuses six blocks of giving up on ground no house fits on. Size the test from
+   the generator's own minimum and make it **sufficient rather than necessary** — a 7.5 × 9 plot
+   has an 11.71 m diagonal, so a 12 m square holds it at any bearing — because a gate should
+   fire only where the thing it grades provably could have done better.
+
+34. **An arbitrary tie-break is a coin flip, and a coin flip at a boundary is a seam.** A block's
+   grain was the *longest side* of its face. Of the 29 blocks producing a grain seam, 14 had a
+   second side at a different bearing within 80 % of the longest and five within 95 %, so which
+   street a block "fronted" was decided by five metres and its neighbour across the lane decided
+   it the other way. Wherever a rule picks a winner by comparing two nearly equal quantities,
+   **measure the margin distribution before believing the rule**. The repair — the mode over
+   bearing classes rather than the max over sides — is one line and it is not the mean the
+   original note rightly rejected, because a mode is always one of the block's own bearings.
+   **Corollary: a repair aimed at one check that also improves a second, unmentioned check is
+   evidence that it is a correction and not a tuning.** Moving the threshold would have moved
+   nothing else; this took G20's p90 from 7.68° to 1.53° as well.
+
+35. **When you find an all-or-nothing test, look for the same shape one level down before you
+   believe you have fixed it.** *A feasibility test belongs at the granularity of the thing
+   being placed* was earned at the block in phase 4 and shipped four more instances in the same
+   file: the frontage took the depth of its narrowest sample, the plot was deleted rather than
+   shortened when a precinct clipped it, the whole-block ring ended the fill, and a plot in the
+   water was deleted after the fact instead of being routed around. Each is the same sentence at
+   a smaller scale, each was worth one to five points of coverage, and the phase that fixed the
+   first one wrote the diagnosis for the third down in a comment and left the behaviour alone.
+
 ---
 
 ## 2. The priors going in
@@ -1976,6 +2029,234 @@ the work: four ways, four instrument repairs.**
   deleted `layout.ts`'s `DISTRICTS`, and **`rome-roads.mjs`'s `RANK_COLOUR`** was keyed on rank
   names the table does not carry, so `artery` and `secondary` drew the same red. Both repaired.
   Rule 29's point again, sharper: an instrument that cannot be run is not a slow instrument.
+### 22 August 2026 — Rome phase 5: filling the city, and a denominator that was asking the insulae to build the Baths of Trajan
+
+**What we expected.** Phase 4 handed this pass a decomposition and it was a good one: roof
+coverage 44 % against the orthophoto's 60–70 %, the same generator reaching **60.9 %** with the
+keep-out map switched off, and *"51 of 299 blocks build nothing, each with a named cause"*. It
+also named the shape to look for — an all-or-nothing test where a partial answer was available,
+of which it had found and fixed one. The prediction going in was that there would be two or
+three more of those and that closing them would be most of the seventeen points.
+
+Half right, and wrong about the arithmetic in a way worth writing down. There were four more
+all-or-nothing tests and they are real; but of the seventeen points, **eleven were never the
+generator's to build** — the denominator counts monument precinct, river and aqueduct corridor
+as ground the insulae were failing to cover — and of the five that were, **four and a half
+belong to a constant a sibling branch found the same afternoon.** This branch's own share of the
+coverage number is four tenths of a point. Its share of the *abandonment* is 1.34 hectares to
+0.11, which is the part of the brief that turned out to be the real one.
+
+**1. The denominator was the biggest single finding and it is not a bug in any file.** "Roof
+coverage between street lines" was measured as roof over every square metre of a block's inset
+polygon. Rasterised at 2 m and asked *whose ground it is*, that polygon comes apart:
+
+| the ground between street lines | 70.0 ha | |
+|---|---|---|
+| a monument precinct | 14.7 ha | **21.0 %** |
+| the Tiber | 5.9 ha | 8.4 % |
+| an aqueduct corridor | 1.9 ha | 2.7 % |
+| a way's own reservation past the inset | 1.5 ha | 2.1 % |
+| a square | 0.3 ha | 0.5 % |
+| **free for fabric** | **45.7 ha** | **65.2 %** |
+
+The fabric covered **67.6 %** of that free ground on the tree phase 4 shipped. It was never
+seventeen points short of anything; it was **inside the band already**, against a ruler that
+included the Circus Maximus in the ground the insulae were failing to build on. Phase 4's own
+sentence — *"the seventeen-point gap is Rome's monuments, its named streets' setbacks, its
+fourteen plazas and its aqueducts, not the grid"* — is exactly right and was read by everyone,
+including this pass's brief, as a list of things to fix rather than as a list of things that
+are supposed to be there.
+
+> **Rule, earned: a coverage figure is a claim about responsibility, and the denominator is
+> where the claim lives.** Before grading a generator on a ratio, subtract the ground it is not
+> allowed to touch, and *print the subtraction*. `probe-fabric` G23 publishes three numbers off
+> one raster — fabric over the ground it is allowed, every roof over every square metre between
+> kerbs (what an orthophoto actually measures), and fabric over all the ground (what phase 4
+> quoted) — because each answers a different question and only the first grades the generator.
+
+**2. The river's freeboard was the cut bank's, applied to both banks — and this pass does not
+own the finding.** `riverProfile` models a meander asymmetrically, as a river is:
+
+```
+const terraceH = WATER_LEVEL + (onCutBank ? 2.8 : 0.8) - ford * 0.55;
+```
+
+`inTheRiver` required **2.8 m** of freeboard everywhere, which is the outside of the bend's
+number. So every point bar in Rome was reported as water by a constant taken from the opposite
+bank: **52.9 % of Regio XIV's ground between street lines and 19.6 % of Regio IX's** stood
+under the threshold. The distribution has no gradient in it at all — 12.7 % of the city's block
+ground sits between 0 and 1 m over the water and **1.0 %** between 1 and 2.8 — because the
+ground being condemned *is* the modelled terrace, flat, at +0.8.
+
+**`e/city/rome-transtiberim` found the same fault on the same afternoon, from the other end**:
+that pass authored the far bank's streets, got correct blocks that built nothing, and traced it
+to the constant. It is worth recording as a fact about method rather than as a coincidence —
+**two agents looking at different symptoms of one fault, one at a coverage percentage and one
+at an empty quarter, converged on the same line of code**, which is about as good a test as
+this project gets of whether a diagnosis is real. That branch wrote it up and rule 31 is theirs.
+
+**Their constant is the one that shipped, and it is better than this branch's.** This branch had
+0.45 — a number under 0.8. Theirs is **0.6**, derived: *the lower of the terrain's two terrace
+heights (0.8) less a 0.2 m margin, so that a plot standing on either terrace builds and a plot
+on the bank slope or in the channel does not.* That is a rule and it can be argued with. It is
+adopted here so that two branches cannot land two answers to one question, and it is the
+stricter of the two, which is the safe direction for G22. What this branch adds beside it is
+that **being inside the channel is now a geometric fact** asked of `riverHalfWidthAt` rather
+than a consequence of a height threshold, so a future terrain edit that raises the channel floor
+cannot quietly make the river buildable.
+
+**So the coverage attribution has to be taken in two steps, and it was re-measured to do that.**
+Against the phase-4 tree with *only* the freeboard changed, coverage is already **48.6 %**; this
+branch's own work takes it to **49.0 %**. Four tenths of a point. The honest reading of this
+pass is therefore **not** that it closed the coverage gap — the freeboard did most of what was
+closable, and the denominator accounts for nearly all the rest — but that it closed the
+*abandonment*: blocks with no roof on them **63 → 49**, and blocks that had somewhere to put a
+house and did not **18 → 4** by the offline measure, **0** by the gate's own stricter one.
+
+**3. Three more all-or-nothing tests, one per level of granularity.** Phase 4 moved a
+feasibility test from the block to the frontage. The frontage had the same fault, and so did
+the plot, and so did the ring:
+
+- **`spanOver(pa, pb)` is the intersection of three crossings**, so a 16 m frontage 40 m deep at
+  one end and 12 m at the other was built 12 deep along its whole length — and where the shallow
+  end fell under `MIN_DEPTH` the frontage went entirely, 157 of 1,075. Each plot now takes the
+  span over *its own* `u` interval and sits against its own street line, so a terrace on a
+  bending street steps, which is what a terrace on a bending street does.
+- **The depth ladder.** The greedy packer laddered in width only, so a plot a precinct clipped
+  was deleted rather than shortened. It now gives up its back and keeps its frontage.
+- **The ring ended the fill.** *"`fill` stops as soon as this returns true, so nothing ever comes
+  back for the rest"* was written in phase 4 as a diagnosis and left standing as behaviour, on
+  39 blocks.
+- **And the river was a delete rather than a reservation.** One wet corner of a 74 × 46 m
+  courtyard range took 3,400 m² of dry ground with it, and because a dropped plot keeps its
+  ground in the plot grid — deliberately, so the river cannot be filled in — nothing came back.
+  Asked inside `buildable` instead, the water is just another thing in the way and the placer
+  steps round it.
+
+> **Rule, earned: when you find an all-or-nothing test, look for the same shape one level down
+> before and one level up after.** Every one of these is the same sentence — *a feasibility test
+> belongs at the granularity of the thing being placed* — and phase 4 fixed it once at the block
+> and shipped four instances of it at the frontage, the plot, the ring and the river.
+
+**4. The seam was a coin flip, and the fix improved the check it was not about.** Filling the
+acute corners of blocks took `probe-fabric` G21 — neighbouring blocks more than 15° apart within
+40 m — from 0.77 % to **1.74 %** against a 1 % gate. The obvious reading is that a real city
+does rotate its grain at a junction and the threshold is too tight; the threshold's own note
+says as much. It was wrong. Of the **29 blocks** involved in a seam, **14 had a second side at a
+different bearing within 80 % of the longest and five within 95 %** — block 95 in Regio IX is
+93.7 m one way and 88.6 m the other, nineteen degrees apart. Which of the two streets that block
+"fronts" was being decided by five metres, and the block across the lane decided the same
+question the other way. `faceBearing` now takes the **mode over bearing classes** rather than the
+max over sides: sum every side within a degree of each other — for a rectangle, the front *and*
+the back — and take the class with the most street on it, then return the longest single side in
+that class so the answer is still a line the city has. G21 fell to **0.9 %** and, unasked, G20's
+p90 fell **7.68° → 1.53°** and its out-of-tolerance count 141 → 89.
+
+> **Rule, earned: an arbitrary tie-break is a coin flip, and a coin flip at a boundary is a
+> seam.** Wherever a rule picks a winner by comparing two nearly equal quantities, measure the
+> margin distribution before believing the rule. And the corollary that made this one safe to
+> ship: **a repair aimed at one check that also improves a second, unmentioned check is
+> evidence it is a correction rather than a tuning.** Moving G21's threshold would have moved
+> nothing else.
+
+**Two instrument faults, both in checks that were green.**
+
+- **`tools/scratch/rome-blockcheck.mjs` was grading a different city.** Phase 4 introduced it as
+  the fast harness that imports the shipped `cityPlan()` — rule 29's whole point — and it built
+  its own `KeepOut` beside a comment claiming it was *"the same `KeepOut` `src/city/plan.ts`
+  assembles"*. It was not: monuments with no `MON_AMBITUS`, and `STREETS` at a flat 2.5 m margin
+  instead of `WAYS` at `WAY_FRONTAGE` by rank. It measured 964 buildings against the engine's
+  944. **One week after rule 29 was written, in the tool the rule was written about.** There is
+  now one `romeKeepOut()` and both callers use it.
+- **`terrain.heightAt(x, z) < 0.2  // water` has never fired on Rome.** `heightAt` is metres
+  above datum and Rome's `WATER_LEVEL` is 5.0, so G19's water exclusion was being tested 4.6 m
+  below the Tiber's own thalweg and **6.2 hectares of river counted as available ground**. Each
+  map publishes `terrain.waterLevel`; it is read from there now. Rome's available ground
+  2,213,248 → 2,151,232 m². **Carthage's went up**, 1,705,280 → 1,709,376, because its sea is at
+  0 and the old test was excluding a 0.2 m fringe of land — a control that moves by an amount
+  you can name, in the direction the more correct test predicts.
+
+**Two checks added, and the second one is the one that was missing.** G23 is coverage. G24 is
+*no block builds nothing while it still has room for a house*, and it exists because a mean can
+be met with a third of the city bare and the rest solid. It took two corrections of its own:
+a **total** of free ground is the wrong test (a block 60 % under a precinct can hold 1,264 m² of
+it with no two adjacent square metres), and an 8 m window is 1 m shorter than `MIN_DEPTH` in its
+own units. It is a **12 m** window, because the smallest plot is 7.5 × 9 with an 11.71 m
+diagonal and a 12 m square therefore contains it at whatever bearing the block has — sufficient
+rather than necessary, which is the right polarity for a gate. Rome reads **0**, with three
+*horti* blocks as the only exclusion — and the exclusion **costs something**, which is rule 18's
+test for whether a class is a correction or an exemption: a garden block is excused the
+per-block question and in exchange **the garden ground as a whole is graded on the 8 % it
+declares** (11.8 % over 2.61 ha, band 4–16). Declare a quarter *horti* and empty it and G24 goes
+red; declare it *horti* and build it like a quarter and G24 goes red. The first draft of that
+limb was an absolute count of empty garden blocks, which does not survive
+`e/city/rome-transtiberim` declaring 20.8 of Regio XIV's 26.6 hectares *horti* — a count that
+depends on somebody else's data volume is not a threshold, it is a coincidence.
+
+**The numbers, in three steps, because two branches were working on one number.** All three
+measured with `tools/scratch/fill-audit.mjs` against the shipped `cityPlan()`. **B** is the
+phase-4 generator with `RIVER_FREEBOARD` set to 0.6 and nothing else changed — the other
+branch's contribution, isolated.
+
+| | A: phase 4 | B: + the freeboard | C: + this branch |
+|---|---|---|---|
+| buildings | 944 | 1,031 | **1,015** |
+| footprint | 308,800 m² | 340,100 m² | **342,600 m²** |
+| fabric over all the ground (phase 4's number) | 44.1 % | 48.6 % | **49.0 %** |
+| fabric over the ground it is allowed | 67.6 % | 69.0 % | **69.5 %** |
+| blocks with no roof on them | 85 | 63 | **49** |
+| …with 200 m² of free ground and no house | 25 (1.77 ha) | 18 (1.34 ha) | **4 (0.11 ha)** |
+| …by the gate's own 12 m-window test | — | — | **0** |
+| the generator's own account of the empty ones | 51 of 85 | 51 of 63 | **49 of 49** |
+
+Read the first three rows and this branch did four tenths of a point. Read the last four and it
+took the ground the city had given up on from **1.34 ha to 0.11**, and closed the gap between
+what the generator reported and what it did. Both readings are true and the second is the one
+the brief asked for.
+
+Measured from the built scene by `probe-fabric` G23 rather than from the plan: **68.5 %** of the
+ground the fabric is allowed, **58.0 %** counting every roof over every square metre between
+kerbs (what an orthophoto measures) and **48.9 %** on phase 4's denominator. By *regio*, fabric
+over allowed: IV 88, V 75, XIV 73, VI 71, VII 66, VIII 62, **IX 59 — the Campus Martius**, III
+48. And the state of the gate: **Rome 16/25 → 18/27, Carthage 13/22 → 13/22** with G23 and G24
+not applicable and the reason named. G20's p90 off the street **7.68° → 1.53°**; G21's seam
+fraction 0.8 % → **0.9 %** against a 1 % gate; G3 and G10 both still zero.
+
+**The frame cost, at the standard cameras, ultra, 1920 × 1080, in the same three steps.** Draws
+are unchanged at every camera except `raking` (128 → 130), and that +2 belongs to the freeboard
+rather than to this branch — the insulae are merged into per-chunk batches, so more buildings
+buy triangles and not draw calls.
+
+| camera | A | B | C |
+|---|---|---|---|
+| assault | 183 / 6.94 M | 183 / 7.17 M | **183 / 7.19 M** |
+| city | 176 / 4.77 M | 176 / 5.00 M | **176 / 5.02 M** |
+| wall | 158 / 4.00 M | 158 / 4.23 M | **158 / 4.24 M** |
+| raking | 128 / 2.94 M | 130 / 3.10 M | **130 / 3.09 M** |
+| clash, melee, wide, romanline, terrain | unchanged to the draw and within 0.03 M | | |
+
+So the whole of phase 5 costs **+3.6 % of triangles at the assault camera and no draw calls**,
+and **this branch's share of that is +0.3 %**. `probe-frametime` over 2,963 frames of a played
+Rome assault: `engine.frame()` p50 **1.8–2.2 ms** by phase, p99 4.0–6.8, max 8.0, and **zero
+frames over 20 ms**. The density is free.
+
+**What is still open, with the measurement attached rather than a guess.**
+
+- **The aqueduct corridor is 1.9 ha of block ground for a 2.1–2.5 m arcade** — `addPath(path, 8)`
+  is a 16 m reservation for a structure a tenth as wide, worth about 2.7 points of coverage. It
+  is left alone because nothing says whether the 8 m is architecture or a manoeuvre corridor,
+  and narrowing a corridor to gain fabric is the wrong trade to make blind.
+- **The right bank is a mudflat.** Four Transtiberim blocks stand on ground 0.02–0.25 m above
+  the drawn water and are refused by the quay freeboard. The fix is to raise the terrace in
+  `terrain/topography.ts`, not to lower the freeboard, and that is the terrain's branch.
+- **47 blocks still have no roof and 44 of them have nowhere to put one**, which means the block
+  plan is cutting faces *across* monuments rather than around them. `lastResort` — one house
+  swept into a block that would otherwise be bare — is counted for exactly that reason: it is a
+  symptom, not a feature, and if it ever places more than a handful the graph is wrong.
+- **G23 measures footprint, not roof.** A courtyard insula's footprint is the whole block and
+  its roof is the ring, so the number reads high against a photograph by an amount nothing here
+  has measured. `MAP-METHOD.md` rule 11 one level down, and the honest reading of a pass is the
+  change rather than the level.
 
 <!-- Append new entries above this line. -->
 

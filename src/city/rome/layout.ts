@@ -2,7 +2,7 @@
 import { HALF_EXTENT, worldOf as projectSurvey } from '../../terrain/topography';
 import { TIBER_ISLAND } from '../../terrain/tiberSurvey';
 import { clamp } from '../../util/math';
-import { AX, axisU, axisV, obbOverlap, obbRadius, type Obb, type WayClass } from '../layout';
+import { AX, axisU, axisV, KeepOut, obbOverlap, obbRadius, type Obb, type WayClass } from '../layout';
 import { GATE_X } from './apertures';
 import { ROME_WAYS, wayBearingAt } from './ways';
 // Straight from the terrain, not through `./circuit`: the wall builder now reads
@@ -1047,4 +1047,55 @@ export function wayMix(
   return (['artery', 'secondary', 'local', 'vicus'] as WayClass[])
     .filter((c) => acc.has(c))
     .map((cls) => ({ cls, count: acc.get(cls)!.count, km: +acc.get(cls)!.km.toFixed(2) }));
+}
+
+/**
+ * **The reservation map, in one place, because two callers were building different ones.**
+ *
+ * `plan.ts` assembled this inline and `tools/scratch/rome-blockcheck.mjs` assembled its own
+ * copy beside a comment claiming it was "the same `KeepOut` `src/city/plan.ts` assembles".
+ * It was not: the copy reserved `l.hw`/`l.hd` with no ambitus, and reserved `STREETS` at a
+ * flat 2.5 m margin instead of `WAYS` at `WAY_FRONTAGE` by rank. So the fast instrument
+ * measured a city with **20 more buildings in it** than the one the engine builds, which is
+ * `MAP-METHOD.md` rule 29's failure mode exactly — the fast tool and the slow tool disagree,
+ * and the fast one is the one people run. One function, both callers.
+ *
+ * `MON_AMBITUS` is 4 m and the number is earned in `plan.ts`'s own note: `probe-fabric` G9
+ * wants the XII Tables' 1.5 m *ambitus* between a monument and a house, and G14 measures a
+ * smallest oversail of 2.52 m on the Tabularium, so anything under 1.5 + 2.52 is provably too
+ * small for every monument that oversails its own box.
+ */
+export const MON_AMBITUS = 4;
+
+export function romeKeepOut(): KeepOut {
+  const keepOut = new KeepOut();
+  for (const l of LANDMARKS) {
+    keepOut.addRect(l.x, l.z, l.hw + MON_AMBITUS, l.hd + MON_AMBITUS, l.rot);
+    // A mound is bigger in plan than the building on it.
+    /**
+     * **A mound is bigger in plan than the building on it — and it is the shape of the
+     * building, not a circle.** `monuments.ts` already *draws* the mound elliptical, so the
+     * Janiculum's drawn ridge is 418 x 193 world metres on its own bearing while the ground
+     * reserved for it was a 469 m circle: 6.9 hectares of Transtiberim, and measured on the
+     * far bank it was the whole of the quarter's non-horti ground.
+     *
+     * A rectangle rather than an ellipse because `KeepOut` has `addRect` and `addCircle` and
+     * no third thing, and circumscribing is the conservative direction -- it reserves 4/pi
+     * more ground than the mound covers and so can never put a house on the hillside. The
+     * four other mounded rows are all within 15% of round, so this moves them by metres and
+     * moves the Janiculum by a quarter of a kilometre.
+     *
+     * Recovered during the merge of e/city/rome-transtiberim and e/city/rome-fill: the second
+     * branch extracted this function without the first branch's fix, so taking its refactor
+     * whole would have silently restored the circle.
+     */
+    if (l.mound) {
+      const k = (l.moundRadius ?? l.clear) / l.clear;
+      keepOut.addRect(l.x, l.z, l.hw * k * 1.02, l.hd * k * 1.02, l.rot);
+    }
+  }
+  for (const w of WAYS) keepOut.addPath(w.path, w.width * 0.5 + WAY_FRONTAGE[w.cls]);
+  for (const p of PLAZAS) keepOut.addRect(p.x, p.z, p.hw + 2, p.hd + 2, p.rot);
+  for (const a of AQUEDUCTS) keepOut.addPath(a.path, 8);
+  return keepOut;
 }
