@@ -82,7 +82,11 @@ const OUT = path.resolve(ROOT, args.get('out') ?? `screenshots/testudo/${LABEL}`
 const CAMS = {
   'front-eye': { ahead: 13, right: 0, eye: 1.75, aim: 1.55, dist: 13, fov: 42 },
   'roof-rake': { ahead: 20, right: 6, eye: 8.0, aim: 1.7, dist: 21, fov: 38 },
-  'flank-march': { ahead: 2, right: 15, eye: 1.75, aim: 1.6, dist: 15, fov: 44, march: true },
+  // A true broadside, aimed at the middle of the block's length rather than at its front
+  // corner. The first version of this camera stood at `ahead: 2` and photographed the
+  // corner at a grazing angle, which shows a seam in any shield wall ever built.
+  'flank-march': { ahead: -4.5, right: 17, eye: 1.75, aim: 1.55, dist: 17, fov: 40, march: true },
+  'flank-halt': { ahead: -4.5, right: 17, eye: 1.75, aim: 1.55, dist: 17, fov: 40 },
   corner: { ahead: 6, right: -6, eye: 1.6, aim: 1.45, dist: 8, fov: 50 },
   tactical: { ahead: 26, right: 18, eye: 34, aim: 1.5, dist: 32, fov: 40 },
   // Close enough to read one board: is that the painted face or the hide back, is the umbo
@@ -91,6 +95,12 @@ const CAMS = {
   'roof-close': { ahead: 7, right: 1.5, eye: 4.6, aim: 1.74, dist: 6, fov: 30 },
   // The back of the shell. The rearmost rank turns about, and if it does not, this says so.
   rear: { ahead: -22, right: 4, eye: 6.5, aim: 1.6, dist: 15, fov: 40 },
+  // Does it still read as a tortoise from a tactical camera at range? Recent judgements on
+  // this project have been about exactly this: a portico whose columns stopped resolving
+  // past 40 m, a monument unidentifiable at 90 m. 120 m at a long lens is where a player
+  // manoeuvres from, and it is past the distance at which a man would otherwise become a
+  // billboard of a man standing up.
+  far120: { ahead: 90, right: 55, eye: 42, aim: 1.5, dist: 118, fov: 24 },
 };
 const requested = args.get('cams') ? String(args.get('cams')).split(',') : Object.keys(CAMS);
 

@@ -2350,6 +2350,21 @@ export class UnitRenderSystem implements Subsystem {
         // over a few hundred men, which is nothing against a 16 M frame.
         if (lod === 3 && cav) lod = 2;
 
+        /**
+         * A man in a testudo never reaches the billboard tier either, and for the same
+         * reason a mounted man does not: the impostor sheet is a *standing* man with his
+         * shield across his body, so a cohort crossing that edge would stop being a
+         * tortoise and go back to being a block of infantry — the whole silhouette this
+         * work exists to produce, deleted at one distance. The billboard cannot be fixed
+         * for this case, because it is a pre-rendered atlas of poses and the roof is five
+         * poses that only mean anything next to each other.
+         *
+         * LOD2 is 313 triangles a man, so holding a 320-man cohort one tier finer costs
+         * about 100,000 triangles against a 16 M frame, and only while it is in testudo
+         * and only past the impostor edge. That is the cheapest thing in this file.
+         */
+        if (lod === 3 && this.anyTestudo && this.testudoBlend[i] > 0.5) lod = 2;
+
         if (lod === 3) {
           this.pushImpostor(i, rp.x, rp.y, rp.z, facing, u.faction, selected);
           continue;
