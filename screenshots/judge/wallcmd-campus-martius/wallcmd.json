@@ -1,7 +1,7 @@
 {
  "seed": 4265438264,
  "map": "campus-martius",
- "t": 42.9,
+ "t": 42.8,
  "stone": [
   {
    "id": 0,
@@ -248,7 +248,7 @@
     "hit": 2
    },
    "standard": {
-    "x": 242,
+    "x": 241.98,
     "y": 42.12,
     "z": 538.31
    },
@@ -262,13 +262,13 @@
    "onLink": 0,
    "menY": 44.97,
    "probes": 63,
-   "answering": 18,
-   "pct": 29,
+   "answering": 17,
+   "pct": 27,
    "plate": {
     "present": true,
     "off": false,
-    "opacity": "0.86",
-    "x": 799,
+    "opacity": "0.87",
+    "x": 800,
     "y": 362,
     "w": 35,
     "onScreen": true,
@@ -289,8 +289,8 @@
    "onLink": 0,
    "menY": 50.2,
    "probes": 63,
-   "answering": 32,
-   "pct": 51,
+   "answering": 33,
+   "pct": 52,
    "plate": {
     "present": true,
     "off": false,
@@ -302,7 +302,7 @@
     "hit": 4
    },
    "standard": {
-    "x": 315.72,
+    "x": 315.71,
     "y": 52.58,
     "z": 545.72
    },
@@ -349,8 +349,8 @@
     "present": true,
     "off": false,
     "opacity": "0.86",
-    "x": 800,
-    "y": 363,
+    "x": 799,
+    "y": 361,
     "w": 35,
     "onScreen": true,
     "hit": 6
@@ -397,22 +397,22 @@
    "onLink": 71,
    "menY": 34.52,
    "probes": 63,
-   "answering": 22,
-   "pct": 35,
+   "answering": 20,
+   "pct": 32,
    "plate": {
     "present": true,
     "off": false,
     "opacity": "0.86",
     "x": 797,
-    "y": 358,
+    "y": 359,
     "w": 39,
     "onScreen": true,
     "hit": 16
    },
    "standard": {
-    "x": 207.72,
+    "x": 207.74,
     "y": 36.28,
-    "z": 535.65
+    "z": 535.7
    },
    "staffTopAboveFeet": 1.8
   },
@@ -424,8 +424,8 @@
    "onLink": 69,
    "menY": 39.74,
    "probes": 63,
-   "answering": 31,
-   "pct": 49,
+   "answering": 30,
+   "pct": 48,
    "plate": {
     "present": true,
     "off": false,
@@ -439,7 +439,7 @@
    "standard": {
     "x": 243.88,
     "y": 41.5,
-    "z": 538.34
+    "z": 538.42
    },
    "staffTopAboveFeet": 1.8
   },
@@ -457,16 +457,16 @@
     "present": true,
     "off": false,
     "opacity": "0.87",
-    "x": 791,
+    "x": 787,
     "y": 360,
     "w": 39,
     "onScreen": true,
     "hit": 18
    },
    "standard": {
-    "x": 282.01,
+    "x": 282.06,
     "y": 46.73,
-    "z": 543.72
+    "z": 543.79
    },
    "staffTopAboveFeet": 1.8
   }
@@ -524,7 +524,7 @@
    "name": "an enemy on the wall has a plaque the mouse can reach",
    "ok": true,
    "expected": "a plate in the clickable band",
-   "actual": "793,356"
+   "actual": "792,355"
   },
   {
    "name": "their own plaque names them",
@@ -558,38 +558,38 @@
   }
  ],
  "log": [
-  "t+42.9: on the stone — [{\"id\":0,\"t\":\"ballistarii\",\"f\":0,\"alive\":103,\"onWall\":103,\"onGround\":0,\"onLink\":0,\"runs\":[0],\"goal\":\"none\",\"garr\":true},{\"id\":1,\"t\":\"ballistarii\",\"f\":0,\"alive\":107,\"onWall\":107,\"onGround\":0,\"onLink\":0,\"runs\":[1],\"goal\":\"none\",\"garr\":true},{\"id\":2,\"t\":\"ballistarii\",\"f\":0,\"alive\":106,\"onWall\":106,\"onGround\":0,\"onLink\":0,\"runs\":[2],\"goal\":\"none\",\"garr\":true},{\"id\":3,\"t\":\"ballistarii\",\"f\":0,\"alive\":107,\"onWall\":107,\"onGround\":0,\"onLink\":0,\"runs\":[3],\"goal\":\"none\",\"garr\":true},{\"id\":4,\"t\":\"ballistarii\",\"f\":0,\"alive\":108,\"onWall\":108,\"onGround\":0,\"onLink\":0,\"runs\":[4],\"goal\":\"none\",\"garr\":true},{\"id\":5,\"t\":\"wall-slingers\",\"f\":0,\"alive\":90,\"onWall\":90,\"onGround\":0,\"onLink\":0,\"runs\":[5],\"goal\":\"none\",\"garr\":true},{\"id\":6,\"t\":\"wall-slingers\",\"f\":0,\"alive\":90,\"onWall\":90,\"onGround\":0,\"onLink\":0,\"runs\":[6],\"goal\":\"none\",\"garr\":true},{\"id\":7,\"t\":\"wall-slingers\",\"f\":0,\"alive\":90,\"onWall\":90,\"onGround\":0,\"onLink\":0,\"runs\":[7],\"goal\":\"none\",\"garr\":true},{\"id\":16,\"t\":\"escalade-party\",\"f\":1,\"alive\":84,\"onWall\":9,\"onGround\":4,\"onLink\":71,\"runs\":[1],\"goal\":\"none\",\"garr\":true},{\"id\":17,\"t\":\"escalade-party\",\"f\":1,\"alive\":83,\"onWall\":11,\"onGround\":3,\"onLink\":69,\"runs\":[2],\"goal\":\"none\",\"garr\":true},{\"id\":18,\"t\":\"escalade-party\",\"f\":1,\"alive\":79,\"onWall\":10,\"onGround\":0,\"onLink\":69,\"runs\":[3],\"goal\":\"none\",\"garr\":true},{\"id\":19,\"t\":\"escalade-party\",\"f\":1,\"alive\":49,\"onWall\":5,\"onGround\":7,\"onLink\":37,\"runs\":[4],\"goal\":\"descend\",\"garr\":true}]",
+  "t+42.8: on the stone — [{\"id\":0,\"t\":\"ballistarii\",\"f\":0,\"alive\":103,\"onWall\":103,\"onGround\":0,\"onLink\":0,\"runs\":[0],\"goal\":\"none\",\"garr\":true},{\"id\":1,\"t\":\"ballistarii\",\"f\":0,\"alive\":107,\"onWall\":107,\"onGround\":0,\"onLink\":0,\"runs\":[1],\"goal\":\"none\",\"garr\":true},{\"id\":2,\"t\":\"ballistarii\",\"f\":0,\"alive\":106,\"onWall\":106,\"onGround\":0,\"onLink\":0,\"runs\":[2],\"goal\":\"none\",\"garr\":true},{\"id\":3,\"t\":\"ballistarii\",\"f\":0,\"alive\":107,\"onWall\":107,\"onGround\":0,\"onLink\":0,\"runs\":[3],\"goal\":\"none\",\"garr\":true},{\"id\":4,\"t\":\"ballistarii\",\"f\":0,\"alive\":108,\"onWall\":108,\"onGround\":0,\"onLink\":0,\"runs\":[4],\"goal\":\"none\",\"garr\":true},{\"id\":5,\"t\":\"wall-slingers\",\"f\":0,\"alive\":90,\"onWall\":90,\"onGround\":0,\"onLink\":0,\"runs\":[5],\"goal\":\"none\",\"garr\":true},{\"id\":6,\"t\":\"wall-slingers\",\"f\":0,\"alive\":90,\"onWall\":90,\"onGround\":0,\"onLink\":0,\"runs\":[6],\"goal\":\"none\",\"garr\":true},{\"id\":7,\"t\":\"wall-slingers\",\"f\":0,\"alive\":90,\"onWall\":90,\"onGround\":0,\"onLink\":0,\"runs\":[7],\"goal\":\"none\",\"garr\":true},{\"id\":16,\"t\":\"escalade-party\",\"f\":1,\"alive\":84,\"onWall\":9,\"onGround\":4,\"onLink\":71,\"runs\":[1],\"goal\":\"none\",\"garr\":true},{\"id\":17,\"t\":\"escalade-party\",\"f\":1,\"alive\":83,\"onWall\":11,\"onGround\":3,\"onLink\":69,\"runs\":[2],\"goal\":\"none\",\"garr\":true},{\"id\":18,\"t\":\"escalade-party\",\"f\":1,\"alive\":79,\"onWall\":10,\"onGround\":0,\"onLink\":69,\"runs\":[3],\"goal\":\"none\",\"garr\":true},{\"id\":19,\"t\":\"escalade-party\",\"f\":1,\"alive\":49,\"onWall\":5,\"onGround\":7,\"onLink\":37,\"runs\":[4],\"goal\":\"descend\",\"garr\":true}]",
   "  [PASS] somebody of mine is on the wall  expected=\">0\" actual=8",
   "  [PASS] an enemy has a lodgement on the wall  expected=\">0\" actual=3",
   "\n=== 2. CAN I GET HOLD OF THEM? one camera per unit, its own drawn men ===",
   "  unit  0 f0 ballistarii     men y  20.9  pick 56/63 (89%)  plate shown  hit=0  staff top y23.28 = 2.4 m above their feet",
   "  unit  1 f0 ballistarii     men y 34.52  pick 29/63 (46%)  plate shown  hit=1  staff top y36.9 = 2.4 m above their feet",
   "  unit  2 f0 ballistarii     men y 39.74  pick 22/63 (35%)  plate shown  hit=2  staff top y42.12 = 2.4 m above their feet",
-  "  unit  3 f0 ballistarii     men y 44.97  pick 18/63 (29%)  plate shown  hit=3  staff top y47.35 = 2.4 m above their feet",
-  "  unit  4 f0 ballistarii     men y  50.2  pick 32/63 (51%)  plate shown  hit=4  staff top y52.58 = 2.4 m above their feet",
+  "  unit  3 f0 ballistarii     men y 44.97  pick 17/63 (27%)  plate shown  hit=3  staff top y47.35 = 2.4 m above their feet",
+  "  unit  4 f0 ballistarii     men y  50.2  pick 33/63 (52%)  plate shown  hit=4  staff top y52.58 = 2.4 m above their feet",
   "  unit  5 f0 wall-slingers   men y 55.43  pick 56/63 (89%)  plate shown  hit=5  staff top y57.81 = 2.4 m above their feet",
   "  unit  6 f0 wall-slingers   men y 60.66  pick 54/63 (86%)  plate shown  hit=6  staff top y63.04 = 2.4 m above their feet",
   "  unit  7 f0 wall-slingers   men y 65.46  pick 48/63 (76%)  plate shown  hit=7  staff top y67.84 = 2.4 m above their feet",
-  "  unit 16 f1 escalade-party  men y 34.52  pick 22/63 (35%)  plate shown  hit=16  staff top y36.28 = 1.8 m above their feet",
-  "  unit 17 f1 escalade-party  men y 39.74  pick 31/63 (49%)  plate shown  hit=17  staff top y41.5 = 1.8 m above their feet",
+  "  unit 16 f1 escalade-party  men y 34.52  pick 20/63 (32%)  plate shown  hit=16  staff top y36.28 = 1.8 m above their feet",
+  "  unit 17 f1 escalade-party  men y 39.74  pick 30/63 (48%)  plate shown  hit=17  staff top y41.5 = 1.8 m above their feet",
   "  unit 18 f1 escalade-party  men y 44.97  pick 18/63 (29%)  plate shown  hit=18  staff top y46.73 = 1.8 m above their feet",
   "  [PASS] every unit of mine on the wall answers the cursor somewhere on its own men  expected=\"0 blind units\" actual=\"0 of 8: []\"",
   "  [PASS] every unit on the wall has a banner the player can click  expected=\"0 without a usable plaque\" actual=\"0: []\"",
   "  [PASS] every standard is planted with its own men, not in the ground under them  expected=\"0 staffs outside 0-5 m above the men's feet\" actual=\"0: []\"",
-  "  pick rate over my own men: [89,46,35,29,51,89,86,76]  mean 63%",
+  "  pick rate over my own men: [89,46,35,27,52,89,86,76]  mean 63%",
   "  [PASS] a marquee over unit 0's men on the parapet catches it  expected=\"includes 0\" actual=\"[0]\"",
   "\n=== 3. MINE ON THE WALL -> THEIRS ON THE WALL ===",
-  "mine 2 at x239.64 z537.38 y39.74  ->  theirs 17 at x244.84 z536.85 y39.74   5 m apart",
+  "mine 2 at x239.62 z537.32 y39.74  ->  theirs 17 at x244.84 z536.8 y39.74   5 m apart",
   "\n=== 5. BY THE PLAQUE, AND THE REFUSAL ===",
-  "  selected 0 on run 0 (ok); their plaque {\"present\":true,\"off\":false,\"opacity\":\"0.86\",\"x\":805,\"y\":363,\"w\":39,\"onScreen\":true,\"hit\":17}",
+  "  selected 0 on run 0 (ok); their plaque {\"present\":true,\"off\":false,\"opacity\":\"0.86\",\"x\":805,\"y\":362,\"w\":39,\"onScreen\":true,\"hit\":17}",
   "  cursor=refuse hovered=17 hint=\"\"",
   "  what went out: [{\"k\":\"issued\",\"kind\":\"attack\",\"ids\":[0],\"x\":null,\"z\":null,\"target\":17,\"src\":\"local\"},{\"k\":\"refused\",\"unitId\":0,\"verb\":\"traverse\",\"refusal\":\"noRoute\",\"bay\":6}]",
   "  the sim's own offer: {\"ok\":false,\"refusal\":\"noRoute\",\"bay\":6}",
-  "  their file: {\"cx\":242.43035073134575,\"cz\":537.2538822447126,\"sin\":0.08291972428560257,\"cos\":-0.9965562224388123,\"halfW\":11.418267152535327,\"halfD\":1.9787568276009098,\"y\":39.74372100830078}",
+  "  their file: {\"cx\":242.445555363419,\"cz\":537.2551685348029,\"sin\":0.08291972428560257,\"cos\":-0.9965562224388123,\"halfW\":11.463655147631789,\"halfD\":1.9787494257335312,\"y\":39.74372100830078}",
   "  [PASS] an attack across a severed walk is refused out loud, with a reason  expected=\"an orderRefused carrying 'noRoute'\" actual=\"[{\\\"k\\\":\\\"refused\\\",\\\"unitId\\\":0,\\\"verb\\\":\\\"traverse\\\",\\\"refusal\\\":\\\"noRoute\\\",\\\"bay\\\":6}]\"",
   "  [PASS] and the cursor said so before the click  expected=\"refuse\" actual=\"refuse (hovered 17)\"",
-  "  selected 3 (ok); their plaque {\"present\":true,\"off\":false,\"opacity\":\"0.88\",\"x\":793,\"y\":356,\"w\":40,\"onScreen\":true,\"hit\":17}",
-  "  [PASS] an enemy on the wall has a plaque the mouse can reach  expected=\"a plate in the clickable band\" actual=\"793,356\"",
+  "  selected 3 (ok); their plaque {\"present\":true,\"off\":false,\"opacity\":\"0.88\",\"x\":792,\"y\":355,\"w\":40,\"onScreen\":true,\"hit\":17}",
+  "  [PASS] an enemy on the wall has a plaque the mouse can reach  expected=\"a plate in the clickable band\" actual=\"792,355\"",
   "  over their plaque: cursor=attack hovered=17 hostile=17 overBanner=17",
   "  [PASS] their own plaque names them  expected=17 actual=17",
   "  what went out: [{\"k\":\"issued\",\"kind\":\"attack\",\"ids\":[3],\"x\":null,\"z\":null,\"target\":17,\"src\":\"local\"}]",
@@ -597,7 +597,7 @@
   "  wall state: {\"onWall\":86,\"onGround\":0,\"onLink\":0,\"runs\":[3],\"runCounts\":{\"3\":86},\"goal\":\"assault\",\"destRun\":2,\"planAge\":11,\"stuck\":0,\"worstFeetError\":0}",
   "  [PASS] right-clicking an enemy plaque on the wall is an attack order  expected=\"kind attack\" actual=\"[\\\"attack\\\"]\"",
   "  [PASS] and the simulation takes it as an assault along the wall, or refuses it out loud  expected=\"goal assault, or an orderRefused\" actual=\"goal assault, refusals []\"",
-  "  40 s later: kills 59->77, their alive 40->16, wall {\"onWall\":77,\"onGround\":0,\"onLink\":3,\"runs\":[2],\"runCounts\":{\"2\":77},\"goal\":\"none\",\"destRun\":-1,\"planAge\":-1,\"stuck\":0,\"worstFeetError\":0}",
+  "  40 s later: kills 61->76, their alive 40->15, wall {\"onWall\":77,\"onGround\":0,\"onLink\":2,\"runs\":[2],\"runCounts\":{\"2\":77},\"goal\":\"none\",\"destRun\":-1,\"planAge\":-1,\"stuck\":0,\"worstFeetError\":0}",
   "  [PASS] no page errors  expected=0 actual=0",
   "  [PASS] no console errors  expected=0 actual=0"
  ]
