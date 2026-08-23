@@ -1697,7 +1697,11 @@ export class UnitRenderSystem implements Subsystem {
            */
           r = TestudoRole.Flank;
           const out = file === 0 ? -1 : 1;
-          turn = out * (rank <= 3 ? TESTUDO_CHAMFER : Math.PI / 2);
+          // Eased rather than stepped. A hard step from 50° to 90° at one rank is a corner
+          // with a crease in it, and from in front the first square board behind the bevel
+          // is edge-on and shows the man beside it. Six ranks of it is a bevel.
+          const t = Math.min(1, Math.max(0, (rank - 1) / 5));
+          turn = out * (TESTUDO_CHAMFER + (Math.PI / 2 - TESTUDO_CHAMFER) * t * t);
         } else if (rank === 1) {
           r = TestudoRole.Nose;
         } else {
