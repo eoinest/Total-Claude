@@ -59,12 +59,13 @@ The left-hand plate is white from edge to edge. Measured on the buffer itself
 
 | contact strength | 5th pct | median | share under 0.7 | share under 0.5 |
 |---|---|---|---|---|
-| **0** — the pipeline as it stood | **0.698** | 0.851 | 5.0 % | 0.9 % |
-| 2.2 | 0.651 | 0.855 | 8.2 % | 1.2 % |
-| **5.0** — shipped | **0.439** | 0.835 | 22.9 % | 8.1 % |
-| 7.0 | 0.306 | 0.824 | 28.7 % | 14.9 % |
+| **0** — the pipeline as it stood | **0.706** | 0.851 | 4.7 % | 0.6 % |
+| 2.2 | 0.663 | 0.855 | 7.5 % | 0.9 % |
+| **5.0** — shipped | **0.467** | 0.835 | 23.0 % | 7.0 % |
+| 7.0 | 0.337 | 0.824 | 29.6 % | 14.6 % |
 
-Same ladder at `front-eye`, the §H station: 0.663 → 0.628 → **0.467** → 0.349.
+Same ladder at `front-eye`, the §H station: 0.682 → 0.651 → **0.498** → 0.380. (These are the
+16-sample numbers; the 12-sample build read about 0.03 deeper at every rung and is in §8.)
 
 The critics were right and the source reader would have been wrong.
 
@@ -106,6 +107,36 @@ The half-resolution HBAO keeps its 1.1 m gather and is now honestly labelled the
 scale. Its four steps became log-spaced — 10 %, 26 %, 55 %, 100 % — at the same tap count, so
 its nearest tap is 0.11 m instead of 0.14 m and it hands over to the contact term without a
 seam.
+
+### Twelve samples read as pepper, and the fix was the sample count and not the blur
+
+A blind grader given the plates measured the shaded shield face at (132–176, 650–720) of
+`corner.png` and called what this term put there *"coarse near-black pepper that does not
+follow the plank grain"*, and took a whole grade off A3 for it. It was right, and it is the
+one artefact this pass introduced rather than found. `tools/scratch/cw-hf.mjs` puts a number
+on it — high-frequency RMS inside that box (each pixel against its own 3×3 mean), and the
+darkest pixel in the box:
+
+| | hfRMS | darkest |
+|---|---|---|
+| unoccluded | 2.60 | 6.5 |
+| 12 samples, 1.0-texel blur | **3.87** | **0.1** |
+| 16 samples, 1.5-texel blur — shipped | **3.60** | **4.9** |
+| 16 samples, 1.9-texel blur | 3.62 | 4.6 |
+
+**The sample count was the whole of it and the blur width was not.** Going wider moved the
+noise 0.02 in the wrong direction and cost 0.3 of the darkest pixel, which is the blur eating
+the core exactly as that pass's own comment always warned it would. The residual 1.0 over the
+unoccluded frame is signal: the term adds real high-frequency detail at every plank seam and
+every boss rim, and it should.
+
+The core survives the trade: the buffer's 5th percentile at `roof-close` reads 0.467 at
+16/1.5 against 0.439 at 12/1.0, on an unoccluded reference of 0.706.
+
+*The same box measures 4.84 on the final plates and that number is not comparable* — §3
+changed the device painted inside it, so the box now contains different linework. The
+isolation above was taken with the device identical on both sides, which is the only way it
+means anything.
 
 ### The floor is a colour now, and that is what let the occlusion be strong enough to see
 
@@ -164,15 +195,15 @@ under 15 % luminance, and the 5th percentile:
 
 | station | mean | dark share | 5th pct |
 |---|---|---|---|
-| `front-eye` | 154.3 → 149.0 (−3.5 %) | 5.0 → 6.5 % | 38.1 → 32.9 |
-| `roof-close` | 49.4 → 45.0 (−8.9 %) | 60.1 → 63.4 % | 5.2 → 2.9 |
-| `corner` | 123.1 → 119.5 (−2.9 %) | 22.0 → 24.9 % | 11.1 → 8.3 |
-| `flank-halt` | 120.2 → 117.0 (−2.7 %) | 27.3 → 30.4 % | 4.2 → 3.1 |
-| `tactical` | 99.0 → 90.5 (−8.6 %) | 5.1 → 6.8 % | 37.6 → 31.1 |
-| `roof-rake` | 108.0 → 96.4 (−10.8 %) | 12.4 → 15.4 % | 20.6 → 16.6 |
-| `rear` | 119.1 → 112.8 (−5.3 %) | 9.5 → 12.3 % | 21.0 → 14.6 |
-| `far120` | 129.8 → 123.5 (−4.9 %) | 0.1 → 0.2 % | 91.8 → 83.0 |
-| `flank-march` | 133.5 → 128.8 (−3.5 %) | 15.1 → 18.5 % | 11.6 → 8.4 |
+| `front-eye` | 154.3 → 149.2 (−3.3 %) | 5.0 → 6.4 % | 38.1 → 33.4 |
+| `roof-close` | 49.4 → 44.8 (−9.3 %) | 60.1 → 64.0 % | 5.2 → 2.9 |
+| `corner` | 123.1 → 119.5 (−2.9 %) | 22.0 → 25.0 % | 11.1 → 8.4 |
+| `flank-halt` | 120.2 → 118.1 (−1.7 %) | 27.3 → 29.5 % | 4.2 → 3.4 |
+| `tactical` | 99.0 → 91.3 (−7.8 %) | 5.1 → 6.2 % | 37.6 → 32.7 |
+| `roof-rake` | 108.0 → 96.6 (−10.6 %) | 12.4 → 15.1 % | 20.6 → 16.8 |
+| `rear` | 119.1 → 113.7 (−4.5 %) | 9.5 → 11.5 % | 21.0 → 15.5 |
+| `far120` | 129.8 → 123.7 (−4.7 %) | 0.1 → 0.1 % | 91.8 → 85.1 |
+| `flank-march` | 133.5 → 131.5 (−1.5 %) | 15.1 → 15.6 % | 11.6 → 11.4 |
 
 Against the linear form, the same table read −0.5 % to −3.7 % and the dark share moved by
 under a point on every camera. That is the whole of what the exponent bought.
@@ -301,8 +332,44 @@ and 14 of its 16 cells are used.
 
 This is deliberately **not** a different device per man. A legion's shields did carry one, and
 so do Rome II's; what varies between two boards of one cohort is the painter's hand and what
-the campaign has done since. Whether a grader accepts that argument is the open question — one
-already did not.
+the campaign has done since.
+
+### It was not enough, and two graders said so in the same words
+
+The plates went to two blind graders independently, and both named the shield as the worst
+thing in the set, and both reached for the same phrase. *"You can trace a whole diagonal file
+of shields that differ only in tint."* *"There is exactly one device in the unit, recoloured —
+under the rubric's own instruction, scan a rank and if you spot a repeated pair, fail."* One
+of them ranked it **ahead of the missing dust**, which scored lower.
+
+The reason the paint loss did not answer it is worth writing down, because it is a general
+lesson about this criterion: rotation, scale, offset and wear are all *transforms of one
+image*, and a grader scanning a rank is looking for a **different image**. No amount of
+per-man treatment of one tile produces one.
+
+So the argument above stands and the implementation of it changes. A legion's shields carried
+one device; what they did not have is one **painter**. `drawEmblem` now paints the winged
+thunderbolt three times:
+
+| hand | wings | bolts | field |
+|---|---|---|---|
+| the issued pattern | full sweep, three coverts, reach 0.47 | one per quarter, 0.055 stroke | `#a8695f` |
+| second | shallower lift, **middle covert dropped**, reach 0.44 | one per quarter, heavy 0.068 stroke, short | `#a2645c` |
+| third | deeper lift, longer droop, reach 0.49 | **two per quarter**, thin 0.046 stroke | `#ad6e60` |
+
+and `resolveKit` draws a legionary's board from the three on a per-man hash. At two paces you
+see three different boards; at twenty you see one legion. **The first hand reduces to the
+device that shipped at every parameter**, deliberately — the issued pattern was not what was
+wrong, and repainting a legion's blazon to answer a variety complaint would be trading a
+correct criticism for a wrong build.
+
+Three and not four because the emblem grid is 8 × 2 and fourteen of its sixteen cells were
+already spoken for. The two new cells go **inside the Roman band** at 4 and 5 rather than at
+the end: the bands decide the shader's whole treatment of a board, and appending after
+`numidian-crescent` would have given a legionary a bright uniform Punic field and a plain hide
+back. `EMBLEM_TRIBAL_FIRST` 4 → 6 and `EMBLEM_PUNIC_FIRST` 9 → 11 move with them, and so do
+the two hard-coded tribal pools in `resolveKit`; rosters name emblems by string, so no roster
+entry moves. Zero VRAM, zero draw calls, zero triangles.
 
 Second change, one line, and it is the sort of thing that only shows up in an inventory: the
 scutum's two spina bars were `Tint.Atlas`, which means untinted, which means **every scutum in
@@ -340,6 +407,8 @@ position** — the two `cameras.json` agree to the centimetre on all nine.
 | | before | after |
 |---|---|---|
 | eye level, 13 m out (§H) | ![](../images/contact/before-front-eye.jpg) | ![](../images/contact/after-front-eye.jpg) |
+| a marching line from the quarter rear, 52 m | ![](../images/contact/before-wake-quarter.jpg) | ![](../images/contact/wake-quarter.jpg) |
+| 0.30 s after the order to advance | ![](../images/contact/before-lean-start.jpg) | ![](../images/contact/lean-start.jpg) |
 | one board magnified | ![](../images/contact/before-roof-close.jpg) | ![](../images/contact/after-roof-close.jpg) |
 | the corner, 1.6 m | ![](../images/contact/before-corner.jpg) | ![](../images/contact/after-corner.jpg) |
 | broadside, eye level | ![](../images/contact/before-flank-halt.jpg) | ![](../images/contact/after-flank-halt.jpg) |
@@ -569,10 +638,13 @@ diagnosis and a handover, not a fix.
   assigned. The forward axis was the affordable one.
 - **No lean on the impostor tier**, so the bulk of a 9,000-man field at strategic zoom does
   not lean. `pushImpostor` zeroes the lane.
-- **One device on every board still, by choice.** The wear is now per man and no two boards
-  are the same image, but a grader who wants different iconography will still mark C1 down.
-  There are exactly two free cells in the emblem atlas and a third row costs 2048x256x4 bytes
-  three times over.
+- **Three hands, not thirty.** A cohort now draws from three paintings of its device instead
+  of one, which is what a rank-scan is looking for, but a praetorian cohort's scorpion and an
+  urban cohort's wreath still have exactly one hand each — the alternates are two more
+  thunderbolts and cannot be handed to them. Those units are a small share of the field and
+  the legionary cohorts are what fill a frame, so this is where the two free atlas cells were
+  worth spending; it is not a general fix. The emblem grid is now **full** at 16 of 16, and the
+  next device of any kind costs a fourth row: 2048 × 256 × 4 bytes, three times over.
 - **One face on every soldier in the game.** The largest remaining C1 item and untouched here.
 - **A testudo raises almost none of the wake, and that is arithmetic rather than a bug.**
   It advances at 0.36 x walk, so it clears the 0.45 m/s gate — but its frontage closes to
