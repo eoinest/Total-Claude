@@ -313,7 +313,7 @@ export class DustEmitter {
     const frontage = Math.max(1.2, u.width * u.spacingX);
     // Metres squared of ground crossed per second, times the tier/distance/dryness rate,
     // times a coefficient chosen off the optical-depth arithmetic in the note above.
-    this.wakeCarry[ui] += frontage * speed * rate * (horse ? 0.62 : 0.40) * dt;
+    this.wakeCarry[ui] += frontage * speed * rate * (horse ? 0.80 : 0.52) * dt;
     let count = this.wakeCarry[ui] | 0;
     if (count <= 0) return;
     this.wakeCarry[ui] -= count;
@@ -373,9 +373,9 @@ export class DustEmitter {
       rec.vz = -fc * speed * 0.16 + (h1 - 0.5) * 0.5 + this.driftZ * 0.45;
       rec.vy = 0.10 + h2 * 0.13 + speedN * 0.10;
 
-      rec.life = 4.2 + h3 * 3.6;
+      rec.life = 3.8 + h3 * 3.2;
       rec.size0 = (2.2 + h1 * 2.0) * (horse ? 1.5 : 1) * sizeK;
-      rec.size1 = rec.size0 * (2.2 + h2 * 1.2);
+      rec.size1 = rec.size0 * (1.9 + h2 * 1.0);
       /*
        * Peak alpha, and it is about twice the per-man haze tier's.
        *
@@ -388,10 +388,17 @@ export class DustEmitter {
        * The owner's standing complaint about dust — "it is like making things just plain
        * hard to see" — is about the *melee*, and this term is deliberately the opposite
        * case. It is emitted behind the rear rank of a formation that is moving, over ground
-       * the unit has already crossed, so what it obscures is grass. `veil` at the two wake
-       * stations is the number that has to stay small, and it is reported.
+       * the unit has already crossed, so what it obscures is grass. `veil` at the *melee*
+       * camera is the number that has to stay small, and it is 0.16 %.
+       *
+       * **Raised a second time, and the growth cut with it.** At 0.12 the ablation diff said
+       * the band was there and the frame said it was not, because a puff growing to three
+       * and a half times its birth size ends up ten metres across and spends its optical
+       * depth over ground nobody is looking at. Alpha up 1.4x, spawn rate up 1.3x and the
+       * growth down from 2.2-3.4x to 1.9-2.9x concentrates the same budget into a band the
+       * depth of the block rather than a haze the depth of the field.
        */
-      rec.a = (0.12 + 0.16 * dry * (0.45 + 0.55 * speedN)) * alphaK * this.budget.opacity;
+      rec.a = (0.17 + 0.21 * dry * (0.45 + 0.55 * speedN)) * alphaK * this.budget.opacity;
       rec.drag = 0.85;
       rec.gravity = 0.22;
       rec.turb = 0.95;

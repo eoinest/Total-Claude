@@ -237,7 +237,10 @@ behind it.
   40-man skirmisher screen and a 480-man phalanx of the same frontage raise the same dust.
 - It is gated on the **anchor** moving, not on the men moving. A melee — two thousand men
   shuffling at 0.2 m/s with still anchors — raises none of it, and the contact emitter keeps
-  that case exactly as it was. Measured at the melee camera after the change: **veil 0.16 %**.
+  that case exactly as it was. Measured on the shipped build at the melee camera, in-session
+  ablation: **cover 0.48 %, veil 0.09 %, mean crowd luminance lift 0.06 of 255** — the
+  fighting is not veiled at all, which is the constraint the owner's standing complaint about
+  dust sets and the reason this term is gated on the anchor rather than on the men.
 - The anchor's velocity is differenced from `u.x, u.z` between frames, in the emitter, and
   the bookkeeping runs *before* the distance cull — otherwise a unit that walks out of range
   and back differences two positions a hundred frames apart and reads as travelling at
@@ -257,8 +260,15 @@ Measured at the two wake stations, in-session ablation, 1920x1080:
 
 | station | cover (>2/255) | veil (>12/255) | mean dLum |
 |---|---|---|---|
-| `wake-quarter` — 52 m, quarter rear | 38.9 % | 17.9 % | 7.8/255 |
-| `wake-rear` — 30 m, dead astern | 45.3 % | 27.0 % | 13.8/255 |
+| `wake-quarter` — 52 m, quarter rear | 42.2 % | 20.5 % | 8.6/255 |
+| `wake-rear` — 30 m, dead astern | 48.0 % | 29.8 % | 14.7/255 |
+
+The alpha was raised twice and the puff *growth* cut on the second pass, which is the part
+worth writing down: at the first setting the ablation diff said the band was there and the
+frame said it was not, because a puff growing to three and a half times its birth size ends
+up ten metres across and spends its optical depth over ground nobody is looking at.
+Concentrating the same budget — alpha ×1.4, rate ×1.3, growth 2.2–3.4× down to 1.9–2.9× —
+buys a band the depth of the block instead of a haze the depth of the field.
 
 The owner's standing complaint about dust is *"it is like making things just plain hard to
 see"*, and it is about the melee. This term is deliberately the opposite case: it fires only
