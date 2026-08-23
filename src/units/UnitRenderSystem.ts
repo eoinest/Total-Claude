@@ -240,6 +240,8 @@ const TESTUDO_EVEN = 0.78;
 const TESTUDO_FORM = 0.55;
 /** Ranks a block needs before its rearmost turns about to close the back. */
 const TESTUDO_MIN_DEPTH = 4;
+/** How far the two flank men nearest the face turn, instead of a right angle. */
+const TESTUDO_CHAMFER = (50 * Math.PI) / 180;
 
 /**
  * Ceiling on machines drawn at once. Four batteries of four is sixteen; sixty-four leaves
@@ -1670,15 +1672,32 @@ export class UnitRenderSystem implements Subsystem {
            * `floor((last - file) / w)` is the highest rank that file actually reaches.
            */
           r = TestudoRole.Flank;
-          turn = Math.PI;
-        } else if (file === 0) {
-          // File 0 is the most negative local x, which is the unit's *left*: see
-          // `centredX` in `sim/formations.ts`.
+          // Chamfered at the two back corners for the same reason as the front two: a man
+          // who is both the end of the rear rank and the end of a flank has to face the
+          // diagonal, or the join between the two walls is a hole with a man in it.
+          // `turn` is added to the unit's heading, and the unit's left is negative: a man on
+          // the left flank looking back over his left shoulder is `-(PI - k)`, not `PI - k`,
+          // which would face him back over the *other* one and put his board inside the
+          // block.
+          const k = TESTUDO_CHAMFER * 0.72;
+          turn = file === 0 ? k - Math.PI : file === w - 1 ? Math.PI - k : Math.PI;
+        } else if (file === 0 || file === w - 1) {
+          /**
+           * The flanks, and the chamfer at the front of them.
+           *
+           * File 0 is the most negative local x, which is the unit's *left*: see `centredX`
+           * in `sim/formations.ts`. A flank man turns a right angle and stands his board up
+           * outward — except in the first two ranks behind the face, where a right angle
+           * leaves the board edge-on to anybody standing in front of the formation and a
+           * critic counted four or five men fully exposed at each front corner, helmets and
+           * bare arms, with no shield in front of them and none above. `TESTUDO_CHAMFER`
+           * turns those two men through fifty degrees instead, so the corner presents a
+           * bevel to the front rather than a notch. A shell is not a box with square
+           * corners; the corners are where two surfaces have to meet.
+           */
           r = TestudoRole.Flank;
-          turn = -Math.PI / 2;
-        } else if (file === w - 1) {
-          r = TestudoRole.Flank;
-          turn = Math.PI / 2;
+          const out = file === 0 ? -1 : 1;
+          turn = out * (rank <= 3 ? TESTUDO_CHAMFER : Math.PI / 2);
         } else if (rank === 1) {
           r = TestudoRole.Nose;
         } else {

@@ -143,7 +143,7 @@ const POSES = {
     // because a testudo stows the weapon — `TESTUDO_STOW_HI` in `kit.ts` — and a man holding
     // a 10 kg scutum against a volley with one hand and nothing in the other is the pose that
     // makes the whole formation read as men doing something difficult.
-    elbowR: [-0.30, 0.86, 0.00], handR: [-0.20, 0.92, 0.24],
+    elbowR: [-0.30, 0.86, -0.06], handR: [-0.21, 0.92, 0.10],
   },
   nose: {
     stance: 'hunch', board: [-46, 0, 0], centre: [-0.02, 1.55, 0.36],
@@ -153,18 +153,18 @@ const POSES = {
   // printed plane; alternating ranks between these two gives a surface with a grain, which
   // is what a roof of hand-held boards actually looks like from above.
   roofA: {
-    stance: 'hunch', board: [-90, 0, 0], centre: [0, 1.72, 0.24],
-    elbowR: [-0.30, 1.34, 0.06], handR: [-0.19, 1.56, 0.20],
+    stance: 'hunch', board: [-82, 0, 0], centre: [0, 1.72, 0.24],
+    elbowR: [-0.30, 1.32, 0.02], handR: [-0.20, 1.48, 0.16],
   },
   roofB: {
-    stance: 'hunch', board: [-86, 0, 0], centre: [0, 1.775, 0.17],
-    elbowR: [-0.30, 1.34, 0.06], handR: [-0.19, 1.58, 0.16],
+    stance: 'hunch', board: [-78, 0, 0], centre: [0, 1.755, 0.20],
+    elbowR: [-0.30, 1.32, 0.02], handR: [-0.20, 1.50, 0.13],
   },
   // Turned outward by the renderer rather than by the pose — a flank man in a testudo
   // faces the flank, so his whole body turns and the same board maths serves.
   flank: {
-    stance: 'hunch', board: [6, 0, 0], centre: [-0.02, 1.22, 0.30],
-    elbowR: [-0.31, 1.15, 0.06], handR: [-0.20, 1.24, 0.26],
+    stance: 'hunch', board: [6, 0, 0], centre: [-0.02, 0.95, 0.30],
+    elbowR: [-0.31, 0.90, -0.04], handR: [-0.21, 0.98, 0.10],
   },
 };
 

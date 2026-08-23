@@ -453,9 +453,9 @@ const idleBraceLow: OverlayDef = {
  * |---|---|---|
  * | `testudoFace` | 0.30–1.35 m, upright | the front rank's own frontage, down to the ankles |
  * | `testudoNose` | 1.19–1.92 m, 46° back-slope reaching 0.75 m forward | the band across the front at head height — the gap that makes a testudo look like a crowd wearing hats |
- * | `testudoRoofA` | level at 1.74 m, 1.06 m of board over a 0.63 m interval | the roof, course one |
- * | `testudoRoofB` | 1.73–1.81 m, 4° off level | the roof, course two: alternate ranks take it, so the boards lap rather than butt and the surface has a grain |
- * | `testudoFlank` | 0.72–1.77 m, upright, its top edge on the roof line | the flanks and the rear, with the man turned outward by the renderer |
+ * | `testudoRoofA` | 1.66–1.81 m, 8° nose-down, 1.06 m of board over a 0.63 m interval | the roof, course one |
+ * | `testudoRoofB` | 1.63–1.85 m, 12° nose-down | the roof, course two: alternate ranks take it, so the boards lap rather than butt and the surface has a grain |
+ * | `testudoFlank` | 0.42–1.47 m, upright | the flanks and the rear, with the man turned outward by the renderer |
  *
  * Each roof board laps the one in front by 0.43 m, which is what leaves no hole when a man
  * is 0.1 m out of his place. The face's top at 1.35 m sits above the nose's bottom at
@@ -543,12 +543,19 @@ const TESTUDO_DEEP_MARCH: BoneTrack[] = [
 const TESTUDO_DEEP_MARCH_ROOT: readonly (readonly [number, number, number, number])[] =
   [[0, 0, -0.21, 0.05]];
 
-/** Front rank: the board upright and planted, covering 0.30–1.35 m. Both hands behind it. */
+/**
+ * Front rank: the board upright and planted, covering 0.30-1.35 m. Both hands behind it.
+ *
+ * The right hand's target was pulled 0.14 m back after a critic found knuckles coming
+ * through the painted face of the board in four places in one eye-level crop. A hand
+ * "on the back of the shield" has to be behind the *back* of the shield, and the scutum
+ * is 0.135 m of curve plus 0.022 m of plywood in front of where the arm is.
+ */
 const ARMS_FACE: BoneTrack[] = [
   absTr(MB.upperArmL, [[0, 150.4, 67.3, 55.3]]),
   absTr(MB.lowerArmL, [[0, 173, -51, -177]]),
-  absTr(MB.upperArmR, [[0, 21.7, 29.1, 67.6]]),
-  absTr(MB.lowerArmR, [[0, -48.3, -55.8, 150.5]]),
+  absTr(MB.upperArmR, [[0, 18.1, -11.1, 70.5]]),
+  absTr(MB.lowerArmR, [[0, -51.9, -49.8, 151.4]]),
 ];
 
 /** Second rank: the glacis, 46° back from vertical, covering 1.19–1.92 m. */
@@ -559,28 +566,56 @@ const ARMS_NOSE: BoneTrack[] = [
   absTr(MB.lowerArmR, [[0, -73.8, -40.1, 166.6]]),
 ];
 
-/** Roof, course one: dead level at 1.74 m. */
+/**
+ * Roof, course one: 8 degrees nose-down, 1.66 m at the leading edge and 1.81 m at the
+ * trailing one.
+ *
+ * **It was dead level and that was worse.** A horizontal board sees the whole sky
+ * hemisphere, so it takes about twice the ambient a vertical one does, and a critic scored
+ * the roof two to three stops brighter than the *same asset* on the wall — "a flat pink
+ * quilt", with no occlusion anywhere the boards lap because coplanar boards cannot shade
+ * each other. Eight degrees costs 2% of the fore-and-aft coverage, tips the normal off the
+ * zenith, and puts a real 0.15 m step at every lap, so the roof shades itself with shadow
+ * rather than needing an AO term it cannot have. It is also the correct way round: the
+ * leading edge is the low one, so the front board sheds over the one behind it.
+ */
 const ARMS_ROOF_A: BoneTrack[] = [
-  absTr(MB.upperArmL, [[0, 110, 84.4, 13.1]]),
-  absTr(MB.lowerArmL, [[0, 90, -51, -177]]),
-  absTr(MB.upperArmR, [[0, 108, -11.5, -17.5]]),
-  absTr(MB.lowerArmR, [[0, -81.7, -29.6, 172.4]]),
+  absTr(MB.upperArmL, [[0, 106.3, 84.6, 10.5]]),
+  absTr(MB.lowerArmL, [[0, 98, -51, -177]]),
+  absTr(MB.upperArmR, [[0, 90.8, 5, -0.8]]),
+  absTr(MB.lowerArmR, [[0, -74.2, -27.7, 166.3]]),
 ];
 
-/** Roof, course two: 4° off level and 30 mm higher, so the courses lap. */
+/** Roof, course two: 12 degrees and 10 mm higher, so the two courses lap and disagree. */
 const ARMS_ROOF_B: BoneTrack[] = [
-  absTr(MB.upperArmL, [[0, 98, 85, 5]]),
-  absTr(MB.lowerArmL, [[0, 94, -51, -177]]),
-  absTr(MB.upperArmR, [[0, 108, -11.5, -17.5]]),
-  absTr(MB.lowerArmR, [[0, -86.6, -31.3, 176.3]]),
+  absTr(MB.upperArmL, [[0, 99, 85, 5.5]]),
+  absTr(MB.lowerArmL, [[0, 102, -51, -177]]),
+  absTr(MB.upperArmR, [[0, 90.8, 5, -0.8]]),
+  absTr(MB.lowerArmR, [[0, -78.2, -28.7, 169.5]]),
 ];
 
-/** Flank and rear: the board upright, covering 0.72–1.77 m, its top edge on the roof line. */
+/**
+ * Flank and rear: the board upright and low, covering 0.42-1.47 m.
+ *
+ * **It used to cover 0.72-1.77 m and that was the loudest fault in the whole feature.** The
+ * argument for the high board was that its top edge stood on the roof line and sealed every
+ * horizontal sightline; what it actually produced was 0.72 m of bare leg under the shield
+ * along both flanks and the whole of the back, which a critic named as the single
+ * highest-leverage fix and called out in five of nine frames. Dropping it 0.30 m puts the
+ * rim into the grass, and it takes the *second* fault with it: at 1.47 m the far wall no
+ * longer stands proud of the roof, so the dozen unlit hide backs that a tactical camera
+ * used to see over the top of the shell — "black fins", and they shredded the silhouette at
+ * every range — are hidden behind the roof they used to stick through.
+ *
+ * What is given up is a 0.19 m band between the rim and the roof's edge, seen only from
+ * outside at about eye height. It shows the men's own helmets and the underside of the
+ * roof, not sky.
+ */
 const ARMS_FLANK: BoneTrack[] = [
-  absTr(MB.upperArmL, [[0, 157.7, 88.7, 3.4]]),
+  absTr(MB.upperArmL, [[0, -146.8, 88.7, 8.4]]),
   absTr(MB.lowerArmL, [[0, -174, -51, -177]]),
-  absTr(MB.upperArmR, [[0, 136.7, 39.1, -46.3]]),
-  absTr(MB.lowerArmR, [[0, -64.1, -47.3, 160]]),
+  absTr(MB.upperArmR, [[0, 17.8, 35.7, 71.7]]),
+  absTr(MB.lowerArmR, [[0, -28.5, -40.9, 130.8]]),
 ];
 
 /**
