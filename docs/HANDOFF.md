@@ -3152,3 +3152,50 @@ samples over 14 functions — **6,144** approximated results. Corrected in `src/
 - **The desync fixture needs replacing once the quantisation firewall merges** from
   `e/tools/xengine-arm` — Chromium against Firefox stops diverging and the natural fixture
   disappears. The successor is named in `docs/MULTIPLAYER.md` §9.8.
+
+---
+
+## Session — the testudo, 22 Aug 2026 (`e/units/testudo-shell`)
+
+Branch `e/units/testudo-shell`, six commits on `940ac0e`, pushed. Full write-up in
+[`docs/tech/TESTUDO.md`](tech/TESTUDO.md); frames in `docs/images/testudo/`.
+
+### The finding worth carrying forward
+
+**`shieldwall` and `testudo` had never had their own spacing.** `BattleSystem.resolveCrowding`
+separates every man to a fixed 0.84 m centre to centre; `testudo` asks for 0.516 m between files
+and `shieldwall` for 0.636 m, and the solver moves a man up to 0.22 m a tick against a steering
+term that manages millimetres. Both formations expanded until they stood on exactly the ground a
+`line` of the same strength stands on. Measured with one 320-man cohort left to settle 30 s
+(`tools/probe-testudo.mjs`): **14.39 × 13.47 m at 0.606 m² a man, median man 2.00 m off his own
+slot, worst 11.80 m**, against the 10.80 × 8.85 m the formation asks for.
+
+`FormationDef.packRadius` gives those two their own body radius (0.25 m and 0.31 m). Same cohort
+now: **11.06 × 8.91 m at 0.308 m², median 0.052 m off slot.** The sum of two *default* radii is
+bit-identical to the `radius * 2` constant it replaces, so nothing else moves by a ULP.
+
+**That is a balance change and all three determinism arms were re-recorded for it, in the same
+commit** (`66e574f`). `hash`, `uf64` and `uctl` are all UNCHANGED at t+0 on all three — the
+deployment and the discrete half of every unit at boot are byte-identical to what shipped.
+Survivors at t+400: field 4,973 → 5,408 (+8.7%), Rome's assault 2,272 → 2,293 (+0.9%),
+Carthage's 2,330 → 2,258 (−3.1%). Headcounts 8,632 / 3,072 / 3,440 unchanged.
+
+Everything else in the branch is presentation and was **proved** so: after the pose work landed
+on top, `qa-determinism` on the default arm is UNCHANGED at all seven checkpoints on `hash`,
+`uf64` and `uctl` against the baseline recorded before it.
+
+### Gate on this branch
+
+tsc clean, lint 3/3, qa-deploy 33/33, seams PASS both maps, determinism ✓ all three arms.
+`renderer.info` over nine cameras that are full of the formation: draw calls identical at eight
+and one lower at the ninth; triangles within 0.7% except `roof-close`, which is 18.7% *down*
+because a block on a third of the ground occludes more of itself.
+
+### Two things a reader should know
+
+- **`e/units/testudo` was already checked out by another worktree**, so this work is on
+  `e/units/testudo-shell`. Nothing was force-moved.
+- **`tools/probe-testudo.mjs` shoots its marching camera last, deliberately.** A camera with
+  `march: true` orders the cohort forward before the shutter and a simulation cannot be rewound,
+  so every camera after it photographs a block that has moved. The first pass had `tactical` on
+  either side of it in the two arms and the "identical station" pair differed by 1.79 m.
