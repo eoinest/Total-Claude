@@ -1446,28 +1446,30 @@ export class SelectionController {
     if (hovered < 0) return -1;
     const v = this.model.view(hovered);
     if (!v || v.own || v.destroyed) return -1;
-    if (!this.wallValid) {
-      /*
-       * ...**except from outside somebody else's curtain, where the wall order still wins.**
-       *
-       * `wallValid` is false on most pixels of an enemy parapet seen from the field — the ray
-       * meets the merlons or misses the stone over the men's heads — so this line hands the
-       * besieger an attack on the garrison instead of the storm he is trying to order. It did
-       * not bite before, because the pick could not name a unit standing on a wall; making it
-       * able to is the whole of this branch, and it turned `qa-wallattack`'s *"the wall order
-       * still wins unmodified"* from green to red: `orderIssued kind=attack targetUnitId=7`
-       * where the base tree emitted `kind=move` at the foot of the bay.
-       *
-       * Storming a defended bay is the besieger's entire game and it must keep working from
-       * the plain click. The three named ways to attack him instead — his banner, ctrl, and
-       * both parties already on the same wall — are all still open, and the first two are
-       * measured green on Carthage.
-       */
-      return this.selectionIsStorming() ? -1 : hovered;
-    }
+    /*
+     * From outside somebody else's curtain the wall order wins even where the ray missed.
+     *
+     * `wallValid` is false on most pixels of an enemy parapet seen from the field — the ray
+     * meets the merlons, or passes over the men's heads and lands on the street behind — so
+     * `if (!this.wallValid) return hovered` handed the besieger an attack on the garrison
+     * instead of the storm he was ordering. It did not bite until this branch, because the
+     * pick could not name a unit standing on a wall; making it able to turned
+     * `qa-wallattack`'s *"the wall order still wins unmodified"* red, with
+     * `orderIssued kind=attack targetUnitId=7` where the base tree emitted `kind=move` at
+     * the foot of the bay. Storming a defended bay is the besieger's whole game.
+     *
+     * **The veto goes at the bottom, with the other one, and the first attempt put it at the
+     * top.** From there it ran before the three named overrides and swallowed two of them:
+     * the banner route and ctrl both stopped producing an attack, and the cursor went back
+     * to reading `attack` from the fallback branch while a `move` went out — the exact
+     * cursor-lies-about-the-order defect this workstream exists to remove, reintroduced by
+     * the fix for it. Measured, 5 red of 11 against the 3 the base tree carries.
+     */
+    const storming = this.selectionIsStorming();
+    if (!this.wallValid && !storming) return hovered;
     if (!this.wallProbe?.isGarrisoned(v.id)) return hovered;
     const intent = this.wallIntent();
-    if (!intent) return hovered;
+    if (!intent && !storming) return hovered;
     if (this.overBanner === hovered) return hovered;
     if (this.ctrlHeld || this.dragCtrl) return hovered;
     if (intent === 'traverse') return hovered;
