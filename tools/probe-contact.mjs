@@ -76,6 +76,14 @@ const KEEP = args.has('keep-frames');
  * timed pass takes about three times as long.
  */
 const TIME = Number(args.get('time') ?? 0);
+/**
+ * Sim seconds a `march: true` camera walks the unit before the shutter.
+ *
+ * The default is `probe-testudo`'s 2.2 s, which is right for judging legs and wrong for
+ * judging a wake: the wake's puffs live four to eight seconds, so at 2.2 s the band is a
+ * third built and the frame understates the effect it is meant to measure.
+ */
+const MARCH = Number(args.get('marchtime') ?? 2.2);
 const OUT = path.resolve(ROOT, args.get('out') ?? `screenshots/contact/${LABEL}`);
 
 /** The nine stations of `tools/probe-testudo.mjs`, verbatim. Do not renumber them. */
@@ -89,6 +97,23 @@ const CAMS = {
   rear: { ahead: -22, right: 4, eye: 6.5, aim: 1.6, dist: 15, fov: 40 },
   far120: { ahead: 90, right: 55, eye: 42, aim: 1.5, dist: 118, fov: 24 },
   'flank-march': { ahead: -4.5, right: 17, eye: 1.75, aim: 1.55, dist: 17, fov: 40, march: true },
+  /*
+   * Two stations of my own, both for E1 and C6, and both **outside** the block.
+   *
+   * `flank-march` above is a broadside at 17 m, which is inside a `line` formation 41 files
+   * wide and photographs the inside of a helmet. A wake is a thing a unit leaves *behind*
+   * it, so it can only be judged from behind it and from far enough back that the ground the
+   * unit has already crossed is in frame.
+   */
+  'wake-quarter': { ahead: -34, right: 40, eye: 7.5, aim: 2.0, dist: 52, fov: 40, march: true },
+  'wake-rear': { ahead: -30, right: 0, eye: 4.2, aim: 1.7, dist: 30, fov: 46, march: true },
+  /*
+   * A broadside on the moment the order is obeyed, from far enough out to see the whole
+   * block's silhouette against the sky. `march: 0.45` is the point of it: three tenths of a
+   * second into a start is when a body leans hardest and it is the frame the speed-driven
+   * lean this replaces was flat in.
+   */
+  'start-broad': { ahead: -6, right: 34, eye: 2.6, aim: 1.65, dist: 34, fov: 34, march: 0.45 },
 };
 const requested = args.get('cams') ? String(args.get('cams')).split(',') : Object.keys(CAMS);
 
@@ -120,6 +145,15 @@ const ARM_SETS = {
     { name: 'hbao', q: {}, fx: { debugView: 'ao' } },
     { name: 'contactbuf', q: {}, fx: { debugView: 'contact' } },
   ],
+  /**
+   * Is there dust behind this unit? Ablates the soft-particle layer at a frozen instant, so
+   * the pair differs only by the dust. `cover` in the table below is then literally the
+   * share of the frame the dust is over.
+   */
+  dust: [
+    { name: 'base', q: {}, fx: {} },
+    { name: 'noao', q: {}, fx: { noDust: true } },
+  ],
   /** A strength ladder for the near-field contact term, buffers and frames both. */
   sweep: [
     { name: 'base', q: {}, fx: {} },
@@ -143,6 +177,25 @@ if (!arms) throw new Error(`--arms must be one of ${Object.keys(ARM_SETS).join('
  * denominator is the *off* frame, so the ratio is "what fraction of its unoccluded light
  * this pixel kept".
  */
+function coverage(onBuf, offBuf, n) {
+  let cover = 0;
+  let veil = 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const o = i * 3;
+    const lOn = 0.2126 * onBuf[o] + 0.7152 * onBuf[o + 1] + 0.0722 * onBuf[o + 2];
+    const lOff = 0.2126 * offBuf[o] + 0.7152 * offBuf[o + 1] + 0.0722 * offBuf[o + 2];
+    const d = Math.abs(lOn - lOff);
+    sum += d;
+    if (d > 2) cover++;
+    if (d > 12) veil++;
+  }
+  return {
+    cover: +(cover / n).toFixed(4), veil: +(veil / n).toFixed(4),
+    dLum: +(sum / n).toFixed(3),
+  };
+}
+
 function compare(onBuf, offBuf, n) {
   const ratios = [];
   let touched = 0;
@@ -246,6 +299,34 @@ try {
 
     T.postfx = () => g.engine.context.tryGet('postfx') ?? null;
 
+    /**
+     * Hide (or restore) the soft-particle layer, which is where all dust lives.
+     *
+     * `visible` is redefined as a getter rather than assigned, because several systems
+     * rewrite `mesh.visible` every frame and a plain assignment is undone before the next
+     * draw. `tools/probe-dust.mjs` established this and the reason is worth repeating.
+     */
+    T.dust = (hidden) => {
+      const hit = [];
+      g.engine.scene.traverse((o) => {
+        if (typeof o.name === 'string' && o.name.startsWith('vfx-particles')) hit.push(o);
+      });
+      for (const o of hit) {
+        if (hidden) {
+          if (!T.dustSaved) T.dustSaved = new Map();
+          if (!T.dustSaved.has(o)) T.dustSaved.set(o, Object.getOwnPropertyDescriptor(o, 'visible') ?? null);
+          Object.defineProperty(o, 'visible', { get: () => false, set: () => {}, configurable: true });
+        } else if (T.dustSaved && T.dustSaved.has(o)) {
+          const d = T.dustSaved.get(o);
+          delete o.visible;
+          if (d) Object.defineProperty(o, 'visible', d);
+          else o.visible = true;
+          T.dustSaved.delete(o);
+        }
+      }
+      return hit.length;
+    };
+
     T.reset = () => {
       rig.heightAt = T.savedHeightAt;
       rig.walkableTopAt = T.savedWalkAt;
@@ -323,6 +404,7 @@ try {
           aoContactStrength: fx.aoContactStrength,
         };
       }
+      T.dust(!!a.fx.noDust);
       if (fx) {
         fx.contactShadows = a.fx.contactShadows ?? T.fxSaved.contactShadows;
         fx.aoStrength = a.fx.aoStrength ?? T.fxSaved.aoStrength;
@@ -396,6 +478,49 @@ try {
       };
     };
 
+    /**
+     * The lean ladder: the acceleration lean over the unit's own men at a start, at a
+     * steady march and at a halt, read at each of the three moments in one page.
+     *
+     * A still frame cannot show this and should not be asked to. The claim is about a
+     * derivative; the test is that the sign flips.
+     */
+    T.leanLadder = () => {
+      const urs = g.engine.context.tryGet('unitRender');
+      if (!urs || typeof urs.leanStats !== 'function') return null;
+      const u = T.unit();
+      const out = {};
+      // Halted and settled.
+      T.form(false);
+      g.engine.advance(1.2);
+      out.halted = urs.leanStats(u.members);
+      // The order, three tenths of a second in.
+      T.form(true);
+      g.engine.advance(0.30);
+      out.start = urs.leanStats(u.members);
+      // Steady, five seconds later.
+      g.engine.advance(5.0);
+      out.steady = urs.leanStats(u.members);
+      // Checked: ordered to stand, three tenths of a second in.
+      T.form(false);
+      g.engine.advance(0.30);
+      out.halt = urs.leanStats(u.members);
+      // And the simulation's own term over the same men, for the comparison that matters.
+      const p = g.battle ? g.battle.pool : g.engine.context.tryGet('battle').pool;
+      let mn = Infinity; let mx = -Infinity; let sum = 0;
+      for (const i of u.members) {
+        const l = p.lean[i];
+        if (l < mn) mn = l;
+        if (l > mx) mx = l;
+        sum += Math.abs(l);
+      }
+      out.poolLeanAtHalt = {
+        n: u.members.length, min: +mn.toFixed(5), max: +mx.toFixed(5),
+        meanAbs: +(sum / u.members.length).toFixed(5),
+      };
+      return out;
+    };
+
     T.cost = () => {
       const i = g.engine.renderer.info.render;
       return { calls: i.calls, triangles: i.triangles };
@@ -408,6 +533,27 @@ try {
   await page.evaluate((s) => window.__game.fastForward(s), SETTLE);
   await page.evaluate(() => window.__game.advance(0.5));
 
+  if (args.has('lean')) {
+    const L = await page.evaluate(() => window.__tc.leanLadder());
+    if (!L) {
+      console.log('lean: no `units` subsystem with leanStats() — nothing measured');
+    } else {
+      console.log('');
+      console.log('the acceleration lean, radians, over the unit\'s own men');
+      console.log('moment                  n   meanAbs        min        max     p90abs');
+      console.log('──────────────────  ─────  ────────  ─────────  ─────────  ─────────');
+      for (const k of ['halted', 'start', 'steady', 'halt']) {
+        const x = L[k];
+        console.log(`${k.padEnd(18)}  ${String(x.n).padStart(5)}  ${String(x.meanAbs).padStart(8)}  `
+          + `${String(x.min).padStart(9)}  ${String(x.max).padStart(9)}  ${String(x.p90abs).padStart(9)}`);
+      }
+      const q = L.poolLeanAtHalt;
+      console.log(`pool.lean (sim)     ${String(q.n).padStart(5)}  ${String(q.meanAbs).padStart(8)}  `
+        + `${String(q.min).padStart(9)}  ${String(q.max).padStart(9)}          -`);
+      report.lean = L;
+    }
+  }
+
   const raw = new Map();
   for (const name of requested) {
     const cam = CAMS[name];
@@ -415,8 +561,15 @@ try {
 
     await page.evaluate((m) => window.__tc.form(m), !!cam.march);
     if (cam.march) {
-      await page.evaluate(() => window.__game.fastForward(2.2));
-      await page.evaluate(() => window.__game.advance(0.4));
+      // `fastForward` is safe here and was checked rather than assumed: `ParticleSystem`
+      // is integrated by `particles.advance(sdt)` inside `VFXSystem.update`, and written to
+      // the GPU by `flush` inside `preRender`, both of which a skipped submit still runs.
+      // Only the rasterisation is dropped, so a wake fast-forwarded is the same wake.
+      // A camera may name its own march time; `start-broad` wants a fraction of a second
+      // where the wake stations want seven.
+      const secs = typeof cam.march === 'number' ? cam.march : MARCH;
+      if (secs > 0.6) await page.evaluate((m) => window.__game.fastForward(m - 0.4), secs);
+      await page.evaluate((m) => window.__game.advance(Math.min(0.4, m)), secs);
     }
 
     const placed = await page.evaluate(({ c }) => {
@@ -444,6 +597,15 @@ try {
       const buf = await page.screenshot({ type: 'png' });
       shots[a.name] = buf;
       entry.arms[a.name] = { ...st, cost: await page.evaluate(() => window.__tc.cost()) };
+      entry.arms[a.name].live = await page.evaluate(() => {
+        const v = window.__game.engine.context.tryGet('vfx');
+        if (!v) return null;
+        return {
+          soft: v.particles ? v.particles.softLive : null,
+          wake: v.dust ? v.dust.wakeSpawnedLastFrame : null,
+          wakeUnits: v.dust ? v.dust.wakeUnitsLastFrame : null,
+        };
+      });
       if (TIME > 0) entry.arms[a.name].ms = await page.evaluate((n) => window.__tc.timeMs(n), TIME);
       if (st.debugView) {
         const px = await sharp(buf).removeAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -462,8 +624,8 @@ try {
 
   // ---- measure ----------------------------------------------------------
   console.log('');
-  console.log('camera        arm         meanDrop    p01    p05    p25    med   cover    f10    f20');
-  console.log('────────────  ─────────  ─────────  ─────  ─────  ─────  ─────  ──────  ─────  ─────');
+  console.log('camera        arm         meanDrop    p01    p05    p25    med   cover    f10    f20   cover2  veil12   dLum');
+  console.log('────────────  ─────────  ─────────  ─────  ─────  ─────  ─────  ──────  ─────  ─────  ───────  ──────  ─────');
   for (const [name, shots] of raw) {
     if (!shots.noao) continue;
     const px = { on: null, off: null };
@@ -475,10 +637,15 @@ try {
       const c = compare(px.on.data, px.off.data, n);
       if (!c) continue;
       report.cams[name].arms[arm].vsNoAo = c;
+      const cv = coverage(px.on.data, px.off.data, n);
+      report.cams[name].arms[arm].vsNoAo.cover2 = cv.cover;
+      report.cams[name].arms[arm].vsNoAo.veil12 = cv.veil;
+      report.cams[name].arms[arm].vsNoAo.dLum = cv.dLum;
       console.log(`${name.padEnd(13)} ${arm.padEnd(10)} `
         + `${String(c.meanDrop).padStart(9)}  ${String(c.p01).padStart(5)}  ${String(c.p05).padStart(5)}  `
         + `${String(c.p25).padStart(5)}  ${String(c.median).padStart(5)}  `
-        + `${String(c.cover).padStart(6)}  ${String(c.f10).padStart(5)}  ${String(c.f20).padStart(5)}`);
+        + `${String(c.cover).padStart(6)}  ${String(c.f10).padStart(5)}  ${String(c.f20).padStart(5)}`
+        + `  ${String(c.cover2).padStart(7)}  ${String(c.veil12).padStart(6)}  ${String(c.dLum).padStart(5)}`);
     }
   }
 
