@@ -3152,3 +3152,112 @@ samples over 14 functions — **6,144** approximated results. Corrected in `src/
 - **The desync fixture needs replacing once the quantisation firewall merges** from
   `e/tools/xengine-arm` — Chromium against Firefox stops diverging and the natural fixture
   disappears. The successor is named in `docs/MULTIPLAYER.md` §9.8.
+## Session — 22 Aug 2026: commanding men who are standing on stone, on `e/sim/wall-control`
+
+The owner: *"still having some issues controling units that have scaled a wall once they are on
+the wall. they get disconnected from their banner that allows me to control them. and then they
+just generally just generally dont follow any instructions"*. The judge's §3 cell, from the real
+menu, is the same complaint with numbers on it:
+
+```
+cohort 10 ON THE WALL  ->  escalade-party 16 ON THE WALL
+    cursor=default   hovered=16   wallValid=false   hint=""
+    30 s later: moved 0.0 m, order 6->6
+```
+
+**Both are one chain, and the last link is that the selection was empty.** Reproduced verbatim on
+**Carthage**, the map where the player is the one who scales the wall: `cursor=default hovered=0
+wallValid=false hint="" sel=[]`. With nothing selected the cursor has nothing to offer and a
+right-click emits nothing — which is what "no order, and no refusal either" is made of.
+
+### Three causes, all measured
+
+1. **The standard is planted in the ground under the men.** `BannerSystem.anchor` took its height
+   from `battle.groundAt`, a heightfield sample, and a wall is not in the heightfield. At the storm
+   of Rome, all eleven units on the Aurelian walk had their standard **13.0–14.0 m below their own
+   men**; at Carthage the same call errs **1.7–2.4 m above**, because the graded bench under the
+   curtain reads higher than the walkway. The sign of the error is an accident of the map. Now a
+   median of nine living men's `pool.y` — not `battle.levelOf`, which reads 0 for everybody during
+   the paused deployment phase, the trap `ui/model.ts` documents for `standY`. After: every standard
+   0–2.4 m above its own men's feet, 11 of 11, both maps.
+
+2. **The pick describes a rectangle where the men are a file.** `48262b3` established that *a unit
+   on a wall is a file the wall's depth* and fixed the simulation; `ui/picking.footprintOf` never
+   heard. Sampling a 9×7 grid over each unit's **own drawn men**: **21–62% answered, mean 45%** (13%
+   for a lodgement). `clickSelect` clears the selection on a miss, so two clicks in three disarmed
+   the player. `Siege.wallFileOf` now publishes the stretch of walk the men are standing on and the
+   pick tests it **in addition** to the field box. After: **37–89%, mean 68–72%**.
+
+   Built from `pool.x/z`, not from `stationOf`: the first cut used station indices and measured the
+   lodgement of run 2 as eleven men on 1.7 m of stone centred at x 256.3 while those same eleven men
+   stood at x 243.5. **Thirteen metres** — the record outliving the thing it describes, for the
+   fourth time in this file.
+
+3. **A garrison could not be told to attack.** `Siege` filtered `kind:'attack'` out of its only
+   subscription, never writes `targetUnitId`, and `closeToContact` returns early for anything it
+   owns. `WallGoal.Assault` is a `Traverse` with a name on it, re-aimed every tick while the target
+   lives. Measured: cursor `attack`, order `attack` target 17, `u.order` 6→3, **+25 kills in 30 s,
+   their 83 down to 14**, garrison still on the wall. At 34 m via the enemy's plaque: `goal:
+   assault`, **their 45 down to 15 in 40 s**. Across a severed component of the circuit: cursor
+   `refuse` **before** the click and `{refusal:"noRoute", bay:6}` on the bus after it.
+
+### The gap — passive against played, 12 seeds, the same script on both trees
+
+| column | gap BEFORE | gap AFTER | sign test |
+|---|---|---|---|
+| decidedAt | −0.1 ± 14.0 | −3.9 ± 8.4 | 6/12 p=1.000 → 5/12 p=0.774 |
+| mine | −4.7 ± 20.3 | −12.0 ± 12.8 | 5/12 p=0.774 → 3/12 p=0.146 |
+| theirs | −4.8 ± 18.8 | −1.0 ± 25.9 | 6/12 p=1.000 → 8/10 p=0.109 |
+| **wallSeconds** | **−9.6 ± 13.2** | **−15.8 ± 10.4** | **2/10 p=0.109 → 0/11 p=0.0010** |
+| worstLodge | −1.2 ± 6.6 | −2.1 ± 4.7 | 4/12 p=0.388 → 3/11 p=0.227 |
+
+`wallSeconds` is seconds of the battle with any enemy man standing on my wall. Before, the player's
+effect on it was real in the mean and undecidable in the spread — two seeds in ten moved the wrong
+way. After, **every seed that moved at all moved the same way.**
+
+**On the judge's own column the gap did not open**: `decidedAt` went −0.1 → −3.9 s and p stayed at
+0.77, and the verdict is **Defeat 12/12 in all four arms**. The player now has a decisive grip on
+the wall fight and no measurable grip on the outcome. Say that plainly rather than quoting the
+`wallSeconds` line on its own.
+
+**The control**: the passive arm is identical on both trees across all five columns. With no player
+orders the fixed tree plays the same battle.
+
+### The gate
+
+Green: `tsc` clean, **lint 3/3**, `probe-seams` PASS both maps, `qa-deploy` **33/33**, `qa-replay`
+**21/21**, `qa-wallorder` **10/10**, `jg-wallcmd` **14/14** and **18/18**.
+
+Adjudicated against the base tree, because a red assertion has to be attributed rather than assumed:
+
+| probe | base | branch | |
+|---|---|---|---|
+| `qa-wallattack` | 3 red of 11 | 5 red | 1 real regression, 1 fixture (probe fails to select its own actor) |
+| `qa-wallmatrix` | 7 red **+ a crash** | 6 red, no crash | R3 "stairs down" goes green |
+| `probe-siege` | 43/48 | 41/48 | 4 shared, 1 fixed, 2 new and both late-battle |
+
+### Determinism — the two siege pins moved, and why
+
+- `default` 8,632 men: **UNCHANGED** at all 7 checkpoints, IDENTICAL at 4 tiers.
+- Rome assault 3,072: UNCHANGED t+0/30/90/150/200, **DRIFTED** t+250 and t+400.
+- Carthage 3,440: UNCHANGED t+0/30, **DRIFTED** from t+90.
+
+A vs B is IDENTICAL at every checkpoint on all three, so the engine is still a pure function of
+(config, seed, tick). One cause, and the shape of the drift names it: **the AI's own escalade
+parties gain the assault verb**, but only once more of their men are on the stone than on the rungs
+— which happens after t+200 on Rome and around t+90 on the faster Carthage assault. The field
+battle, which has no garrison, is bit-identical. The two siege pins are re-recorded in the commit
+that moved them.
+
+### What is not fixed, and what would change my mind
+
+- **The player still loses 12 of 12.** A thin mechanical player exercising one verb moves the wall
+  fight and not the war. Whether a real player can now win is not something this measures.
+- `qa-wallattack`'s *"the cursor tells the truth over a garrison"* is red on both trees: on base the
+  cursor read `attack` and a `move` went out. Not this branch's, and not fixed.
+- The two new `probe-siege` failures are both late-battle and both plausibly downstream of the AI
+  gaining the verb, since the battle after t+90 is a different battle. Named, not explained.
+- Two units interlocked on one stretch of stone are two claims on every pixel between them, and no
+  tie-break on geometry separates them honestly — measured, file half-widths 12.46 m against 10.93
+  with centres 0.8 m apart. The plaque is the route out and it is measured green. If someone shows
+  the plaque unreachable in a real camera, that is the thing to fix next.

@@ -365,9 +365,21 @@ export const SEAMS: readonly Seam[] = [
      * storm — which is the state it shipped in — so it is named here rather than left to be
      * an implementation detail of one install block.
      */
+    /**
+     * `wallFileOf` and `wallAssaultOfferAt` are named here for the same reason.
+     *
+     * `wallFileOf` is what lets the pick describe a unit on a wall as the file it is rather
+     * than as the field rectangle it is not; without it the cursor answers on 21-62% of the
+     * pixels over a cohort's own men, a missed click clears the selection, and the player is
+     * disarmed two clicks in three. `wallAssaultOfferAt` is the pre-click half of "take
+     * those men off the wall": lose it and the cursor goes back to promising an attack the
+     * walk cannot deliver. Both fail silently and invisibly if they ever stop answering,
+     * which is exactly what this file is for.
+     */
     optional: {
       cancelWallPlan: 'fn', releaseEscalade: 'fn',
       escaladeOfferAt: 'fn', traverseOfferAt: 'fn',
+      wallFileOf: 'fn', wallAssaultOfferAt: 'fn',
     },
   },
   {
