@@ -182,25 +182,38 @@ try {
 
     T.unit = () => b.units.find((u) => u.id === T.unitId);
 
-    /** Put it in testudo and stop it, or put it in testudo and walk it. */
+    /**
+     * Put it in testudo and stop it, or put it in testudo and walk it.
+     *
+     * **`order` is a number and it took a critic to notice.** `UnitOrder` in
+     * `src/sim/types.ts` is a numeric enum — `Hold = 0`, `MoveTo = 1` — and this used to
+     * write the strings `'hold'` and `'move'`. Nothing threw: `steerSoldiers` only compares
+     * `order` against `UnitOrder.Rout`, so the men still dressed on their slots and the
+     * probe looked like it worked. But the *anchor* only advances on `MoveTo` or
+     * `AttackMove` (`BattleSystem` line 845), so **the marching camera photographed a
+     * halted block for the whole of the first two passes**, and a critic duly scored the
+     * animation 1 out of 4 for "`flank-march` and `flank-halt` are the same legs". They
+     * were the same legs. The formation was not moving.
+     */
+    const HOLD = 0;
+    const MOVE_TO = 1;
     T.form = (march) => {
       const u = T.unit();
       b.setFormation(u, 'testudo');
-      u.order = 'hold';
       u.running = false;
       u.charging = false;
       u.targetUnitId = -1;
       u.waypoints = [];
+      u.targetFacing = u.facing;
       if (march) {
         // Straight ahead, far enough that it is still walking when the shutter opens.
-        u.order = 'move';
+        u.order = MOVE_TO;
         u.targetX = u.x + Math.sin(u.facing) * 40;
         u.targetZ = u.z + Math.cos(u.facing) * 40;
-        u.targetFacing = u.facing;
       } else {
+        u.order = HOLD;
         u.targetX = u.x;
         u.targetZ = u.z;
-        u.targetFacing = u.facing;
       }
       return { id: u.id, type: b.typeOf(u).id, alive: u.alive, width: u.width,
         formation: u.formationId, spacingX: u.spacingX, spacingZ: u.spacingZ };

@@ -221,7 +221,7 @@ const SLOT_STRAGGLE = 0.30;
  * a man's drawn position because a rank of men on a perfect grid reads as a spreadsheet.
  * A testudo is the one formation where that is precisely wrong: the scatter is what turns a
  * shield roof into a shield roof with holes in it. So a man in a testudo is drawn up to
- * 0.30 m *toward* his slot instead of up to 0.43 m away from it, which is a smaller
+ * 0.40 m *toward* his slot instead of up to 0.43 m away from it, which is a smaller
  * intervention than the one it replaces and in the direction the formation is asking for.
  *
  * `TESTUDO_EVEN` is the one that needs stating plainly. `pool.scale` and `heightMul`
@@ -234,7 +234,7 @@ const SLOT_STRAGGLE = 0.30;
  * enough that the plane reads. The men underneath are behind their own shields; the roof is
  * the only part of them anybody can see.
  */
-const TESTUDO_DRESS = 0.30;
+const TESTUDO_DRESS = 0.40;
 const TESTUDO_EVEN = 0.78;
 /** Seconds to form up or fall out. A ninety-degree turn on the flank happens over this. */
 const TESTUDO_FORM = 0.55;

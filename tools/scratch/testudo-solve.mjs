@@ -146,8 +146,8 @@ const POSES = {
     elbowR: [-0.30, 0.86, -0.06], handR: [-0.21, 0.92, 0.10],
   },
   nose: {
-    stance: 'hunch', board: [-46, 0, 0], centre: [-0.02, 1.55, 0.36],
-    elbowR: [-0.32, 1.28, 0.10], handR: [-0.20, 1.46, 0.32],
+    stance: 'hunch', board: [-52, 0, 0], centre: [-0.02, 1.44, 0.34],
+    elbowR: [-0.32, 1.22, 0.02], handR: [-0.21, 1.36, 0.16],
   },
   // Two courses, four degrees and forty millimetres apart. A single roof clip gives one
   // printed plane; alternating ranks between these two gives a surface with a grain, which
@@ -163,8 +163,8 @@ const POSES = {
   // Turned outward by the renderer rather than by the pose — a flank man in a testudo
   // faces the flank, so his whole body turns and the same board maths serves.
   flank: {
-    stance: 'hunch', board: [6, 0, 0], centre: [-0.02, 0.95, 0.30],
-    elbowR: [-0.31, 0.90, -0.04], handR: [-0.21, 0.98, 0.10],
+    stance: 'hunch', board: [6, 0, 0], centre: [-0.02, 1.09, 0.30],
+    elbowR: [-0.31, 1.02, -0.05], handR: [-0.21, 1.10, 0.10],
   },
 };
 

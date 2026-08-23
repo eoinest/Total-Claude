@@ -452,10 +452,10 @@ const idleBraceLow: OverlayDef = {
  * | pose | board covers | closes |
  * |---|---|---|
  * | `testudoFace` | 0.30–1.35 m, upright | the front rank's own frontage, down to the ankles |
- * | `testudoNose` | 1.19–1.92 m, 46° back-slope reaching 0.75 m forward | the band across the front at head height — the gap that makes a testudo look like a crowd wearing hats |
+ * | `testudoNose` | 1.16–1.81 m, 52° back-slope reaching 0.85 m forward | the band across the front at head height — the gap that makes a testudo look like a crowd wearing hats |
  * | `testudoRoofA` | 1.66–1.81 m, 8° nose-down, 1.06 m of board over a 0.63 m interval | the roof, course one |
  * | `testudoRoofB` | 1.63–1.85 m, 12° nose-down | the roof, course two: alternate ranks take it, so the boards lap rather than butt and the surface has a grain |
- * | `testudoFlank` | 0.42–1.47 m, upright | the flanks and the rear, with the man turned outward by the renderer |
+ * | `testudoFlank` | 0.55–1.60 m, upright, rim 0.05 m over the man's own helmet | the flanks and the rear, with the man turned outward by the renderer |
  *
  * Each roof board laps the one in front by 0.43 m, which is what leaves no hole when a man
  * is 0.1 m out of his place. The face's top at 1.35 m sits above the nose's bottom at
@@ -558,12 +558,22 @@ const ARMS_FACE: BoneTrack[] = [
   absTr(MB.lowerArmR, [[0, -51.9, -49.8, 151.4]]),
 ];
 
-/** Second rank: the glacis, 46° back from vertical, covering 1.19–1.92 m. */
+/**
+ * Second rank: the glacis, 52° back from vertical, covering 1.16-1.81 m.
+ *
+ * It was 46° and 1.19-1.92 m, and its top edge therefore stood up to 0.26 m **above** the
+ * roof line all the way across the front. Seen from any camera behind the formation that is
+ * a row of eight to ten hide backs, unlit, standing proud of the shell — a critic measured
+ * them at luminance 33-40 against the roof's 94-103 and called them "flat unlit near-black
+ * rectangles that shred the silhouette at every range". They were the *front* of the
+ * formation seen from behind. Laid back six more degrees and dropped 0.10 m, the glacis now
+ * tops out level with the roof's own trailing edge and there is nothing to see over.
+ */
 const ARMS_NOSE: BoneTrack[] = [
-  absTr(MB.upperArmL, [[0, 130.7, 88.7, 1.5]]),
-  absTr(MB.lowerArmL, [[0, 134, -51, -177]]),
-  absTr(MB.upperArmR, [[0, 126.5, -3.1, -35.8]]),
-  absTr(MB.lowerArmR, [[0, -73.8, -40.1, 166.6]]),
+  absTr(MB.upperArmL, [[0, 151.5, 88.7, 3.5]]),
+  absTr(MB.lowerArmL, [[0, 128, -51, -177]]),
+  absTr(MB.upperArmR, [[0, 91.4, 40.8, -1.4]]),
+  absTr(MB.lowerArmR, [[0, -74.5, -42.7, 167.2]]),
 ];
 
 /**
@@ -595,27 +605,33 @@ const ARMS_ROOF_B: BoneTrack[] = [
 ];
 
 /**
- * Flank and rear: the board upright and low, covering 0.42-1.47 m.
+ * Flank and rear: the board upright, covering 0.55-1.60 m. **This height is a solved
+ * three-way trade and it is worth understanding before moving it.**
  *
- * **It used to cover 0.72-1.77 m and that was the loudest fault in the whole feature.** The
- * argument for the high board was that its top edge stood on the roof line and sealed every
- * horizontal sightline; what it actually produced was 0.72 m of bare leg under the shield
- * along both flanks and the whole of the back, which a critic named as the single
- * highest-leverage fix and called out in five of nine frames. Dropping it 0.30 m puts the
- * rim into the grass, and it takes the *second* fault with it: at 1.47 m the far wall no
- * longer stands proud of the roof, so the dozen unlit hide backs that a tactical camera
- * used to see over the top of the shell — "black fins", and they shredded the silhouette at
- * every range — are hidden behind the roof they used to stick through.
+ * One 1.06 m board cannot cover a 1.75 m man, so wherever it is put, something is out. Two
+ * critics moved it in opposite directions and between them fixed the number:
  *
- * What is given up is a 0.19 m band between the rim and the roof's edge, seen only from
- * outside at about eye height. It shows the men's own helmets and the underside of the
- * roof, not sky.
+ *   - **0.72-1.77 m** — the first attempt, chosen so the rim stood on the roof line and
+ *     sealed every horizontal sightline. It put 0.72 m of bare leg along both flanks and
+ *     the whole of the back; a critic named it in five of nine frames and called it the
+ *     single highest-leverage fix in the build.
+ *   - **0.42-1.47 m** — the answer to that, and it made the *other* end worse: the hunched
+ *     man's head is at 1.55 m, so a rim at 1.47 leaves his helmet, face and both raised
+ *     forearms above it. The next critic counted twenty-six in one unbroken band across the
+ *     back and scored it as the same fault the legs were.
+ *   - **0.55-1.60 m**, here. The rim is 0.05 m *over* the head, so nothing of the man shows
+ *     above it, and the gap to the roof's own leading edge at 1.66 m is 0.06 m — closed for
+ *     any practical sightline. The leg band is 0.55 m of which the grass takes about 0.2 m.
+ *
+ * Dropping it also took the "black fins" with it: at 1.60 m the far wall no longer stands
+ * above the roof, so the unlit hide backs a tactical camera used to see over the top of the
+ * shell are hidden behind the roof they used to stick through.
  */
 const ARMS_FLANK: BoneTrack[] = [
-  absTr(MB.upperArmL, [[0, -146.8, 88.7, 8.4]]),
+  absTr(MB.upperArmL, [[0, -172.1, 88.7, 6.2]]),
   absTr(MB.lowerArmL, [[0, -174, -51, -177]]),
-  absTr(MB.upperArmR, [[0, 17.8, 35.7, 71.7]]),
-  absTr(MB.lowerArmR, [[0, -28.5, -40.9, 130.8]]),
+  absTr(MB.upperArmR, [[0, 22.1, 26.6, 67.2]]),
+  absTr(MB.lowerArmR, [[0, -52, -46.8, 150.8]]),
 ];
 
 /**
