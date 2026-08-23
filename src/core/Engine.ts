@@ -25,6 +25,18 @@ export interface EngineContext {
   /** Canvas size in CSS pixels. */
   readonly viewW: number;
   readonly viewH: number;
+  /**
+   * True while `advance`/`advanceTicks` is running synthetic frames.
+   *
+   * `Engine.isAdvancing` has said for some time that this is "published because a subsystem
+   * cannot otherwise tell a frame the player will see from one of the thousands `advance`
+   * fires" — and it was published on the engine, which no subsystem holds. This is the same
+   * fact where a subsystem can reach it. Anything that reasons about *wall clock* has to sit
+   * those frames out: a fast-forward runs at whatever rate the CPU manages, and
+   * `NetSession.linkFault` reading a 60-second fast-forward as sixty seconds of silence from
+   * the relay is exactly the false alarm this field prevents.
+   */
+  readonly advancing: boolean;
   /** Resolve another subsystem by name. Throws if absent. */
   get<T extends Subsystem>(name: string): T;
   /** Resolve another subsystem, or undefined if not registered. */
@@ -300,6 +312,7 @@ export class Engine {
       get quality() { return self.quality; },
       get viewW() { return self.viewW; },
       get viewH() { return self.viewH; },
+      get advancing() { return self.advancing; },
       get: (name) => {
         const s = self.byName.get(name);
         if (!s) throw new Error(`[Engine] required subsystem "${name}" is not registered`);

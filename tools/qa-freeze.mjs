@@ -48,7 +48,7 @@ import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 import { bootThroughMenu } from './lib/menu-boot.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const ARMS = ['commit', 'quiet', 'ceiling', 'orphan', 'throw', 'net-drop'];
+const ARMS = ['commit', 'quiet', 'ceiling', 'orphan', 'throw', 'net-drop', 'net-silent'];
 const FLAGS = ['port', 'relay', 'json', 'only'];
 const args = new Map(process.argv.slice(2).map((a) => {
   const m = a.match(/^--([^=]+)(?:=(.*))?$/);
@@ -358,7 +358,34 @@ try {
     }
     const m = await both(host, 16000);
     const g = await guest.evaluate(() => window.__wd());
+
+    /*
+     * And a blocked main thread, which is the false positive this pass actually produced.
+     *
+     * The first version of the silence test differenced `performance.now()` against the last
+     * inbound frame. On a machine running three determinism gates at once it ended a healthy
+     * match with `linkLost` in the middle of `qa-net`'s desync arm — because `onmessage` runs
+     * on the page's main thread, so a blocked thread cannot *receive* a packet that has already
+     * arrived, and eight seconds of blocked thread read identically to eight seconds of dead
+     * relay. Eight seconds is past the six-second threshold with room to spare; the arm passes
+     * only because the count is now in rendered frames, which a stalled page does not have.
+     */
+    const stalled = await host.evaluate(() => {
+      const t0 = Date.now();
+      while (Date.now() - t0 < 8000) { /* hold the main thread, as a load spike does */ }
+      return Date.now() - t0;
+    });
+    await sleep(2500);
+    const afterStall = await host.evaluate(() => window.__wd());
+    record('quiet-main-thread-stall',
+      !afterStall.net?.ended && afterStall.reports.length === 0,
+      `a ${(stalled / 1000).toFixed(0)}-second main-thread block does not end the match`,
+      `ended ${JSON.stringify(afterStall.net?.ended ?? '')}, `
+        + `${afterStall.reports.length} watchdog report(s), turn ${afterStall.net?.turn}`,
+      'a blocked thread cannot receive a packet that has arrived; that is not a dead relay');
+
     measured.lockstepWait = {
+      stallMs: stalled, afterStall: { ended: afterStall.net?.ended, reports: afterStall.reports },
       ticks: m.ticks, frames: m.frames, host: m.b.reports, guest: g.reports,
       turn: m.b.net?.turn, ceiling: m.b.ceiling, ceilingOwner: m.b.ceilingOwner,
       stalls: m.b.net?.stalls,
@@ -595,6 +622,65 @@ try {
       host: m.b.net, guest: gm.net, strip: strip.replace(/\s+/g, ' ').slice(-200),
       reports: m.b.reports,
     };
+    for (const p of [host, guest]) { await p.close(); pages.splice(pages.indexOf(p), 1); }
+  }
+  // -------------------------------------------------------------------------
+  // Arm: the socket stays open and the relay stops talking — the sleeping laptop
+  // -------------------------------------------------------------------------
+  if (wanted('net-silent')) {
+    console.log('\n=== the relay stops talking without closing the socket ===');
+    /*
+     * `SIGSTOP`, not `SIGKILL`, and the difference is the whole arm.
+     *
+     * A killed process closes its sockets and the browser fires `onclose`, which is the path
+     * `net-drop` covers. A *stopped* one does not: the TCP connection stays open in the
+     * kernel, the client's `WebSocket.readyState` stays 1, and the packets simply cease. That
+     * is what a laptop waking from sleep and a wireless link that has gone away both look
+     * like, and it is the case `onclose` cannot cover — so if this arm goes red the fix is
+     * half a fix and the freeze is still shippable.
+     */
+    const relay = await startRelay(RELAY_PORT + 2);
+    const q = `net=${encodeURIComponent(relay.base)}&room=FRZSL&autoplay=1&deploy=0`;
+    const host = await newPage();
+    await bootThroughMenu(host, {
+      base, map: 'campus-martius', scenario: 'field', tier: 'low', size: 'small', query: q,
+    });
+    const guest = await newPage();
+    await guest.goto(`${base}/?${q}&host=0`, { waitUntil: 'domcontentloaded' });
+    await guest.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
+    await host.evaluate(INSTALL);
+    for (const p of [host, guest]) {
+      await p.waitForFunction(() => window.__game.net.status().phase === 'battle',
+        null, { timeout: 90000 });
+    }
+    await sleep(3000);
+    const live = await host.evaluate(() => window.__wd());
+    relay.proc.kill('SIGSTOP');
+    // Four seconds — under the six-second threshold — must still be silence, not a verdict.
+    await sleep(4000);
+    const early = await host.evaluate(() => window.__wd());
+    record('net-silent-patient', !early.net?.ended,
+      'four seconds of silence is a hitch and is treated as one',
+      `ended ${JSON.stringify(early.net?.ended ?? '')} after 4 s at tick ${early.tick}`,
+      'the threshold has to leave room for a link having a bad moment');
+    await sleep(9000);
+    const late = await host.evaluate(() => window.__wd());
+    record('net-silent-named', late.net?.ended === 'linkLost'
+      && late.net.message.includes('nothing has arrived'),
+    'and thirteen seconds is a dead link, named, even though the socket never closed',
+    `${late.net?.ended}: ${late.net?.message}`,
+    'this is the half `onclose` cannot cover — a sleeping laptop leaves the socket open');
+    const strip = await host.evaluate(() =>
+      document.querySelector('.tc-net')?.textContent ?? '');
+    record('net-silent-on-screen', strip.includes('linkLost'),
+      'and it is on screen rather than only in the console',
+      strip.replace(/\s+/g, ' ').slice(-170));
+    measured.netSilent = {
+      tickAtStop: live.tick, early: early.net?.ended ?? '', late: late.net,
+      reports: late.reports, strip: strip.replace(/\s+/g, ' ').slice(-200),
+    };
+    try { relay.proc.kill('SIGCONT'); } catch { /* gone */ }
+    relay.proc.kill('SIGKILL');
     for (const p of [host, guest]) { await p.close(); pages.splice(pages.indexOf(p), 1); }
   }
 } catch (e) {

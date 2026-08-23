@@ -123,7 +123,21 @@ const INSTALL = () => {
     if (!d) return null;
     return {
       active: d.active, committed: d.committed, zone: { ...d.zone },
-      budget: d.budget(), paused: g.engine.time.paused,
+      budget: d.budget(),
+      /*
+       * Three readings of the clock rather than one, because the phase stops it with a
+       * **named hold** now rather than with the player's own `paused` boolean.
+       *
+       * These checks read `paused` and went red on the pass that made the pause owned, and
+       * they were right to: what they always meant was "the clock is not running", and after
+       * the change that is `stopped`. `holders` is the reading they could not make before and
+       * the one that matters — "held by `deployment`" is a different and much stronger claim
+       * than "held", and an orphaned hold is exactly what froze the owner's battle.
+       */
+      stopped: g.engine.time.stopped,
+      held: g.engine.time.held,
+      holders: g.engine.time.holders(),
+      paused: g.engine.time.paused,
       plaque: !!document.querySelector('.deploy'),
       refusal: d.lastRefusal,
     };
@@ -376,11 +390,13 @@ if (!ONLY || ONLY === 'menu') {
   await settle(page, 600);
   const st = ready ? await page.evaluate(() => window.__depState()) : null;
   await shot(page, 'menu-deployment');
-  record('menu-opens-phase', ready && !!st && st.active && st.paused && st.plaque,
+  record('menu-opens-phase',
+    ready && !!st && st.active && st.stopped && st.holders.includes('deployment') && st.plaque,
     'clicked BEGIN BATTLE in the real menu with no ?harness and no ?deploy',
     st
-      ? `ready ${ready}  deployment.active ${st.active}  clock paused ${st.paused}  `
-        + `plaque in DOM ${st.plaque}  zone "${st.zone.label}"`
+      ? `ready ${ready}  deployment.active ${st.active}  clock stopped ${st.stopped} `
+        + `held by ${JSON.stringify(st.holders)}  plaque in DOM ${st.plaque}  `
+        + `zone "${st.zone.label}"`
       : `ready ${ready}, no deployment on window.__game`);
   if (st) {
     measured.menuZone = st.zone;
@@ -410,10 +426,14 @@ if (!ONLY || ONLY === 'menu') {
   await page.keyboard.press('Space');
   await settle(page, 400);
   const afterSpace = await page.evaluate(() => window.__depState());
-  record('clock-held', !!afterSpace && afterSpace.paused && afterSpace.active,
-    'pressed Space during deployment',
-    afterSpace ? `still paused ${afterSpace.paused}, phase still active ${afterSpace.active}`
-      : 'no state');
+  record('clock-held', !!afterSpace && afterSpace.stopped && afterSpace.active
+    && afterSpace.holders.includes('deployment'),
+  'pressed Space during deployment',
+  afterSpace
+    ? `still stopped ${afterSpace.stopped} (held by ${JSON.stringify(afterSpace.holders)}, `
+      + `player pause ${afterSpace.paused}), phase still active ${afterSpace.active}`
+    : 'no state',
+  'the phase holds the clock in its own name; Space is swallowed rather than honoured');
 
   if (page.__errs.length) record('menu-console', false, 'page errors during the menu arm',
     page.__errs.slice(0, 3).join(' | '));
@@ -433,9 +453,11 @@ if (!ONLY || ONLY === 'field') {
   await settle(page, 500);
 
   const st0 = await page.evaluate(() => window.__depState());
-  record('phase-live', !!st0 && st0.active && st0.paused,
+  record('phase-live',
+    !!st0 && st0.active && st0.stopped && st0.holders.includes('deployment'),
     'loaded with ?deploy=1',
-    st0 ? `active ${st0.active}  paused ${st0.paused}  ${st0.budget.units} own units, `
+    st0 ? `active ${st0.active}  stopped ${st0.stopped} held by `
+      + `${JSON.stringify(st0.holders)}  ${st0.budget.units} own units, `
       + `${st0.budget.men} men, ${st0.budget.free} pool places free` : 'no phase');
   if (st0) measured.fieldZone = st0.zone;
 
@@ -715,10 +737,13 @@ if (!ONLY || ONLY === 'field') {
   const placedAfter = await page.evaluate((id) => window.__unit(id), target.id);
   const wander = Math.hypot(placedAfter.x - placedBefore.x, placedAfter.z - placedBefore.z);
   await shot(page, 'field-committed');
-  record('begin-battle', !!stC && !stC.active && !stC.paused && stC.committed,
-    'clicked BEGIN BATTLE on the deployment plaque',
-    `active ${stC?.active}  paused ${stC?.paused}  committed ${stC?.committed}, `
-      + `clock ran to t+${await page.evaluate(() => window.__game.simTime().toFixed(1))} s`);
+  record('begin-battle', !!stC && !stC.active && !stC.stopped && stC.committed
+    && stC.holders.length === 0,
+  'clicked BEGIN BATTLE on the deployment plaque',
+  `active ${stC?.active}  stopped ${stC?.stopped}  holders `
+    + `${JSON.stringify(stC?.holders)}  committed ${stC?.committed}, `
+    + `clock ran to t+${await page.evaluate(() => window.__game.simTime().toFixed(1))} s`,
+  'the hold has to be *gone*, not merely inactive: a hold nobody claims is the freeze');
   record('placement-survives', wander < 22,
     '5 s of battle after committing',
     `the unit placed by hand moved ${wander.toFixed(2)} m from where it was put`,

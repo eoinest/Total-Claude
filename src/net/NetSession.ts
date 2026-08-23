@@ -144,8 +144,20 @@ const STALL_MS = (TICKS_PER_TURN / 30) * 1000 * 1.5;
  * link that drops both leave a half-open TCP connection whose browser-side `WebSocket` sits in
  * `readyState 1` until something times out, and that is exactly the shape of "I was in the
  * middle of a game and everything froze".
+ *
+ * **In rendered seconds, not in `performance.now()`, and that distinction cost `qa-net` an arm.**
+ * The first version differenced wall clock against the last inbound frame, and on a machine
+ * running three determinism gates at once it ended a perfectly healthy match with `linkLost`
+ * mid-desync-test. Nothing was wrong with the socket: `onmessage` runs on the page's main
+ * thread, so a main thread that is blocked cannot *receive* a packet that has already arrived,
+ * and six seconds of blocked thread read identically to six seconds of dead relay.
+ *
+ * `Time.frameDt` cannot tell that lie. It is clamped at 0.25 s and it only advances on a frame
+ * that ran, so a stalled page contributes a quarter of a second to this total however long it
+ * was stalled, and a page that is drawing normally contributes real time. The same reasoning
+ * `SimWatchdog` uses for the same reason.
  */
-const LINK_SILENT_MS = 6000;
+const LINK_SILENT_S = 6;
 
 export class NetSession implements Subsystem {
   readonly name = 'net';
@@ -186,6 +198,9 @@ export class NetSession implements Subsystem {
   private stallSince = 0;
   /** When this client first ran out of authorised ticks. Not yet a stall; see `STALL_MS`. */
   private waitingSince = 0;
+  /** Rendered seconds since an inbound frame last arrived. See `LINK_SILENT_S`. */
+  private quietFor = 0;
+  private lastGot = -1;
   private perturbed = -1;
   /** The tick this client was on when it announced. -1 until `announce` runs. */
   private tick0 = -1;
@@ -334,6 +349,20 @@ export class NetSession implements Subsystem {
   private pace(): void {
     const t = this.ctx.time;
     /*
+     * How long the relay has been silent, counted in frames that actually ran.
+     *
+     * `link.counts.got` rather than a timestamp taken in `onmessage`, and `time.frameDt` rather
+     * than `performance.now()`, because both halves of the measurement have to be blind to a
+     * blocked main thread — see `LINK_SILENT_S`. Synthetic frames are excluded outright: a
+     * fast-forward runs thousands of frames with no event loop in between, and every one of
+     * them is a frame during which nothing could possibly have arrived.
+     */
+    if (!this.ctx.advancing) {
+      const got = this.link.counts.got;
+      if (got !== this.lastGot) { this.lastGot = got; this.quietFor = 0; }
+      else this.quietFor += t.frameDt;
+    }
+    /*
      * The link, before anything else, because a client with no link has no business waiting.
      *
      * This is the fix for the freeze the pass was opened on. There is no reconnection —
@@ -425,7 +454,7 @@ export class NetSession implements Subsystem {
    *    nobody has to arrange. This is the case `onclose` cannot cover: a half-open socket after
    *    a sleep or a dropped wireless link, where the browser still believes it is connected.
    *
-   *    The threshold is **eight observed gaps or `LINK_SILENT_MS`, whichever is longer**, and
+   *    The threshold is **eight observed gaps or `LINK_SILENT_S`, whichever is longer**, and
    *    the multiple matters more than the floor. `turnMs` belongs to the relay —
    *    `tools/relay.mjs --turn-ms=` sets it — so a constant tuned against the 100 ms default
    *    would report a deliberately slow relay as a dead one, which is the false alarm this
@@ -436,14 +465,11 @@ export class NetSession implements Subsystem {
    */
   private linkFault(): string {
     if (this.link.dropped) return this.link.dropped;
-    if (this.tick0 < 0) return '';
-    const last = this.link.lastMessageAt;
-    if (!last) return '';
-    const quiet = performance.now() - last;
-    const limit = Math.max(LINK_SILENT_MS, this.link.gapMs * 8);
-    if (quiet < limit) return '';
-    return `nothing has arrived from the relay for ${(quiet / 1000).toFixed(1)} s, `
-      + `against a ${Math.round(this.link.gapMs)} ms turn — the link is gone`;
+    if (this.tick0 < 0 || !this.link.lastMessageAt) return '';
+    const limit = Math.max(LINK_SILENT_S, (this.link.gapMs * 8) / 1000);
+    if (this.quietFor < limit) return '';
+    return `nothing has arrived from the relay in ${this.quietFor.toFixed(1)} s of `
+      + `drawing, against a ${Math.round(this.link.gapMs)} ms turn — the link is gone`;
   }
 
   // -------------------------------------------------------------------------
