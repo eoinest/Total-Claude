@@ -21,6 +21,13 @@
  * **Randomness.** Nothing in this file draws from an `Rng`. The graph is a pure function of
  * the way table and the map frame, so two callers get the same faces in the same order.
  *
+ * **And nothing exported here is unused.** `pointInPoly`, `clipToHalfPlane`, `spanAtU` and a
+ * `traceBoundary` that walked the outline of a set of faces were all written for this pass and
+ * all deleted before it shipped, because the design they were for — a *regio*'s published
+ * extent as the union of its blocks — was replaced by an authored partition. `ROME-FABRIC.md`
+ * §9.9 is right about `maxDrawAt`: a function whose docstring makes a promise and which nothing
+ * calls is worse than no function at all.
+ *
  * ## The convention, stated once, because a sign error here is invisible
  *
  * Everything is in the battlefield's `(x, z)` plane, and the shoelace sum
@@ -114,20 +121,6 @@ export const polyArea = (p: readonly Pt[]): number => {
   return a * 0.5;
 };
 
-/** Crossing-number test. Correct for any simple polygon, convex or not. */
-export const pointInPoly = (p: readonly Pt[], x: number, z: number): boolean => {
-  let inside = false;
-  for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
-    const a = p[i];
-    const b = p[j];
-    if (a.z > z !== b.z > z) {
-      const t = (z - a.z) / (b.z - a.z);
-      if (x < a.x + t * (b.x - a.x)) inside = !inside;
-    }
-  }
-  return inside;
-};
-
 /**
  * Clip a polygon to the half-plane *left of `a → b`, offset inward by `d`*.
  *
@@ -192,11 +185,6 @@ export function insetFace(face: Face, setback: (cls: WayClass) => number): Pt[] 
   }
   const out = dedupeRing(poly);
   return out.length >= 3 ? out : [];
-}
-
-/** Clip an arbitrary polygon to a half-plane, exposed for the map-frame clip. */
-export function clipToHalfPlane(poly: readonly Pt[], ax: number, az: number, bx: number, bz: number): Pt[] {
-  return dedupeRing(clipHalf(poly, ax, az, bx, bz, 0));
 }
 
 /**
@@ -516,69 +504,4 @@ export function planarise(ways: readonly GraphWay[]): PlanarGraph {
       degenerateFaces: degenerate,
     },
   };
-}
-
-/**
- * Where a line at constant `u` enters and leaves a polygon, in the polygon's own frame.
- *
- * Returns the widest single span. For the convex inset polygons this is called on there is
- * exactly one; the "widest" is what keeps it honest if a re-entrant one ever reaches here.
- */
-export function spanAtU(poly: readonly { u: number; v: number }[], u: number): [number, number] | null {
-  const hits: number[] = [];
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i];
-    const b = poly[(i + 1) % poly.length];
-    if (a.u > u !== b.u > u) hits.push(a.v + ((u - a.u) / (b.u - a.u)) * (b.v - a.v));
-  }
-  if (hits.length < 2) return null;
-  hits.sort((p, q) => p - q);
-  let lo = hits[0];
-  let hi = hits[1];
-  for (let i = 0; i + 1 < hits.length; i += 2) {
-    if (hits[i + 1] - hits[i] > hi - lo) {
-      lo = hits[i];
-      hi = hits[i + 1];
-    }
-  }
-  return [lo, hi];
-}
-
-/**
- * The outline of a set of faces, traced off the half-edge structure.
- *
- * A boundary half-edge is one whose face is in the set and whose twin's face is not. Those
- * form closed rings by construction, so this cannot invent an outline the faces do not have —
- * which is the property that lets a *regio*'s published extent be exactly the union of its
- * blocks rather than a rectangle drawn round them. Returns every ring it finds, largest
- * first; a set in two pieces comes back as two rings and the caller is expected to say so
- * rather than take the first and keep quiet.
- */
-export function traceBoundary(g: PlanarGraph, inSet: (faceIndex: number) => boolean): Pt[][] {
-  const isBoundary = (h: number): boolean => {
-    const f = g.faceOf[h];
-    if (f < 0 || !inSet(f)) return false;
-    const t = g.faceOf[h ^ 1];
-    return t < 0 || !inSet(t);
-  };
-  const done = new Uint8Array(g.next.length);
-  const rings: Pt[][] = [];
-  const tail = (h: number): number => (h % 2 === 0 ? g.edges[h / 2].a : g.edges[(h - 1) / 2].b);
-  for (let h0 = 0; h0 < g.next.length; h0++) {
-    if (done[h0] || !isBoundary(h0)) continue;
-    const ring: Pt[] = [];
-    let h = h0;
-    for (let guard = 0; guard < g.next.length + 4; guard++) {
-      done[h] = 1;
-      ring.push(g.nodes[tail(h)]);
-      // Walk the face cycle, stepping over any edge whose other side is also in the set.
-      let n = g.next[h];
-      for (let inner = 0; inner < g.next.length && !isBoundary(n); inner++) n = g.next[n ^ 1];
-      h = n;
-      if (h === h0 || done[h]) break;
-    }
-    if (ring.length >= 3) rings.push(ring);
-  }
-  rings.sort((a, b) => Math.abs(polyArea(b)) - Math.abs(polyArea(a)));
-  return rings;
 }
