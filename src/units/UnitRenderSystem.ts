@@ -268,12 +268,31 @@ const SLOT_STRAGGLE = 0.30;
  * Deceleration is the same arithmetic with the sign reversed and is the more valuable half:
  * a line stopping is the moment weight is most visible.
  *
- * `LEAN_ACCEL_MAX` bounds it at 0.30 rad (17 degrees), which is a hard sprint start. The
- * crowd solver can shove a man several metres a second in one tick, so an unbounded reading
- * of the pool's velocity would occasionally lay somebody flat.
+ * `LEAN_ACCEL_MAX` bounds it at 0.42 rad, which is a hard sprint start. The crowd solver can
+ * shove a man several metres a second in one tick, so an unbounded reading of the pool's
+ * velocity would occasionally lay somebody flat.
+ *
+ * ## The 1.55, and why the physical number alone under-reads
+ *
+ * The shader does not rotate a man about his heels. `skinShader.ts` bends him:
+ * `lean = iOrient.z * bendT * bendT` with `bendT = clamp( y / SOLDIER_LEAN_H )` and
+ * `SOLDIER_LEAN_H` at 1.5 m, so a vertex at the shoulder takes `(1.4/1.5)^2` = 0.87 of the
+ * angle and one at the belt takes `(1.0/1.5)^2` = 0.44. What an eye — or a grader with a
+ * ruler — measures is the tilt of the *trunk*, the segment between those two, and that
+ * averages about 0.65 of the nominal.
+ *
+ * A blind grader did exactly that. Told which frame was 0.30 s into an ordered advance, it
+ * measured the trunk axis of five men across the rank, reported **4 degrees against the 8 to
+ * 15 a real body produces**, and scored C6 at 1. The nominal at that instant was 8.5. The
+ * lean was there and two thirds of it was inside the bend.
+ *
+ * So the coefficient carries the recovery explicitly: `1/9.81` is the physics and `1.55` is
+ * `1/0.65`, which is the profile's own attenuation over the segment the eye reads. Both
+ * numbers are written down separately on purpose — the day `SOLDIER_LEAN_H` or the quadratic
+ * changes, the second one is wrong and the first one is not.
  */
-const LEAN_ACCEL = 1 / 9.81;
-const LEAN_ACCEL_MAX = 0.30;
+const LEAN_ACCEL = (1 / 9.81) * 1.55;
+const LEAN_ACCEL_MAX = 0.42;
 /**
  * Time constants for the two low passes, in reciprocal seconds.
  *

@@ -303,10 +303,29 @@ signal whose noise is many times the signal.
 | moment | mean abs | min | max |
 |---|---|---|---|
 | halted and settled | 0 | 0 | 0 |
-| **0.30 s after the order to advance** | **0.139** | 0.021 | **0.219** |
-| steady march, 5 s later | 0 | 0 | 0.0003 |
-| **0.30 s after the order to stand** | **0.118** | **−0.194** | −0.017 |
+| **0.30 s after the order to advance** | **0.220** (12.6°) | 0.118 | **0.333** |
+| steady march, 5 s later | 0 | 0 | 0 |
+| **0.30 s after the order to stand** | **0.187** | **−0.287** | −0.098 |
 | `pool.lean` over the same men | 0.071 | 0.071 | 0.071 |
+
+### The physical number alone under-reads by a third, and a grader measured exactly that
+
+The shader does not rotate a man about his heels, it bends him:
+`lean = iOrient.z * bendT²` with `bendT = clamp( y / SOLDIER_LEAN_H )` and `SOLDIER_LEAN_H` at
+1.5 m. A vertex at the shoulder takes (1.4/1.5)² = 0.87 of the angle and one at the belt takes
+(1.0/1.5)² = 0.44, so the **trunk** — the segment an eye reads and a grader measures — tilts by
+about 0.65 of the nominal.
+
+A blind grader did precisely that. Given the frame and told what moment it was, it measured
+the trunk axis of five men across the rank, reported **4° against the 8–15° a real body
+produces**, and scored C6 at 1. The nominal at that instant was 8.5°; two thirds of it were
+inside the bend.
+
+So the coefficient carries the recovery explicitly — `LEAN_ACCEL = (1/9.81) × 1.55`, where the
+1.55 is 1/0.65 and the two numbers are written down separately so that the day
+`SOLDIER_LEAN_H` or the quadratic changes, the second one is wrong and the first one is not.
+The ladder above is at the recovered value: 12.6° nominal at the start, about 8.2° of measured
+trunk tilt, inside the band the grader named.
 
 ![](../images/contact/lean-start.jpg)
 
