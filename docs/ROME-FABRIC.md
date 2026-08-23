@@ -2423,8 +2423,10 @@ inherits from this pass.
 ### 10.3 What was authored, and off which plate
 
 Twenty-three ways, 11.6 km, in `src/city/rome/ways.ts`, each row carrying its plate in a `cite`
-field. Against 42 ways and 19 km before — of which 17 were `feeder-*` links at 42 m that nobody
-authored and 12 were monument rings.
+field. Against **41 ways and 14.2 km** before, as `probe-fabric` reads it off the built scene — of
+which 17 were `feeder-*` links at 42 m that nobody authored and the rest were monument rings.
+(`layout.ts`'s own comment claimed "42 ways and 19 km"; the measured figure is 41 and 14.2, and
+the comment is corrected in the same commit. A number in a comment is a claim.)
 
 - **Identification** comes from **Shepherd pl. 22** (`ASSETS.md` item 9), the only plate in the
   pool that names the streets. It is not georeferenced; `tools/scratch/rome-roads.mjs --fit` fits

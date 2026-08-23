@@ -1196,7 +1196,10 @@ function segIntersect(
  * The whole street network by rank: how many ways of each class and how many kilometres.
  *
  * **`extra` is the district lanes and leaving them out was actively misleading.** The
- * armature is 42 ways and 19 km; the spines and ribs each quarter cuts for itself are
+ * armature is 23 ways and 11.6 km — it was 41 and 14.2 before phase 3 deleted the monument
+ * rings and the feeders, and this comment said "42 and 19", which nothing had ever measured; the
+ * figure is `probe-fabric`'s `armatureWays`/`armatureKm` off the built scene. The spines and ribs
+ * each quarter cuts for itself are
  * several hundred more and the majority of the network by length, so a mix reported from
  * `WAYS` alone said the city had 42 streets in it while the player was looking at a
  * thousand. `CitySystem` passes the generated lanes in, and the number in `stats()` is now
