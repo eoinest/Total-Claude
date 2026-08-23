@@ -593,7 +593,7 @@ export class ReplaySystem implements Subsystem {
     }
     // Deployment runs off the render loop, so a packet that lands while the clock is stopped
     // has to be drained here rather than waiting for a tick that will never come.
-    if (this.mode === 'net' && this.ctx.time.paused) this.pumpNet();
+    if (this.mode === 'net' && this.ctx.time.stopped) this.pumpNet();
   }
 
   /** A deployment operation, handed to the relay instead of performed. */
@@ -672,13 +672,17 @@ export class ReplaySystem implements Subsystem {
   private push(e: ReplayEvent): void {
     if (this.relay(e)) return;
     /*
-     * A paused clock will never reach another `fixedUpdate`, so queueing here would hold
+     * A stopped clock will never reach another `fixedUpdate`, so queueing here would hold
      * the order until the player un-paused — which is not what pressing H while paused
      * means. Applied at once instead, and stamped with the tick that is about to run: with
      * no ticks in between, "now" and "the top of tick N" are the same point in the sequence,
      * which is exactly what playback will reproduce.
+     *
+     * `stopped` rather than `paused`: the deployment phase stops the clock with a named hold
+     * now instead of the player's own boolean, and all three of these tests always meant "the
+     * clock is not running" rather than "the player pressed Space".
      */
-    if (this.ctx.time.paused) { this.apply(e); return; }
+    if (this.ctx.time.stopped) { this.apply(e); return; }
     this.queued.push(e);
   }
 
@@ -722,7 +726,7 @@ export class ReplaySystem implements Subsystem {
       // Only while the clock is stopped: everything else waits for a tick, and pumping the
       // net feed from the render loop mid-battle would put an order at a frame boundary,
       // which is the exact defect the tick stamp exists to remove.
-      if (this.ctx.time.paused) this.pumpNet();
+      if (this.ctx.time.stopped) this.pumpNet();
       return;
     }
     if (this.mode !== 'play') return;

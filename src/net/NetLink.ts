@@ -23,6 +23,25 @@ import { RELAY_V, validCode, type ClientMsg, type RelayMsg } from './protocol';
  * that section's own reviewer counted at 331 mutated instance fields across twelve systems.
  * What this file does instead is make the failure legible: a dropped socket ends the match by
  * name at a stated tick, on both sides, rather than freezing one of them.
+ *
+ * ## 22 August 2026 — the paragraph above was false, and it froze the owner's battle
+ *
+ * `connect` resolves on `welcome` and sets `settled`, and `die` — which is the *only* thing
+ * `onclose` did with the news — returns immediately once `settled` is true. So after the
+ * handshake a closed socket set a boolean nobody read and told nobody anything. `NetSession`
+ * went on re-pinning `Time.tickCeiling` at the last turn the relay had authorised, for ever,
+ * with `paused` false and `gameSpeed` 1: animations running, nothing moving, `1x` on the top
+ * bar, no console error, no message. That is the report this pass was opened on, and killing
+ * the relay under a live match reproduces it in one line
+ * (`tools/scratch/freeze-net.mjs`, `tools/qa-freeze.mjs --only=net-drop`).
+ *
+ * Two things carry the news now. `dropped` is the *reason*, set from `onclose` and from
+ * `onerror` whether or not the connection ever settled, and `NetSession.pace` reads it every
+ * frame and ends the match through the same `onEnd` path a relay-sent `end` uses — halt at a
+ * stated tick, with a sentence, on the panel. `lastMessageAt` is the backstop for the case
+ * `onclose` cannot cover: a half-open socket, which is what a sleeping laptop and a dead
+ * wireless link both produce, where the relay's ten packets a second simply stop arriving and
+ * the browser is never told. Neither is a reconnection and neither pretends to be.
  */
 export class NetLink {
   readonly room: string;
@@ -32,6 +51,36 @@ export class NetLink {
   refusal = '';
   peer: 'absent' | 'joined' | 'ready' | 'left' = 'absent';
   closed = false;
+  /**
+   * Why the transport went away, or `''`. Set once, from whichever of `onclose`/`onerror`
+   * fires first, **whether or not the handshake had already completed** — which is the whole
+   * of the fix, because before this the post-handshake case was dropped on the floor.
+   *
+   * Distinct from `refusal`, which is the relay saying no to a join. This is the wire failing.
+   */
+  dropped = '';
+  /**
+   * `performance.now()` of the last frame that arrived, or 0 before the first.
+   *
+   * The relay closes a turn on its own wall clock and emits a packet to both slots every
+   * `turnMs` — 100 ms by default — whatever the clients are doing, so silence is a *fact about
+   * the link* rather than a guess about the peer. That is what lets `NetSession` tell a client
+   * that is legitimately waiting on its opponent from one whose relay has gone, without a
+   * timer that would have to be tuned against how slowly a person thinks.
+   */
+  lastMessageAt = 0;
+  /**
+   * Smoothed gap between inbound frames, in ms. 0 until the second one arrives.
+   *
+   * Measured rather than assumed, because the relay's turn length is the relay's to choose:
+   * `tools/relay.mjs --turn-ms=` sets it and `RoomOptions.turnMs` defaults to 100, but a fixed
+   * threshold tuned against the default would call a deliberately slow relay a dead one. The
+   * silence test in `NetSession.linkFault` uses a multiple of this with a floor, so it scales
+   * with whatever cadence the relay actually keeps.
+   */
+  gapMs = 0;
+  /** Called once, from the socket's own callbacks, when the transport fails after settling. */
+  onDropped: ((why: string) => void) | null = null;
 
   /** Every message, in arrival order, for whoever attaches. Drained by `NetSession`. */
   private queue: RelayMsg[] = [];
@@ -74,10 +123,27 @@ export class NetLink {
         return;
       }
       this.ws = ws;
-      ws.onerror = () => { clearTimeout(timer); die(`the relay at ${this.url} refused the connection`); };
-      ws.onclose = () => {
+      /*
+       * `drop` runs on **every** transport failure; `die` only rejects the connect promise.
+       *
+       * They used to be one thing, and `die` is a no-op once the promise has settled, so a
+       * socket that failed after `welcome` — which is every socket that fails during a battle
+       * — set `closed` and stopped there. See the file docstring.
+       */
+      const drop = (why: string): void => {
         this.closed = true;
+        if (this.dropped) return;
+        this.dropped = why;
+        try { this.onDropped?.(why); } catch { /* a listener must not break the socket */ }
+      };
+      ws.onerror = () => {
         clearTimeout(timer);
+        drop(`the link to the relay at ${this.url} failed`);
+        die(`the relay at ${this.url} refused the connection`);
+      };
+      ws.onclose = () => {
+        clearTimeout(timer);
+        drop(`the relay closed the connection${this.refusal ? `: ${this.refusal}` : ''}`);
         die(`the relay closed the connection${this.refusal ? `: ${this.refusal}` : ''}`);
         for (const w of this.waiters.splice(0)) w.fail(new Error('socket closed'));
       };
@@ -85,6 +151,12 @@ export class NetLink {
         let m: RelayMsg;
         try { m = JSON.parse(String(ev.data)) as RelayMsg; } catch { return; }
         this.got++;
+        const at = performance.now();
+        if (this.lastMessageAt) {
+          const gap = at - this.lastMessageAt;
+          this.gapMs = this.gapMs ? this.gapMs * 0.8 + gap * 0.2 : gap;
+        }
+        this.lastMessageAt = at;
         if (m.k === 'welcome') {
           this.slot = m.slot;
           if (m.v !== RELAY_V) { clearTimeout(timer); die(`relay speaks v${m.v}, this build speaks v${RELAY_V}`); return; }
@@ -133,7 +205,9 @@ export class NetLink {
     return out;
   }
 
+  /** Our own hang-up. Marked, so the `onclose` it provokes is not reported as a link failure. */
   close(why = 'closed'): void {
+    this.dropped = this.dropped || `closed by this client: ${why}`;
     if (this.ws && this.ws.readyState === 1) this.send({ k: 'bye', why });
     this.ws?.close();
     this.closed = true;

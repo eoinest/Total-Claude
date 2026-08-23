@@ -266,7 +266,25 @@ export class DeploymentSystem implements Subsystem {
       if (this.battle.siege.isGarrisoned(u.id)) this.onWall.add(u.id);
     }
     this.active = true;
-    this.ctx.time.paused = true;
+    /*
+     * The clock is stopped in this phase's *name*, and the name is checked.
+     *
+     * It used to be `time.paused = true` here and `time.paused = false` in `commitInner`, which
+     * is two anonymous writes to a public boolean with a whole commit in between. `commitInner`
+     * set `active = false` first and released the clock last, inside a `note()` wrapper that
+     * does not swallow, so a throw anywhere in the middle left the battle stopped by a phase
+     * that reported itself finished — the plaque gone, the result screen being checked, and no
+     * tick ever again. `Time.hold` takes a claim: the hold is only valid while this phase says
+     * it is still laying out an army, and `SimWatchdog` releases and reports one that isn't.
+     *
+     * A `finally` in `commitInner` closes the specific hole. This closes the class, including
+     * for the next phase somebody writes that needs the clock stopped.
+     */
+    this.ctx.time.hold(this.name, () => ({
+      held: this.active,
+      expected: true,
+      why: 'the army is being laid out — press Enter or BEGIN BATTLE',
+    }));
     this.ctx.events.emit('deploymentBegan', {
       faction: playerFaction, units: this.ownUnits().length,
     });
@@ -284,25 +302,48 @@ export class DeploymentSystem implements Subsystem {
     this.note({ verb: 'commit' }, () => this.commitInner());
   }
 
+  /**
+   * The clock is released in a `finally`, and that is the bug this pass was opened on.
+   *
+   * The order used to be: clear `active`, walk `battle.units`, empty the bench, *then* let the
+   * clock go. Every statement between the first and the last is a chance to throw — and
+   * `note()`, which this runs inside, re-throws — so a fault in the middle left `active` false
+   * and the clock stopped by a phase that no longer believed it was holding anything.
+   * `blocksClock` then reported false, `HudSystem` handed Space and the speed keys back, the
+   * result screen started being checked, and `Time.beginFrame` returned zero steps for the
+   * rest of the session. It was never reproduced from the interface — the five commit paths
+   * in `tools/qa-freeze.mjs` all complete — but "I could not find an input that throws here"
+   * is not the same claim as "nothing here can throw", and the difference is a frozen battle.
+   *
+   * With the release in a `finally` the fault still propagates, still reaches the console and
+   * the `pageerror` collectors, and no longer takes the battle with it. `SimWatchdog` is the
+   * backstop for the version of this that a `finally` cannot reach.
+   */
   private commitInner(): void {
     if (!this.active) return;
     this.active = false;
     this.committed = true;
-    for (const u of this.battle.units) {
-      if (u.destroyed) continue;
-      if (u.order === UnitOrder.Garrison) continue;
-      u.waypoints.length = 0;
-      u.targetX = u.x;
-      u.targetZ = u.z;
-    }
-    // Whatever is still benched will never be seen again; drop the references so the
-    // unit objects and their member arrays can be collected.
-    this.bench.length = 0;
-    // In a relayed battle both players hold the clock and the second one to commit releases
-    // it, so neither is attacked while still laying out an army.
-    if (!this.peer?.active) {
-      this.ctx.time.paused = false;
-      this.ctx.time.resync();
+    try {
+      for (const u of this.battle.units) {
+        if (u.destroyed) continue;
+        if (u.order === UnitOrder.Garrison) continue;
+        u.waypoints.length = 0;
+        u.targetX = u.x;
+        u.targetZ = u.z;
+      }
+      // Whatever is still benched will never be seen again; drop the references so the
+      // unit objects and their member arrays can be collected.
+      this.bench.length = 0;
+    } finally {
+      /*
+       * Each phase releases its own hold and the clock runs when the last one lets go, which
+       * is the same rule the `peer?.active` test spelled out by hand — in a relayed battle
+       * both players hold the clock and neither is attacked while still laying out an army.
+       * `resync` only on the frame the last hold goes, because dropping the accumulator is a
+       * decision about the battle and not about bookkeeping.
+       */
+      this.ctx.time.release(this.name);
+      if (!this.ctx.time.held) this.ctx.time.resync();
     }
     this.ctx.events.emit('deploymentEnded', { units: this.ownUnits().length });
   }
