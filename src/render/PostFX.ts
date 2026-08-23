@@ -971,6 +971,36 @@ export class PostFXSystem implements Subsystem {
           float ndv = dot( N, V ) * inversesqrt( max( len2, 1e-8 ) ) - uNear.w;
           occ += max( 0.0, ndv ) * clamp( 1.0 - len2 / uNearR2, 0.0, 1.0 );
         }
+        /*
+         * ---- no foliage guard here, and it was tried -------------------------------------
+         *
+         * A field of thin blades occludes itself everywhere: every grass pixel has some
+         * neighbours in front of its tangent plane and some behind it, so this disc finds
+         * solid matter in every direction and the whole lawn darkens. It is the one artefact
+         * of this term and it is real.
+         *
+         * The obvious discriminator is **coherence**: a genuine junction — a boot on the
+         * ground, a rim over a rim, a wall against paving — should have its occluders all on
+         * one side of the tangent plane, so the signed sum of the elevations and the sum of
+         * their magnitudes should agree; a thicket should have them on both sides at pixel
+         * scale and the ratio should collapse. It costs two adds and it does not work. Both
+         * variants were built and measured on the buffer at the roof-close station, 320 shields:
+         *
+         *   | 5th percentile of the occlusion buffer | with guard | without |
+         *   | every sample votes                     | 0.663      | 0.439   |
+         *   | only samples clearing the tangent bias | 0.655      | 0.439   |
+         *
+         * The guard attenuates the corners as hard as the grass, and gating the vote on the
+         * bias — which should have removed the near-tangent samples that cancel each other —
+         * moved it by 0.008. The reason is that the normal is reconstructed from depth, so on
+         * any real surface a good fraction of the disc reads as slightly *behind* the plane
+         * and votes against; the sign distribution at a junction is not clean enough to
+         * measure. A guard would need a real normal buffer, which is the geometry pass this
+         * chain exists to avoid.
+         *
+         * Recorded rather than shipped at zero, because a knob that halves the effect is
+         * worse than a known limitation.
+         */
         return clamp( 1.0 - ( occ / float( NS ) ) * uNear.z, 0.0, 1.0 );
       }
 

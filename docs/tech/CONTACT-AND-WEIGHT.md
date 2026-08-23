@@ -486,12 +486,30 @@ diagnosis and a handover, not a fix.
 
 ## 8. What is still wrong
 
-- **The grass takes the contact term hardest.** A field of thin blades occludes itself
-  everywhere, so the near-field disc finds solid matter at the base of every blade. It is
-  physically right and it is the single artefact I would look at next: at strength 7 with the
-  old clamp it was a black mat, and the coloured fill is what makes 5.0 survivable rather than
-  what makes it correct. A foliage guard — suppressing the term where the depth
-  neighbourhood is high-frequency — is the honest fix and I did not build it.
+- **The grass takes the contact term hardest, and the obvious guard does not work.** A field
+  of thin blades occludes itself everywhere, so the near-field disc finds solid matter at the
+  base of every blade. It is physically right and it is the single artefact I would look at
+  next: at strength 7 with the old clamp it was a black mat, and the coloured fill is what
+  makes 5.0 survivable rather than what makes it correct.
+
+  A **coherence** guard was built and measured and then taken out. The idea is that a genuine
+  junction has its occluders all on one side of the tangent plane, so the signed sum of the
+  elevations and the sum of their magnitudes agree, while a thicket has them on both sides at
+  pixel scale and the ratio collapses — two extra adds, no extra taps. On the buffer at
+  `roof-close`, 5th percentile:
+
+  | | with the guard | without |
+  |---|---|---|
+  | every sample votes | 0.663 | **0.439** |
+  | only samples clearing the tangent bias vote | 0.655 | **0.439** |
+
+  It attenuates the corners as hard as the grass, and gating the vote on the bias — which
+  should have removed exactly the near-tangent samples that cancel each other — moved it by
+  0.008. The reason is that the normal is reconstructed from depth, so on any real surface a
+  good fraction of the disc reads as slightly *behind* the plane and votes against; the sign
+  distribution at a junction is not clean enough to measure without a real normal buffer,
+  which is the geometry pass this whole chain exists to avoid. A knob that halves the effect
+  is worse than a known limitation, so it is a comment in `nearContact` and not a uniform.
 - **Half-resolution AO still cannot produce a join** and now does not have to. But that also
   means the ambient term and the contact term have different resolutions and therefore
   different silhouettes, and at very long range — past `far120` — the contact term's disc is

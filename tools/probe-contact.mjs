@@ -157,12 +157,14 @@ const ARM_SETS = {
   /** A strength ladder for the near-field contact term, buffers and frames both. */
   sweep: [
     { name: 'base', q: {}, fx: {} },
-    { name: 'occ-s0', q: {}, fx: { debugView: 'occ', aoContactStrength: 0 } },
-    { name: 'occ-s2', q: {}, fx: { debugView: 'occ' } },
-    { name: 'occ-s4', q: {}, fx: { debugView: 'occ', aoContactStrength: 4 } },
-    { name: 'occ-s7', q: {}, fx: { debugView: 'occ', aoContactStrength: 7 } },
-    { name: 'frame-s4', q: {}, fx: { aoContactStrength: 4 } },
-    { name: 'frame-s7', q: {}, fx: { aoContactStrength: 7 } },
+    // `off` is the pipeline exactly as it stood before the near-field term existed: the
+    // half-resolution HBAO and the sun march, and nothing else. It is the honest zero.
+    { name: 'occ-off', q: {}, fx: { debugView: 'occ', aoContactStrength: 0 } },
+    { name: 'occ-2', q: {}, fx: { debugView: 'occ', aoContactStrength: 2.2 } },
+    { name: 'occ-ship', q: {}, fx: { debugView: 'occ' } },
+    { name: 'occ-7', q: {}, fx: { debugView: 'occ', aoContactStrength: 7 } },
+    { name: 'frame-off', q: {}, fx: { aoContactStrength: 0 } },
+    { name: 'frame-7', q: {}, fx: { aoContactStrength: 7 } },
   ],
 };
 const arms = ARM_SETS[ARMS];
