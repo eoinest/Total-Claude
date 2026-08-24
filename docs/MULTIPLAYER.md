@@ -2205,6 +2205,29 @@ sheets are in the DOM at once and the visible one is chosen by a class on the ro
 `.menu-sheet` waits on the *hidden* home sheet for the full sixty seconds on any URL that opens
 straight on the setup step. Only the lobby arm arrives that way, which is why nothing had hit it.
 
+#### And one thing the extra load found in the gate itself
+
+Running the whole suite back to back put this machine at load 4 and made `same-battle` go red
+twice in four runs of `--only=battle` — *"they stopped at different ticks: 2,112 and 2,117"*, with
+`checkpoints-agreed` green both times and no hash ever compared, because the comparison never got
+that far. The other two runs settled at 2,106 and 2,115 with all five layers identical.
+
+`settleTogether` SIGSTOPs the relay so the two clients drain to a common tick, and its comment
+claimed that works "by construction rather than by luck" because SIGSTOP stops the process and not
+the kernel's socket buffers. That is true of the kernel's buffer and **false of node's**:
+`sock.write` returns false when the kernel buffer fills and node queues the remainder inside the
+process, which a frozen process never flushes. Two sockets fill at different rates because two
+pages read at different rates, so a relay stopped mid-backlog can leave one client holding turns
+the other will now never receive — and no amount of waiting converges them, because the thing that
+would send them is stopped.
+
+The helper now releases the relay for 250 ms and stops it again whenever both clients have gone
+static *and are apart*, up to six times. The comparison is untouched — equal ticks are still
+required and the five layers are still compared bit for bit — so it can only turn a false red into
+a real answer, never a red into a green. It is recorded here because it is the same failure this
+pass is about, wearing test-harness clothes: an instrument reporting a fact about the laptop as a
+fact about the product.
+
 #### What is still not done
 
 The invite link is withheld rather than repaired when the page is on loopback; making it work
