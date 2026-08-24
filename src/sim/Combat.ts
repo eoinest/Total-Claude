@@ -1360,12 +1360,17 @@ export class CombatSystem implements Subsystem {
       // `bias` is a *positive scalar* on a direction every man in the unit shares. It varies
       // how far a man is pushed and never which way, so the whole fighting line moves along
       // one axis, in one sign, at one moment — and `balance` swings smoothly with the nerve
-      // and kill pulses, so that one axis reverses on a slow beat that the eye reads as a
-      // rhythm. Measured with `tools/probe-hivemind.mjs` on a 136-man cohort thirty seconds
-      // into a melee: coherence **R = 0.320** against the 0.086 that independent men of that
-      // number would give, with the unit-mean lateral offset carrying a dominant period at
-      // autocorrelation strength 0.82. That is the measurable half of "they all sway left and
-      // right along some sort of function".
+      // and kill pulses, so that one axis reverses on a slow beat. Measured with
+      // `tools/probe-hivemind.mjs` on a 135-man cohort thirty seconds into a melee: coherence
+      // **R = 0.454**, against the 0.086 that independent men of that number would give.
+      //
+      // What the probe did *not* find, and it was looking: any genuine periodic oscillation in
+      // the positions, on this tree or the one before it. An earlier cut of the probe reported
+      // one and it was an artefact of taking an argmax over all autocorrelation lags, which
+      // returns the shortest lag searched for any smooth signal. So the coherent thing here is
+      // a shared *direction*, not a shared rhythm, and this is the half of the report that is
+      // real. The other half was that the men were standing in an exact lattice; see
+      // `FormationDef.dress`.
       //
       // `skew` adds the missing dimension: a per-man rotation of his own share of the push,
       // drawn from his stable hash and **zero-mean**, so the unit's aggregate displacement is
