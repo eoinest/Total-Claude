@@ -140,6 +140,13 @@ const STALL_MS = (TICKS_PER_TURN / 30) * 1000 * 1.5;
  * silence is roughly **sixty consecutive missed turns**, which is not a slow peer and is not
  * jitter; the peer's speed does not enter into it, because the peer is not what sends this.
  *
+ * **"Unconditionally" was false in one phase, and that is the bug this constant caused.** The
+ * lobby closes no turns, so a host waiting alone for a challenger received nothing after
+ * `welcome`, `NetLink.gapMs` stayed at 0, the threshold below collapsed to this floor and the
+ * match ended with `linkLost` at exactly 6.0 s — socket open, relay running, nothing wrong.
+ * `Room.LOBBY_BEAT_MS` sends a `ping` a second in that phase, so the sentence above is now true
+ * in every phase rather than in three of the four, and this floor measures what it says.
+ *
  * It exists at all because `onclose` is not guaranteed. A laptop that sleeps and a wireless
  * link that drops both leave a half-open TCP connection whose browser-side `WebSocket` sits in
  * `readyState 1` until something times out, and that is exactly the shape of "I was in the
@@ -204,6 +211,15 @@ export class NetSession implements Subsystem {
   private perturbed = -1;
   /** The tick this client was on when it announced. -1 until `announce` runs. */
   private tick0 = -1;
+  /**
+   * Whether the verdict in `ended` was inferred here or sent by the relay. See `onEnd`.
+   *
+   * Only two things can end a match locally — `linkLost`, and nothing else — and a local
+   * verdict is a guess about a wire that has stopped answering. The relay's is a fact: it can
+   * see both sockets. So a relay verdict is allowed to replace a local one, and never the
+   * other way round.
+   */
+  private endedLocally = false;
 
   constructor(link: NetLink, cfg: BattleConfig, quality: QualityTier, deployPhase: boolean) {
     this.link = link;
@@ -371,7 +387,7 @@ export class NetSession implements Subsystem {
      * reason, and leave the record. What was missing was anybody noticing.
      */
     const fault = this.linkFault();
-    if (fault && this.phase !== 'over') this.onEnd('linkLost', this.ctx.time.tick, fault);
+    if (fault && this.phase !== 'over') this.onEnd('linkLost', this.ctx.time.tick, fault, 'here');
     if (this.phase === 'over') {
       t.setCeiling(t.tick, 'net');
       t.gameSpeed = 1;
@@ -451,8 +467,10 @@ export class NetSession implements Subsystem {
    *    was set and never read.
    * 2. **The relay has stopped sending.** `Room.tick` emits a turn packet to both slots every
    *    `turnMs` off its own wall clock, unconditionally, so inbound traffic is a heartbeat
-   *    nobody has to arrange. This is the case `onclose` cannot cover: a half-open socket after
-   *    a sleep or a dropped wireless link, where the browser still believes it is connected.
+   *    nobody has to arrange — and in the lobby, where there are no turns to close, a `ping` a
+   *    second instead (`Room.LOBBY_BEAT_MS`). This is the case `onclose` cannot cover: a
+   *    half-open socket after a sleep or a dropped wireless link, where the browser still
+   *    believes it is connected.
    *
    *    The threshold is **eight observed gaps or `LINK_SILENT_S`, whichever is longer**, and
    *    the multiple matters more than the floor. `turnMs` belongs to the relay —
@@ -501,6 +519,7 @@ export class NetSession implements Subsystem {
       case 'refuse':
         this.phase = 'over';
         this.ended = m.why;
+        this.endedLocally = false;
         this.message = m.detail ?? m.why;
         break;
       case 'end': this.onEnd(m.why, m.atTick, m.detail); break;
@@ -643,6 +662,7 @@ export class NetSession implements Subsystem {
     };
     this.phase = 'over';
     this.ended = 'desync';
+    this.endedLocally = false;
     this.endedAtTick = m.lastAgreedTick;
     this.ctx.time.setCeiling(this.ctx.time.tick, 'net');
     this.message = `the two battles parted at tick ${m.tick} (${m.layer})`;
@@ -650,8 +670,24 @@ export class NetSession implements Subsystem {
       + `last agreed tick ${m.lastAgreedTick}`);
   }
 
-  private onEnd(why: string, atTick: number, detail: string): void {
-    if (this.ended && this.ended !== why) return;
+  /**
+   * The match is over, for a stated reason, at a stated tick.
+   *
+   * **First verdict wins — except that the relay outranks this client.** The guard used to be
+   * "first wins" outright, and that is right for the case it was written for: a relay `end`
+   * followed by the `onclose` it provokes should stay `peerLeft` rather than decay into
+   * `linkLost` a frame later. It was wrong in the case that actually shipped. A false
+   * `linkLost` in the lobby (`Room.LOBBY_BEAT_MS`) got in first, and then *swallowed the
+   * relay's real verdict* — so a survivor whose opponent had walked away was told the link
+   * had died, which is a different accusation about a different party.
+   *
+   * The heartbeat means the false verdict no longer happens. This is the second lock: a
+   * verdict this client inferred is never allowed to outrank one the relay observed, whatever
+   * order they arrive in.
+   */
+  private onEnd(why: string, atTick: number, detail: string, from: 'relay' | 'here' = 'relay'): void {
+    if (this.ended && this.ended !== why && !(from === 'relay' && this.endedLocally)) return;
+    this.endedLocally = from === 'here';
     this.ended = why;
     this.endedAtTick = atTick;
     this.phase = 'over';

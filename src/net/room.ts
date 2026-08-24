@@ -149,6 +149,29 @@ const newSlot = (): SlotState => ({
   marks: new Map(), lastHashTick: -1, probe: new Map(),
 });
 
+/**
+ * How often the lobby says "I am still here", in milliseconds.
+ *
+ * The client's only test for a dead relay that `onclose` cannot see — a half-open socket after
+ * a sleep or a dropped wireless link — is *silence*, and `NetSession.linkFault` measures it
+ * against `NetLink.gapMs`, the observed interval between inbound frames. Past the lobby the
+ * turn packet supplies that interval for free, every `turnMs`, whether or not anybody has done
+ * anything. In the lobby nothing did, and the consequence was not "the check is asleep": with
+ * no gap ever observed, `gapMs` stayed 0, the threshold collapsed to its `LINK_SILENT_S` floor
+ * and a host waiting alone in a perfectly healthy room was told the link was gone at exactly
+ * 6.0 seconds — with the socket open and the relay running.
+ *
+ * So the lobby beats too, and the sentence in `linkFault` about the relay sending
+ * unconditionally is now true in every phase rather than in three of the four.
+ *
+ * A second and not a `turnMs`, because the lobby is the one phase that legitimately lasts
+ * minutes — somebody is reading a code to somebody else over the phone — and ten frames a
+ * second for the whole of it is a Cloudflare bill (§3) for no information. At one second the
+ * threshold is `max(LINK_SILENT_S, 8 × 1 s)` = 8 s, so a relay that dies while you wait is
+ * named about eight seconds later, which is well inside the time it takes to wonder.
+ */
+const LOBBY_BEAT_MS = 1000;
+
 export type Phase = 'lobby' | 'deploy' | 'battle' | 'over';
 
 export class Room {
@@ -170,6 +193,8 @@ export class Room {
   private pairNote = '';
   private willFork = false;
   private nextClose = 0;
+  /** When the lobby's next keep-alive is due. See `LOBBY_BEAT_MS`. */
+  private nextBeat = 0;
   /** The host's battle, published before either client has finished loading it. */
   private setup: { cfg: unknown; deployPhase: boolean } | null = null;
   private faultsFired = 0;
@@ -263,6 +288,7 @@ export class Room {
       }
     }
     this.nextClose = nowMs + this.opts.turnMs;
+    this.nextBeat = nowMs + LOBBY_BEAT_MS;
     return { slot, refuse: null, out };
   }
 
@@ -643,7 +669,20 @@ export class Room {
       }
       return none();
     }
-    if (this.phase === 'lobby') return none();
+    /*
+     * The lobby beats too, and this line used to be `return none()`.
+     *
+     * A host alone in a room is the one state where nothing else was on the wire, and the
+     * client's silence test read that as a dead relay at exactly 6.0 s — see `LOBBY_BEAT_MS`
+     * for the arithmetic and `NetSession.linkFault` for the test. `ping` was declared in the
+     * protocol from the first draft and never sent by anybody; this is what it is for.
+     */
+    if (this.phase === 'lobby') {
+      if (nowMs < this.nextBeat) return none();
+      this.nextBeat = nowMs + LOBBY_BEAT_MS;
+      if (!this.slots[0].joined && !this.slots[1].joined) return none();
+      return { out: [{ to: 'all', msg: { k: 'ping', t: Math.round(nowMs) } }], close: [] };
+    }
     if (nowMs < this.nextClose) return none();
 
     const out: Outbound[] = [];
@@ -785,6 +824,29 @@ export class Room {
     };
   }
 }
+
+/**
+ * The refusal for a challenger who typed a code no host ever asked for.
+ *
+ * It lives here, next to `Room`'s own two refusals, because it is the same kind of sentence and
+ * there must be exactly one of it — but the *test* cannot: only the adapter knows whether it
+ * has ever heard of a code, and the two adapters know it differently. `tools/relay.mjs` has a
+ * `Map` and can answer outright. `net/worker.ts` cannot: `idFromName(code)` conjures a Durable
+ * Object for any string you hand it, which is precisely the hazard `CODE_ALPHABET`'s docstring
+ * names, so there the question is a storage read.
+ *
+ * Without this a mistyped code was the worst failure in the product: the challenger joined an
+ * empty room that the relay had just invented for them, waited on a host who was sitting in a
+ * different room entirely, and nothing anywhere ever said so. No timeout, no message, no way
+ * back — the one shape `docs/MULTIPLAYER.md` keeps calling out, an instrument that fails by
+ * saying nothing.
+ */
+export const noSuchRoom = (code: string): RelayMsg => ({
+  k: 'refuse',
+  why: 'noRoom',
+  detail: `there is no room ${code} on this relay. Nobody has opened one under that code — `
+    + 'check it against the host\'s screen, or have them read it out again.',
+});
 
 /**
  * A room code from a source of randomness the caller supplies.
