@@ -38,18 +38,31 @@
  *
  * | knob | value | provenance |
  * |---|---|---|
- * | cap, owner away | 4 | measured: `bb-bench` — 0.45–0.48× cores, 92–98 % of linear scaling |
- * | cap, owner present | 2 | measured: `tools/scratch/gpu-bench.mjs`, see `docs/tech/RESOURCE-BUDGET.md` |
- * | cap, owner playing | 1 | measured: same bench, owner-frame-time arm |
- * | GPU ceiling, away | 92 % | a machine with nobody on it should be *used* |
- * | GPU ceiling, present | 70 % | **the owner's preference — asked, see below** |
- * | GPU ceiling, playing | 45 % | **the owner's preference — asked, see below** |
+ * | cap, owner away | 4 | **measured**: `bb-bench` — 0.45–0.48× cores, 92–98 % of linear scaling |
+ * | cap, owner present | 2 | *derived* from the GPU reading below — not a sweep of its own |
+ * | cap, owner playing | 1 | *derived* the same way |
+ * | GPU ceiling, away | 92 % | judgement: a machine with nobody on it should be *used* |
+ * | GPU ceiling, present | 70 % | **preference — his to set, not measured** |
+ * | GPU ceiling, playing | 45 % | **preference — his to set, not measured** |
  * | idle before "away" | 180 s | judgement: long enough to survive reading a diff |
+ * | the demotion is worth it | **1.81×** | **measured**: `tools/scratch/gpu-bench.mjs`, 4 paired cycles |
  *
- * The two ceilings marked *preference* are not measurements and must not be presented as any.
- * "How much of my machine do I want left free while I work" is a question only he can answer;
- * the values here are a defensible default pending his. Everything else in the table is a
- * number this repository measured.
+ * Three of those rows are not measurements and are labelled so rather than dressed up.
+ *
+ * **The two caps marked *derived*** come from one number: a single agent browser rendering this
+ * scene averages **85 % of the GPU** while using 24 % of the CPU. There is no arrangement of
+ * four such browsers that leaves him a GPU. Two is what fits under a 70 % ceiling; one, demoted,
+ * is what fits under 45 %. That is arithmetic on a measurement, not a scaling sweep, and if
+ * somebody runs the sweep these should move.
+ *
+ * **The two ceilings marked *preference*** answer "how much of my machine do I want left free
+ * while I work", which is a question only he can answer. The values here are a defensible
+ * default pending his.
+ *
+ * **The row that is measured properly** is whether any of this helps. Owner at 2560x1600, two
+ * agents at 1920x1080, four paired interleaved cycles: 65.2 fps with the agents at normal
+ * priority against 118.0 fps with them demoted, against 120.0 fps with no agents at all —
+ * and frames over 20 ms went from 15 % to 0 %. See `docs/tech/RESOURCE-BUDGET.md`.
  *
  * ## Environment
  *
