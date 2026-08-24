@@ -112,6 +112,43 @@
  *   | Rome    | 5/21, 16 failing | **7/25, 18 failing** |
  *   | Carthage| 12/21, 9 failing | **13/22, 9 failing, 3 not applicable (G8c, G8d, G13b)** |
  *
+ * ----------------------------------------------------------------------------
+ * AND IT WENT DOWN AGAIN, FOR THE SAME REASON. G22 MEASURES A FOOTPRINT NOW.
+ * ----------------------------------------------------------------------------
+ *
+ * `e/city/rome-river-solids`, 23 Aug 2026. The owner: *"there are some big buildings still in
+ * the river."* This file answered **`PASS — no structure stands below the water surface`, 0 of
+ * 1 106**. Both were true, and the reason is that G22 sampled five points — the centre and the
+ * four corners — and gated on the centre. The Mausoleum of Hadrian is a 95 m box on a reach
+ * where the channel swings 250 world metres west across its own southern third: 1 932 of its
+ * 9 069 m² stand on ground 4.6 m under the surface, and its centre datum reads a dry 7.80 m.
+ *
+ * | | before | after |
+ * |---|---|---|
+ * | Rome     | 15/27, 12 failing | **14/27, 13 failing** |
+ * | Carthage | 13/22, 9 failing  | **13/22, 9 failing** — the control does not move |
+ *
+ * Rome loses a check it was passing wrongly. Carthage's score is unchanged and its G22 finds
+ * **four** solids instead of one: `temple-sea` (2 732 m², 97 % of plan, 9.7 m under), and three
+ * the centre test could not see — `quay-fort` at 360 m² and two curtain segments. **Three of
+ * Rome's three faults and three of Carthage's four have a DRY CENTRE**, which is the whole
+ * argument for the change as one integer, and the run prints it every time.
+ *
+ * `MAP-METHOD.md` rule 31 is a week old — *a constant lifted out of a two-sided thing keeps the
+ * side it was lifted from, and the other side then becomes impossible rather than merely
+ * wrong.* This is its mirror one level up: **a SAMPLE lifted out of an extended thing keeps the
+ * point it was taken at, and the rest of the footprint becomes invisible rather than merely
+ * approximate.** The evidence was already written down and not gated on — the `Transtiberim`
+ * pass recorded *"0 under water, same 3 wet corners"* in the same sentence as the pass, and this
+ * file's own `WATER_EXPECTED` comment asserted *"So G22 fails on it"* about a row it passed.
+ *
+ * G22 also now accounts for the monuments it **cannot** walk. Its population is
+ * `getObstacles()`, so a `soft` row leaves the denominator silently; `NO_SOLID_AGREED` names
+ * them, counts them and gates membership, and `--inject=water-population-drop` proves it. The
+ * reason for not simply walking them is measured: the Janiculum's reserved box has a corner on
+ * ground at 0.40 m and its drawn mound is 281 m from that corner, so grading the box would
+ * report a landform in a river it is not in.
+ *
  * The judge's prediction of 7/25 and 18 is exactly right and **its composition is not**: the
  * table has G15 passing and does not score G11, and the measurement has G11 passing and G15
  * failing. Two pairs are declared one complex and stand 3.1 m apart — inside G8c's own
@@ -160,7 +197,8 @@
  *   - **G22 is the water check, and it is not shipped without its exclusion accounting.** A
  *     check born blind to a mechanism measures that mechanism's absence (`MAP-METHOD.md` rule
  *     16), and Carthage's Cothon is 325 m of *water* that would fail a naive test. So every
- *     excluded row is named, counted and gated against a typed-in list.
+ *     excluded row is named, counted and gated against a typed-in list. **And it asks its
+ *     question of the whole plan, not of the centre of it** — see the second score table above.
  *   - **G11 gains the off-frame category the same way.** Five survey rows are off this map's
  *     +Z edge by a decision the owner took in writing. The category is gated against those five
  *     BY NAME, so a sixth row falling off the frame fails rather than joining a category.
@@ -205,8 +243,10 @@
  *            licenses a trespass only inside one complex, only where the pair is joined, and
  *            only as deep as a party wall.
  *   G17      no quarter reports itself unable to build.
- *   G22      no structure's footprint stands below the water surface, with every excluded row
- *            named and the exclusion list gated.
+ *   G22      no structure's FOOTPRINT stands below the water surface — the oriented rectangle
+ *            rasterised at 2 m and graded on wet AREA, not five points graded on the centre.
+ *            Every excluded row named and its list gated; every monument that publishes no
+ *            collision solid named and ITS list gated, so the population cannot go dark.
  *   G18-G19  the layout REGIONS partition the ground — no overlapping pair, and claimed area
  *            over available ground = 1.00. This is the second, independent fault
  *            (`docs/ROME-FABRIC.md` §2.3): seventeen rectangles claiming 266% of the city.
@@ -305,6 +345,29 @@ const INJECTIONS = {
     what: 'grants a water licence to a structure that publishes solids and is dry. Proves the '
       + 'stale-licence limb fires: an exclusion list that describes a city that has moved is '
       + 'rule 13\'s check gone dark.',
+  },
+  'water-population-drop': {
+    hits: 'G22',
+    what: 'drops the first row from NO_SOLID_AGREED, so a monument that is absent from G22\'s '
+      + 'population is absent without having been declared. Proves the population accounting '
+      + 'is gated on MEMBERSHIP and not on length — MAP-METHOD.md rules 13 and 16, the same '
+      + 'shape as `off-frame-drop`, applied to the other way a check can go dark.',
+  },
+  'water-in-the-channel': {
+    hits: 'G22',
+    what: 'puts a synthetic 40 x 30 m solid at the DEEPEST water on the map, found by search '
+      + 'against the live terrain rather than typed in, so it cannot go stale when the channel '
+      + 'moves. Proves the check fires at all, on either map, including one whose fabric is '
+      + 'clean. Its centre is wet, so it is the limb the five-point form also had.',
+  },
+  'water-straddle-the-bank': {
+    hits: 'G22',
+    what: 'puts a synthetic 60 x 40 m solid on DRY ground whose plan reaches into the water — '
+      + 'the Mausoleum of Hadrian\'s shape, synthesised. **This is the injection that proves '
+      + 'the FOOTPRINT limb rather than the check.** The centre datum is above the surface by '
+      + 'construction, so the five-point form this replaces passes it and the area form '
+      + 'cannot; the run prints the injected row\'s own centre datum beside its wet area so '
+      + 'the reader can see which limb caught it.',
   },
   'band-ceiling': {
     hits: 'G13a',
@@ -735,6 +798,47 @@ const T = {
    * nothing, and `ABUT_DEPTH_M` decides which.
    */
   NEST_FRAC: 0.95,
+
+  /**
+   * G22's raster pitch over a solid's own oriented footprint, metres.
+   *
+   * G22 used to sample five points — the centre and the four corners — and gate on the
+   * centre. That is a check about a POINT wearing a footprint's clothes, and the owner could
+   * see what it could not: the Mausoleum of Hadrian stands with 2 232 of its 9 069 m² on
+   * ground 4.6 m under the Tiber while its centre datum reads a dry 7.80 m. Five samples
+   * cannot answer a question about area, so this one rasterises.
+   *
+   * 2 m because the thing being sampled is `terrain.heightAt`, a bilinear read of a field on a
+   * 1.367 m grid: a pitch under the field's own spacing buys nothing but time, and a pitch
+   * much over it can step across a channel 28 world metres wide. `WATER_SAMPLE_CAP` bounds the
+   * cost on the two structures big enough to matter (the Tiber Island's box is 289 × 72 m),
+   * growing the pitch rather than truncating the scan, so a big solid is measured coarsely
+   * rather than partially.
+   */
+  WATER_SAMPLE_M: 2,
+  WATER_SAMPLE_CAP: 120,
+
+  /**
+   * Wet footprint area at which a solid is standing in the water rather than beside it, m².
+   *
+   * **One sample cell, and it is deliberately the instrument's own resolution and nothing
+   * else.** `MAP-METHOD.md` rule 12 — a test tangent to its own threshold answers by rounding
+   * — so the tolerance has to absorb the one thing that is genuinely arbitrary here, which is
+   * where the raster's cells happen to fall against a continuous waterline. A footprint whose
+   * edge is tangent to the water shows at most a cell; a footprint that crosses the waterline
+   * shows a band. There is no third population to separate, and no number was fitted to the
+   * data: measured on Rome the wet areas are 2 232, 407 and 33 m² against a field of zeroes,
+   * and on Carthage 30 harbour solids at hundreds of m² against a field of zeroes. Two orders
+   * of magnitude of daylight either side, on both maps.
+   *
+   * A tolerance in AREA and not in depth, because depth is the wrong unit for the complaint.
+   * A building 2 cm under the surface over its whole plan is in the river and a building whose
+   * corner touches 4 m of water over half a square metre is on a bank; a depth threshold gets
+   * both backwards. The worst depth is reported beside the area for every fault, because the
+   * two want different fixes — `MAP-METHOD.md` rule 16's habit applied to a measurement rather
+   * than to an exclusion.
+   */
+  WATER_FOOT_TOL_M2: 4,
 };
 
 // ===========================================================================
@@ -1029,14 +1133,29 @@ const OFF_FRAME_AGREED = {
  *    so a naive water check fails them by construction — which is exactly the shape of a check
  *    that measures a mechanism's absence rather than a fault.
  *
- * **What is NOT on this list, deliberately: the Theatre of Marcellus.** Its centre datum is
- * 1.52 m against a 5.0 m water surface and three of its four box corners are wet
- * (`CITY-GROUND-JUDGE.md` §10.6). The branch flagged it and left it drawn on the ground that
- * the Tiber resurvey owns the channel. That reasoning is right and it is not a licence: a
- * monument three and a half metres under the surface is visible from the ground, in the
- * quarter the assault crosses. The right handling of a fault you must not fix is to stop
- * drawing it — the `offMapSouth` treatment, with the name printed at boot — not to write it
- * down. So G22 fails on it, and it fails until either the channel moves or the row does.
+ * **What is NOT on this list, deliberately: the Theatre of Marcellus and the Mausoleum of
+ * Hadrian.** The paragraph this replaces said the Theatre's *"centre datum is 1.52 m against a
+ * 5.0 m water surface and three of its four box corners are wet"*, and concluded *"So G22 fails
+ * on it."* **It did not.** On this tree the Theatre's centre datum reads 7.80 m — the terrain
+ * moved under it when the freeboard was corrected — and the check, which gated on that centre,
+ * went green while 435 m² of the cavea's plan sat 3.7 m under the Tiber. The comment was
+ * describing an intention the code did not have. That is the whole reason this check now
+ * measures area: **a licence list is only as honest as the measurement it exempts rows from,
+ * and a paragraph asserting that a check fails is not the check failing.**
+ *
+ * Measured, footprint-wise, on the tree this comment is being written on:
+ *
+ *   | row | wet plan | of | worst ground | centre datum |
+ *   |---|---|---|---|---|
+ *   | `mausoleum-hadrian` | 1 932 m² | 9 069 (24 %) | 0.40 m | 7.80 m — DRY |
+ *   | `theatre-marcellus` | 435 m² | 2 476 (18 %) | 1.32 m | 7.80 m — DRY |
+ *   | `wall#33` | 14 m² | 67 (21 %) | 1.68 m | 9.22 m — DRY |
+ *
+ * Neither monument is licensed and neither should be: a monument standing four and a half
+ * metres under the surface is visible from the ground, in the quarter the assault crosses.
+ * The right handling of a fault you must not fix is to stop drawing it — the `offMapSouth`
+ * treatment, with the name printed at boot — not to write it down. So G22 fails on them, and
+ * it fails until the channel moves, the plan compresses, or the rows do.
  */
 const WATER_EXPECTED = {
   'campus-martius': [
@@ -1045,6 +1164,41 @@ const WATER_EXPECTED = {
   carthage: [
     { id: 'cothon', why: 'the obstacle IS the basin — Hurst 1994, a 325 m circular harbour of water' },
     { id: 'merchant-harbour', why: 'the obstacle IS the basin — CARTHAGE.md 6.2, "320 x 150 m of water"' },
+  ],
+};
+
+/**
+ * **Monuments the plan declares and G22 cannot walk, because they publish no collision solid.**
+ *
+ * G22's population is `city.getObstacles()`. A `soft` row — landscape rather than masonry — is
+ * not in it, so it silently leaves the check's denominator. That is `MAP-METHOD.md` rule 13
+ * exactly: *a check that goes dark is worse than a check that fails*, and rule 16's condition
+ * on top of it — an exclusion is a claim, so it needs a count, a list of names printed every
+ * run, and a gate on membership so that a sixth row joining the category fails.
+ *
+ * **And there is a positive reason not to walk them, measured on this tree.** A soft row's
+ * reserved rectangle is not its drawn ground. The Janiculum Ridge publishes a 556 × 257 m box
+ * whose south-east corner stands on ground at **0.40 m**, four and a half metres under the
+ * surface — and the ridge is *drawn* as a mound of `moundRadius` 230 whose nearest stone is
+ * 281 m from that corner. Grading the box would report a landform in the river that is not in
+ * the river, which is the same fault as reserving a circumradius circle for an elliptical
+ * mound, one file over. `MAP-METHOD.md` rule 11 is the general form: the footprint and the
+ * stone are two objects. Until a soft row publishes the second, this check declines to grade
+ * the first, by name.
+ *
+ * `tiber-island` appears here *and* in `WATER_EXPECTED`: it is licensed to be wet if it ever
+ * becomes solid, and today it is not solid. The two lists answer different questions and the
+ * run prints both.
+ */
+const NO_SOLID_AGREED = {
+  'campus-martius': [
+    { id: 'tiber-island', why: 'soft: the Insula Tiberina is modelled ground, not masonry' },
+    { id: 'janiculum', why: 'soft: a planted ridge; the drawn mound is an ellipse, the reserved box is not' },
+    { id: 'gardens-sallust', why: 'soft: the Horti Sallustiani are planting and terracing, not a building' },
+  ],
+  carthage: [
+    { id: 'tophet', why: "layout.ts `solid: false` — an open precinct of stelae, not a building" },
+    { id: 'forum', why: "layout.ts `solid: false` — an open square; its two stoas ARE solid and are graded" },
   ],
 };
 
@@ -1148,7 +1302,7 @@ try {
   );
   await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 300000 });
 
-  const out = await page.evaluate(async ({ MAPID, PUB, TH, OFF_FRAME, WATER_OK, INJ, DRY_ROW }) => {
+  const out = await page.evaluate(async ({ MAPID, PUB, TH, OFF_FRAME, WATER_OK, NO_SOLID, INJ, DRY_ROW }) => {
     // =====================================================================
     // FAULT INJECTION. See `INJECTIONS` above the browser boundary for what each one proves.
     // Every one of these perturbs the PROBE's reference data or the PROBE's thresholds. None
@@ -1167,6 +1321,10 @@ try {
     if (injected.has('water-no-exclusions')) {
       injectNotes.push(`WATER_EXPECTED emptied (was ${WATER_OK.map((w) => w.id).join(', ') || 'empty'})`);
       WATER_OK = [];
+    }
+    if (injected.has('water-population-drop')) {
+      injectNotes.push(`NO_SOLID_AGREED -= ${NO_SOLID[0]?.id ?? '(empty)'}`);
+      NO_SOLID = NO_SOLID.slice(1);
     }
     if (injected.has('water-stale-licence')) {
       WATER_OK = [...WATER_OK, { id: DRY_ROW, why: 'INJECTED — this row is dry and publishes solids' }];
@@ -2442,6 +2600,79 @@ try {
     const terrain = ctx.tryGet ? ctx.tryGet('terrain') : null;
     const terrainWaterLevel = terrain ? (terrain.waterLevel ?? 0) : null;
 
+    /**
+     * **The two synthetic solids, for `--inject`. Neither exists unless asked for.**
+     *
+     * `MAP-METHOD.md` rule 18's test for a repair: the new class must be able to fail. A
+     * footprint test that has only ever been run on a city nobody has fixed yet proves
+     * nothing about itself, so these put a solid in the water on purpose and the run exits
+     * non-zero whatever it finds.
+     *
+     * Both are placed by SEARCH against the live terrain rather than by typed coordinates, so
+     * neither goes stale when the channel moves — which is the fault the whole of this pass is
+     * about. The search is deterministic: a fixed 8 m lattice over the map, scanned in index
+     * order, and the extremum taken with a strict `<`.
+     *
+     *  - `water-in-the-channel` puts a 40 × 30 m box at the DEEPEST water on the map. It
+     *    proves the check fires at all, on either map, and its centre is wet, so the form
+     *    this replaces would have caught it too.
+     *  - `water-straddle-the-bank` is the one that proves the FOOTPRINT limb specifically. It
+     *    puts a 60 × 40 m box on DRY ground whose own centre stands above the surface and
+     *    whose plan reaches into the water — the Mausoleum of Hadrian's shape, synthesised.
+     *    The five-point form would pass it: the centre is dry by construction, and a box that
+     *    straddles a waterline diagonally can have all four corners dry as well.
+     */
+    const waterInjectedSolids = (() => {
+      const out = [];
+      const wantChannel = injected.has('water-in-the-channel');
+      const wantStraddle = injected.has('water-straddle-the-bank');
+      if (!wantChannel && !wantStraddle) return out;
+      if (!terrain || typeof terrain.heightAt !== 'function') return out;
+      const level = typeof terrain.waterLevel === 'number' ? terrain.waterLevel : null;
+      if (level === null) return out;
+      const EXT = 1400;
+      const STEP = 8;
+      let deep = null;
+      let straddle = null;
+      for (let z = -EXT; z <= EXT; z += STEP) {
+        for (let x = -EXT; x <= EXT; x += STEP) {
+          const h = terrain.heightAt(x, z);
+          if (h <= level) {
+            if (!deep || h < deep.h) deep = { x, z, h };
+          } else {
+            // Dry, but with water inside 40 m of it: the bank. Rank by how deep that water is,
+            // so the injected box is unambiguously over the channel and not over a puddle.
+            let near = Infinity;
+            for (const [dx, dz] of [[40, 0], [-40, 0], [0, 40], [0, -40], [28, 28], [-28, 28], [28, -28], [-28, -28]]) {
+              const hn = terrain.heightAt(x + dx, z + dz);
+              if (hn < near) near = hn;
+            }
+            if (near <= level && (!straddle || near < straddle.near)) straddle = { x, z, h, near };
+          }
+        }
+      }
+      if (wantChannel && deep) {
+        out.push({
+          id: 'INJECTED-in-the-channel', name: 'INJECTED solid in the channel',
+          o: { x: deep.x, z: deep.z, hw: 20, hd: 15, rot: 0, kind: 'building' },
+        });
+        injectNotes.push(
+          `a 40 x 30 m solid placed at the deepest water on the map, (${deep.x}, ${deep.z}),`
+          + ` ground ${deep.h.toFixed(2)} m against a surface at ${level}`);
+      }
+      if (wantStraddle && straddle) {
+        out.push({
+          id: 'INJECTED-straddling-the-bank', name: 'INJECTED solid straddling the bank',
+          o: { x: straddle.x, z: straddle.z, hw: 30, hd: 20, rot: 0, kind: 'building' },
+        });
+        injectNotes.push(
+          `a 60 x 40 m solid placed on DRY ground at (${straddle.x}, ${straddle.z}), centre datum`
+          + ` ${straddle.h.toFixed(2)} m — above the ${level} m surface, so the five-point form`
+          + ` this replaces passes it — with water at ${straddle.near.toFixed(2)} m inside 40 m of it`);
+      }
+      return out;
+    })();
+
     // =====================================================================
     // G22 — nothing stands under the water surface.
     //
@@ -2452,10 +2683,39 @@ try {
     // Carthage — because the question is not "where does the survey think the river is" but
     // "is this masonry under the water the player can see".
     //
-    // Five samples per solid: the centre and the four corners of its own oriented box. A
-    // solid is a FAULT when its centre is under the surface; `cornersWet` and `allWet` are
-    // reported beside it, because a building with two wet corners is on a bank and a building
-    // with five is in the channel, and the two want different fixes.
+    // **The question is about a FOOTPRINT and it used to be asked of a POINT.**
+    //
+    // This check sampled five points — the centre and the four corners of the oriented box —
+    // and gated on the centre, reporting `cornersWet` beside it without gating on it. It
+    // answered `PASS — no structure stands below the water surface`, 0 of 1 106, on a Rome
+    // where the owner could see two monuments in the Tiber. Both are true at once, and the
+    // reason is that a centre is not a footprint: the Mausoleum of Hadrian is a 95 m box on
+    // a reach where the channel swings 250 world metres west across its own southern third,
+    // so 2 232 of its 9 069 m² stand on ground 4.6 m under the surface while the centre
+    // datum reads a dry 7.80 m.
+    //
+    // That is `MAP-METHOD.md` rule 31's mirror, and rule 31 is a week old: *a constant lifted
+    // out of a two-sided thing keeps the side it was lifted from.* Here it is a SAMPLE lifted
+    // out of an extended thing — it keeps the point it was taken at, and the rest of the
+    // footprint becomes invisible rather than merely approximate. The `Transtiberim` pass had
+    // already written the evidence down — *"0 under water, same 3 wet corners"* — which is a
+    // check reporting the fault it is not gating, in the same sentence as the pass.
+    //
+    // So: rasterise the oriented rectangle at `WATER_SAMPLE_M` and measure the wet AREA. A
+    // solid is a FAULT when more than `WATER_FOOT_TOL_M2` of its plan stands at or below the
+    // water surface. The centre datum, the corner count and the deepest ground under the plan
+    // are all reported beside it — the centre because it is the number the previous form
+    // gated on and the change has to be auditable against it, the depth because a footprint
+    // 2 cm under water and one 4.6 m under want different fixes.
+    //
+    // **The ruler is `terrain.heightAt` against `terrain.waterLevel`, and that is the drawn
+    // waterline rather than a model of it.** `WaterSurface`'s fragment shader discards where
+    // `vWater.y - bedHeight(vWater.xz) <= 0`, reading the same baked height field
+    // `heightAt` reads, so the water the player sees is drawn exactly where this check says
+    // it is. The probe deliberately does not call `inTheRiverAt`, which is the city's own
+    // buildability test and a different function — an analytic profile plus a 0.6 m quay
+    // freeboard, evaluated on nine points of a bounding box. Grading the city with the city's
+    // own admission test is the failure this file's header exists to forbid.
     //
     // Every exclusion is named, counted, and gated on its MEMBERSHIP against `WATER_EXPECTED`
     // — `MAP-METHOD.md` rule 16, and the condition the judge attached to endorsing this check.
@@ -2467,6 +2727,40 @@ try {
       const level = typeof terrain.waterLevel === 'number' ? terrain.waterLevel : null;
       if (level === null) return { measured: false, why: 'the terrain publishes no waterLevel' };
       const okIds = new Set(WATER_OK.map((w) => w.id));
+      /**
+       * The wet area of one oriented rectangle, by raster.
+       *
+       * Cell centres, not corners, so a footprint that merely touches the waterline scores
+       * nothing rather than half a cell; and the pitch is grown rather than the scan
+       * truncated when a box is bigger than `WATER_SAMPLE_CAP` cells on a side, so a large
+       * solid is measured coarsely and never partially.
+       */
+      const scanFoot = (o) => {
+        const cs = Math.cos(o.rot);
+        const sn = Math.sin(o.rot);
+        const nu = Math.min(TH.WATER_SAMPLE_CAP, Math.max(1, Math.round((2 * o.hw) / TH.WATER_SAMPLE_M)));
+        const nv = Math.min(TH.WATER_SAMPLE_CAP, Math.max(1, Math.round((2 * o.hd) / TH.WATER_SAMPLE_M)));
+        const cell = ((2 * o.hw) / nu) * ((2 * o.hd) / nv);
+        let wetCells = 0;
+        let worst = Infinity;
+        let wx = o.x;
+        let wz = o.z;
+        for (let iu = 0; iu < nu; iu++) {
+          const u = -o.hw + (iu + 0.5) * ((2 * o.hw) / nu);
+          for (let iv = 0; iv < nv; iv++) {
+            const v = -o.hd + (iv + 0.5) * ((2 * o.hd) / nv);
+            const px = o.x + u * cs - v * sn;
+            const pz = o.z + u * sn + v * cs;
+            const h = terrain.heightAt(px, pz);
+            if (h <= level) wetCells++;
+            if (h < worst) { worst = h; wx = px; wz = pz; }
+          }
+        }
+        return {
+          samples: nu * nv, wetM2: wetCells * cell, wetFrac: wetCells / (nu * nv),
+          worstDatumM: worst, worstAt: { x: wx, z: wz }, pitchM: (2 * o.hw) / nu,
+        };
+      };
       const sampled = [];
       const rowsFor = (list, kind) => {
         for (const e of list) {
@@ -2474,19 +2768,42 @@ try {
           const hs = pts.map((q) => terrain.heightAt(q.x, q.z));
           const centreH = hs[0];
           const cornersWet = hs.slice(1).filter((h) => h <= level).length;
+          const f = scanFoot(e.o);
           sampled.push({
             id: e.id, name: e.name, kind,
             centreDatumM: r2(centreH), cornersWet, corners: hs.length - 1,
             centreWet: centreH <= level,
             allWet: hs.every((h) => h <= level),
             areaM2: e.area, x: r2(e.o.x), z: r2(e.o.z),
+            wetM2: r2(f.wetM2), wetPct: r2(f.wetFrac * 100), footSamples: f.samples,
+            worstDatumM: r2(f.worstDatumM),
+            worstAt: { x: r2(f.worstAt.x), z: r2(f.worstAt.z) },
+            footWet: f.wetM2 > TH.WATER_FOOT_TOL_M2,
           });
         }
       };
       rowsFor(mons, 'monument');
       rowsFor(bldgs, 'building');
       rowsFor(walls, 'wall');
-      const wet = sampled.filter((r) => r.centreWet);
+      for (const inj of waterInjectedSolids) {
+        const f = scanFoot(inj.o);
+        const centreH = terrain.heightAt(inj.o.x, inj.o.z);
+        const poly = obPoly(inj.o);
+        const hs = poly.map((q) => terrain.heightAt(q.x, q.z));
+        sampled.push({
+          id: inj.id, name: inj.name, kind: 'building',
+          centreDatumM: r2(centreH), cornersWet: hs.filter((h) => h <= level).length,
+          corners: hs.length, centreWet: centreH <= level,
+          allWet: centreH <= level && hs.every((h) => h <= level),
+          areaM2: 4 * inj.o.hw * inj.o.hd, x: r2(inj.o.x), z: r2(inj.o.z),
+          wetM2: r2(f.wetM2), wetPct: r2(f.wetFrac * 100), footSamples: f.samples,
+          worstDatumM: r2(f.worstDatumM),
+          worstAt: { x: r2(f.worstAt.x), z: r2(f.worstAt.z) },
+          footWet: f.wetM2 > TH.WATER_FOOT_TOL_M2,
+          injected: true,
+        });
+      }
+      const wet = sampled.filter((r) => r.footWet);
       const excluded = wet.filter((r) => okIds.has(r.id));
       const faults = wet.filter((r) => !okIds.has(r.id));
       /*
@@ -2508,22 +2825,58 @@ try {
       const notBuilt = WATER_OK.filter((w) => !solidIds.has(w.id));
       const byName = new Map();
       for (const f of faults) {
-        const cur = byName.get(f.id) ?? { id: f.id, name: f.name, kind: f.kind, solids: 0, worstDatumM: 99, allWet: 0, areaM2: 0, x: f.x, z: f.z };
+        const cur = byName.get(f.id) ?? {
+          id: f.id, name: f.name, kind: f.kind, solids: 0, wetM2: 0, areaM2: 0,
+          worstDatumM: 99, dryCentres: 0, allWet: 0, x: f.x, z: f.z,
+        };
         cur.solids++;
         cur.areaM2 += f.areaM2;
-        if (f.centreDatumM < cur.worstDatumM) { cur.worstDatumM = f.centreDatumM; cur.x = f.x; cur.z = f.z; }
+        cur.wetM2 += f.wetM2;
+        if (!f.centreWet) cur.dryCentres++;
+        if (f.worstDatumM < cur.worstDatumM) {
+          cur.worstDatumM = f.worstDatumM;
+          cur.x = f.worstAt.x;
+          cur.z = f.worstAt.z;
+        }
         if (f.allWet) cur.allWet++;
         byName.set(f.id, cur);
+      }
+      for (const s of byName.values()) {
+        s.wetM2 = r2(s.wetM2);
+        s.wetPct = r2((s.wetM2 / Math.max(1e-6, s.areaM2)) * 100);
       }
       return {
         measured: true,
         waterLevelM: level,
+        footToleranceM2: TH.WATER_FOOT_TOL_M2,
+        footPitchM: TH.WATER_SAMPLE_M,
         solidsSampled: sampled.length,
-        centreWet: wet.length,
+        footSamples: sampled.reduce((s, r) => s + r.footSamples, 0),
+        /** The number the form this replaces gated on, kept so the change is auditable. */
+        centreWet: sampled.filter((r) => r.centreWet).length,
+        footWet: wet.length,
         entirelyWet: sampled.filter((r) => r.allWet).length,
         anyCornerWet: sampled.filter((r) => r.cornersWet > 0).length,
         faultSolids: faults.length,
-        faultStructures: [...byName.values()].sort((a, b) => a.worstDatumM - b.worstDatumM),
+        /**
+         * The whole argument for the change, as one integer: faults whose CENTRE stands dry
+         * and which the five-point form therefore could not see, however deep their plan sat.
+         */
+        faultSolidsWithDryCentre: faults.filter((r) => !r.centreWet).length,
+        faultWetM2: r2(faults.reduce((s, r) => s + r.wetM2, 0)),
+        /**
+         * **Dry, but only just — reported, never gated.**
+         *
+         * `e/city/rome-fill` left this open in writing: *"four Transtiberim blocks stand on
+         * ground 0.02–0.25 m over the water, and the fix is to raise the terrace in
+         * `topography.ts`, not to lower the freeboard."* A solid a centimetre clear of the
+         * surface is not a fault by any statement this check is willing to make, and it is
+         * the population that becomes one the moment the terrain moves. Printing the count
+         * is how a reader finds out whether that item is still live without opening a branch.
+         * 0.6 m is the city's own `QUAY_FREEBOARD`, quoted rather than chosen.
+         */
+        dryButUnder060: sampled.filter((r) => !r.footWet && r.worstDatumM > level && r.worstDatumM <= level + 0.6).length,
+        faultStructures: [...byName.values()].sort((a, b) => b.wetM2 - a.wetM2),
         faultsByKind: {
           monument: faults.filter((r) => r.kind === 'monument').length,
           building: faults.filter((r) => r.kind === 'building').length,
@@ -2537,8 +2890,38 @@ try {
         })),
         staleLicences: staleLicences.map((w) => w.id),
         licencesNotBuiltAsSolids: notBuilt.map((w) => w.id),
-        worstWet: sampled.filter((r) => r.cornersWet > 0 || r.centreWet)
-          .sort((a, b) => a.centreDatumM - b.centreDatumM).slice(0, 12),
+        /**
+         * The population accounting, gated on MEMBERSHIP. Rule 13: a check that loses part of
+         * its population must separate "excluded by design" from "missing", count the
+         * exclusions, and print them by name.
+         */
+        planMonuments: owners.length,
+        monumentsWalked: new Set(mons.map((e) => e.id)).size,
+        monumentsWithoutSolid: (() => {
+          const have = new Set(mons.map((e) => e.id));
+          return owners.filter((o) => !have.has(o.id)).map((o) => ({ id: o.id, soft: !!o.soft }));
+        })(),
+        noSolidAgreed: NO_SOLID.map((r) => r.id),
+        noSolidUnagreed: (() => {
+          const have = new Set(mons.map((e) => e.id));
+          const agreed = new Set(NO_SOLID.map((r) => r.id));
+          return owners.filter((o) => !have.has(o.id) && !agreed.has(o.id)).map((o) => o.id);
+        })(),
+        noSolidStale: (() => {
+          const have = new Set(mons.map((e) => e.id));
+          return NO_SOLID.filter((r) => have.has(r.id)).map((r) => r.id);
+        })(),
+        injectedSolids: waterInjectedSolids.map((s) => ({
+          id: s.id, x: r2(s.o.x), z: r2(s.o.z),
+          ...(() => {
+            const row = sampled.find((r) => r.id === s.id);
+            return row
+              ? { centreDatumM: row.centreDatumM, centreWet: row.centreWet, wetM2: row.wetM2, wetPct: row.wetPct }
+              : {};
+          })(),
+        })),
+        worstWet: sampled.filter((r) => r.wetM2 > 0 || r.centreWet)
+          .sort((a, b) => b.wetM2 - a.wetM2).slice(0, 12),
       };
     })();
     const partition = await (async () => {
@@ -3449,17 +3832,41 @@ try {
           W.why, 'no solid with a wet centre, outside the named list');
       } else {
         const mons22 = W.faultStructures.filter((f) => f.kind === 'monument');
-        gate('G22', 'no structure stands below the water surface',
-          W.faultSolids === 0 && W.staleLicences.length === 0,
-          `${W.faultSolids} solids with their centre under water of ${W.solidsSampled} sampled`
-          + ` (water at ${W.waterLevelM} m; ${W.entirelyWet} entirely wet, ${W.anyCornerWet} with a wet corner)`
+        const desc = (f) => `${f.id} ${f.wetM2} m2 (${f.wetPct}% of plan) down to ${f.worstDatumM} m`;
+        gate('G22', "no structure's FOOTPRINT stands below the water surface",
+          W.faultSolids === 0 && W.staleLicences.length === 0
+            && W.noSolidUnagreed.length === 0 && W.noSolidStale.length === 0,
+          `${W.faultSolids} solids with more than ${W.footToleranceM2} m2 of their FOOTPRINT under`
+          + ` water, of ${W.solidsSampled} sampled at a ${W.footPitchM} m pitch`
+          + ` (${W.footSamples} ground samples; water at ${W.waterLevelM} m)`
+          + `; ${W.faultWetM2} m2 of masonry plan stands in the water in total`
           + `; by kind: ${W.faultsByKind.monument} monument, ${W.faultsByKind.building} building,`
           + ` ${W.faultsByKind.wall} wall`
+          + `; ${W.faultSolidsWithDryCentre} of the ${W.faultSolids} have a DRY CENTRE and were`
+          + ` invisible to the five-point form this replaces (which sees ${W.centreWet} wet centres`
+          + ` and ${W.anyCornerWet} wet corners)`
           + (mons22.length
-            ? `; monuments: ${mons22.map((f) => `${f.id} at ${f.worstDatumM} m`).join('; ')}`
+            ? `; monuments: ${mons22.map(desc).join('; ')}`
             : '')
           + (W.faultStructures.length
-            ? `; worst overall: ${W.faultStructures.slice(0, 4).map((f) => `${f.id} at ${f.worstDatumM} m`).join('; ')}`
+            ? `; worst overall: ${W.faultStructures.slice(0, 4).map(desc).join('; ')}`
+            : '')
+          + (W.injectedSolids.length
+            ? `; INJECTED: ${W.injectedSolids.map((s) => `${s.id} at (${s.x}, ${s.z}) centre ${s.centreDatumM} m`
+              + ` (${s.centreWet ? 'wet' : 'DRY — the old form passes it'}), ${s.wetM2} m2 wet`).join('; ')}`
+            : '')
+          + `; ${W.dryButUnder060} solids are dry but stand within 0.6 m of the surface — the`
+          + ' population that becomes a fault if the terrace moves, reported and not gated'
+          + ` | POPULATION: ${W.monumentsWalked} of ${W.planMonuments} planned monuments publish a`
+          + ` collision solid and are walked; the ${W.monumentsWithoutSolid.length} that do not are`
+          + ` named and gated on MEMBERSHIP: [${W.monumentsWithoutSolid.map((m) => m.id + (m.soft ? ' (soft)' : '')).join(', ') || 'none'}]`
+          + (W.noSolidUnagreed.length
+            ? `; NOT AGREED — a monument left this check's population without being declared:`
+              + ` [${W.noSolidUnagreed.join(', ')}]`
+            : '')
+          + (W.noSolidStale.length
+            ? `; STALE — declared as publishing no solid and it now does, so it should be graded:`
+              + ` [${W.noSolidStale.join(', ')}]`
             : '')
           + ` | EXCLUSIONS, named and gated: ${W.excludedNamed.length}`
           + ` [${W.excludedNamed.map((e) => `${e.id}: ${e.wetSolids} wet of ${e.solidsPublished} solid(s)`).join(', ')}]`
@@ -3471,7 +3878,9 @@ try {
             ? `; licence held against a row that publishes no solid (soft landscape), reported not`
               + ` gated: [${W.licencesNotBuiltAsSolids.join(', ')}]`
             : ''),
-          'no solid with a wet centre outside WATER_EXPECTED, and no stale licence');
+          `no solid with more than ${W.footToleranceM2} m2 of its plan at or below the drawn water`
+          + ' surface, outside WATER_EXPECTED; no stale licence; and the monuments that publish no'
+          + ' solid are exactly NO_SOLID_AGREED, by name');
       }
     }
     const passed = checks.filter((c) => c.ok && !c.na).length;
@@ -3604,6 +4013,7 @@ try {
   }, {
     MAPID: MAP, PUB: PUBLISHED[MAP] ?? [], TH: T,
     OFF_FRAME: OFF_FRAME_AGREED[MAP] ?? [], WATER_OK: WATER_EXPECTED[MAP] ?? [],
+    NO_SOLID: NO_SOLID_AGREED[MAP] ?? [],
     INJ: INJECT,
     /**
      * A dry structure that publishes collision solids, per map, for `water-stale-licence`.
