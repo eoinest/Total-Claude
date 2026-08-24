@@ -112,11 +112,20 @@ const LOG_FILE = path.join(paths.BUDGET_DIR, 'reclaim-log.jsonl');
 /* ──────────────────────────────── arguments ──────────────────────────────── */
 
 const argv = process.argv.slice(2);
-const flag = (name) => argv.find((a) => a === `--${name}` || a.startsWith(`--${name}=`));
+/**
+ * `--name=value`, or `--name value`.
+ *
+ * Both spellings, because the header of this file documents `--explain <path>` with a space and
+ * the first implementation only accepted `=`. It did not error — `value()` returned its default
+ * and the tool printed the ordinary report, so the flag looked like it had been ignored on
+ * purpose. A flag that silently does nothing is worse than one that is rejected.
+ */
 const value = (name, dflt = null) => {
-  const f = flag(name);
-  if (!f) return dflt;
-  return f.includes('=') ? f.slice(f.indexOf('=') + 1) : dflt;
+  const i = argv.findIndex((a) => a === `--${name}` || a.startsWith(`--${name}=`));
+  if (i < 0) return dflt;
+  if (argv[i].includes('=')) return argv[i].slice(argv[i].indexOf('=') + 1);
+  const next = argv[i + 1];
+  return next && !next.startsWith('--') ? next : dflt;
 };
 
 const APPLY = argv.includes('--apply');
@@ -137,11 +146,14 @@ const SIZES = argv.includes('--sizes');
  */
 const UNDER = value('under') ? path.resolve(value('under')) : null;
 
+/** A user typing the wrong flag gets a sentence, not a stack trace. */
+const die = (msg) => { console.error(`reclaim: ${msg}`); process.exit(2); };
+
 /** `48h`, `30m`, `14d`, or a bare number of hours. */
 const parseAge = (s, dflt) => {
   if (!s) return dflt;
   const m = String(s).match(/^(\d+(?:\.\d+)?)\s*([smhd]?)$/i);
-  if (!m) throw new Error(`--min-age: expected something like 24h, 90m or 7d; got ${JSON.stringify(s)}`);
+  if (!m) die(`expected an age like 24h, 90m or 7d; got ${JSON.stringify(s)}`);
   const mult = { s: 1e3, m: 60e3, h: 3600e3, d: 86400e3, '': 3600e3 }[m[2].toLowerCase()];
   return Number(m[1]) * mult;
 };
@@ -158,7 +170,7 @@ const included = new Set(value('include', '').split(',').filter(Boolean));
 const only = value('only', '').split(',').filter(Boolean);
 const skipped = new Set(value('skip', '').split(',').filter(Boolean));
 for (const g of [...included, ...only, ...skipped]) {
-  if (!ALL_GROUPS.includes(g)) throw new Error(`unknown group ${JSON.stringify(g)}; expected one of ${ALL_GROUPS.join(', ')}`);
+  if (!ALL_GROUPS.includes(g)) die(`unknown group ${JSON.stringify(g)}; expected one of ${ALL_GROUPS.join(', ')}`);
 }
 const GROUPS = new Set(
   (only.length ? only : [...DEFAULT_GROUPS, ...included]).filter((g) => !skipped.has(g))
