@@ -364,6 +364,41 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    water was deleted after the fact instead of being routed around. Each is the same sentence at
    a smaller scale, each was worth one to five points of coverage, and the phase that fixed the
    first one wrote the diagnosis for the third down in a comment and left the behaviour alone.
+36. **A sample lifted out of an extended thing keeps the point it was taken at, and the rest
+   of the extent becomes invisible rather than merely approximate.** Rule 31's mirror, and the
+   more expensive of the two, because a wrong constant is at least wrong everywhere while a
+   wrong sample is right where you look. `probe-fabric` G22 asked *"does this structure stand
+   under water"* of five points and gated on one of them, and answered **PASS, 0 of 1,106** on
+   a Rome with the Mausoleum of Hadrian standing 1,932 m² — a quarter of its podium — under
+   4.6 m of Tiber, because the centre of an 89 m box was on the bank. The same shape sat in the
+   placement rule that put it there: `FAR_BANK` is a centre-to-bank clearance evaluated at the
+   monument's own row, and over the podium's own hundred metres of z the channel swings 250 m
+   west across it. **Test: name the extent of the thing and the extent of the sample, and if
+   the first is bigger, the check is about a different object.** And the tell is loud when you
+   look for it — a report that prints the fault beside the pass. This one had printed *"0 under
+   water, same 3 wet corners"* for a week.
+
+37. **A thing under test may declare its intentions; it may not grade them. A licence needs a
+   second list and an envelope, or it is an exemption with a sentence attached.** Three
+   structures on two maps genuinely stand over their own water — the Theatre of Marcellus on
+   the Ripa, Rome's river-wall return three metres into the channel, Carthage's south anchor
+   dying in the Lake of Tunis — and each was already argued for in `src/`, in writing, before
+   any check could see it. (A declaration should also separate what is *sourced* from what is
+   *decided*: the Theatre's position on the Ripa is Platner's, and the piles under it are ours.
+   A row that blurs the two invites the next reader to argue with the archaeology.) The
+   temptation is to let the plan say so and have the gate believe it, and that turns a check
+   into a comment: the next row in the water writes the same sentence and the gate goes quiet. **Three parts, and all three are needed.** (1) The plan
+   *declares*, by name, beside the thing. (2) Something outside it *agrees*, by name, and the
+   two sets are compared **both ways** — a declaration nobody agreed to fails, and an agreement
+   nobody declares fails, so writing a sentence in the source buys an argument with a human
+   rather than silence. (3) The licence has an **envelope** with a physical meaning, so
+   agreeing to a name does not agree to any amount of it: here, a licensed solid must still be
+   *founded on the bank* — dry centre, under half its plan wet, no deeper than its substructure
+   is drawn. The envelope is what the list is really for, and it earned itself immediately:
+   Carthage's `quay-fort` would have passed the "over water, historically" argument on the
+   nod, and it fails the depth limb by a factor of two, because seven and a half metres of
+   open gulf under a third of a platform is not a quay. **Test: can the thing under test widen
+   its own licence by editing itself? If yes, you have written a comment.**
 
 ---
 
@@ -2257,6 +2292,383 @@ frames over 20 ms**. The density is free.
   its roof is the ring, so the number reads high against a photograph by an amount nothing here
   has measured. `MAP-METHOD.md` rule 11 one level down, and the honest reading of a pass is the
   change rather than the level.
+
+### 23 August 2026 — "there are some big buildings still in the river", and the gate that said there were none
+
+**The report, verbatim.** *"there are some big buildings still in the river."* And
+`probe-fabric` G22, on the same tree: **`PASS — no structure stands below the water surface`,
+0 of 1,106 solids.** One of the two was wrong and finding out which was the whole brief.
+
+**What we expected.** Four hypotheses were handed over in priority order: the gate tests the
+wrong point; monuments are not in its population; the drawn water is wider than the modelled
+channel; the terrace is right and the ground under it is not. The first was expected to be the
+answer and it was — but the *reason* it was the answer is a different and worse thing than
+"corners are not gated", and two of the other three turned out to be measurably false in ways
+worth writing down.
+
+**Measure the complaint first, in the units of the complaint** (rule 11). Before touching
+source: `tools/shots/tiber-solids.shot.mjs`, five cameras on the water, none above 62 m.
+`screenshots/rome-river-solids/01` is the frame. The Mausoleum of Hadrian's podium wall goes
+into the Tiber; `02`, at 1.75 m on the bank, shows the same wall **hanging in the air over the
+water** with daylight under it, because monument prisms are drawn from one ground sample at the
+centre with `bottom: false`; `03` is the same podium from the north-east, bone dry. The fault is
+one-sided, which is the first clue about why a centre test could not see it.
+
+#### The cause: a sample lifted out of an extended thing
+
+G22 sampled five points — the centre and the four corners of the oriented box — and gated on the
+centre. Rasterising the whole footprint at 2 m against the same `terrain.heightAt` it already
+used:
+
+| row | wet plan | of | % | worst ground | centre datum | old G22 |
+|---|---|---|---|---|---|---|
+| `mausoleum-hadrian` | 1,932 m² | 9,069 | 24 % | **0.40 m** | 7.80 m | pass |
+| `theatre-marcellus` | 435 m² | 2,476 | 18 % | 1.32 m | 7.80 m | pass |
+| `wall#33` | 14 m² | 67 | 21 % | 1.68 m | 9.22 m | pass |
+
+Water is drawn at 5.0 m, so 0.40 m of ground is **four and a half metres under the surface**,
+over a fifth of an 89 m podium, and the check that owns the question answered *pass* because the
+one point it looked at was on the bank.
+
+**This is rule 31's mirror, one level up.** Rule 31 is a week old — *a constant lifted out of a
+two-sided thing keeps the side it was lifted from, and the other side then becomes impossible
+rather than merely wrong.* Here: **a sample lifted out of an extended thing keeps the point it
+was taken at, and the rest of the extent becomes invisible rather than merely approximate.** A
+centre is not a footprint, and the difference is not a tolerance — it is a different question.
+
+**And the evidence was already written down, twice, by the people who wrote the check.** The
+Transtiberim pass recorded *"0 under water, same 3 wet corners"* — a check reporting the fault
+in the same sentence as the pass. And `probe-fabric`'s own `WATER_EXPECTED` comment asserted, in
+prose, *"So G22 fails on it"* about the Theatre of Marcellus, on a tree where it did not. **A
+comment claiming a check fails is not the check failing**, and it is more dangerous than no
+comment, because the next reader budgets for a known failure that is not being detected.
+
+#### Why the footprint does not fit: the projection folds the meander onto the building
+
+The deeper cause is not the check. Measured against the survey rather than the model
+(`tools/scratch/riverfit.mjs`):
+
+| | real clearance to the channel edge | projected | own half-reach, world m |
+|---|---|---|---|
+| `mausoleum-hadrian` | 77 real m | 34 (`KX`) / **27** (`KZ`) | **48** |
+| `theatre-marcellus` | 60 real m | 26 / **21** | **28** |
+
+**The building is nearly twice as wide as the gap it has**, and it is wide because its plan is
+held in *world* metres while the gap is a *projected* distance. That is rule 22 applied to a
+footprint instead of a cross-section — *a constant in world metres is a variable in real metres
+whenever the projection is anisotropic* — and rule 10 one level up: **compute whether the module
+fits inside the projection before choosing it.** Nobody had asked the question of a monument,
+only of an insula between two cross-streets.
+
+`layout.ts` had already written the prediction and then reasoned past it. `FAR_BANK(z, 100)` is
+a centre-to-bank clearance and its own comment says: *"a 100 m centre clearance is not 100 m of
+clearance for an 89 m podium."* It then concludes the override is **inert**, and it is — *at the
+monument's own row*, where the bank stands 146 m west. Over the podium's own 101 m of z the
+Tiber swings 250 world metres west across it, and at z 867 the box's east edge is **71 m east of
+the west bank**, i.e. in the channel. A clearance evaluated at one row of a footprint that spans
+many rows of a bending river is the same fault as the centre test, in the placement rule instead
+of the gate.
+
+#### Two hypotheses measured and closed
+
+- **"The drawn water is wider than the modelled channel" — no, and it is worth knowing.**
+  `WaterSurface`'s fragment shader discards where `vWater.y - bedHeight(vWater.xz) <= 0`, reading
+  the *same* baked height texture `terrain.heightAt` reads, with `uSurge` 0 on Rome. So in the
+  near field the water is drawn exactly where `heightAt < waterLevel`, and G22's ruler is the
+  drawn waterline rather than a model of it. The one real divergence is at range: the water's
+  bed is sampled at screen-derivative mip while the ground mesh is sampled at clipmap LOD, so a
+  distant shoreline drifts laterally by metres. **Not the fault here, and the right thing for the
+  gate to keep using.**
+- **"Monuments are not in the population" — half true, and the half that is true is the
+  interesting one.** G22 walks `getObstacles()`, which does contain monuments. What it does not
+  contain is `soft` rows, and those left the denominator *silently* — rule 13's check going dark.
+  On Rome that is three (`tiber-island`, `janiculum`, `gardens-sallust`), on Carthage two
+  (`tophet`, `forum`, both `solid: false`).
+
+  **And not walking them is a measurement, not laziness.** The Janiculum's reserved box has a
+  south-east corner on ground at 0.40 m — under water — and the ridge is *drawn* as a mound of
+  radius 230 whose nearest stone is **281 m from that corner**. Grading the box would report a
+  landform standing in a river it is not in. That is the same shape as the keep-out circle drawn
+  for an elliptical mound one file over: **a landform's plan is ground, not a cross-section, and
+  the reserved rectangle is not the drawn shape.** So the rows are named, counted and gated on
+  membership instead, and `--inject=water-population-drop` proves the gate.
+
+#### What the gate does now, and that it can fail
+
+G22 rasterises each solid's own oriented rectangle at `WATER_SAMPLE_M` = 2 m — the terrain
+field's own 1.367 m spacing rounded up, so the pitch cannot step across a 28 m channel — and
+grades the wet **area** against `WATER_FOOT_TOL_M2` = 4 m². **The tolerance is one sample cell
+and nothing was fitted to the data**: rule 12 says a test tangent to its own threshold answers by
+rounding, so the tolerance absorbs the one arbitrary thing, which is where the raster's cells
+fall against a continuous waterline. The populations are two orders of magnitude either side of
+it on both maps — 1,932 / 435 / 14 m² against a field of zeroes on Rome.
+
+| | before | after |
+|---|---|---|
+| Rome | 15/27, 12 failing | **14/27, 13 failing** |
+| Carthage | 13/22, 9 failing | **13/22, 9 failing** |
+
+**The control does not move and it finds four faults instead of one**: `temple-sea` (2,732 m²,
+97 % of plan, 9.7 m under, which the centre test already had), plus `quay-fort` at 360 m² and
+two curtain segments, which it did not. **Three of Rome's three and three of Carthage's four
+have a dry centre**, and the run prints that integer every time, because it is the whole argument
+for the change in one number.
+
+**Three injections, all shown red.** `water-in-the-channel` puts a 40 × 30 m solid at the deepest
+water *found by search against the live terrain*, so it cannot go stale when the channel moves.
+`water-population-drop` drops a row from the no-solid list. And the one that matters:
+**`water-straddle-the-bank`** puts a 60 × 40 m solid on **dry ground** whose plan reaches into
+the water — the Mausoleum's shape, synthesised. On Rome it lands at (−416, 8) with a centre
+datum of **7.80 m, above the surface**, and 500 m² of wet plan. The form this replaces passes it
+by construction; the area form cannot. **That is the difference between the two checks, isolated
+in one run**, and it is rule 18's test for a repair: the new class must be able to fail.
+
+#### What is NOT fixed, and why it is the owner's call and not this branch's
+
+**Rome's G22 is red on this branch and the buildings are still in the river.** Every fix
+available spends fidelity on an axis the survey exists to protect, and the numbers are:
+
+| option | what it costs | does it clear the water? |
+|---|---|---|
+| give `mausoleum-hadrian` the `draw` it is missing | it is drawn at **1.058** of its published plan against a cohort median of **0.59** — the largest ratio on the map, and one of only two masonry rows with no `draw` at all. At 0.5 it is out of the channel (155 m² of bank left); at **0.35** it is dry | yes, at 0.35 — which is `KZ`, and that is not a coincidence: the binding perpendicular on an east–west reach is compressed by `KZ`, so a plan compressed by the same factor keeps its real clearance ratio |
+| make `FAR_BANK` footprint-aware | the direct repair of the mirror above — evaluate the bank over the footprint's whole z-span and subtract its half-width. Moves the Mausoleum **102 m west** of a survey row the judge called *"the best-placed monument on the map"*, 8 m from the inked mausoleum on the plate | yes, and 102 m is inside the declared 120 m override bound |
+| leave it and stop drawing it | the `offMapSouth` treatment, name printed at boot | yes |
+
+
+**And a fourth, found by sweeping instead of arguing, which is much the cheapest**
+(`tools/scratch/riverbudge.mjs` sweeps plan scale, northing and easting against the same wet-area
+measure G22 gates on):
+
+| | to clear the 4 m² gate | wet plan at that setting |
+|---|---|---|
+| `mausoleum-hadrian`, shrink the plan | `draw` **0.35** | 0 m², worst ground 5.97 |
+| `mausoleum-hadrian`, move west | **−120 m** | 0 m², worst 7.48 |
+| `mausoleum-hadrian`, move **north** | **−30 m in z** | **0 m², worst 5.08** |
+| `theatre-marcellus`, shrink the plan | does not clear at any scale down to 0.30 | 95 m² at 0.30 |
+| `theatre-marcellus`, move west | **gets worse**, 407 → 2,003 m² by −80 m | — |
+| `theatre-marcellus`, move **north** | **−20 m in z** | **2 m², worst 4.75** |
+
+Thirty world metres and twenty. Every other axis costs three to six times as much or does not
+converge at all, and moving the Theatre west makes it five times worse — which is worth knowing
+before anyone reasons about it from a plan view, because west *looks* like the way out of a
+river that runs north–south and this reach does not.
+
+**It is still not free and it is still not this branch's call.** 30 world metres of z is
+**86 real metres** of northing on a row the judge's plate control placed to 8 m, and 20 is 57
+real metres on a row that was moved 39 m *to* a plate control this month with a stated error of
+30. And it would break `assertRomeFrame`'s z-clamp check, which gates at 10 m over 28 rows and
+currently reads 7.6.
+
+**The deeper reading, which is why none of these is obviously right.** The channel is digitised
+from 451 stations and agrees with a second independent survey to 1.1 world metres. The monument
+is on a plate control to 8 m. **Both data are good and they still overlap**, which means the
+overlap is manufactured by the projection rather than by either datum: at `KZ` 0.35 the Vatican
+meander is folded onto a building whose plan did not compress with it. So the repair that is a
+correction rather than a nudge is the plan (rule 22 applied to a footprint), and its cost is
+that `drawHeightOf` defaults to `draw`, so `draw: 0.35` also makes Castel Sant'Angelo **11 m
+tall**. Rule 14 permits the escape — a named anisotropy with the ratio printed — and it was
+earned against exactly this, so invoking it deliberately for one row is a decision and not an
+oversight. That is the shape of the question, and it is the owner's.
+
+And the Theatre of Marcellus is harder than any of them: it is *already* the smallest ratio on
+the map (0.252) and at 0.3 it is still 95 m² wet. Its real clearance is 60 m. **It stood on the
+Ripa, and Rome genuinely built out over that water.** So "should Rome have structures on piles
+over the Tiber at all" is a design question with a real historical answer on both sides, and it
+went to the owner rather than being decided in a probe branch.
+
+**The methodological point, which is the reusable part**: the gate change and the city change
+are separable, and the gate change is worth shipping on its own even though it makes the score
+go down and fixes nothing the player can see. It converts a fault the owner could see and the
+project could not measure into one that is measured, named, counted and printed every run. The
+city change then has a target and a receipt. Shipping them together would have hidden which of
+the two did the work.
+
+**One thing reported and deliberately not gated, and it is still live.** **Eight** solids on
+Rome and four on Carthage are dry but stand within 0.6 m of the surface — the city's own
+`QUAY_FREEBOARD`, quoted rather than chosen. That is `e/city/rome-fill`'s open item
+(*"four Transtiberim blocks stand on ground 0.02–0.25 m over the water, and the fix is to raise
+the terrace in `topography.ts`, not to lower the freeboard"*) made visible without being made a
+fault, so a reader can see whether it is still live without opening a branch. It is: eight, not
+four, and every one of them becomes a G22 fault the day the terrace moves the wrong way. A
+number printed beside a gate is how an open item stops being folklore.
+
+### 23 August 2026 — the owner's ruling on the buildings in the river: shrink one, move two, declare three
+
+The pass above measured the fault and costed three repairs, and said the choice between them
+was the owner's. It was, and he made it: **shrink the plan and pin the height where the
+position is good; move it where the position is simply wrong; declare it where the building
+genuinely belonged over the water — and keep the gate a gate while doing so.**
+
+| | before this entry | after |
+|---|---|---|
+| Rome | 14/27, 13 failing | **15/27, 12 failing** |
+| Carthage | 13/22, 9 failing | **14/22, 8 failing** |
+
+G22 is green on both maps with **0 m² of unlicensed masonry under water**, against 2,382 m²
+on Rome and 3,122 m² on Carthage an hour earlier. Nothing else moved: the check-by-check diff
+between the two runs is one line on each map.
+
+#### The Mausoleum of Hadrian: `draw` 0.35, `drawY` 1, and the position does not move
+
+`survey.ts` now carries both numbers on the row, with the arithmetic beside them. The plan
+comes down from the full published 89 m to 31 m — which clears the channel, the worst ground
+under the footprint going from **0.40 m to 5.97 m** against a 5.0 m surface — and the height is
+**pinned at 1**, so the drum keeps its 21 m and the statue its 41.
+
+**That is rule 14's anisotropy used on purpose, and it is named where it is authored.**
+`drawHeightOf` defaults to `draw` for a reason that is right for every other row on the map — a
+monument should be a smaller model of itself, not a squashed one, and a ground judge measured
+Rome's monuments 1.54× too tall for their width before that default existed. At 0.35 the
+default gives Castel Sant'Angelo an **11-metre drum**, which is not a smaller mausoleum, it is
+a garden folly. The cost of the override is stated on the row rather than discovered later:
+**the drum reads narrow for its height from close up**, 22 m across under a 47 m total where
+the real building is 64 across and 48 tall.
+
+The alternative was 30 world metres of z, which is **86 real metres of northing on a row a
+plate control placed to 8 m**, and it breaks `assertRomeFrame`'s z-clamp gate. The owner took
+the narrow drum. `drawY`'s own docstring had asked that any row setting 1 say why on the row
+and expect to be argued with; this is the first row to do it, and the argument is there.
+
+#### The Theatre of Marcellus: declared, and the piles are drawn
+
+No plan scale takes the Theatre out of the channel — 95 m² still wet at `draw` 0.30, against a
+4 m² gate — and moving west makes it five times worse. It is the one row where *"it belongs
+over the water"* is an answer rather than an excuse: the theatre stands on the **Ripa** with
+its stage flank toward the Tiber, which is Platner (*"the stage is toward the river"*) and is
+already in the row's own citation. **Carrying that flank on piles is a modelling decision, not
+a second citation, and the row says so** — it is the only treatment that keeps the position the
+plate control gave it without standing masonry in open channel, and stating it as a decision is
+how the next reader knows to argue with us rather than with Platner.
+
+So the row declares `overWater` with its reason, and **`monuments.ts:buildRipaPiles` draws the
+substructure**: a pile field under the wet part of the plan — travertine footing driven into
+the bed, timber pile up to the floor plate, a capping beam every other row — and the wet
+perimeter bays are built as **open piers instead of a battered wall**, so from the water you
+can see under the building. That last part is the point. `buildSubstructure` already ran a
+solid plinth down into the Tiber, and a solid plinth standing in a river is exactly the picture
+the owner reported. Piers on piles is the Ripa; a wall is a flood.
+
+#### The two Carthage rows that were simply in the wrong place
+
+The control moved, and it moved because the check can now see two faults that were real and
+old, not because anything was loosened:
+
+- **The Temple by the Sea** stood **9.69 m under the sea across 97 % of its plan, with a wet
+  centre.** It had no cite when it was written and none now. Moved 107 m onto the land, to
+  (100, 1150). The seat is chosen by a rule and swept in `tools/scratch/seasolids.mjs`: of the
+  dry seats that also keep every way's reserved belt and every monument's clearance, take the
+  least **relief** under the plan inside 120 m. The *nearest* dry seat is 89 m away and worse —
+  this coast is a 28–36 % bluff, so a 64 m plan on it crosses 23 m of ground and the builder
+  seats the monument on `heightAt(centre)`, floating the seaward end 13 m in the air. At the
+  chosen seat it crosses 16.7 m, which is inside this map's own range (the forum sits on
+  12.5 m, the merchant harbour on 25.0, the Byrsa on 31.7). **Levelling ground under a
+  Carthaginian monument the way Rome's `buildSubstructure` does is a real gap, and it is named
+  here rather than fixed here.**
+- **The Roman quay-fort** hung 30 % of its platform over **7.57 m** of open gulf with a dry
+  centre — invisible to the five-point form. §6.4 puts it *on* the captured quay, and a quay is
+  land. Moved 27 m landward to z 1093, where the whole plan stands at 0.77 m or better, 61 m
+  clear of the nearest way's belt and 17 m clear of `stoa-seaward`.
+
+**Neither was written into the licence list, and the envelope is why that was not a judgement
+call.** The Temple fails all three limbs; the quay-fort passes the fraction limb and fails the
+depth limb by nearly a factor of two.
+
+#### The licence, and the four things that stop it being a hole
+
+Rule 37 above is the general form. Concretely: each plan publishes `OVER_WATER_DECLARED` — a
+list of **oriented rectangles on the ground**, each with an id and a reason — and
+`probe-fabric` publishes `OVER_WATER_AGREED` with a citation per row. G22 compares the two sets
+both ways, licenses only their intersection, and refuses the licence anyway unless the solid is
+dry-centred, under `OVER_WATER_MAX_WET_FRAC` = 0.5 of its plan wet, and no deeper than
+`OVER_WATER_MAX_DEPTH_M` = 4.0 m, the depth the substructure is actually drawn to. A
+declaration that licenses nothing is **stale** and fails, exactly as an unused
+`WATER_EXPECTED` row does.
+
+**A rectangle rather than an id, and that is not a detail.** Two of the three declared rows are
+*curtain bays*, and a curtain bay's identity in every consumer here is positional — `wall#33` —
+and changes the moment a gate opens or a ram brings a bay down. A licence keyed on that name
+would evaporate on the first breach. A rectangle on the ground does not.
+
+**And the rectangle licenses only what it CONTAINS, every corner.** The first draft matched on
+the solid's *centre*, which is rule 36 living inside the fix for rule 36: a 300 m insula whose
+centre happened to fall inside a 36 m river-wall envelope would have been absolved by it.
+Containment cannot do that, because nothing bigger than the declaration can be inside it — and
+that is also why the envelopes in `src/` are drawn **loosely** rather than shaved to the
+masonry. With containment doing the discrimination a loose envelope costs nothing, while a
+tight one only makes the licence go stale the first time a bay pitch moves by a metre.
+
+**Containment then found a real thing, immediately, and it is worth the paragraph.** Turning
+the test on made Rome go red with the Theatre faulted *and* its own declaration reported
+**stale** — the declaration was written for that row and did not contain it. The reason is
+`CitySystem:occRot`, which **negates plan rotation at the sim boundary** because `Obstacles.ts`
+measures yaw the other way round and the fix was a negation there rather than a change to
+everyone's axes. So the rectangle `layout.ts` calls the Theatre and the rectangle the collision
+surface calls the Theatre are **mirror images** at any non-zero bearing, and the Theatre's is
+−0.513 rad. A gate that compares plan data against the sim's collision set has to cross that
+boundary, and nothing had ever needed to before: every other check reads one side or the other.
+
+The repair is not to negate a rotation in one more place. It is to publish the declaration as
+the plan rectangle's **axis-aligned bounding box**, which is *invariant* under the mirroring —
+flipping the sign of `rot` leaves `|cos|` and `|sin|` alone — so the envelope is the same
+envelope in both conventions and cannot rot the day somebody changes one of them. **General
+form: when two subsystems disagree about a sign, do not translate between them at a third
+site; find the quantity that does not care.**
+
+What each licence actually covers, printed every run:
+
+| map | declaration | solids | wet plan | deepest | source |
+|---|---|---|---|---|---|
+| Rome | `theatre-marcellus` | 1 | 434.8 m² (17.6 %) | 1.32 m | the cavea on the Ripa |
+| Rome | `river-wall-return` | 1 | 14.4 m² (21.4 %) | 1.68 m | `works.ts` runs it 3 m past the bank on purpose |
+| Carthage | `south-anchor` | 2 | 30.2 m² (40 %, 33 %) | −0.71 m | `CARTHAGE_WALL_LINE`: the wall dies in the lagoon |
+
+**Every one of those three was already written down in `src/` before the check could see it**,
+which is the uncomfortable part and the same shape as the pass above: the river wall's own
+builder says *"into the channel by a couple of metres… a wall that stops at the waterline
+leaves a cell of dry bank the raster can round"*, and `CARTHAGE_WALL_LINE` says *"both anchors
+die on water and the south one dies* in *it"* and measures the 12 m. Three deliberate design
+statements sat in three files, and the first instrument able to read them was the one that
+failed them.
+
+Three injections, all shown red: `over-water-drop` (the plan declares a row this file no longer
+agrees to — **and the masonry it covered comes straight back as a fault**), `over-water-phantom`
+(a licence held against masonry no plan claims), and `over-water-shallow` (the envelope refusing
+a row that is declared, agreed and dry-centred). And **`water-straddle-the-bank` is untouched
+and still red**, because an undeclared solid on dry ground reaching into the channel is
+precisely what the owner saw.
+
+#### The eight, decided: named, not gated, and they are two different repairs
+
+The pass above reported eight Rome solids within 0.6 m of the surface and left them ungated.
+They are now **printed by id, kind and freeboard on every run**, and with the names in front of
+you the decision is easy, because the count was hiding the fact that they are not one
+population:
+
+```
+  2 monument   stadium-domitian   +0.03 m     mausoleum-augustus +0.05 m
+  6 building   insula#806 +0.16   #810 +0.25  #811 +0.31  #812 +0.37
+               insula#338 +0.42   #340 +0.55
+```
+
+**Not a check, and 0.6 m is the reason rather than the excuse.** `QUAY_FREEBOARD` = 0.6 m is
+the city's own *buildability* rule — the clearance a house floor needs over the quay — and it
+is applied by `inTheRiverAt` when the generator chooses a plot. The six insulae are exactly the
+population it is for, standing at 0.16–0.55 m, i.e. *inside the generator's own freeboard*;
+that is `e/city/rome-fill`'s open terrace item, whose own words are *"the fix is to raise the
+terrace in `topography.ts`, not to lower the freeboard"*. It is the right fix and it is still
+live. Turning 0.6 m into a G22 limb would fail those six for a defect that is one branch over
+and already understood, and would fail Carthage's four for the same reason.
+
+The other two are **monuments**, and for a monument the freeboard rule is the wrong instrument
+twice over: a monument is not placed by the plot generator at all — it is projected from the
+survey — and it stands on a substructure that `buildSubstructure` foots **1.1 m below the
+lowest ground under it**, so the Stadium of Domitian's *masonry* goes under the waterline
+whether or not its *ground* does. Grading a monument on the freeboard its neighbours' plots
+need would report a fault about the wrong object, which is rule 11 exactly: the footprint and
+the stone are two objects. **What those two want is a different check — does a monument's drawn
+substructure stand in the water? — and that check does not exist.** Naming the gap is this
+pass's answer; building it is not, because it needs the drawn vertices rather than the plan,
+and that is G14's machinery rather than G22's.
 
 <!-- Append new entries above this line. -->
 

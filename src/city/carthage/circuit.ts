@@ -84,10 +84,16 @@ export const CARTHAGE_WALL_LINE: WallLine = {
    * that ends in a lagoon is a wall with no flank march round it. What it does not want is
    * the 22.5 m anchor **tower** founded at −0.75 m, which is what was there.
    *
-   * The anchor itself is not moved. `nBays` is `round(length / 30.8) & ~1`, so anything east
-   * of x −943.4 drops the wall from 64 bays to 62 and relays every bay, tower, postern, ramp
-   * and casemate on the circuit to bury one tower — and the window of dry ground before that
-   * boundary is 13 m wide, which is a footing measured in centimetres of margin.
+   * The anchor itself is not moved. `carthageBayLattice` lays
+   * `round(length / (PUNIC.towerSpacing * 0.5)) & ~1` bays — **66** of them at a 30.02 m
+   * pitch, on a 1,981 m frontage — so moving the anchor east drops the count by two and
+   * relays every bay, tower, postern, ramp and casemate on the circuit to bury one tower, and
+   * the window of dry ground before that boundary is a footing measured in centimetres of
+   * margin. (This paragraph read *"`nBays` is `round(length / 30.8) & ~1` … 64 bays to 62"*
+   * for two passes. The divisor is 29.6, not 30.8, and the count is 66. The conclusion is
+   * unchanged and the transcription was not: quoting a formula is how a docstring rots, so
+   * `layout.ts:OVER_WATER_DECLARED` — which needs this lattice to place the anchor's
+   * over-water envelope — calls the function instead of copying it.)
    */
   waterLevel: SEA_LEVEL,
   /**

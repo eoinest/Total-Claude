@@ -298,6 +298,30 @@ export interface RomeMonument {
   /** Placed on the terrain's river centreline (Tiber Island). */
   onRiver?: boolean;
   /**
+   * **This building stands over the water on purpose, and this is the reason it may.**
+   *
+   * The string is the declaration. A row that carries one is drawn with a substructure into
+   * the channel (`monuments.ts:buildRipaPiles`) and is published in `layout.ts`'s
+   * `OVER_WATER_DECLARED`, which `probe-fabric` G22 reads as a *claim* and grades against a
+   * list of its own. Setting it is not an exemption and cannot be used as one:
+   *
+   *  - G22's licence is gated on MEMBERSHIP against `OVER_WATER_AGREED`, typed into the probe
+   *    with a citation per row. A row that declares itself over water without being on that
+   *    list fails the check *harder* than one that says nothing, because the declaration
+   *    itself is then unagreed.
+   *  - The licence is bounded. A licensed row must still be **founded on the bank**: its
+   *    centre dry, less than half its plan wet, and its deepest wet ground within the depth
+   *    the substructure is actually drawn to. A building standing *in* the channel fails
+   *    every one of those and cannot be laundered into a wharf by writing a sentence here.
+   *
+   * One row carries it: `theatre-marcellus`. The theatre stands on the **Ripa** with its stage
+   * flank toward the Tiber — Platner, quoted in its `cite` — and carrying that flank on piles
+   * over the foreshore is this map's answer to a footprint no plan scale gets out of the
+   * channel. The position is sourced and the substructure is a modelling decision; the row
+   * says which is which, so a later reader argues with the decision and not with Platner.
+   */
+  overWater?: string;
+  /**
    * Landscape rather than masonry — gardens, a planted hill, an island. Soft footprints
    * keep the insula generator out but are exempt from the monument-overlap resolver and
    * its assertion, because a temple standing in the middle of the Horti Sallustiani is
@@ -513,6 +537,10 @@ export const ROME: readonly RomeMonument[] = [
     name: 'Theatre of Marcellus',
     e: -252, n: -91, len: 130, wid: 115, bearing: 204, axis: 'z',
     draw: 0.407, // 130 x 115 m real -> 53 x 47 m drawn
+    overWater: 'on the Ripa with its stage flank toward the Tiber (Platner), carried on piles '
+      + 'over the foreshore — a modelling decision, because no plan scale takes this footprint '
+      + 'out of the channel and moving it 20 world metres north is 57 real metres off a plate '
+      + 'control',
     where: 'campus-martius', complex: 'octavia-marcellus',
     cite: '41.8918 N 12.4797 E. Cavea 111 m across, 32.6 m to the top of the attic, 41 arcade ' +
       'bays per storey, seated c. 15,000; dedicated 13 BC. The cavea opens SE onto its stage, ' +
@@ -523,7 +551,30 @@ export const ROME: readonly RomeMonument[] = [
       'Moved 39 m this pass to the judge\'s plate control (how: "plate", err 30 m), which reads ' +
       'the cavea\'s centre of curvature at 0.46 m/px. Worth noting why the old value survived so ' +
       'long: the same reader\'s contact sheet at 1.0 m/px had reported zero error. A monument is ' +
-      'not checked until it is checked at a scale that can see it.',
+      'not checked until it is checked at a scale that can see it. ' +
+      '**This is the one row on the map that declares itself over the water, and the ' +
+      'declaration is the answer rather than an excuse.** 435 m2 of the drawn cavea — 18 % of ' +
+      'its plan — stands on ground down to 1.32 m under a 5.0 m surface. Unlike the Mausoleum, ' +
+      '*no plan scale gets it out*: swept against G22\'s own wet-area measure ' +
+      '(`tools/scratch/riverbudge.mjs`) it is still 95 m2 wet at `draw` 0.30, and moving it ' +
+      'WEST — the direction a plan view suggests, on a reach that does not run north-south — ' +
+      'makes it five times worse, 407 m2 to 2,003 m2 by 80 world metres. It clears at 20 world ' +
+      'metres north, which is 57 real metres of northing off a plate control that placed it to ' +
+      '30 m. ' +
+      '**And the row is on the water side of its own quarter, which is sourced.** This entry\'s ' +
+      'own citation above, from Platner, is *"the stage is toward the river"* — so the theatre ' +
+      'stands on the **Ripa** between the Forum Holitorium and the Tiber with its stage flank ' +
+      'seaward, and the dry side is the arcaded back. What is a **modelling decision** rather ' +
+      'than a citation is the substructure: the map carries that seaward flank on piles over ' +
+      'the foreshore, because it is the only treatment that keeps the row where the plate ' +
+      'control put it without standing masonry in open channel. It is stated as a decision ' +
+      'here so a later reader argues with the decision and not with Platner. ' +
+      'So the row declares `overWater`, `monuments.ts:buildRipaPiles` draws the piles under ' +
+      'the wet part of the plan and opens the wet perimeter bays into piers, and G22 licenses ' +
+      'it BY NAME against a list typed into the probe — bounded to a dry centre, under half ' +
+      'the plan wet, and no deeper than the substructure is drawn. It is not an exemption: the ' +
+      'same run fails every solid in the water that has not declared itself, and an injected ' +
+      '60 x 40 m box straddling the bank goes red beside it.',
   },
 
   // ---- the Capitol, the Fora and the Palatine ----------------------------
@@ -868,9 +919,41 @@ export const ROME: readonly RomeMonument[] = [
     id: 'mausoleum-hadrian',
     name: 'Mausoleum of Hadrian',
     e: -1326, n: 1178, len: 89, wid: 89, bearing: 177,
+    draw: 0.35, // 89 x 89 m real -> 31 x 31 m drawn
+    drawY: 1, // and the only row in the table that keeps its height. See below.
     where: 'trans-tiberim', farBank: true,
     cite: '41.9031 N 12.4663 E. Drum 64 m across on an 89 m square podium, reached by the ' +
-      'Pons Aelius (AD 134); the imperial mausoleum in 271 and later Castel Sant\'Angelo.',
+      'Pons Aelius (AD 134); the imperial mausoleum in 271 and later Castel Sant\'Angelo. ' +
+      '**`draw` 0.35 and `drawY` 1, and this is the deliberate anisotropy rule 14 warns ' +
+      'about, taken with its eyes open.** The owner: *"there are some big buildings still in ' +
+      'the river."* At the full published plan 1,932 m2 of this 89 m podium — 24 % of it — ' +
+      'stood on ground 0.40 m above datum under a 5.0 m water surface, four and a half metres ' +
+      'under the Tiber, while its centre datum read a dry 7.80 m. `probe-fabric` G22 rasterises ' +
+      'the footprint now and failed on it; at 0.35 the worst ground under the plan is 5.97 m ' +
+      'and the check is green. ' +
+      '**The cause is the projection and not either datum.** The real clearance from this ' +
+      'point to the channel is 77 real metres, which projects to 27 world metres at `KX`/`KZ`; ' +
+      'the footprint\'s 44.5 m half-reach does not project at all, because a building keeps ' +
+      'its true plan while position compresses. Both inputs are good — the position is a ' +
+      'plate control at 8 m and the channel agrees with a second independent survey to 1.1 ' +
+      'world metres — so the overlap is manufactured by the frame. That is rule 22 applied to ' +
+      'a plan instead of a cross-section. ' +
+      '**What was measured and what it cost** (`tools/scratch/riverbudge.mjs`, swept against ' +
+      'the same wet-area measure G22 gates on): the footprint clears the channel at `draw` ' +
+      '0.35, at 30 world metres north, or at 120 world metres west. Thirty world metres of z ' +
+      'is **86 real metres of northing** on a row a plate control placed to 8 m, and it breaks ' +
+      '`assertRomeFrame`\'s z-clamp gate. So the plan gives way and the position does not: ' +
+      'accuracy of *place* is what this table is for. ' +
+      '**And the height is pinned, which is the anisotropy.** `drawY` defaults to `draw` ' +
+      'precisely so a monument is a smaller model rather than a squashed one, and at 0.35 the ' +
+      'default gives Castel Sant\'Angelo an **11-metre drum** on a 31 m podium — not a smaller ' +
+      'mausoleum, a garden folly. `drawY: 1` keeps the drum\'s 21 m and the statue at 41 m, so ' +
+      'the tomb still reads as the tallest thing on the far bank from the assault\'s side of ' +
+      'the river, which is the whole reason it is on this map. The cost is stated rather than ' +
+      'hidden: **the drum reads narrow for its height from close up** — 22 m across against a ' +
+      '47 m total, where the real building is 64 across and 48 tall. The owner took that in ' +
+      'preference to 86 real metres of position error, and `drawY`\'s own docstring asks any ' +
+      'row that sets 1 to say why here and expect to be argued with. This is the argument.',
   },
   {
     id: 'janiculum',

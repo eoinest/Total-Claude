@@ -34,6 +34,50 @@ export interface Obb {
 }
 
 /**
+ * **Masonry a city plan declares as standing over its own water, and why.**
+ *
+ * Some structures belong in the water and no amount of moving them fixes that: the Theatre of
+ * Marcellus stood on the Ripa, Rome's river-wall return runs *into* the channel so the raster
+ * cannot round a cell of dry bank at the end of the Aurelian circuit, and Carthage's south
+ * anchor dies in the Lake of Tunis on purpose, because a wall that ends in a lagoon is a wall
+ * with no flank march round it. Each of those is authored beside the thing it describes and
+ * every one of them has a source.
+ *
+ * **This is a declaration, not an exemption, and the difference is where it is graded.**
+ * `probe-fabric` G22 reads the list as a *claim about intent* and grades it against
+ * `OVER_WATER_AGREED`, which is typed into the probe with a reason per row. Three things
+ * follow, and they are the reason the type exists rather than a boolean on the obstacle:
+ *
+ *  1. A plan that declares something the probe has not agreed to **fails**, by name. Adding a
+ *     row here does not buy silence; it buys an argument with a human.
+ *  2. A declaration that licenses nothing — because the masonry moved out from under it — is a
+ *     STALE licence and also fails. Rule 13: a list that describes a city that is no longer
+ *     here is a check gone dark.
+ *  3. The licence is **bounded by an envelope**, not open. A licensed solid must still be
+ *     founded on the bank: dry centre, under half its plan wet, and no deeper than the
+ *     substructure is drawn. A building standing in the channel fails all three.
+ *
+ * The declaration **is** a rectangle in world metres — it extends `Obb` — rather than naming an
+ * obstacle, because the things that need declaring are not all monuments: two of the three are
+ * *curtain bays*, whose ids in every consumer are positional (`wall#33`) and change when a gate
+ * opens or a ram takes a bay down. A rectangle on the ground does not.
+ *
+ * The external check licenses a solid only when the declaration **contains** it, every corner,
+ * so a rectangle can never absolve anything bigger than itself. Two consequences worth knowing
+ * before authoring one. Draw it **loosely**: a tight envelope buys nothing and goes stale the
+ * first time a bay pitch moves by a metre. And prefer `rot: 0`, because `CitySystem:occRot`
+ * negates plan rotation at the sim boundary — the plan's rectangle and the collision set's
+ * rectangle are mirror images at any non-zero bearing, and an axis-aligned envelope is the one
+ * shape that is the same in both conventions.
+ */
+export interface OverWaterDeclaration extends Obb {
+  /** Stable name for the declaration, gated on membership by the external check. */
+  id: string;
+  /** Why this masonry is allowed to stand in the water. One sentence, with its source. */
+  why: string;
+}
+
+/**
  * `makeRotationY(r)` sends local +X to world (cos r, −sin r) and local +Z to
  * (sin r, cos r), so these are the box's two axes in world space.
  */
