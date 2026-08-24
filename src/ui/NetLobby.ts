@@ -57,12 +57,13 @@
  *     the machine next door has a perfectly good address to be sent. Withholding here is
  *     honest about the URL bar and wrong about the world.
  *
- * `/__tc/lan` is how the second case identifies itself: a same-origin JSON plaque that
- * `tools/lib/vite-runner.mjs` serves **only** on a non-loopback bind (see `lanPlaque` there).
- * Present, it names the address and the relay port and the invite is built out of those.
- * Absent — deployed site, plain dev server, anything else — nothing changes and the refusal is
- * the one the previous pass wrote. The default is still to withhold; what moved is the set of
- * cases in which a link genuinely exists, not the willingness to claim one that does not.
+ * `<meta name="tc-lan">` is how the second case identifies itself: a plaque
+ * `tools/lib/vite-runner.mjs` writes into the document **only** on a non-loopback bind (see
+ * `lanPlaque` there). Present, it names the address and the relay port and the invite is built
+ * out of those. Absent — deployed site, plain dev server, anything else — nothing changes and
+ * the refusal is the one the previous pass wrote. The default is still to withhold; what moved
+ * is the set of cases in which a link genuinely exists, not the willingness to claim one that
+ * does not.
  */
 
 import { CODE_ALPHABET, CODE_LEN, validCode } from '../net/protocol';

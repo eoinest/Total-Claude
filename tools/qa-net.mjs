@@ -1771,6 +1771,20 @@ if (wanted('lan')) {
     'both defaults were 127.0.0.1, so the documented way to play a two-player game was playable by one');
 
   /*
+   * If the address does not answer there is nothing to drive a browser at, and the five checks
+   * below would each report a Playwright timeout about a page that was never served. One
+   * sentence, and the arm stops — the same judgement `norelay` makes when its port is occupied.
+   */
+  reachable: {
+  if (game !== 200 || !String(health).startsWith('relay ok')) {
+    record('lan-arm-can-run', false,
+      'the rest of this arm needs the host command to be serving at that address',
+      `game ${game}, relay '${String(health).slice(0, 60)}' — nothing to point a browser at`,
+      'five Playwright timeouts about a server that is not there is not five findings');
+    break reachable;
+  }
+
+  /*
    * The case the lobby could not solve alone: a loopback URL bar over a LAN-bound server.
    *
    * Nothing is typed into the relay field here on purpose. `defaultRelay()` fills it with
@@ -1845,23 +1859,44 @@ if (wanted('lan')) {
 
   const guestPage = await newPage(chromeGuest);
   await guestPage.goto(invite, { waitUntil: 'domcontentloaded' });
-  await guestPage.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
-  await hostPage.evaluate(INSTALL);
-  await guestPage.evaluate(INSTALL);
-  for (const p of [hostPage, guestPage]) {
-    await p.waitForFunction(() => ['deploy', 'battle'].includes(window.__net()?.phase),
-      null, { timeout: 90000 });
+  /*
+   * Bounded, and the failure is read off the page rather than thrown.
+   *
+   * An invite that carries the right host and the wrong intent — the `host=0` dropped, say —
+   * opens perfectly and then sits on the setup sheet as a second host, and the first version of
+   * this reported that as a five-minute `waitForFunction` timeout with an empty log. The whole
+   * point of §9.12's geometry checks was to stop a Playwright stack standing in for a finding.
+   */
+  const guestReady = await guestPage
+    .waitForFunction(() => window.__game?.ready === true, null, { timeout: 150000 })
+    .then(() => true).catch(() => false);
+  let lh = null;
+  let lg = null;
+  if (guestReady) {
+    await hostPage.evaluate(INSTALL);
+    await guestPage.evaluate(INSTALL);
+    for (const p of [hostPage, guestPage]) {
+      await p.waitForFunction(() => ['deploy', 'battle'].includes(window.__net()?.phase),
+        null, { timeout: 90000 }).catch(() => { /* read below, whatever state it is in */ });
+    }
+    lh = await hostPage.evaluate(() => window.__net() ?? null).catch(() => null);
+    lg = await guestPage.evaluate(() => window.__net() ?? null).catch(() => null);
   }
-  const lh = await hostPage.evaluate(() => window.__net());
-  const lg = await guestPage.evaluate(() => window.__net());
+  const showing = guestReady ? '' : await guestPage.evaluate(() =>
+    (document.querySelector('.tc-lobby h1')?.textContent
+      ?? document.querySelector('.menu h1, .menu-home')?.textContent
+      ?? document.title).replace(/\s+/g, ' ').trim().slice(0, 80)).catch(() => 'nothing readable');
   await shot(guestPage, 'lan-03-guest-followed-the-link');
-  measured.lan.met = { room: roomB, host: lh, guest: lg };
+  measured.lan.met = { room: roomB, host: lh, guest: lg, guestReady, showing };
   record('lan-the-link-is-the-whole-invitation',
-    lh.room === roomB && lg.room === roomB && lh.slot === 0 && lg.slot === 1
+    lh?.room === roomB && lg?.room === roomB && lh.slot === 0 && lg.slot === 1
       && lh.myFaction !== lg.myFaction,
     'a second client given nothing but that link ends up on the other side of the same battle',
-    `${invite.slice(0, 78)}… → room ${lg.room}, slot ${lg.slot}, commanding ${lg.myFaction} `
-      + `against slot ${lh.slot}'s ${lh.myFaction}`,
+    guestReady
+      ? `${invite.slice(0, 78)}… → room ${lg?.room}, slot ${lg?.slot}, commanding ${lg?.myFaction} `
+        + `against slot ${lh?.slot}'s ${lh?.myFaction}`
+      : `the link opened and no battle started in 150 s — the second client is showing "${showing}", `
+        + 'which is what an invite that omits the challenger\'s side of it produces',
     'no code typed, no relay address entered, no URL written by this test');
 
   /*
@@ -1903,6 +1938,7 @@ if (wanted('lan')) {
 
   await hostPage.close(); await guestPage.close(); await plain.close();
   plainRelay.stop();
+  }
   lan.stop();
 }
 
