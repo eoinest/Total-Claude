@@ -708,6 +708,11 @@ const main = () => {
     if (GROUPS.has('stale') && stale.length) {
       // git's own prune: it removes only registrations whose directory is missing, which it
       // re-checks itself. Nothing on disk is touched.
+      //
+      // This is the one thing `--under` does not scope, because git has no scoped prune. It is
+      // left global rather than skipped, because the operation is defined by a condition git
+      // verifies for itself — the directory is not there — and a registration for a directory
+      // that does not exist is not somebody's work under any reading.
       git(['worktree', 'prune', '--verbose']);
       for (const s of stale) { removed.push({ kind: 'stale-metadata', path: s.path, head: s.head }); receipt({ kind: 'stale-metadata', path: s.path, head: s.head, branch: s.branch }); }
     }
