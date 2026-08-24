@@ -3,11 +3,12 @@
  * QA: two clients, one relay, one battle — driven through the real menu with a real mouse.
  *
  * Usage: node tools/qa-net.mjs [--port=5937] [--relay=5989] [--json=path] [--shots=dir]
- *                              [--only=proto,battle,drop,dup,swap,ulp,late,leave,lag,xengine]
+ *                              [--only=proto,battle,siege,lobby,badcode,norelay,drop,dup,swap,
+ *                                      ulp,late,leave,lag,xengine]
  *                              [--all] [--seconds=70] [--keep] [--xsize=ultra] [--xticks=1500]
  *
- * Nine arms by default. `xengine` — two full-scale battles in two browser engines — is opt-in;
- * see `DEFAULT_ARMS`.
+ * Thirteen arms by default. `xengine` — two full-scale battles in two browser engines — is
+ * opt-in; see `DEFAULT_ARMS`.
  *
  * An unknown flag, or an unknown `--only=` arm, exits 2 rather than quietly running nothing —
  * `tools/qa-replay.mjs` explains why at length and the reason is that this project has shipped
@@ -38,6 +39,18 @@
  *
  * Every one of those arms **fails if the session does not notice**. There is no arm here whose
  * pass condition is "nothing happened".
+ *
+ * ## And the lobby, which for weeks it could not see
+ *
+ * Every arm listed above waits for `phase === 'battle'` before it asserts anything, and
+ * `bootMatch` gets there by writing `?net=…&room=…` itself. So for as long as this file has
+ * existed, **not one check had ever loaded `?mp=1`** — the page a player actually starts from,
+ * which was meanwhile unusable by a mouse in three separate ways and had a CREATE A ROOM button
+ * that had never once succeeded. Thirty-eight green checks behind a door nobody could open.
+ *
+ * `lobby`, `badcode` and `norelay` close that. The first types a code and presses the buttons;
+ * the other two press them at a room nobody opened and at an address nothing is listening on,
+ * and pass only if the failure is *named*, with a way out, and without a `pageerror`.
  *
  * ## Ports
  *
@@ -72,11 +85,11 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { bootThroughMenu, ensureServer, waitForServer } from './lib/menu-boot.mjs';
+import { bootThroughMenu, driveMenu, ensureServer, waitForServer } from './lib/menu-boot.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const ARMS = ['proto', 'battle', 'siege', 'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 'lag',
-  'xengine'];
+const ARMS = ['proto', 'battle', 'siege', 'lobby', 'badcode', 'norelay', 'drop', 'dup', 'swap',
+  'ulp', 'late', 'leave', 'lag', 'xengine'];
 /**
  * `xengine` is opt-in, and that is a judgement rather than an omission.
  *
@@ -664,37 +677,71 @@ async function settleTogether(host, guest, ms = 40000, relay = null) {
    * way to 2,640. The clients were right and the instrument was wrong.
    *
    * SIGSTOP rather than a protocol message, because the protocol should not grow a pause verb
-   * for a test's convenience. Whatever turns are already in flight still arrive — SIGSTOP stops
-   * the process, not the kernel's socket buffers — so both clients drain to the ceiling of the
-   * same last turn and stop there, at the same tick, by construction rather than by luck.
-   * SIGCONT afterwards, because the `late` and `leave` arms reuse this match.
+   * for a test's convenience. SIGCONT afterwards, because the `late` and `leave` arms reuse
+   * this match.
+   *
+   * ## And one SIGSTOP is not enough, which cost this arm two red runs on a busy machine
+   *
+   * The paragraph that used to be here said the two clients "drain to the ceiling of the same
+   * last turn and stop there, at the same tick, by construction rather than by luck", on the
+   * grounds that SIGSTOP stops the process and not the kernel's socket buffers. That is true of
+   * the *kernel's* buffer and false of node's. `sock.write` returns false when the kernel buffer
+   * is full and node queues the remainder in the process; a frozen process never flushes it. The
+   * two sockets fill at different rates, because the two pages read at different rates, so a
+   * relay frozen mid-backlog can leave one client holding three turns the other will now never
+   * receive — and no amount of waiting converges them, because the thing that would send them
+   * is stopped.
+   *
+   * Measured on this tree, four runs of `--only=battle` on a machine at load 4: two settled
+   * (2,106 and 2,115, every layer identical) and two reported *"they stopped at different
+   * ticks: 2,112 and 2,117"* — with `checkpoints-agreed` green in both failures and no hash
+   * ever compared, because the comparison never got that far. A red that means "the laptop was
+   * busy" is the thing this file's own header says teaches people to ignore a gate.
+   *
+   * So when both clients have gone static *and are apart*, the relay is let go for a quarter of
+   * a second and stopped again. That flushes whatever was stuck to whichever client was short,
+   * and the next stop finds them level. Bounded, because a loop that could run for ever is a
+   * different way to fail. The comparison itself is untouched: equal ticks are still required
+   * and the five layers are still compared bit for bit.
    */
-  try { relay?.proc.kill('SIGSTOP'); } catch { /* already gone */ }
+  const stop = () => { try { relay?.proc.kill('SIGSTOP'); } catch { /* already gone */ } };
+  const go = () => { try { relay?.proc.kill('SIGCONT'); } catch { /* already gone */ } };
+  stop();
   const t0 = Date.now();
   let last = [-1, -2];
+  let nudges = 0;
   while (Date.now() - t0 < ms) {
     const a = await host.evaluate(() => window.__mark().tick);
     const b = await guest.evaluate(() => window.__mark().tick);
     const na = await host.evaluate(() => window.__net());
     if (a === b && a === last[0] && b === last[1]) {
-      try { relay?.proc.kill('SIGCONT'); } catch { /* already gone */ }
-      return { tick: a, ended: na?.ended ?? '' };
+      go();
+      return { tick: a, ended: na?.ended ?? '', nudges };
     }
     if (na?.ended) {
       // An ended session stops moving; one more read confirms it.
       await sleep(400);
       const a2 = await host.evaluate(() => window.__tick());
       const b2 = await guest.evaluate(() => window.__tick());
-      try { relay?.proc.kill('SIGCONT'); } catch { /* already gone */ }
-      return { tick: Math.min(a2, b2), ended: na.ended, apart: a2 !== b2 };
+      go();
+      return { tick: Math.min(a2, b2), ended: na.ended, apart: a2 !== b2, nudges };
+    }
+    // Both static, and apart: the laggard is missing turns nothing is going to send it.
+    if (a !== b && a === last[0] && b === last[1] && nudges < 6) {
+      nudges++;
+      go();
+      await sleep(250);
+      stop();
+      last = [-1, -2];
+      continue;
     }
     last = [a, b];
     await sleep(350);
   }
   const a = await host.evaluate(() => window.__tick());
   const b = await guest.evaluate(() => window.__tick());
-  try { relay?.proc.kill('SIGCONT'); } catch { /* already gone */ }
-  return { tick: Math.min(a, b), ended: '', timedOut: true, apart: a !== b };
+  go();
+  return { tick: Math.min(a, b), ended: '', timedOut: true, apart: a !== b, nudges };
 }
 
 /** Both clients' final state, for comparison. */
@@ -1330,6 +1377,35 @@ if (wanted('leave')) {
   const m = mainMatch ?? await bootMatch(relay);
   if (!mainMatch) { await deployWith(m.host, 'leave-h'); await deployWith(m.guest, 'leave-g'); await sleep(1500); }
   const before = await m.host.evaluate(() => window.__net());
+  /*
+   * Where the session strip sits, measured against the bar it used to sit on top of.
+   *
+   * `.tc-net` was `top: 8px` and `.topbar` is `top: 0.8em` in a HUD whose em is
+   * `10px * var(--ui-scale)`: the same strip, centred the same way, so the room code and the
+   * link status were drawn straight over the turn clock and both armies' strength. Checked
+   * here because this is the only arm that has a live battle, a HUD and a session at once.
+   */
+  const strips = await m.host.evaluate(() => {
+    const r = (s) => {
+      const el = document.querySelector(s);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { top: Math.round(b.top), bottom: Math.round(b.bottom),
+        left: Math.round(b.left), right: Math.round(b.right) };
+    };
+    return { net: r('.tc-net'), bar: r('.topbar') };
+  });
+  const overlap = strips.net && strips.bar
+    && strips.net.top < strips.bar.bottom && strips.net.bottom > strips.bar.top
+    && strips.net.left < strips.bar.right && strips.net.right > strips.bar.left;
+  measured.stripPlacement = strips;
+  record('session-strip-clears-the-hud', !!strips.net && !!strips.bar && !overlap,
+    'the session strip parks under the top bar instead of on top of it',
+    strips.net && strips.bar
+      ? `strip ${strips.net.top}–${strips.net.bottom}, top bar ${strips.bar.top}–${strips.bar.bottom}`
+      : `strip ${strips.net ? 'found' : 'MISSING'}, top bar ${strips.bar ? 'found' : 'MISSING'}`,
+    'measured from the bar rather than written down, because the bar moves with --ui-scale');
+
   await m.guest.close();
   let after = null;
   const t0 = Date.now();
@@ -1349,9 +1425,350 @@ if (wanted('leave')) {
   record('peer-left-halts', still === stopped,
     'and it stops rather than running on into a battle nobody else is in',
     `tick ${stopped} then ${still} a second later`);
+
+  /*
+   * And the screen the survivor is left looking at, which is the owner's second decision:
+   * halt, state the result, offer a way out — and record no result at all.
+   *
+   * `peer-left` above proves the *session* knows. It proved nothing about the person, who until
+   * this pass got an eleven-point line of red text above the top bar over a battle that would
+   * never move again, and whose only exit was the browser's back button.
+   */
+  await sleep(600);
+  const over = await m.host.evaluate(() => {
+    const el = document.querySelector('.tc-over');
+    if (!el) return null;
+    return {
+      title: (el.querySelector('h2')?.textContent ?? '').trim(),
+      body: (el.textContent ?? '').replace(/\s+/g, ' ').trim(),
+      menu: el.querySelector('#tc-over-menu')?.getAttribute('href') ?? null,
+      save: !!el.querySelector('#tc-over-save'),
+      haveRecord: !!window.__game?.net?.record(),
+    };
+  });
+  await shot(m.host, 'leave-01-peer-left-screen');
+  measured.leaveScreen = { ...(over ?? {}), errs: m.host.__errs.slice(0, 4) };
+  if (!over && m.host.__errs.length) console.log(`  page said: ${m.host.__errs.join(' ; ')}`);
+  record('peer-left-has-a-screen',
+    !!over && /left/i.test(over.title) && /The battle stood at t\+\d+/.test(over.body)
+      && !!over.menu,
+    'the survivor gets a sheet that says the opponent left, where the battle stood, and a way out',
+    over ? `${over.title} — ${over.body.slice(0, 150)}` : 'there is no sheet; the strip is all there is',
+    'the owner\'s shape for it: "The battle stood at t+337, turn 101."');
+  record('peer-left-records-no-result',
+    !!over && /No result has been recorded/.test(over.body)
+      && !/\b(VICTORY|DEFEAT|Victory|Defeat)\b/.test(over.body),
+    'and it does not manufacture a verdict out of an abandoned battle',
+    over ? over.body.slice(-180) : 'no sheet',
+    'BattleFlow\'s dispatch is deliberately not reused: that card exists to print a verdict');
+  record('peer-left-offers-the-record-only-if-there-is-one',
+    !!over && over.save === over.haveRecord,
+    'Save the replay is offered exactly when there is a record to save',
+    over ? `record ${over.haveRecord ? 'present' : 'absent'}, button ${over.save ? 'shown' : 'absent'}`
+      : 'no sheet',
+    'a button that fails when a stranded player presses it is worse than an absent one');
   await m.host.close();
   mainMatch = null;
   relay.stop();
+}
+
+// ---------------------------------------------------------------------------
+// The window every other arm in this file has looked straight past
+// ---------------------------------------------------------------------------
+
+/*
+ * Two clients who find each other through the form, with nobody hand-building a URL.
+ *
+ * **This is the blind spot, and it is structural rather than an oversight.** Every net arm
+ * above waits for `phase === 'battle'` before it asserts anything, and `bootMatch` reaches that
+ * phase by writing `?net=…&room=…` itself. So not one of them has ever loaded `?mp=1`, and the
+ * lobby in front of a working netcode was free to be anything at all. It was: the panel took
+ * `hud.css`'s `.card` rule and rendered 135 px wide with every control below y=1059 on a page
+ * that could not scroll, `#menu-root`'s `pointer-events: none` meant no click could land on any
+ * of them anyway, and CREATE A ROOM had never once succeeded because `/new` came back without
+ * an `Access-Control-Allow-Origin`. Thirty-eight green checks over a front door nobody could
+ * open.
+ *
+ * The pass condition is deliberately the whole flow and not a geometry assertion: type a code,
+ * press CREATE, the other client types the same code and presses JOIN, and a battle happens.
+ * A regression in any one of the three faults above breaks it, and so does a fourth nobody has
+ * thought of yet.
+ *
+ * 5988 is the last free port in the band (see the `siege` arm's note); the three lobby arms run
+ * one after another and each stops its own relay, so they share it.
+ */
+if (wanted('lobby')) {
+  console.log('\n=== two clients through the real form ===');
+  const relay = await startRelay(5988);
+  const room = nextRoom();
+  const host = await newPage(chrome);
+  /*
+   * In through the front door, not at `?mp=1`.
+   *
+   * The one URL this arm is allowed to type is the site's own root. Everything after it — the
+   * lobby, the host's `?net=…&room=…&menu=battle`, the challenger's `&host=0` — is written by
+   * the product, which is the entire claim being made.
+   */
+  await host.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+  await host.waitForSelector('.menu.at-home .dest-multiplayer', { timeout: 60000 });
+  await host.click('.menu-home .dest-multiplayer');
+  await host.waitForSelector('.tc-lobby', { timeout: 30000 });
+
+  /*
+   * Geometry and hit-testing first, because it is the measurement that named the bug.
+   *
+   * Not decoration on top of the flow test: a panel that is 135 px wide and cannot be clicked
+   * *also* fails the flow test, but it fails it as a thirty-second Playwright timeout with
+   * "waiting for locator" and no indication of why. This turns that into a sentence.
+   */
+  const geo = await host.evaluate(() => {
+    const at = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return { missing: true, reaches: false, blockedBy: 'no such element' };
+      const r = el.getBoundingClientRect();
+      const cx = Math.round(r.x + r.width / 2);
+      const cy = Math.round(r.y + r.height / 2);
+      const inView = cx >= 0 && cy >= 0 && cx < innerWidth && cy < innerHeight;
+      const top = inView ? document.elementFromPoint(cx, cy) : null;
+      return {
+        w: Math.round(r.width), h: Math.round(r.height), y: Math.round(r.y), inView,
+        pe: getComputedStyle(el).pointerEvents,
+        reaches: !!top && (top === el || el.contains(top)),
+        blockedBy: top ? `${top.tagName.toLowerCase()}${top.id ? `#${top.id}` : ''}` : 'nothing',
+      };
+    };
+    return {
+      sheet: at('.tc-sheet'), room: at('#tc-room'), create: at('#tc-host'),
+      join: at('#tc-join'), relay: at('#tc-relay'), back: at('.tc-back'),
+    };
+  });
+  const unreachable = ['room', 'create', 'join', 'relay', 'back'].filter((k) => !geo[k].reaches);
+  measured.lobby = { geo };
+  record('lobby-is-clickable', unreachable.length === 0 && geo.sheet.w >= 480,
+    'every control in the lobby is where it says it is and a real mouse reaches it',
+    unreachable.length
+      ? `${unreachable.join(', ')} — elementFromPoint returns `
+        + unreachable.map((k) => `${k}:${geo[k].blockedBy}`).join(', ')
+      : `panel ${geo.sheet.w}x${geo.sheet.h}, all five controls hit-test to themselves`,
+    'hud.css .card clamped this panel to 135x210 and #menu-root swallowed every click');
+
+  /*
+   * The field used to delete a character and say nothing. `O` is the one people type.
+   *
+   * Typed at 30 ms a key, which is the measurement that mattered: the first fix wrote the
+   * explanation on the keystroke that caused it and the *next* keystroke overwrote it with
+   * "3 more characters", so the sentence existed for a fifth of a second and nobody saw it.
+   */
+  await host.click('#tc-room');
+  await host.type('#tc-room', 'ROMEX', { delay: 30 });
+  const filtered = await host.inputValue('#tc-room');
+  const hintText = ((await host.textContent('#tc-room-hint')) ?? '').replace(/\s+/g, ' ').trim();
+  record('lobby-names-the-character-it-dropped',
+    filtered === 'RMEX' && hintText.includes('“O”') && /read aloud/.test(hintText),
+    'a character the alphabet does not have is removed and *named*, not removed in silence',
+    `typing ROMEX leaves ${filtered} and the field says: ${hintText.slice(0, 120)}`,
+    'the alphabet exists because codes get read aloud, which is exactly why O is what gets typed');
+
+  await host.fill('#tc-room', '');
+  await host.fill('#tc-relay', relay.base);
+  await host.type('#tc-room', room, { delay: 20 });
+  await shot(host, 'lobby-01-form');
+  await host.click('#tc-host');
+  await host.waitForSelector('#tc-code', { timeout: 20000 });
+  const shown = ((await host.textContent('#tc-code')) ?? '').trim();
+  const rs0 = await relayStatus(relay);
+  await shot(host, 'lobby-02-room-open');
+  record('lobby-create-opens-the-room-asked-for',
+    shown === room && !!rs0?.rooms?.some((r) => r.code === room),
+    'CREATE A ROOM reaches the relay, and the code on screen is the one that was typed',
+    `the sheet reads ${shown || '(nothing)'}; the relay holds `
+      + `${(rs0?.rooms ?? []).map((r) => r.code).join(', ') || 'no rooms'}`,
+    'before CORS this fetch always rejected and the lobby blamed a relay that had just answered');
+
+  await host.click('#tc-begin');
+  await driveMenu(host, { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' });
+
+  const guest = await newPage(chromeGuest);
+  await guest.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+  await guest.waitForSelector('.menu.at-home .dest-multiplayer', { timeout: 60000 });
+  await guest.click('.menu-home .dest-multiplayer');
+  await guest.waitForSelector('.tc-lobby', { timeout: 30000 });
+  await guest.fill('#tc-relay', relay.base);
+  await guest.click('#tc-room');
+  await guest.type('#tc-room', room, { delay: 20 });
+  await shot(guest, 'lobby-03-guest-form');
+  await guest.click('#tc-join');
+  await guest.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
+  // `window.__net` and the rest of the readers live in `INSTALL`; `bootMatch` runs it and this
+  // arm does not go through `bootMatch`, which is the whole point of it.
+  await host.evaluate(INSTALL);
+  await guest.evaluate(INSTALL);
+  for (const p of [host, guest]) {
+    await p.waitForFunction(() => ['deploy', 'battle'].includes(window.__net()?.phase),
+      null, { timeout: 90000 });
+  }
+  const nh = await host.evaluate(() => window.__net());
+  const ng = await guest.evaluate(() => window.__net());
+  await shot(host, 'lobby-04-host-in-battle');
+  await shot(guest, 'lobby-05-guest-in-battle');
+  measured.lobby.met = { room, host: nh, guest: ng };
+  record('lobby-two-clients-meet',
+    nh.room === room && ng.room === room && nh.slot === 0 && ng.slot === 1
+      && nh.myFaction !== ng.myFaction,
+    'two people find each other by typing a code, and end up on opposite sides of one battle',
+    `room ${room}: host is slot ${nh.slot} commanding ${nh.myFaction}, `
+      + `challenger is slot ${ng.slot} commanding ${ng.myFaction}`,
+    'the only URL this test typed is the site root; the product wrote both of the others');
+
+  /*
+   * A host alone in a room, watched past six seconds.
+   *
+   * The exact clock the false verdict fired on: `Room.tick` returned `none()` in the lobby, so
+   * `NetLink.gapMs` never left 0, `linkFault`'s threshold collapsed to its `LINK_SILENT_S`
+   * floor, and a healthy session ended at 6.0 s with the socket open. It belongs here rather
+   * than in a fault arm because nothing had to go wrong for it to fire: it needed a player to
+   * take longer than six seconds to read a code out.
+   */
+  record('lobby-alone-is-not-a-dead-link',
+    !nh.ended && !ng.ended && nh.got > 1,
+    'a host who waited alone in the room was not told the link had died',
+    `host ended='${nh.ended || 'not ended'}' after ${nh.got} frames in; `
+      + `challenger ended='${ng.ended || 'not ended'}'`,
+    'the lobby now beats once a second, so the silence test measures silence and not a phase');
+
+  record('lobby-console', host.__errs.length === 0 && guest.__errs.length === 0,
+    'and neither page raised a console error anywhere in the flow',
+    [...host.__errs, ...guest.__errs].slice(0, 3).join(' ; ') || 'clean');
+
+  await host.close(); await guest.close();
+  relay.stop();
+}
+
+/*
+ * A code nobody opened. The relay knew; before this, nobody told the player.
+ *
+ * `roomFor` created on demand, so a mistyped code conjured a second empty room and the
+ * challenger waited in it — no timeout, no message, no way back, for as long as they were
+ * willing to sit there. This arm goes red the moment that silence comes back: its pass
+ * condition is a *named* refusal with a way onward, inside twenty-five seconds.
+ */
+if (wanted('badcode')) {
+  console.log('\n=== a code nobody opened ===');
+  const relay = await startRelay(5988);
+  const page = await newPage(chromeGuest);
+  await page.goto(`${base}/?mp=1`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.tc-lobby', { timeout: 30000 });
+  await page.fill('#tc-relay', relay.base);
+  await page.click('#tc-room');
+  await page.type('#tc-room', 'ZZZZZ', { delay: 20 });
+  const t0 = Date.now();
+  await page.click('#tc-join');
+  let told = null;
+  while (Date.now() - t0 < 25000) {
+    told = await page.evaluate(() => {
+      const h = document.querySelector('.tc-lobby h1');
+      if (!h || !/would not|no relay/i.test(h.textContent ?? '')) return null;
+      const b = document.querySelector('.tc-lobby a[href*="mp=1"]');
+      return {
+        title: (h.textContent ?? '').trim(),
+        body: (document.querySelector('.tc-sheet')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+        back: b ? b.getAttribute('href') : null,
+      };
+    }).catch(() => null);
+    if (told) break;
+    await sleep(300);
+  }
+  const waited = Date.now() - t0;
+  await shot(page, 'lobby-06-wrong-code');
+  measured.badcode = { told, waitedMs: waited, errs: page.__errs.slice(0, 3) };
+  record('wrong-code-is-refused',
+    !!told && /ZZZZZ/.test(told.body ?? '') && waited < 25000,
+    'a code nobody opened is refused by name in a sentence, instead of waiting for ever',
+    told ? `after ${(waited / 1000).toFixed(1)} s: ${told.body.slice(0, 150)}`
+      : `nothing said anything in ${(waited / 1000).toFixed(1)} s — this is the silent wait`,
+    'the relay always knew; what was missing was anybody telling the person who typed it');
+  record('wrong-code-has-a-way-back',
+    !!told?.back && /mp=1/.test(told.back) && /room=ZZZZZ/.test(told.back),
+    'and the way out carries the code back to the form, so a typo is one correction',
+    told?.back ? told.back : 'there is no link off this screen',
+    'the previous screen offered the browser back button and nothing else');
+  record('wrong-code-no-pageerror',
+    page.__errs.filter((e) => e.startsWith('pageerror')).length === 0,
+    'and nothing about the refusal reaches window.onerror',
+    page.__errs.slice(0, 2).join(' ; ') || 'clean',
+    'the old path threw at module top level, which every gate in tools/ collects as a failure');
+  await page.close();
+  relay.stop();
+}
+
+/*
+ * Nothing listening at all, from both directions.
+ *
+ * Two different failures wearing one sentence until now. Through the form it reported *"No
+ * relay at ws://… — start one with node tools/relay.mjs"* even when the relay was running and
+ * had answered; through a battle URL it threw at module top level, which reached
+ * `window.onerror`, and painted the failure in red capitals across the title card with no
+ * control anywhere on the page.
+ *
+ * No relay is started here, deliberately. 5901 was one of the ports six other agents' dev
+ * servers were scattered through, so the arm first proves nothing is on it and says why it
+ * cannot run rather than reporting a dead relay it did not actually have.
+ */
+if (wanted('norelay')) {
+  console.log('\n=== nothing listening ===');
+  const DEAD = 'ws://127.0.0.1:5901';
+  const occupied = await fetch('http://127.0.0.1:5901/health').then(() => true).catch(() => false);
+  if (occupied) {
+    record('no-relay-says-so', false, 'port 5901 has something on it, so this arm cannot run',
+      'something answered http://127.0.0.1:5901/health', 'rerun when it is free');
+  } else {
+    const form = await newPage(chrome);
+    await form.goto(`${base}/?mp=1`, { waitUntil: 'domcontentloaded' });
+    await form.waitForSelector('.tc-lobby', { timeout: 30000 });
+    await form.fill('#tc-relay', DEAD);
+    await form.click('#tc-host');
+    await form.waitForSelector('#tc-note.tc-bad', { timeout: 20000 }).catch(() => { /* asserted */ });
+    const said = ((await form.textContent('#tc-note')) ?? '').replace(/\s+/g, ' ').trim();
+    const stillHere = await form.evaluate(() => !!document.querySelector('#tc-host'));
+    await shot(form, 'lobby-07-no-relay-form');
+    record('no-relay-says-so', /5901/.test(said) && /No answer from/.test(said) && stillHere,
+      'CREATE names the address that did not answer and leaves you on the form to fix it',
+      said.slice(0, 170) || 'the form said nothing at all',
+      'it used to blame a relay that was running, and it navigated away from the field to edit');
+
+    const direct = await newPage(chromeGuest);
+    await direct.goto(`${base}/?net=${encodeURIComponent(DEAD)}&room=QAQQQ&host=0`,
+      { waitUntil: 'domcontentloaded' });
+    await direct.waitForSelector('.tc-lobby h1', { timeout: 40000 }).catch(() => { /* asserted */ });
+    const sheet = ((await direct.textContent('.tc-sheet').catch(() => '')) ?? '')
+      .replace(/\s+/g, ' ').trim();
+    const way = await direct.getAttribute('.tc-lobby a[href*="mp=1"]', 'href').catch(() => null);
+    await shot(direct, 'lobby-08-no-relay-direct');
+    measured.norelay = { form: said, direct: sheet, back: way,
+      errs: [...form.__errs, ...direct.__errs] };
+    record('no-relay-is-a-screen-and-not-a-splash',
+      /No relay answered/i.test(sheet) && /5901/.test(sheet) && !!way,
+      'and a battle URL pointed at nothing gets a refusal with a way back, not a red splash',
+      sheet.slice(0, 170) || 'nothing was drawn',
+      'a relayed battle cannot start without a relay; saying so is not the same as crashing');
+    /*
+     * `pageerror` only, and the browser's own network log is allowed to be noisy.
+     *
+     * A refused TCP connection writes two `console.error` lines nothing in this repository
+     * emits or can suppress — "Failed to load resource: net::ERR_CONNECTION_REFUSED" and the
+     * WebSocket equivalent — and counting those would make an honest failure report look like
+     * a defect. What must not appear is an *uncaught exception*, which is what a top-level
+     * throw on this path produced, and it is reported by name so the reason is legible.
+     */
+    const thrown = [...form.__errs, ...direct.__errs].filter((e) => e.startsWith('pageerror'));
+    record('no-relay-no-pageerror', thrown.length === 0,
+      'neither path raises an uncaught exception',
+      thrown.slice(0, 2).join(' ; ')
+        || `clean (${form.__errs.length + direct.__errs.length} network console line(s), which `
+          + 'the browser writes for a refused connection and nothing here can prevent)',
+      'main.ts spends a paragraph on why the lobby must not throw; this is the other branch');
+    await form.close(); await direct.close();
+  }
 }
 
 // ---------------------------------------------------------------------------

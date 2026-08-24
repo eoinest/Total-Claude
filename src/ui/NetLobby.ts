@@ -1,39 +1,73 @@
 /**
  * The lobby: make a room, or join one.
  *
- * Reached from the front door, or directly at `?mp=1`. It is four fields and two buttons and
- * it does exactly one thing — turn a relay address and a room code into the URL that boots a
- * relayed battle — because everything else about the pairing is settled by the handshake,
- * which is the only party that can see both clients.
+ * Reached from the front door, or directly at `?mp=1`. It turns a relay address and a room
+ * code into the URL that boots a relayed battle — because everything else about the pairing is
+ * settled by the handshake, which is the only party that can see both clients.
+ *
+ * ## Three faults stacked, and none of them was in this file's logic
+ *
+ * This form was measured, with a real mouse, and it had never been usable by one. The three
+ * are worth naming because each is a different lesson and only the third is a bug in the
+ * ordinary sense:
+ *
+ * 1. **The panel was called `card`.** `hud.css`'s `.card` is the unit card, it is loaded on
+ *    every page, and it contributes `max-width: 9em`, `max-height: 14em` and a column flex.
+ *    `max-width` clamps regardless of specificity, so the lobby's `width: min(620px, 92vw)`
+ *    computed to 620 and rendered at **135**. Every control landed below y=1059. That rule
+ *    carries the comment *"A card is a card. Nothing about a broken parent may let one become
+ *    a panel"* — and the reverse is what happened. Every class in here is `tc-`-prefixed now:
+ *    a global stylesheet is a shared namespace and this file does not get to pick common nouns
+ *    out of it.
+ * 2. **The page could not scroll to what was pushed off it.** `scrollHeight` 800 against an
+ *    `innerHeight` of 800: the controls were not below the fold, they were *unreachable*, and
+ *    a full-page screenshot could not show them either. A fixed, centred overlay must be a
+ *    scroll container and must centre in a way that does not clip its own top when the content
+ *    outgrows the viewport — hence `.tc-fit` with `min-height: 100%` rather than
+ *    `place-items: center`, which clips.
+ * 3. **`#menu-root` is `pointer-events: none` and this never opted back in.** `.menu` does;
+ *    `menu.css`'s own comment explains why the container must not hit-test. The lobby inherited
+ *    the container and not the opt-in, so `elementFromPoint` over the middle of the panel
+ *    returned `canvas#viewport` and a real click on any control timed out.
  *
  * ## Why this carries its own styles
  *
  * `menu.css` and `hud.css` are shared files with several agents live in them, and a lobby that
- * needed a stylesheet edit would be a merge conflict on somebody else's afternoon for the sake
- * of nine rules. The overlay is self-contained and borrows the menu's palette by eye. If it
- * survives, folding it into `menu.css` is a tidy-up with no behaviour in it.
+ * needed a stylesheet edit would be a merge conflict on somebody else's afternoon. The overlay
+ * is self-contained and borrows the menu's palette by eye.
  *
  * ## The relay address is a field and not a constant
  *
  * `tools/deploy-vercel.mjs` uploads a static tree with no build step, so there is nowhere to
  * bake a production relay URL in (`docs/MULTIPLAYER.md` §4.3). It defaults to
  * `ws://<this host>:5959`, which is what `node tools/relay.mjs` serves, and is remembered in
- * `localStorage` so nobody types it twice. Once `net/worker.ts` is deployed the default becomes
- * that `wss://…workers.dev` origin and this field becomes the escape hatch rather than the
- * normal path.
+ * `localStorage` so nobody types it twice. On the deployed site that default is a guess that
+ * nothing answers, and the form says so rather than failing at it.
  */
 
 import { CODE_ALPHABET, CODE_LEN, validCode } from '../net/protocol';
 
 const KEY = 'tc.net.relay';
+
+/**
+ * Styles, `tc-`-prefixed without exception. See fault 1 in the file docstring.
+ *
+ * `.tc-lobby` is the scroll container and `.tc-fit` is the thing that centres inside it. The
+ * pair, rather than `place-items: center` on the container, because a centred grid or flex item
+ * taller than its box overflows *equally in both directions* and the top half becomes
+ * unreachable — which is the shape of fault 2, and it would come back the first time somebody
+ * opened this at 700 px with a long error in it.
+ */
 const CSS = `
-.tc-lobby{position:fixed;inset:0;z-index:120;display:grid;place-items:center;
+.tc-lobby{position:fixed;inset:0;z-index:120;overflow:auto;pointer-events:auto;
   background:radial-gradient(120% 90% at 50% 0%,#241a12 0%,#0d0a08 70%);
   font:400 15px/1.5 ui-serif,Georgia,serif;color:#e8dcc6}
-.tc-lobby .card{width:min(620px,92vw);padding:30px 34px 26px;border:1px solid #6b5735;
-  border-radius:3px;background:linear-gradient(#1d1610,#14100c);
+.tc-lobby .tc-fit{box-sizing:border-box;min-height:100%;display:flex;align-items:center;
+  justify-content:center;padding:32px 16px}
+.tc-lobby .tc-sheet{box-sizing:border-box;width:min(620px,92vw);padding:30px 34px 26px;
+  border:1px solid #6b5735;border-radius:3px;background:linear-gradient(#1d1610,#14100c);
   box-shadow:0 18px 60px #000a}
-.tc-lobby h1{margin:0 0 4px;font:600 26px/1.1 ui-serif,Georgia,serif;letter-spacing:.06em;
+.tc-lobby h1{margin:0 0 6px;font:600 26px/1.1 ui-serif,Georgia,serif;letter-spacing:.06em;
   color:#e9c877;text-transform:uppercase}
 .tc-lobby p{margin:0 0 18px;color:#a89a7d;font-size:13.5px}
 .tc-lobby label{display:block;margin:14px 0 5px;font-size:11.5px;letter-spacing:.14em;
@@ -42,109 +76,356 @@ const CSS = `
   border-radius:2px;background:#0e0b08;color:#f0e6d2;font:400 15px/1.3 ui-monospace,monospace;
   letter-spacing:.08em}
 .tc-lobby input:focus{outline:none;border-color:#c9a24a;box-shadow:0 0 0 2px #c9a24a33}
-.tc-lobby .row{display:flex;gap:12px;margin-top:20px}
-.tc-lobby button{flex:1;padding:11px 14px;border:1px solid #7a6238;border-radius:2px;
+.tc-lobby input#tc-room{padding:12px 14px;font-size:27px;letter-spacing:.42em;
+  text-align:center;text-indent:.42em;color:#f4e7c6}
+.tc-lobby .tc-hint{margin:6px 0 0;font-size:12px;color:#8e7f63;min-height:1.4em}
+.tc-lobby .tc-hint.tc-bad{color:#e2564b}
+.tc-lobby .tc-row{display:flex;gap:12px;margin-top:20px;flex-wrap:wrap}
+.tc-lobby button{flex:1 1 12em;padding:11px 14px;border:1px solid #7a6238;border-radius:2px;
   background:linear-gradient(#3a2c1a,#241a10);color:#f0dfb4;font:600 13px/1 ui-serif,Georgia,serif;
   letter-spacing:.13em;text-transform:uppercase;cursor:pointer}
-.tc-lobby button:hover{border-color:#c9a24a;color:#fff3d4}
-.tc-lobby button.ghost{flex:0 0 auto;padding:11px 16px;background:#1a140e}
-.tc-lobby .note{margin-top:16px;min-height:2.6em;font-size:13px;color:#bfae8c;
-  word-break:break-all}
-.tc-lobby .note b{color:#e9c877}
-.tc-lobby .bad{color:#e2564b}
-.tc-lobby .back{margin-top:18px;display:inline-block;color:#8e7d5f;font-size:12.5px;
+.tc-lobby button:hover:not(:disabled){border-color:#c9a24a;color:#fff3d4}
+.tc-lobby button:disabled{opacity:.45;cursor:default}
+.tc-lobby button.tc-ghost{flex:0 1 auto;background:#1a140e;color:#cdbb95;font-weight:500}
+.tc-lobby .tc-note{margin-top:16px;font-size:13px;color:#bfae8c;overflow-wrap:anywhere}
+.tc-lobby .tc-note:empty{margin-top:0}
+.tc-lobby .tc-note b{color:#e9c877}
+.tc-lobby .tc-note.tc-bad{color:#e2564b}
+.tc-lobby .tc-relaybox{margin-top:26px;padding-top:18px;border-top:1px solid #3a2e1e}
+.tc-lobby .tc-relaybox label{margin-top:0}
+.tc-lobby .tc-code{margin:4px 0 10px;padding:18px 10px;border:1px solid #6b5735;
+  border-radius:3px;background:#0e0b08;color:#f4e7c6;text-align:center;
+  font:600 40px/1.1 ui-monospace,monospace;letter-spacing:.34em;text-indent:.34em;
+  user-select:all;-webkit-user-select:all}
+.tc-lobby .tc-back{margin-top:20px;display:inline-block;color:#8e7d5f;font-size:12.5px;
   text-decoration:none;letter-spacing:.1em;text-transform:uppercase}
-.tc-lobby .back:hover{color:#e9c877}
+.tc-lobby .tc-back:hover{color:#e9c877}
+.tc-lobby a:focus-visible,.tc-lobby button:focus-visible,
+.tc-lobby a:focus,.tc-lobby button:focus{outline:2px solid #c9a24a;outline-offset:3px;
+  border-radius:2px}
 `;
 
 const httpOf = (ws: string): string => ws.replace(/^ws/, 'http');
 
-/** Default relay address: whatever host served the page, on the relay's own port. */
+/**
+ * Escaped for `innerHTML`. Relay addresses and refusal text both reach the page this way.
+ *
+ * Exported because `main.ts` builds the lines for `showNetNotice` and every one of them
+ * contains a value out of the query string.
+ */
+export const esc = (s: string): string => s.replace(/[&<>"]/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
+
+/**
+ * A hostname only this machine can reach.
+ *
+ * Used twice and for the same judgement in both places: an invite link built out of one of
+ * these is a link to *the recipient's own computer*, which is the single most confusing thing
+ * this form could hand somebody. Better to withhold the link and say why than to produce a
+ * dead one that looks alive.
+ */
+const isLoopback = (host: string): boolean =>
+  host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
+  || host.endsWith('.localhost');
+
+const hostOf = (addr: string): string => {
+  try { return new URL(addr).hostname; } catch { return ''; }
+};
+
+/**
+ * Default relay address: whatever host served the page, on the relay's own port — **unless
+ * that guess is one this page can prove wrong**, in which case the field is left empty.
+ *
+ * `ws://<this host>:5959` is exactly right for the case it was written for, which is somebody
+ * running `npm run dev` and `node tools/relay.mjs` side by side, and for a dev server reached
+ * over a LAN address by the machine next door.
+ *
+ * It is a lie on the deployed site. `tools/deploy-vercel.mjs` uploads a static tree with no
+ * server in it (§4.3), so `wss://<vercel-host>:5959` names a port nothing has ever listened on,
+ * and pre-filling it means the first thing the form does is hand the player a wrong answer and
+ * then fail at it. An HTTPS origin that is not loopback is that case: the static host is the
+ * only thing there, and a browser on an HTTPS page cannot open a plain `ws://` socket anyway.
+ * Empty, with the hint underneath asking for an address, is the truthful state.
+ */
 const defaultRelay = (): string => {
   const stored = localStorage.getItem(KEY);
   if (stored) return stored;
+  if (location.protocol === 'https:' && !isLoopback(location.hostname)) return '';
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   return `${scheme}://${location.hostname || '127.0.0.1'}:5959`;
 };
 
-export function showLobby(host: HTMLElement): void {
-  const style = document.createElement('style');
-  style.textContent = CSS;
-  document.head.append(style);
+/** The URL that boots a relayed battle. One builder, so the invite and the host agree. */
+const battleUrl = (relay: string, code: string, asHost: boolean): URL => {
+  const u = new URL(location.href);
+  u.search = '';
+  u.searchParams.set('net', relay);
+  u.searchParams.set('room', code);
+  // The host still has a battle to choose, and `startStep` opens on the setup sheet for any
+  // URL that names one. The challenger has nothing to choose and waits for the host's config.
+  if (asHost) u.searchParams.set('menu', 'battle');
+  else u.searchParams.set('host', '0');
+  return u;
+};
 
+/** The shell every lobby screen is drawn into. Returns the sheet to fill. */
+function mount(host: HTMLElement): HTMLElement {
+  if (!document.getElementById('tc-lobby-css')) {
+    const style = document.createElement('style');
+    style.id = 'tc-lobby-css';
+    style.textContent = CSS;
+    document.head.append(style);
+  }
+  const existing = host.querySelector('.tc-lobby');
+  if (existing) existing.remove();
   const root = document.createElement('div');
   root.className = 'tc-lobby';
-  root.innerHTML = `<div class="card">
+  root.innerHTML = '<div class="tc-fit"><div class="tc-sheet"></div></div>';
+  host.append(root);
+  return root.querySelector('.tc-sheet') as HTMLElement;
+}
+
+/**
+ * A refusal, in the register of the rest of them: what happened, why, and a way onward.
+ *
+ * Exported because `main.ts` needs it. Before this, a relay that did not answer produced a
+ * `throw` at the top level of the module — which is an unhandled rejection, which every
+ * harness in `tools/` collects as a `pageerror`, and which `main.ts`'s own comment fourteen
+ * lines above it forbids for exactly this reason. What the player saw was the loading splash
+ * shouting a stack-adjacent sentence in red capitals at them with no button on the screen.
+ *
+ * It never returns: the caller is expected to stop, and stopping by resolving nothing is the
+ * pattern `?mp=1` already uses.
+ */
+export function showNetNotice(host: HTMLElement, o: {
+  title: string;
+  lines: string[];
+  /** Offered as the primary way out. Defaults to the lobby, carrying what was typed. */
+  back?: { label: string; href: string };
+}): void {
+  const sheet = mount(host);
+  const back = o.back ?? { label: 'Back to the lobby', href: '?mp=1' };
+  sheet.innerHTML = `<h1>${esc(o.title)}</h1>`
+    + o.lines.map((l) => `<p>${l}</p>`).join('')
+    + `<div class="tc-row"><a class="tc-back" id="tc-notice-back" href="${esc(back.href)}"
+         style="margin-top:6px">&lsaquo; ${esc(back.label)}</a></div>`;
+  (sheet.querySelector('#tc-notice-back') as HTMLElement | null)?.focus();
+}
+
+export function showLobby(host: HTMLElement): void {
+  const sheet = mount(host);
+  const params = new URLSearchParams(location.search);
+
+  sheet.innerHTML = `
     <h1>Two commanders</h1>
-    <p>One battle, both armies, on two machines. The host chooses the ground and the orders
-       of battle; the challenger takes the other side. Every order goes through a relay, which
-       is what makes the two simulations one battle rather than two.</p>
-    <label for="tc-relay">Relay address</label>
-    <input id="tc-relay" spellcheck="false" autocomplete="off">
+    <p>One battle, both armies, on two machines. One of you opens a room and reads the code
+       out; the other types it in. The host chooses the ground and the orders of battle; the
+       challenger takes the other side.</p>
     <label for="tc-room">Room code</label>
-    <input id="tc-room" spellcheck="false" autocomplete="off" maxlength="${CODE_LEN}"
-      placeholder="${'—'.repeat(CODE_LEN)}">
-    <div class="row">
+    <input id="tc-room" spellcheck="false" autocomplete="off" autocapitalize="characters"
+      inputmode="latin" maxlength="${CODE_LEN}" placeholder="${'—'.repeat(CODE_LEN)}"
+      aria-describedby="tc-room-hint">
+    <p class="tc-hint" id="tc-room-hint"></p>
+    <div class="tc-row">
       <button type="button" id="tc-host">Create a room</button>
       <button type="button" id="tc-join">Join that room</button>
     </div>
-    <div class="note" id="tc-note"></div>
-    <a class="back" href="?">&lsaquo; Back to the front door</a>
-  </div>`;
-  host.append(root);
+    <div class="tc-note" id="tc-note"></div>
+    <div class="tc-relaybox">
+      <label for="tc-relay">Relay address</label>
+      <input id="tc-relay" spellcheck="false" autocomplete="off">
+      <p class="tc-hint">Every order goes through a relay, which is what makes the two
+         simulations one battle rather than two. Run one with
+         <code>node tools/relay.mjs</code>, or paste the address of one somebody else is
+         running.</p>
+    </div>
+    <a class="tc-back" href="?">&lsaquo; Back to the front door</a>`;
 
-  const relay = root.querySelector('#tc-relay') as HTMLInputElement;
-  const room = root.querySelector('#tc-room') as HTMLInputElement;
-  const note = root.querySelector('#tc-note') as HTMLElement;
-  relay.value = defaultRelay();
-  room.value = (new URLSearchParams(location.search).get('room') ?? '').toUpperCase();
-  room.addEventListener('input', () => {
-    room.value = room.value.toUpperCase().split('')
-      .filter((c) => CODE_ALPHABET.includes(c)).join('');
-  });
+  const relay = sheet.querySelector('#tc-relay') as HTMLInputElement;
+  const room = sheet.querySelector('#tc-room') as HTMLInputElement;
+  const hint = sheet.querySelector('#tc-room-hint') as HTMLElement;
+  const note = sheet.querySelector('#tc-note') as HTMLElement;
+  const hostBtn = sheet.querySelector('#tc-host') as HTMLButtonElement;
+  const joinBtn = sheet.querySelector('#tc-join') as HTMLButtonElement;
+
+  relay.value = params.get('net') ?? defaultRelay();
+  room.value = (params.get('room') ?? '').toUpperCase();
 
   const say = (html: string, bad = false): void => {
     note.innerHTML = html;
-    note.classList.toggle('bad', bad);
+    note.classList.toggle('tc-bad', bad);
   };
+
+  /*
+   * The field used to eat characters and say nothing about it.
+   *
+   * `ROMEX` became `RMEX`, because `O` is not in `CODE_ALPHABET` — and the alphabet exists
+   * *because* codes get read aloud, so `O` for `0` is the single likeliest thing a person will
+   * type. Silently deleting it turns a five-character code into a four-character one and hands
+   * the blame to the typist. The filter stays, so the field always holds something valid and no
+   * submission can fail on shape; what is new is that it says what it took and why.
+   */
+  const refused = new Set<string>();
+  const clean = (): void => {
+    const raw = room.value.toUpperCase();
+    const kept = [...raw].filter((c) => CODE_ALPHABET.includes(c)).join('');
+    for (const c of raw) if (!CODE_ALPHABET.includes(c)) refused.add(c);
+    if (!kept) refused.clear();
+    if (kept !== room.value) room.value = kept;
+    joinBtn.disabled = !validCode(kept);
+    const left = CODE_LEN - kept.length;
+    const progress = kept.length === 0
+      ? `${CODE_LEN} characters. Leave it empty and Create will pick one for you.`
+      : left > 0
+        ? `${left} more character${left > 1 ? 's' : ''}.`
+        : 'Both of you need this exact code.';
+    /*
+     * The complaint outlives the keystroke that caused it, and that is the whole point.
+     *
+     * `input` fires per character, so the first version wrote the explanation on the press of
+     * `O` and overwrote it with "3 more characters" on the press of `M` a fifth of a second
+     * later. Nobody reads a sentence that is on screen for 200 ms — measured: typing ROMEX at
+     * 30 ms a key left the field reading RMEX with a hint that said nothing had gone wrong.
+     * The set holds until the field is cleared.
+     */
+    if (!refused.size) {
+      hint.classList.remove('tc-bad');
+      hint.textContent = progress;
+      return;
+    }
+    const list = [...refused].map((c) => `\u201c${c}\u201d`);
+    hint.classList.add('tc-bad');
+    hint.textContent = `${list.join(', ')} ${refused.size > 1 ? 'are' : 'is'} not in a room `
+      + 'code \u2014 I, O, 0 and 1 are left out on purpose, because a code gets read aloud. '
+      + progress;
+  };
+  room.addEventListener('input', clean);
+  clean();
 
   const go = (code: string, asHost: boolean): void => {
     localStorage.setItem(KEY, relay.value.trim());
-    const u = new URL(location.href);
-    u.search = '';
-    u.searchParams.set('net', relay.value.trim());
-    u.searchParams.set('room', code);
-    if (asHost) {
-      // Straight to the setup sheet: the host still has a battle to choose, and `startStep`
-      // opens there for any URL that names one.
-      u.searchParams.set('menu', 'battle');
-    } else {
-      u.searchParams.set('host', '0');
-    }
-    location.href = u.toString();
+    location.href = battleUrl(relay.value.trim(), code, asHost).toString();
   };
 
-  (root.querySelector('#tc-host') as HTMLButtonElement).addEventListener('click', () => {
-    say('Asking the relay for a room…');
-    fetch(`${httpOf(relay.value.trim())}/new`)
-      .then((r) => r.json() as Promise<{ room: string }>)
-      .then((j) => {
-        const invite = new URL(location.href);
-        invite.search = '';
-        invite.searchParams.set('net', relay.value.trim());
-        invite.searchParams.set('room', j.room);
-        invite.searchParams.set('host', '0');
-        say(`Room <b>${j.room}</b>. Send this to your opponent:<br>`
-          + `<code>${invite.toString()}</code>`);
-        void navigator.clipboard?.writeText(invite.toString()).catch(() => { /* no clipboard */ });
-        room.value = j.room;
-        setTimeout(() => go(j.room, true), 900);
+  /** What to say when the relay does not answer — and it depends on where the page came from. */
+  const noRelay = (addr: string, why: string): void => {
+    const local = isLoopback(location.hostname);
+    say(`No answer from <b>${esc(addr)}</b> &mdash; ${esc(why)}. `
+      + (local
+        ? 'Start one with <code>node tools/relay.mjs</code> and press Create again.'
+        : 'This site does not host a relay and cannot: it is a static upload with no server '
+          + 'in it. A relay is a separate process &mdash; <code>node tools/relay.mjs</code> on '
+          + 'a machine you can both reach, or the Cloudflare Worker in <code>net/worker.ts</code> '
+          + '&mdash; and its address goes in the field below.'), true);
+  };
+
+  /**
+   * The room is open. The code is the object on this screen; the link is a convenience.
+   *
+   * That order is deliberate and it is the owner's call. The code is what survives a phone
+   * call, a photograph of a screen and a different network; the link is faster when it works.
+   * The old screen showed both for 900 ms and then navigated away, which is not long enough to
+   * read five characters, let alone say them to somebody.
+   */
+  const opened = (code: string): void => {
+    const addr = relay.value.trim();
+    const invite = battleUrl(addr, code, false).toString();
+    // Honest about when it cannot work. See `isLoopback`: a link naming this machine, mailed
+    // to somebody else, opens *their* machine and finds nothing there.
+    const deadLink = isLoopback(location.hostname) ? 'page' : isLoopback(hostOf(addr)) ? 'relay' : '';
+    sheet.innerHTML = `
+      <h1>Room open</h1>
+      <p>Read this out to the other commander, or have them type it into their own lobby.</p>
+      <div class="tc-code" id="tc-code">${esc(code)}</div>
+      <div class="tc-row">
+        <button type="button" id="tc-copy-code">Copy the code</button>
+        ${deadLink ? ''
+    : '<button type="button" class="tc-ghost" id="tc-copy-link">Copy the invite link</button>'}
+      </div>
+      <p class="tc-hint" id="tc-link-hint">${deadLink === 'page'
+        ? 'There is no invite link, because this page is served from '
+          + `<b>${esc(location.hostname)}</b> &mdash; a link built from it would open the other `
+          + 'commander&rsquo;s own machine and find nothing there. The code is the thing to send.'
+        : deadLink === 'relay'
+          ? `There is no invite link, because the relay is at <b>${esc(hostOf(addr))}</b>, which `
+            + 'names this machine and not theirs. Put an address you can both reach in the relay '
+            + 'field, or send the code and let them set their own.'
+          : `The link carries the relay address and this code: <code>${esc(invite)}</code>`}</p>
+      <div class="tc-row">
+        <button type="button" id="tc-begin">Choose the battle &rarr;</button>
+      </div>
+      <div class="tc-note" id="tc-note2">The other commander can join at any point until the
+        battle starts. Nothing is waiting on them yet.</div>
+      <a class="tc-back" href="?mp=1">&lsaquo; Back to the lobby</a>`;
+
+    const flash = (b: HTMLButtonElement | null, msg: string, back: string): void => {
+      if (!b) return;
+      b.textContent = msg;
+      setTimeout(() => { b.textContent = back; }, 2000);
+    };
+    const copy = async (text: string, b: HTMLButtonElement | null, back: string): Promise<void> => {
+      try {
+        await navigator.clipboard.writeText(text);
+        flash(b, 'Copied', back);
+      } catch {
+        // Clipboard is permission-gated and unavailable over plain http in some browsers. The
+        // code is on screen at 40 px and selectable; saying so beats a button that lies.
+        flash(b, 'Select it and copy', back);
+      }
+    };
+    const codeBtn = sheet.querySelector('#tc-copy-code') as HTMLButtonElement | null;
+    const linkBtn = sheet.querySelector('#tc-copy-link') as HTMLButtonElement | null;
+    codeBtn?.addEventListener('click', () => { void copy(code, codeBtn, 'Copy the code'); });
+    linkBtn?.addEventListener('click', () => { void copy(invite, linkBtn, 'Copy the invite link'); });
+    const begin = sheet.querySelector('#tc-begin') as HTMLButtonElement;
+    begin.addEventListener('click', () => go(code, true));
+    begin.focus();
+  };
+
+  const noAddress = (): boolean => {
+    if (relay.value.trim()) return false;
+    say('There is no relay address in the field below. A relay is a separate process &mdash; '
+      + '<code>node tools/relay.mjs</code> on a machine you can both reach &mdash; and this '
+      + 'page cannot be one, because it is a static upload with no server in it.', true);
+    relay.focus();
+    return true;
+  };
+
+  hostBtn.addEventListener('click', () => {
+    if (noAddress()) return;
+    const addr = relay.value.trim();
+    const asked = room.value.trim().toUpperCase();
+    if (asked && !validCode(asked)) {
+      say(`A room code is ${CODE_LEN} characters. Finish it, or clear the field and let the `
+        + 'relay choose one.', true);
+      room.focus();
+      return;
+    }
+    hostBtn.disabled = true;
+    say('Asking the relay for a room&hellip;');
+    const q = asked ? `?room=${encodeURIComponent(asked)}` : '';
+    fetch(`${httpOf(addr)}/new${q}`)
+      .then(async (r) => {
+        const j = await r.json().catch(() => null) as { room?: string; detail?: string } | null;
+        if (!r.ok || !j?.room) throw new Error(j?.detail ?? `the relay answered ${r.status}`);
+        localStorage.setItem(KEY, addr);
+        opened(j.room);
       })
-      .catch((e) => say(`No relay at <b>${relay.value}</b> &mdash; ${String(e)}. `
-        + 'Start one with <code>node tools/relay.mjs</code>.', true));
+      .catch((e: unknown) => {
+        hostBtn.disabled = false;
+        const why = e instanceof Error ? e.message : String(e);
+        // A rejected `fetch` is the relay being unreachable; a rejection carrying the relay's
+        // own sentence is the relay refusing, and those deserve different answers.
+        if (/^(Failed to fetch|NetworkError|Load failed|.*fetch failed.*)$/i.test(why)) {
+          noRelay(addr, 'the browser could not reach it');
+        } else {
+          say(esc(why), true);
+        }
+      });
   });
 
-  (root.querySelector('#tc-join') as HTMLButtonElement).addEventListener('click', () => {
+  joinBtn.addEventListener('click', () => {
+    if (noAddress()) return;
     const code = room.value.trim().toUpperCase();
     if (!validCode(code)) {
       say(`A room code is ${CODE_LEN} characters from ${CODE_ALPHABET}. `
@@ -153,4 +434,12 @@ export function showLobby(host: HTMLElement): void {
     }
     go(code, false);
   });
+
+  room.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    (validCode(room.value.trim().toUpperCase()) ? joinBtn : hostBtn).click();
+  });
+
+  room.focus();
 }

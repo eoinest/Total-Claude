@@ -47,10 +47,29 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { CODE_ALPHABET, CODE_LEN, validCode } from '../src/net/protocol.ts';
-import { makeCode, Room } from '../src/net/room.ts';
+import { makeCode, noSuchRoom, Room } from '../src/net/room.ts';
 
 /** How often the turn clock runs. A tenth of a turn, matching `tools/relay.mjs`. */
 const ALARM_MS = 100;
+
+/**
+ * Cross-origin on every HTTP answer, for the same reason `tools/relay.mjs` grew it.
+ *
+ * The page is served by Vercel and the relay is a `workers.dev` origin, so *every* call the
+ * lobby makes here is cross-origin. Without this, `Create a room` reads a network error and
+ * reports the relay as unreachable while it is answering perfectly — which is precisely what
+ * shipped locally for as long as `/new` had no headers on it.
+ */
+const CORS: Record<string, string> = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, OPTIONS',
+  'access-control-max-age': '600',
+};
+const json = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json', ...CORS },
+  });
 
 export class RoomObject {
   private state: any;
@@ -92,14 +111,45 @@ export class RoomObject {
   async fetch(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const code = (url.pathname.split('/').pop() ?? '').toUpperCase();
-    if (!validCode(code)) return new Response('bad room code', { status: 400 });
+    if (!validCode(code)) return new Response('bad room code', { status: 400, headers: CORS });
+    /*
+     * Whether anybody has ever opened this room, in storage rather than in a field.
+     *
+     * `idFromName(code)` conjures an object for *any* five characters, which is the hazard
+     * `CODE_ALPHABET`'s docstring names and the reason a mistyped code used to be a silent
+     * wait in an empty room nobody else could see. The Node relay answers the same question
+     * from its `Map`; here it has to survive hibernation, so it is a storage read.
+     */
+    const opened = (await this.state.storage.get('opened')) === true;
+    /*
+     * `/new` lands here as `?open=1`. It claims the code without opening a socket, so the room
+     * exists for a challenger who follows the invite link before the host has finished
+     * choosing a battle.
+     */
+    if (url.searchParams.get('open') === '1') {
+      const room0 = this.get(code);
+      if (opened && (room0.phase !== 'lobby' || room0.occupied > 0)) {
+        return json({ error: 'taken', detail: `room ${code} is in use on this relay` }, 409);
+      }
+      await this.state.storage.put('opened', true);
+      return json({ room: code });
+    }
     if (req.headers.get('Upgrade') !== 'websocket') {
-      return Response.json(this.get(code).status());
+      return json(this.get(code).status());
     }
     const pair = new (globalThis as any).WebSocketPair();
     const [client, server] = [pair[0], pair[1]];
     const room = this.get(code);
     const want = url.searchParams.get('want') === 'join' ? 'join' : 'host';
+    if (want === 'join' && !opened) {
+      // Accepted and then closed, like every other refusal here, so the browser reads a
+      // sentence rather than "connection failed". See `noSuchRoom`.
+      server.accept();
+      server.send(JSON.stringify(noSuchRoom(code)));
+      server.close(1008, 'noRoom');
+      return new Response(null, { status: 101, webSocket: client } as any);
+    }
+    if (!opened) await this.state.storage.put('opened', true);
     const v = Number(url.searchParams.get('v') ?? 1);
     const res = room.join(Date.now(), want, v);
     if (res.slot < 0) {
@@ -144,13 +194,25 @@ export class RoomObject {
 export default {
   async fetch(req: Request, env: any): Promise<Response> {
     const url = new URL(req.url);
-    if (url.pathname === '/health') return new Response('relay ok\n');
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+    if (url.pathname === '/health') return new Response('relay ok\n', { headers: CORS });
     if (url.pathname === '/new') {
-      const code = makeCode(() => Math.random(), CODE_ALPHABET, CODE_LEN);
-      return Response.json({ room: code });
+      const asked = (url.searchParams.get('room') ?? '').trim().toUpperCase();
+      if (asked && !validCode(asked)) {
+        return json({
+          error: 'code',
+          detail: `'${asked}' is not a room code: ${CODE_LEN} characters from ${CODE_ALPHABET}`,
+        }, 400);
+      }
+      const code = asked || makeCode(() => Math.random(), CODE_ALPHABET, CODE_LEN);
+      // Through the object, so the code is *claimed* and not merely suggested. A code the
+      // relay has not heard of is refused at the socket, so minting one without telling the
+      // object would refuse the host who just asked for it.
+      const newId = env.ROOMS.idFromName(code);
+      return env.ROOMS.get(newId).fetch(new Request(`${url.origin}/room/${code}?open=1`, req));
     }
     const m = url.pathname.match(/^\/room\/([A-Za-z0-9]+)$/);
-    if (!m) return new Response('relay: /room/<CODE>, /new, /health\n', { status: 404 });
+    if (!m) return new Response('relay: /room/<CODE>, /new, /health\n', { status: 404, headers: CORS });
     /*
      * The line the whole transport decision rests on.
      *

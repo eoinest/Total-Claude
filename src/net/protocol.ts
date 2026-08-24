@@ -382,6 +382,19 @@ export interface MsgWantProbe { k: 'wantProbe'; tick: number }
 /** The session is over, for a stated reason, at a stated tick. Never a silent hang. */
 export interface MsgEnd { k: 'end'; why: EndReason; atTick: number; detail: string }
 export type EndReason = 'desync' | 'peerLeft' | 'complete' | 'refused' | 'abandoned';
+/**
+ * The lobby's keep-alive. Nothing answers it and nothing reads `t`.
+ *
+ * `NetSession.linkFault` decides a relay is gone from *silence*, measured against the interval
+ * between inbound frames. Past the lobby the turn packet supplies that interval unconditionally;
+ * in the lobby, until this was sent, nothing did — and the threshold collapsed to its floor and
+ * killed a healthy session at 6.0 s. See `Room.LOBBY_BEAT_MS`.
+ *
+ * `t` is the relay's own clock, carried so a captured log can be read by a human. **No client
+ * reads it and nothing in the simulation may**: the whole determinism claim in this file's
+ * docstring rests on no wall clock reaching the tick, and a relay timestamp on the wire is the
+ * most tempting way to break that.
+ */
 export interface MsgPing { k: 'ping'; t: number }
 
 export type RelayMsg =

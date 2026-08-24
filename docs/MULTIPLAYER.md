@@ -2020,3 +2020,219 @@ $ node tools/qa-net.mjs --only=battle,siege --siege-scenario=field
 `--siege-scenario` is a real knob rather than a test hook — it points the arm at any `(map,
 scenario)` the product ships — but it is spelled out rather than hard-coded to `assault`
 specifically so that the check guarding the coverage claim can be shown to work.
+
+### 9.12 The lobby — 23 August 2026, `e/ui/two-commanders`
+
+The netcode worked and nobody could get to it. `tools/qa-net.mjs` was at 38/38 with two clients
+bit-identical at tick 2103 and five injected failures each going red on the right client, and the
+owner's verdict on the thing in front of it was *"a complete mess"*. He was right, and the gap
+between those two sentences is the whole of this section.
+
+**Why 38 green checks could sit on top of an unusable front door.** Every net arm in the file
+waits for `phase === 'battle'` before it asserts anything, and `bootMatch` reaches that phase by
+writing `?net=…&room=…` itself. So not one arm had ever loaded `?mp=1`. The lobby was outside the
+gate's reachable set by construction rather than by oversight — and a gate cannot go red about a
+page it never opens.
+
+#### The form had never been usable by a mouse, and it took three faults to manage it
+
+1. **The panel was called `card`.** `hud.css`'s `.card` is the unit card, loaded on every page,
+   and it contributes `max-width: 9em`, `max-height: 14em` and a column flex. `max-width` clamps
+   whatever the specificity, so the lobby's own `width: min(620px, 92vw)` computed to 620 and
+   rendered at **135**. Measured: panel 135×210, the relay field at y=1059, the code field at
+   y=1119, both buttons at y=1178, the back link at y=1309 — on an 800 px page. The rule carries
+   the comment *"A card is a card. Nothing about a broken parent may let one become a panel."*
+   The fix is a `tc-` prefix on every class in the lobby and no edit to `hud.css`: a global
+   stylesheet is a shared namespace, and a self-contained overlay does not get to take common
+   nouns out of it.
+2. **The page could not scroll to them.** `scrollHeight` 800 against `innerHeight` 800,
+   `canScroll: false`, and a full-page screenshot still 800 px tall. The controls were not below
+   the fold; they were unreachable, and unphotographable. A fixed centred overlay has to *be* the
+   scroll container, and it has to centre with `min-height: 100%` on an inner box rather than
+   `place-items: center`, which overflows equally in both directions and puts the top of a tall
+   sheet out of reach.
+3. **`#menu-root` is `pointer-events: none` and `.tc-lobby` never opted back in.** `.menu` does,
+   and `menu.css` carries the comment explaining why the container must not hit-test. Every
+   control computed `pointerEvents: "none"`, `elementFromPoint` at the panel's centre returned
+   `canvas#viewport`, and a real click on the code field or the Create button timed out.
+
+Each is a different lesson and only the third is a bug in the ordinary sense. Together they meant
+the form had been shipped, reviewed and documented without anybody once pressing a button on it.
+
+#### "Create a room" had never worked, and the error message blamed the wrong party
+
+`/new` returned 200 with the code and no `Access-Control-Allow-Origin`, so the browser refused to
+hand the body to the script and the `fetch` rejected. The lobby's `.catch` then printed **"No
+relay at ws://… — start one with `node tools/relay.mjs`"** *while that relay was running and had
+just done exactly what was asked* — and the room it had minted stayed on the relay with nobody in
+it. Every press leaked one. This is why the whole netcode pass could only ever test the join path.
+
+Headers on every answer now, plus `/new?room=CODE` so a player can claim a code they typed rather
+than take whatever they are given, plus a reaper for rooms nobody ever walked into
+(`EMPTY_ROOM_TTL_MS`, ten minutes; an occupied room is never reaped).
+
+#### The false `linkLost`, which was a correctness bug and not a message
+
+`Room.tick`'s first line was `if (this.phase === 'lobby') return none();`. `NetSession.linkFault`
+decides a relay is gone from silence, measured against `NetLink.gapMs` — the observed interval
+between inbound frames — with a floor of `LINK_SILENT_S`. In the lobby nothing was ever sent after
+`welcome`, so `gapMs` stayed 0, the threshold collapsed to the floor, and a host waiting alone in
+a healthy room was told **the link is gone at exactly 6.0 s**, socket open, relay running, `got`
+still 1. The `linkFault` docstring claimed the relay "emits a packet every `turnMs`,
+unconditionally"; it was true in three phases out of four, and the fourth is the one a person sits
+in while reading a code out loud.
+
+This is *not* the main-thread-stall false alarm §9.7 fixed. That fix — counting rendered seconds
+rather than wall clock — is intact and was rechecked.
+
+The repair makes the premise true rather than adding an exception to it: `LOBBY_BEAT_MS` sends a
+`ping` a second while the room is in its lobby phase. One second and not `turnMs`, because the
+lobby is the one phase that legitimately lasts minutes and ten frames a second for the whole of it
+is a §3 bill for no information; at one second the threshold is `max(6 s, 8 × 1 s) = 8 s`, so a
+relay that dies while somebody waits is still named. `MsgPing` had been in the protocol since the
+first draft and had never been sent by anybody.
+
+**And it swallowed the true verdict.** `onEnd`'s guard is `if (this.ended && this.ended !== why)
+return` — first verdict wins, which is right for a relay `end` followed by the `onclose` it
+provokes. With a stale `linkLost` already set it discarded the relay's `peerLeft`, so a survivor
+whose opponent had walked away was told the wire had failed: a different accusation about a
+different party. A verdict inferred on the client may no longer outrank one the relay observed,
+whichever arrives first, because the relay can see both sockets and the client cannot.
+
+#### A mistyped code was the worst failure in the product
+
+`roomFor` created on demand. That is correct for a host — `?net=…&room=…` with no `host=0` *is*
+the request to open a room — and catastrophic for a challenger: a mistyped code conjured a second,
+empty room and the joiner waited in it, with no timeout, no message and no way back, for as long
+as they were willing to sit there. `CODE_ALPHABET`'s own docstring had named this hazard for the
+Durable Object and nobody had noticed that the Node relay had it too.
+
+`want=join` into a code nobody has opened is now refused by name. The sentence lives in `room.ts`
+as `noSuchRoom` so both adapters read one copy of it; the *test* cannot, because only the adapter
+knows what it has heard of — a `Map` here, a storage read on Cloudflare.
+
+#### The three decisions the owner made, and what they cost
+
+1. **Room code first-class, invite link beside it as a convenience.** CREATE opens a screen whose
+   subject is five characters at 40 px, selectable, captioned *"Read this out to the other
+   commander"*, with COPY THE CODE beside it — and it stays up until the host presses CHOOSE THE
+   BATTLE. The old screen showed the code for 900 ms and then navigated, which is not long enough
+   to read five characters, let alone say them to somebody.
+
+   His choice made the localhost finding load-bearing. The invite is built from `location.href`,
+   so a host on `127.0.0.1` mails a link to the recipient's own machine. **There is no link in
+   that case, and the screen says which of the two addresses is the problem** — the page or the
+   relay — because the code path still works, and that is the point of having both. For the same
+   reason `defaultRelay()` no longer pre-fills `wss://<vercel-host>:5959` on the deployed site: an
+   HTTPS origin that is not loopback is a static upload with no server in it, the guess is one the
+   page can prove wrong, and an empty field with a sentence under it is the truthful state.
+2. **When a peer leaves: halt, state the result, offer a way out.** A sheet, not a strip. It names
+   the tick, the turn, the clock and both armies' surviving strength — *"The battle stood at t+54,
+   turn 17 — 0:01 on the field, with 1,032 of your men still on the field against 1,305."* — and
+   then says **no result has been recorded**, because a battle nobody finished does not have one.
+   `BattleFlowSystem`'s dispatch is deliberately not reused: that card exists to print a verdict.
+   SAVE THE REPLAY appears only when `NetSession.token()` has something to give.
+
+   `linkLost` and `abandoned` get the same sheet. A desync keeps the strip, where §9.4's tick,
+   layer, both hashes and named regiments already live and want to be read together.
+3. **The mode stays "Multiplayer".** *"Two commanders"* was shorthand in conversation. Nothing was
+   renamed.
+
+#### Two more things the pass had to fix before it could claim any of that
+
+**Nothing prints an uncaught `pageerror`.** A relay that would not answer produced a top-level
+`throw`, which is an unhandled rejection, which reaches `window.onerror`, which every harness in
+`tools/` collects — the exact failure `main.ts`'s `?mp=1` branch spends a paragraph avoiding,
+fourteen lines above the line that was doing it. What the player got was the loading splash
+shouting the failure in red capitals across the title card with no control anywhere on the page.
+Both connect failures, and the challenger's two-minute wait for a host who never chose a battle,
+now render a refusal carrying the address, the code and a link back to the lobby that pre-fills
+both.
+
+**The session strip has moved off the top bar.** `.tc-net` was `top: 8px`; `.topbar` is
+`top: 0.8em` in a HUD whose em is `10px * var(--ui-scale)`, centred the same way. The room code
+and the link status were drawn over the turn clock and both armies' strength. It parks under the
+bar now, from the bar's own measured bottom on every rebuild — not a constant, because the bar
+moves with the UI scale, and not measured once, because `drop-in` animates for 0.7 s and the first
+reading put the strip five pixels into a bar that had not finished arriving.
+
+#### The gate now clicks the form
+
+Three new arms and thirteen new checks. `lobby` types a code, presses CREATE A ROOM, has a second
+client type the same code and press JOIN, and reaches a battle **with no URL built by the test** —
+the form writes both of them. It also measures the geometry and the hit-testing first, so a
+regression in any of the three stacked faults reports a sentence instead of a thirty-second
+Playwright locator timeout. `badcode` and `norelay` pass only if the failure is *named*, with a way
+out, and without a `pageerror`.
+
+`peer-left-has-a-screen`, `peer-left-records-no-result`,
+`peer-left-offers-the-record-only-if-there-is-one` and `session-strip-clears-the-hud` join the
+`leave` arm. All four were red before this pass, which is the only reason to believe them.
+
+Made to fail on purpose, which is the only reason to believe the other two. With the
+`want === 'join' && !rooms.has(code)` guard taken back out of `tools/relay.mjs`:
+
+```
+$ node tools/qa-net.mjs --only=badcode
+  FAIL  wrong-code-is-refused    nothing said anything in 25.1 s — this is the silent wait
+  FAIL  wrong-code-has-a-way-back  there is no link off this screen
+  PASS  wrong-code-no-pageerror  clean
+  ✗ 1/3 checks passed        exit 1
+```
+
+and with `throw e` put back in `main.ts` where `netFailed` now stands:
+
+```
+$ node tools/qa-net.mjs --only=norelay
+  PASS  no-relay-says-so         No answer from ws://127.0.0.1:5901 — the browser could not
+                                 reach it. Start one with node tools/relay.mjs …
+  FAIL  no-relay-is-a-screen-and-not-a-splash   nothing was drawn
+  FAIL  no-relay-no-pageerror
+  ✗ 1/3 checks passed        exit 1
+```
+
+Note which check survived each injection: the form's own message is unaffected by the relay's
+join guard, and the form's own message is unaffected by `main.ts` throwing, because those are
+three different failures on three different paths. An arm that went all-red on any injection
+would be measuring one thing and reporting three.
+
+`no-relay-no-pageerror` counts `pageerror` and not `console.error`, deliberately: a refused TCP
+connection makes the browser write two network lines that nothing in this repository emits or
+can suppress, and failing on those would make an honest refusal screen look like a defect.
+
+One further hazard was found by writing them, and is fixed in `tools/lib/menu-boot.mjs`: both menu
+sheets are in the DOM at once and the visible one is chosen by a class on the root, so waiting on
+`.menu-sheet` waits on the *hidden* home sheet for the full sixty seconds on any URL that opens
+straight on the setup step. Only the lobby arm arrives that way, which is why nothing had hit it.
+
+#### And one thing the extra load found in the gate itself
+
+Running the whole suite back to back put this machine at load 4 and made `same-battle` go red
+twice in four runs of `--only=battle` — *"they stopped at different ticks: 2,112 and 2,117"*, with
+`checkpoints-agreed` green both times and no hash ever compared, because the comparison never got
+that far. The other two runs settled at 2,106 and 2,115 with all five layers identical.
+
+`settleTogether` SIGSTOPs the relay so the two clients drain to a common tick, and its comment
+claimed that works "by construction rather than by luck" because SIGSTOP stops the process and not
+the kernel's socket buffers. That is true of the kernel's buffer and **false of node's**:
+`sock.write` returns false when the kernel buffer fills and node queues the remainder inside the
+process, which a frozen process never flushes. Two sockets fill at different rates because two
+pages read at different rates, so a relay stopped mid-backlog can leave one client holding turns
+the other will now never receive — and no amount of waiting converges them, because the thing that
+would send them is stopped.
+
+The helper now releases the relay for 250 ms and stops it again whenever both clients have gone
+static *and are apart*, up to six times. The comparison is untouched — equal ticks are still
+required and the five layers are still compared bit for bit — so it can only turn a false red into
+a real answer, never a red into a green. It is recorded here because it is the same failure this
+pass is about, wearing test-harness clothes: an instrument reporting a fact about the laptop as a
+fact about the product.
+
+#### What is still not done
+
+The invite link is withheld rather than repaired when the page is on loopback; making it work
+would mean the lobby knowing an address the machine is reachable at, which it cannot discover from
+inside a browser. `net/worker.ts` takes every change in this pass — CORS, `/new?room=`, the
+`noSuchRoom` refusal against a storage flag — and remains, as it has always been, unrun. And the
+desync ending still speaks through the strip; if the sheet reads better for a peer leaving, it will
+read better for a fork too, and that is a small follow-up rather than a rewrite.

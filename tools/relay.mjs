@@ -13,6 +13,7 @@
  *   ws://127.0.0.1:5959/room/<CODE>?want=host|join
  *   http://127.0.0.1:5959/status          — every room, as JSON
  *   http://127.0.0.1:5959/health          — one line, for a wait loop
+ *   http://127.0.0.1:5959/new[?room=CODE] — open a room, or claim one by name. CORS-open.
  *
  * ## Why this exists as well as `net/worker.ts`
  *
@@ -47,7 +48,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import process from 'node:process';
 import { CODE_ALPHABET, CODE_LEN, DEFAULT_PAIRS, validCode } from '../src/net/protocol.ts';
-import { makeCode, Room } from '../src/net/room.ts';
+import { makeCode, noSuchRoom, Room } from '../src/net/room.ts';
 
 // ---------------------------------------------------------------------------
 // Arguments. An unknown flag is fatal — see tools/qa-replay.mjs for the reason.
@@ -237,9 +238,26 @@ const roomOpts = () => ({
 
 function roomFor(code) {
   let r = rooms.get(code);
-  if (!r) rooms.set(code, (r = { room: new Room(code, roomOpts()), sockets: [null, null] }));
+  if (!r) {
+    rooms.set(code, (r = { room: new Room(code, roomOpts()), sockets: [null, null], made: Date.now() }));
+  }
   return r;
 }
+
+/**
+ * How long a room nobody ever entered is kept, in milliseconds.
+ *
+ * `/new` mints the room *before* the host has it, because the host is about to spend thirty
+ * seconds choosing a battle and a challenger with the link may well arrive first — the room
+ * has to exist for that challenger to be let in. The cost of that is a room per press of
+ * CREATE, and before CORS was fixed every press failed in the browser and left one behind:
+ * the relay was doing its job and the answer was being thrown away by the same-origin policy.
+ *
+ * Ten minutes, which is longer than anyone spends choosing a battle and shorter than anyone
+ * would keep a code they never used. An occupied room is never reaped however old it is;
+ * the test is *empty and never entered*.
+ */
+const EMPTY_ROOM_TTL_MS = 600_000;
 
 let sends = 0;
 let recvs = 0;
@@ -276,7 +294,10 @@ setInterval(() => {
   const now = Date.now();
   for (const [code, entry] of rooms) {
     flush(entry, entry.room.tick(now));
-    if (entry.room.over && !entry.sockets[0] && !entry.sockets[1]) rooms.delete(code);
+    if (entry.room.over && !entry.sockets[0] && !entry.sockets[1]) { rooms.delete(code); continue; }
+    // A room `/new` minted that nobody ever walked into. See `EMPTY_ROOM_TTL_MS`.
+    if (entry.room.phase === 'lobby' && entry.room.occupied === 0
+      && now - entry.made > EMPTY_ROOM_TTL_MS) rooms.delete(code);
   }
 }, 10).unref?.();
 
@@ -284,33 +305,94 @@ setInterval(() => {
 // HTTP: a status page, a health line, and the upgrade
 // ---------------------------------------------------------------------------
 
+/**
+ * Cross-origin, unconditionally, on every HTTP answer this relay gives.
+ *
+ * **This one missing header is why "Create a room" had never once worked.** The page is served
+ * by Vite on one port and the relay listens on another, so `fetch('http://…:5959/new')` from
+ * the lobby is a cross-origin request. The relay answered it correctly — 200, a fresh code, a
+ * room minted and waiting — and the browser then refused to hand the body to the script,
+ * because no `Access-Control-Allow-Origin` came back with it. The `fetch` promise rejected with
+ * a `TypeError`, the lobby's `.catch` printed *"No relay at ws://… — start one with node
+ * tools/relay.mjs"* while that relay was running and had just done exactly what was asked, and
+ * the room stayed on the relay for ever with nobody in it. Every press leaked one.
+ *
+ * `*` rather than an origin echo, and it is the honest answer here: the relay has no cookies,
+ * no auth and no private state — `/status` is already a public page of every room — so there is
+ * nothing for a third-party origin to steal by reading a reply it could have got itself. The
+ * WebSocket upgrade is unaffected either way; sockets are not subject to the same-origin policy.
+ */
+const CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, OPTIONS',
+  'access-control-max-age': '600',
+};
+const sendJson = (res, status, body) => {
+  res.writeHead(status, { 'content-type': 'application/json', ...CORS });
+  res.end(JSON.stringify(body));
+};
+
 const server = createServer((req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
+  // A simple GET needs no preflight, but a browser that decides to send one must not get a 404.
+  if (req.method === 'OPTIONS') { res.writeHead(204, CORS); res.end(); return; }
   if (url.pathname === '/health') {
-    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.writeHead(200, { 'content-type': 'text/plain', ...CORS });
     res.end(`relay ok rooms=${rooms.size} sends=${sends} recvs=${recvs}\n`);
     return;
   }
   if (url.pathname === '/status') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({
+    sendJson(res, 200, {
       port: PORT, pairs: PAIRS, fatal: FATAL, delayTurns: DELAY, turnMs: TURN_MS,
       lagMs: LAG, fault: FAULT, sends, recvs,
       rooms: [...rooms.values()].map((e) => e.room.status()),
-    }, null, 2));
+    });
     return;
   }
+  /*
+   * `/new` — mint a room, or claim the one the host asked for by name.
+   *
+   * `?room=CODE` exists because the lobby lets a player type their own code, which is what
+   * happens when two people are already on the phone to each other: one of them says a word
+   * and they both type it. Claiming it here rather than discovering the clash at the WebSocket
+   * is the difference between "that one is taken, try another" on the form and a refusal
+   * screen after a page navigation.
+   *
+   * The room is created either way, before the host's socket exists, because the host is about
+   * to spend a minute in the setup sheet and the challenger may well arrive first.
+   */
   if (url.pathname === '/new') {
+    const asked = (url.searchParams.get('room') ?? '').trim().toUpperCase();
+    if (asked) {
+      if (!validCode(asked)) {
+        sendJson(res, 400, {
+          error: 'code',
+          detail: `'${asked}' is not a room code: ${CODE_LEN} characters from ${CODE_ALPHABET}`,
+        });
+        return;
+      }
+      const held = rooms.get(asked);
+      if (held && (held.room.phase !== 'lobby' || held.room.occupied > 0)) {
+        sendJson(res, 409, {
+          error: 'taken',
+          detail: `room ${asked} is in use on this relay${held.room.phase !== 'lobby'
+            ? ` and is already in its ${held.room.phase} phase` : ''}`,
+        });
+        return;
+      }
+      roomFor(asked);
+      sendJson(res, 200, { room: asked });
+      return;
+    }
     let code = '';
     do { code = makeCode(() => randomBytes(1)[0] / 256, CODE_ALPHABET, CODE_LEN); }
     while (rooms.has(code));
     roomFor(code);
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ room: code }));
+    sendJson(res, 200, { room: code });
     return;
   }
-  res.writeHead(404, { 'content-type': 'text/plain' });
-  res.end('relay: /room/<CODE> over websocket, /status, /health, /new\n');
+  res.writeHead(404, { 'content-type': 'text/plain', ...CORS });
+  res.end('relay: /room/<CODE> over websocket, /status, /health, /new[?room=CODE]\n');
 });
 
 server.on('upgrade', (req, sock) => {
@@ -330,8 +412,21 @@ server.on('upgrade', (req, sock) => {
     + `sec-websocket-accept: ${createHash('sha1').update(key + GUID).digest('base64')}\r\n\r\n`);
   sock.setNoDelay(true);
 
-  const entry = roomFor(code);
   const want = url.searchParams.get('want') === 'join' ? 'join' : 'host';
+  /*
+   * A challenger may only walk into a room somebody opened. See `noSuchRoom`.
+   *
+   * `roomFor` creates on demand, which is right for a host — `?net=…&room=…` with no `host=0`
+   * *is* the request to open one — and was catastrophic for a challenger: a mistyped code
+   * conjured a second, empty room and the joiner waited in it for ever.
+   */
+  if (want === 'join' && !rooms.has(code)) {
+    log(`  refused ${code} (noRoom): nobody has opened one`);
+    sock.write(frameOut(JSON.stringify(noSuchRoom(code))));
+    setTimeout(() => sock.end(frameOut('', 0x8)), 60);
+    return;
+  }
+  const entry = roomFor(code);
   const v = Number(url.searchParams.get('v') ?? 1);
   const res = entry.room.join(Date.now(), want, v);
   if (res.slot < 0) {
