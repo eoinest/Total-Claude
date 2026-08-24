@@ -220,6 +220,17 @@ const LAN_REPAIR = 'To play across two machines on the same network, stop this s
   + 'the other machine can reach, and prints the URL to hand over.';
 
 /**
+ * Whether the address in the field is a *guess* rather than a decision.
+ *
+ * `defaultRelay()` below has three sources and only one of them is somebody's choice. A
+ * remembered value is a choice; `ws://<this host>:5959` is a guess, and that guess is wrong the
+ * moment the host ran `npm run host -- --relay-port=` with anything but the default. Set by
+ * `defaultRelay()` and read once, by the plaque handler in `showLobby`, which is the only thing
+ * entitled to overrule a guess.
+ */
+let relayWasGuessed = false;
+
+/**
  * Default relay address: whatever host served the page, on the relay's own port — **unless
  * that guess is one this page can prove wrong**, in which case the field is left empty.
  *
@@ -231,20 +242,11 @@ const LAN_REPAIR = 'To play across two machines on the same network, stop this s
  * server in it (§4.3), so `wss://<vercel-host>:5959` names a port nothing has ever listened on,
  * and pre-filling it means the first thing the form does is hand the player a wrong answer and
  * then fail at it. An HTTPS origin that is not loopback is that case: the static host is the
- * only thing there, and a browser on an HTTPS page cannot open a plain `ws://` socket anyway.
- * Empty, with the hint underneath asking for an address, is the truthful state.
+ * only thing there, and a browser on an HTTPS page cannot open a plain `ws://` socket anyway —
+ * which was an assumption when this was written and is now measured, twice over, in
+ * `docs/MULTIPLAYER.md` §10.2. Empty, with the hint underneath asking for an address, is the
+ * truthful state.
  */
-/**
- * Whether the address in the field is a *guess* rather than a decision.
- *
- * `defaultRelay()` has three sources and only one of them is somebody's choice. A remembered
- * value is a choice; `ws://<this host>:5959` is a guess, and the guess is wrong the moment the
- * host ran `npm run host -- --relay-port=` with anything but the default. Set by
- * `defaultRelay()` and read once, by the plaque handler, which is the only thing entitled to
- * overrule a guess.
- */
-let relayWasGuessed = false;
-
 const defaultRelay = (): string => {
   const stored = localStorage.getItem(KEY);
   if (stored) return stored;
