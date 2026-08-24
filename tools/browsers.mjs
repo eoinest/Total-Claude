@@ -18,6 +18,7 @@
  *     node tools/browsers.mjs                 status (the default)
  *     node tools/browsers.mjs status --json   the same, machine-readable
  *     node tools/browsers.mjs machine         **everything**: browsers, servers, worktrees, disk
+ *     node tools/browsers.mjs machine --no-disk   …without the worktree scan, which is the slow bit
  *     node tools/browsers.mjs owner           what the machine thinks the owner is doing
  *     node tools/browsers.mjs owner playing   tell it, rather than letting it guess
  *     node tools/browsers.mjs owner auto      go back to detecting
@@ -367,7 +368,9 @@ if (cmd === 'machine') {
 
   console.log('');
   if (!reclaim) {
-    console.log('worktrees    (tools/reclaim.mjs did not answer — run it directly for the reason)');
+    console.log(flags.has('--no-disk')
+      ? 'worktrees    (skipped by --no-disk; the worktree scan is the slow part of this command)'
+      : 'worktrees    (tools/reclaim.mjs did not answer — run it directly for the reason)');
   } else {
     const wt = reclaim.worktrees ?? [];
     const onDisk = wt.filter((w) => w.exists);
