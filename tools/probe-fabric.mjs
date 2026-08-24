@@ -484,6 +484,16 @@ const INJECTIONS = {
       + 'again: an exclusion is a claim, so it needs a count, a gate and a price. The price is '
       + 'the aggregate limb: the garden ground itself is graded on the 8 % it declares.',
   },
+  'paving-blind': {
+    hits: 'G5',
+    what: 'puts a 60 x 60 m PHANTOM monument footprint on the midpoint of the first armature '
+      + "way — ground the street builder has certainly paved — in G5's own reference set only. "
+      + 'This is the proof that G5 still READS the drawn scene rather than trusting a '
+      + 'guarantee, and it is needed because the fix on this branch made the street builder '
+      + 'guard every emitter it has: MAP-METHOD.md rule 26 says a mechanism that guarantees a '
+      + 'property destroys the ability to measure it, so the instrument has to be shown to '
+      + 'still work. Scoped to `monErodedPolys`, so it moves G5 and nothing else.',
+  },
   'complex-invent': {
     hits: 'G8c, G8d',
     what: 'declares the closest pair of monuments in DIFFERENT complexes to be one complex. '
@@ -2329,6 +2339,27 @@ try {
     const roadInMon = new Map();
     const wallInMon = new Map();
     const monErodedPolys = mons.map((m) => ({ id: m.id, name: m.name, poly: obPoly(erode(m.o, 0.5)), bb: m.bb }));
+    /*
+     * `--inject=paving-blind`. A phantom footprint on ground the street builder has certainly
+     * paved, in G5's and G7's reference set and nowhere else, so that "0 vertices" can be
+     * shown to be a reading and not a tautology. The position is taken from the probe's own
+     * armature rather than typed, so it cannot go stale when the network moves.
+     */
+    if (injected.has('paving-blind') && armature.length && armature[0].path.length >= 2) {
+      const pth = armature[0].path;
+      const q = pth[Math.floor(pth.length / 2)];
+      const h = 30;
+      const ph = {
+        id: 'INJECTED-phantom-precinct', name: 'INJECTED phantom precinct on a paved way',
+        poly: [
+          { x: q.x - h, z: q.z - h }, { x: q.x + h, z: q.z - h },
+          { x: q.x + h, z: q.z + h }, { x: q.x - h, z: q.z + h },
+        ],
+        bb: { x0: q.x - h, x1: q.x + h, z0: q.z - h, z1: q.z + h },
+      };
+      monErodedPolys.push(ph);
+      injectNotes.push(`monErodedPolys += ${ph.id}, ${h * 2} x ${h * 2} m at (${q.x.toFixed(1)}, ${q.z.toFixed(1)}) on ${armature[0].id}`);
+    }
     const monPolyGrid = makeGrid(monErodedPolys.map((m) => ({ bb: m.bb })));
     /**
      * Every *other* structure's footprint, for the test that asks the question the build

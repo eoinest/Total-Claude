@@ -3229,10 +3229,35 @@ function buildWays(batch: Batch, detail: number, heightAt: Ground, lanes: readon
         const az = lerp(a.z, b.z, i / n);
         const bx = lerp(a.x, b.x, (i + 1) / n);
         const bz = lerp(a.z, b.z, (i + 1) / n);
-        // A way keeps its reservation where a monument stands on it — that ground is spoken
-        // for either way and giving the reservation up necks the corridor shut on both sides
-        // — but it must not *pave* the temple floor. See `onMonument`.
-        if (onMonument((ax + bx) * 0.5, (az + bz) * 0.5)) continue;
+        /**
+         * A way keeps its reservation where a monument stands on it — that ground is spoken
+         * for either way and giving the reservation up necks the corridor shut on both sides
+         * — but it must not *pave* the temple floor. See `onMonument`.
+         *
+         * **This used to be one `onMonument` call at the cell's centreline midpoint, and a
+         * cell is up to 11 m long and 42 m wide.** `MAP-METHOD.md` rule 36: a sample lifted
+         * out of an extended thing keeps the point it was taken at and the rest of the extent
+         * becomes invisible. Measured on the shipped tree by `tools/scratch/mon-paving.mjs`,
+         * **thirteen** way/monument pairs had the ribbon's own EDGE inside a monument's
+         * collision box while the centreline was clear — the Via Lata's outer footway inside
+         * the Mausoleum of Augustus, the Via Sagularis inside the Castra Praetoria, the Via
+         * Labicana inside the Colosseum — and no test could see any of it.
+         *
+         * So the question is asked of each STRIP of the cross-section, over that strip's own
+         * extent: a 3 x 3 lattice of the quad about to be drawn, which strictly contains the
+         * single point it replaces. `clearStrip` is what every emitter below goes through.
+         */
+        const clearStrip = (o0: number, o1: number): boolean => {
+          const om = (o0 + o1) * 0.5;
+          const mx = (ax + bx) * 0.5;
+          const mz = (az + bz) * 0.5;
+          for (const o of [o0, om, o1]) {
+            if (onMonument(ax + nx * o, az + nz * o)) return false;
+            if (onMonument(mx + nx * o, mz + nz * o)) return false;
+            if (onMonument(bx + nx * o, bz + nz * o)) return false;
+          }
+          return true;
+        };
         // Setts vary stone to stone; the variation is what stops a long road reading as
         // one plate of colour. Kept tight — this is one material, not three.
         const tone = 0.88 + hash2(i, salt, 33) * 0.26;
@@ -3252,11 +3277,37 @@ function buildWays(batch: Batch, detail: number, heightAt: Ground, lanes: readon
           p3.set(ax + nx * o1, heightAt(ax + nx * o1, az + nz * o1) + y1, az + nz * o1);
           st.quadN(nrm, p0, p1, p2, p3, c);
         };
+        /**
+         * The carriageway, drawn as the widest clear piece of itself.
+         *
+         * A whole-cell skip is the wrong granularity in the other direction: refusing to pave
+         * 11 m of the Via Lata because its outer 2 m clips a tomb leaves a notch in Rome's
+         * principal street. So a strip that is not clear is halved and each half retried,
+         * down to a 2 m floor — `MAP-METHOD.md` rule 35, the same sentence one level down.
+         * Where nothing is in the way this recurses zero times and emits exactly the one or
+         * two quads it always did; the cost is paid only beside a monument.
+         *
+         * The camber is computed from the offset rather than passed in, so a split piece
+         * carries the same tent profile: `crown` at the axis falling to zero at either kerb,
+         * which is what the two hand-written quads used to describe.
+         */
+        const camber = (o: number): number =>
+          (crown > 0 ? 0.06 + crown * (1 - Math.abs(o) / Math.max(1e-6, road)) : 0.07);
+        const paveStrip = (o0: number, o1: number): void => {
+          if (clearStrip(o0, o1)) {
+            surf(o0, o1, camber(o0), camber(o1));
+            return;
+          }
+          if (o1 - o0 <= 2) return;
+          const om = (o0 + o1) * 0.5;
+          paveStrip(o0, om);
+          paveStrip(om, o1);
+        };
         if (crown > 0) {
-          surf(-road, 0, 0.06, 0.06 + crown);
-          surf(0, road, 0.06 + crown, 0.06);
+          paveStrip(-road, 0);
+          paveStrip(0, road);
         } else {
-          surf(-road, road, 0.07, 0.07);
+          paveStrip(-road, road);
         }
 
         if (foot > 0 && detail >= 1) {
@@ -3264,6 +3315,12 @@ function buildWays(batch: Batch, detail: number, heightAt: Ground, lanes: readon
           for (const side of [-1, 1]) {
             const o0 = road * side;
             const o1 = (road + foot) * side;
+            // The footway is the strip that was actually trespassing: it is the outermost
+            // 0.9-3.4 m of the reservation, so it reaches furthest from the centreline the
+            // old test was taken at. No recursion — a footway is narrower than the 2 m floor
+            // `paveStrip` stops at, so it is drawn whole or not at all, and the kerb below
+            // goes with it because a kerb with no footway behind it is a wall.
+            if (!clearStrip(Math.min(o0, o1), Math.max(o0, o1))) continue;
             // Raised footway, in travertine rather than basalt.
             p0.set(ax + nx * o0, g + kerbH, az + nz * o0);
             p1.set(bx + nx * o0, heightAt(bx, bz) + kerbH, bz + nz * o0);
@@ -3282,44 +3339,78 @@ function buildWays(batch: Batch, detail: number, heightAt: Ground, lanes: readon
         }
       }
 
-      // Colonnades on the processional ways. Rome's Via Lata ran between continuous
-      // porticoes for its whole length, and it is what makes a 42 m corridor read as a
-      // monumental street rather than as a gap.
+      /**
+       * Colonnades on the processional ways. Rome's Via Lata ran between continuous
+       * porticoes for its whole length, and it is what makes a 42 m corridor read as a
+       * monumental street rather than as a gap.
+       *
+       * **This block used to sit outside the per-cell `onMonument` guard, and that — not the
+       * paving — was `probe-fabric` G5.** Measured with `tools/scratch/mon-paving.mjs` on the
+       * shipped tree: of 13,895 street vertices standing inside a monument's own collision
+       * box, **13,692 were this colonnade and 203 were carriageway.** A marble portico with
+       * its architrave marched straight through the Forum Romanum (10,112 vertices), through
+       * the drum of the Mausoleum of Augustus (2,936) and through the Ara Pacis (644),
+       * because the guard was one level of nesting away. The check's own question says
+       * *carriageway*; ninety-eight and a half per cent of what it was counting was this.
+       *
+       * A portico stops at a temple, so the repair is to stop it: each column is asked about
+       * its own position, and the architrave is emitted per bay instead of as one beam from
+       * `a` to `b`, so it can break where the colonnade breaks. Where nothing is in the way
+       * the geometry is unchanged bay for bay — the same section, cut at the pitch the
+       * columns already stood at.
+       */
       if (way.portico && trim && detail >= 2) {
         const pitch = 4.6;
         const cols = Math.floor(len / pitch);
         const off = road + foot + 0.9;
-        for (let i = 1; i < cols; i++) {
-          const t = (i * pitch) / len;
-          const px = lerp(a.x, b.x, t);
-          const pz = lerp(a.z, b.z, t);
-          for (const side of [-1, 1]) {
-            const cxp = px + nx * off * side;
-            const czp = pz + nz * off * side;
-            column(trim, cxp, heightAt(cxp, czp) + 0.34, czp, 0.46, 6.4, 'corinthian', PAL.marble, detail - 1);
-          }
-        }
-        // The architrave the columns carry. Without it a colonnade is a row of bollards,
-        // which is exactly what the first render of this looked like: a portico is a
-        // *roofed* walk, and the continuous horizontal is what says so at any distance.
         for (const side of [-1, 1]) {
-          const y = heightAt(a.x, a.z) + 7.1;
           const ox = nx * off * side;
           const oz = nz * off * side;
-          for (const [w0, w1, dy] of [[-0.55, 0.55, 0], [-0.85, 0.85, 1.05]] as const) {
-            p0.set(a.x + ox + nx * w0, y + dy, a.z + oz + nz * w0);
-            p1.set(b.x + ox + nx * w0, y + dy, b.z + oz + nz * w0);
-            p2.set(b.x + ox + nx * w1, y + dy, b.z + oz + nz * w1);
-            p3.set(a.x + ox + nx * w1, y + dy, a.z + oz + nz * w1);
-            trim.quadN(nrm, p0, p1, p2, p3, dy > 0 ? PAL.marbleShadow : PAL.marble);
+          /** Is this bay's own run of portico clear of masonry, end to end? */
+          const bayClear = (t0: number, t1: number): boolean => {
+            for (const t of [t0, (t0 + t1) * 0.5, t1]) {
+              const px = lerp(a.x, b.x, t) + ox;
+              const pz = lerp(a.z, b.z, t) + oz;
+              if (onMonument(px, pz)) return false;
+            }
+            return true;
+          };
+          for (let i = 1; i < cols; i++) {
+            const t = (i * pitch) / len;
+            const cxp = lerp(a.x, b.x, t) + ox;
+            const czp = lerp(a.z, b.z, t) + oz;
+            if (onMonument(cxp, czp)) continue;
+            column(trim, cxp, heightAt(cxp, czp) + 0.34, czp, 0.46, 6.4, 'corinthian', PAL.marble, detail - 1);
           }
-          // The fascia, so the beam has a face and not just a top.
-          quadPrism(
-            trim, a.x + ox + nx * 0.85 * side, a.z + oz + nz * 0.85 * side,
-            b.x + ox + nx * 0.85 * side, b.z + oz + nz * 0.85 * side,
-            nx * side, nz * side, 0.05, y, y + 1.05,
-            PAL.marble, PAL.marbleShadow, { ends: false, top: false }
-          );
+          // The architrave the columns carry. Without it a colonnade is a row of bollards,
+          // which is exactly what the first render of this looked like: a portico is a
+          // *roofed* walk, and the continuous horizontal is what says so at any distance.
+          // Per bay, so that it ends where the columns end.
+          const y = heightAt(a.x, a.z) + 7.1;
+          const bays = Math.max(1, cols);
+          for (let i = 0; i < bays; i++) {
+            const t0 = i / bays;
+            const t1 = (i + 1) / bays;
+            if (!bayClear(t0, t1)) continue;
+            const q0x = lerp(a.x, b.x, t0) + ox;
+            const q0z = lerp(a.z, b.z, t0) + oz;
+            const q1x = lerp(a.x, b.x, t1) + ox;
+            const q1z = lerp(a.z, b.z, t1) + oz;
+            for (const [w0, w1, dy] of [[-0.55, 0.55, 0], [-0.85, 0.85, 1.05]] as const) {
+              p0.set(q0x + nx * w0, y + dy, q0z + nz * w0);
+              p1.set(q1x + nx * w0, y + dy, q1z + nz * w0);
+              p2.set(q1x + nx * w1, y + dy, q1z + nz * w1);
+              p3.set(q0x + nx * w1, y + dy, q0z + nz * w1);
+              trim.quadN(nrm, p0, p1, p2, p3, dy > 0 ? PAL.marbleShadow : PAL.marble);
+            }
+            // The fascia, so the beam has a face and not just a top.
+            quadPrism(
+              trim, q0x + nx * 0.85 * side, q0z + nz * 0.85 * side,
+              q1x + nx * 0.85 * side, q1z + nz * 0.85 * side,
+              nx * side, nz * side, 0.05, y, y + 1.05,
+              PAL.marble, PAL.marbleShadow, { ends: false, top: false }
+            );
+          }
         }
       }
     }
