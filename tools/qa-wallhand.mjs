@@ -19,7 +19,7 @@
  *
  * Usage: node tools/qa-wallhand.mjs --port=5477 --map=carthage [--json=path] [--shots=dir]
  */
-import { chromium } from 'playwright';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -33,10 +33,6 @@ const MAP = args.get('map') ?? 'carthage';
 const JSON_OUT = args.get('json') ?? null;
 const SHOT_DIR = args.get('shots') ? path.resolve(ROOT, args.get('shots')) : null;
 const W = 1600, H = 900;
-const base = `http://127.0.0.1:${PORT}`;
-const up = await fetch(`${base}/src/main.ts`).catch(() => null);
-if (!up || !up.ok) { console.error(`no dev server at ${base}`); process.exit(2); }
-console.log(`• dev server ${base}   map ${MAP}   (camera never parked; the scenario's own framing)`);
 
 const out = [];
 let failed = 0;
@@ -47,10 +43,31 @@ const say = (name, pass, what, got) => {
   console.log(`        -> ${got}`);
 };
 
-const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
-    '--ignore-gpu-blocklist', '--hide-scrollbars'],
+/*
+ * Browser and server through `tools/lib/browser-budget.mjs` — 23 Aug 2026.
+ *
+ * This file used to open Chromium with a bare `chromium.launch`, so nothing on the machine
+ * counted it, and to *refuse to run* unless somebody had already left a dev server on its port.
+ * The two failures compound: an agent cutting a release wanted one frame out of this probe and
+ * could get it only by becoming an unbudgeted extra renderer beside four budgeted ones, on a
+ * machine whose contended resource is the GPU — one renderer can pin it while the load average
+ * reads 39% and looks idle. It wrote its own small budgeted script instead, which is the tool
+ * being abandoned rather than used.
+ *
+ * `startVite` also closes the hole the old `fetch(base + '/src/main.ts')` probe left open: any
+ * listener answering on the port passed that test, including one serving **another worktree's
+ * branch**. It now asks `/__tc/tree` and refuses a server standing in a different root.
+ *
+ * The slot is taken first and the server second, so a run that has to queue queues holding
+ * nothing. The GPU flags are `launchBrowser`'s defaults and no longer spelled out here.
+ */
+const browser = await launchBrowser({
+  label: 'qa-wallhand', port: PORT, root: ROOT, args: ['--hide-scrollbars'],
 });
+const { base, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, label: 'qa-wallhand', slot: browser.budgetSlot,
+});
+console.log(`• dev server ${base}   map ${MAP}   (camera never parked; the scenario's own framing)`);
 if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
 const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
 const errs = [];
@@ -367,4 +384,5 @@ if (errs.length) say('console clean', false, 'page errors', errs.slice(0, 3).joi
 console.log(`\n${failed === 0 ? 'ALL PASS' : `${failed} FAILED`}  (${out.length} checks)`);
 if (JSON_OUT) await writeFile(path.resolve(ROOT, JSON_OUT), JSON.stringify({ map: MAP, out }, null, 1));
 await browser.close();
+await closeServer();
 process.exit(failed === 0 ? 0 : 1);

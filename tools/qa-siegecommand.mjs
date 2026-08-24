@@ -35,7 +35,7 @@
  * Usage: node tools/qa-siegecommand.mjs --port=5412 [--only=climb|tower|ram|refuse|great|storm]
  *                                       [--map=carthage|rome] [--shots=dir]
  */
-import { chromium } from 'playwright';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -51,16 +51,28 @@ const MAP = args.get('map') ?? 'carthage';
 const SHOT_DIR = args.get('shots') ? path.resolve(ROOT, args.get('shots')) : null;
 const JSON_OUT = args.get('json') ?? null;
 const W = 1600, H = 900;
-const base = `http://127.0.0.1:${PORT}`;
 
-const up = await fetch(`${base}/src/main.ts`).catch(() => null);
-if (!up || !up.ok) { console.error(`no dev server at ${base}`); process.exit(2); }
-console.log(`• dev server ${base}`);
-
-const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
-    '--ignore-gpu-blocklist', '--hide-scrollbars'],
+/*
+ * Browser and server through `tools/lib/browser-budget.mjs` — 23 Aug 2026.
+ *
+ * Same conversion as `qa-wallhand.mjs`, and for the same reason: a bare `chromium.launch` is a
+ * renderer nothing on the machine is counting, and the GPU is the resource that is actually
+ * contended — one headless Chromium can pin it while the load average reads 39% and looks idle.
+ * This is also the longest-running of the three siege tools, so it is the one that spent the
+ * most wall-clock time uncounted.
+ *
+ * The old readiness check — `fetch(base + '/src/main.ts')` — was satisfied by *any* listener on
+ * the port, including one serving another worktree; `startVite` asks `/__tc/tree` and refuses a
+ * server standing in a different root, which is the failure that is impossible to see in the
+ * output because the run passes, against the wrong branch.
+ */
+const browser = await launchBrowser({
+  label: 'qa-siegecommand', port: PORT, root: ROOT, args: ['--hide-scrollbars'],
 });
+const { base, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, label: 'qa-siegecommand', slot: browser.budgetSlot,
+});
+console.log(`• dev server ${base}`);
 if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
 
 const results = [];
@@ -1140,4 +1152,5 @@ if (errs.length) record('console-clean', false, 'page errors', errs.slice(0, 3).
 console.log(`\n${failed === 0 ? 'ALL PASS' : `${failed} FAILED`}  (${results.length} checks)`);
 if (JSON_OUT) await writeFile(path.resolve(ROOT, JSON_OUT), JSON.stringify({ results }, null, 2));
 await browser.close();
+await closeServer();
 process.exit(failed === 0 ? 0 : 1);

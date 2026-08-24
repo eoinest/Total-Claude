@@ -129,8 +129,9 @@ for (const abs of walk(TOOLS)) {
   }
 }
 
-let allow = [];
-try { allow = JSON.parse(readFileSync(ALLOW_FILE, 'utf8')).files ?? []; } catch { /* first run */ }
+let allowDoc = {};
+try { allowDoc = JSON.parse(readFileSync(ALLOW_FILE, 'utf8')); } catch { /* first run */ }
+const allow = allowDoc.files ?? [];
 const allowed = new Set(allow);
 
 const offenders = [...new Set(violations.map((v) => v.file))].sort();
@@ -149,11 +150,28 @@ if (PRUNE) {
     process.exit(2);
   }
   const next = offenders.filter((f) => allowed.has(f));
+  /*
+   * `note` and `generated` are **carried over**, not rewritten.
+   *
+   * They used to be re-emitted from string literals here, and the effect was that every prune
+   * silently shortened the file's own explanation of itself — the second prune dropped "after
+   * load average 160 on 16 cores took this machine down" and the instruction for how to shrink
+   * the list, which is the only part a reader who has not read this file needs. `generated`
+   * moved too, from the date the ratchet was set to the date it was last turned, which is the
+   * one thing that date must not mean: the list is the *state of the tree on 22 Aug*, and a
+   * moving stamp makes it impossible to tell an old entry from a new one.
+   *
+   * `shrunkTo` is the moving number, and it is a separate field so that it can move.
+   */
+  const DEFAULT_NOTE = 'Files that started a browser or a dev server directly when '
+    + 'tools/lib/browser-budget.mjs landed on 22 Aug 2026, after load average 160 on 16 cores '
+    + 'took this machine down. This list may shrink and must not grow. Convert a file, then '
+    + 'run: node tools/check-browser-budget.mjs --prune --all. See tools/check-browser-budget.mjs '
+    + 'for what counts and what it cannot see.';
   writeFileSync(ALLOW_FILE, `${JSON.stringify({
-    note: 'Files that started a browser or a dev server directly when tools/lib/browser-budget.mjs '
-      + 'landed on 22 Aug 2026. This list may shrink and must not grow. '
-      + 'See tools/check-browser-budget.mjs.',
-    generated: new Date().toISOString().slice(0, 10),
+    note: allowDoc.note ?? DEFAULT_NOTE,
+    generated: allowDoc.generated ?? new Date().toISOString().slice(0, 10),
+    shrunkTo: { files: next.length, from: allow.length, on: new Date().toISOString().slice(0, 10) },
     files: next,
   }, null, 2)}\n`);
   console.log(`pruned ${stale.length} entr${stale.length === 1 ? 'y' : 'ies'}; `

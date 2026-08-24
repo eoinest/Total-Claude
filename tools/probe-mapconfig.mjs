@@ -21,8 +21,10 @@
  * rather than a copy of the logic reimplemented here — which is the failure mode of every
  * config test this project could have written in node.
  */
-import { chromium } from 'playwright';
+import path from 'node:path';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 
+const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(
   process.argv.slice(2).map((a) => {
     const [k, v] = a.replace(/^--/, '').split('=');
@@ -30,11 +32,38 @@ const args = new Map(
   }),
 );
 const PORT = Number(args.get('port') ?? 5847);
-const base = `http://127.0.0.1:${PORT}`;
 
+/*
+ * `chromium.launch()` with no arguments at all — measured, not assumed — 23 Aug 2026.
+ *
+ * This file was the one *maintained* tool on the browser-budget allowlist that passed no GPU
+ * flags whatever, and the comment below on `?menu=0&harness=1` calls the target "a bare page on
+ * the same origin". It is not bare: `src/main.ts` constructs `new Engine({ canvas, quality,
+ * fixedSize })` at module top level, unconditionally, so this page builds a WebGL context and
+ * the whole default scene on the main thread before the `page.evaluate` below can import a
+ * single module.
+ *
+ * On what: `tools/scratch/gpu-backend-probe.mjs` asks the page rather than the flag, and on this
+ * machine a bare launch reports
+ *
+ *     ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0)), SwiftShader driver)
+ *
+ * against `ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Max)` with the budget's defaults. So
+ * every run of this probe since it was written has software-rasterised the scene it did not
+ * know it was drawing. `tools/browsers.mjs` could not have told anyone: it reads
+ * `--use-angle=` off the GPU process command line and a launch that passes no such flag lands
+ * in its `unstated` bucket, not its `swiftshader` one.
+ *
+ * `launchBrowser` defaults the four correct flags, and takes a slot while it is at it. The
+ * server comes from `startVite`, which also means the probe no longer needs somebody else to
+ * have left a dev server on 5847 — and refuses to reuse one that is serving a different tree.
+ */
+const browser = await launchBrowser({ label: 'probe-mapconfig', port: PORT, root: ROOT });
+const { base, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, label: 'probe-mapconfig', slot: browser.budgetSlot,
+});
 console.log(`[mapconfig] ${base}`);
 
-const browser = await chromium.launch();
 const page = await browser.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(`PAGEERROR ${e.message}`));
@@ -108,6 +137,7 @@ const out = await page.evaluate(async () => {
 });
 
 await browser.close();
+await closeServer();
 
 for (const r of out.rows) {
   console.log(

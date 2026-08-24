@@ -1,6 +1,11 @@
 {
   "note": "Files that started a browser or a dev server directly when tools/lib/browser-budget.mjs landed on 22 Aug 2026, after load average 160 on 16 cores took this machine down. This list may shrink and must not grow. Convert a file, then run: node tools/check-browser-budget.mjs --prune --all. See tools/check-browser-budget.mjs for what counts and what it cannot see.",
   "generated": "2026-08-22",
+  "shrunkTo": {
+    "files": 250,
+    "from": 254,
+    "on": "2026-08-24"
+  },
   "files": [
     "tools/banner-check.mjs",
     "tools/bisect-draws.mjs",
@@ -38,7 +43,6 @@
     "tools/probe-kitmaps.mjs",
     "tools/probe-lighting.mjs",
     "tools/probe-map.mjs",
-    "tools/probe-mapconfig.mjs",
     "tools/probe-masonry.mjs",
     "tools/probe-melee.mjs",
     "tools/probe-meleegeom.mjs",
@@ -59,7 +63,6 @@
     "tools/probe-shadow.mjs",
     "tools/probe-shadowproxy.mjs",
     "tools/probe-shimmer.mjs",
-    "tools/probe-siegehud.mjs",
     "tools/probe-siegescale.mjs",
     "tools/probe-skydispose-ds.mjs",
     "tools/probe-soldiermesh.mjs",
@@ -82,9 +85,7 @@
     "tools/qa-noassets.mjs",
     "tools/qa-preview.mjs",
     "tools/qa-resolve.mjs",
-    "tools/qa-siegecommand.mjs",
     "tools/qa-wallattack.mjs",
-    "tools/qa-wallhand.mjs",
     "tools/qa-wallmatrix.mjs",
     "tools/qa-wallorder.mjs",
     "tools/scratch-ditch-so2.mjs",

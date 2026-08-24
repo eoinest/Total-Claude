@@ -14,8 +14,7 @@
  *                                      [--shots=dir] [--json=path] [--limit=1600]
  */
 
-import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
@@ -49,32 +48,27 @@ const EXTRA = args.get('extra') ? `&${args.get('extra')}` : '';
 const STEP = Number(args.get('step') ?? 20);
 const W = 1600, H = 900;
 
-const waitForServer = async (url, ms) => {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
-    try {
-      const r = await fetch(url, { signal: AbortSignal.timeout(2000) });
-      if (r.ok || r.status === 304) return true;
-    } catch { /* not up */ }
-    await new Promise((r) => setTimeout(r, 300));
-  }
-  return false;
-};
-
-const base = `http://127.0.0.1:${PORT}`;
-let server = null;
-if (!(await waitForServer(base, 1200))) {
-  server = spawn('npx', ['vite', '--port', String(PORT), '--host', '127.0.0.1', '--strictPort'], {
-    cwd: ROOT, stdio: 'ignore', env: { ...process.env, TC_NO_HMR: '1' },
-  });
-  if (!(await waitForServer(base, 90000))) { console.error('vite did not start'); process.exit(1); }
-}
-console.log(`server ${base}${server ? ' (started here)' : ' (already up)'}`);
-
-const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=metal', '--enable-unsafe-swiftshader',
-    '--ignore-gpu-blocklist', '--hide-scrollbars'],
+/*
+ * Browser and server through `tools/lib/browser-budget.mjs` — 23 Aug 2026.
+ *
+ * This probe was one of three siege tools that opened Chromium with a bare `chromium.launch`
+ * and started Vite with `spawn('npx', ['vite', …])`. Both are the shapes the budget exists to
+ * remove: nothing counted the browser, so a release run could not use this file for a single
+ * frame without becoming an unbudgeted extra renderer on a machine whose contended resource is
+ * the GPU; and the handle `spawn('npx', …)` returns is the npx wrapper rather than Vite, so
+ * `server.kill()` at the bottom left the server on the port.
+ *
+ * The slot is taken **first** and the server started second, so a run that has to queue queues
+ * holding nothing. The four GPU flags are gone from this file: `launchBrowser` defaults them,
+ * which is the only way they cannot drift.
+ */
+const browser = await launchBrowser({
+  label: 'probe-siegehud', port: PORT, root: ROOT, args: ['--hide-scrollbars'],
 });
+const { base, close: closeServer } = await startVite({
+  port: PORT, root: ROOT, label: 'probe-siegehud', slot: browser.budgetSlot,
+});
+console.log(`server ${base}`);
 if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
 
 const TEXT = () => {
@@ -231,4 +225,4 @@ if (JSON_OUT) {
   console.log(`\nwrote ${JSON_OUT}`);
 }
 await browser.close();
-if (server) server.kill();
+await closeServer();
