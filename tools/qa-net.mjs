@@ -3,11 +3,12 @@
  * QA: two clients, one relay, one battle — driven through the real menu with a real mouse.
  *
  * Usage: node tools/qa-net.mjs [--port=5937] [--relay=5989] [--json=path] [--shots=dir]
- *                              [--only=proto,battle,siege,lobby,badcode,norelay,drop,dup,swap,
- *                                      ulp,late,leave,lag,xengine]
+ *                              [--only=proto,battle,siege,lobby,lan,badcode,norelay,drop,dup,
+ *                                      swap,ulp,late,leave,lag,xengine]
+ *                              [--lan-port=5938] [--lan-relay=5984]
  *                              [--all] [--seconds=70] [--keep] [--xsize=ultra] [--xticks=1500]
  *
- * Thirteen arms by default. `xengine` — two full-scale battles in two browser engines — is
+ * Fourteen arms by default. `xengine` — two full-scale battles in two browser engines — is
  * opt-in; see `DEFAULT_ARMS`.
  *
  * An unknown flag, or an unknown `--only=` arm, exits 2 rather than quietly running nothing —
@@ -52,6 +53,18 @@
  * the other two press them at a room nobody opened and at an address nothing is listening on,
  * and pass only if the failure is *named*, with a way out, and without a `pageerror`.
  *
+ * ## And the address, which every arm above quietly assumed
+ *
+ * Every one of them runs on `127.0.0.1`, and so did both defaults in the product: Vite's config
+ * says `host: '127.0.0.1'` and the relay's `listen` said the same. So the whole gate — 54
+ * checks, two clients, five injected faults — had been measuring a two-player game that only
+ * one machine could reach, and reporting it green.
+ *
+ * `lan` runs `tools/host-lan.mjs`, asks for the game and the relay **at the address that
+ * command prints** rather than at loopback, has the lobby build an invite out of it, and gives
+ * the second client nothing but that link. Its last check is the one that matters most: with no
+ * LAN server, the link is still withheld and still says why. See the arm.
+ *
  * ## Ports
  *
  * 5937 for vite and 5985-5999 for the relays. Never 5173. The relay band is deliberately at
@@ -88,8 +101,8 @@ import process from 'node:process';
 import { bootThroughMenu, driveMenu, ensureServer, waitForServer } from './lib/menu-boot.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const ARMS = ['proto', 'battle', 'siege', 'lobby', 'badcode', 'norelay', 'drop', 'dup', 'swap',
-  'ulp', 'late', 'leave', 'lag', 'xengine'];
+const ARMS = ['proto', 'battle', 'siege', 'lobby', 'lan', 'badcode', 'norelay', 'drop', 'dup',
+  'swap', 'ulp', 'late', 'leave', 'lag', 'xengine'];
 /**
  * `xengine` is opt-in, and that is a judgement rather than an omission.
  *
@@ -106,7 +119,7 @@ const ARMS = ['proto', 'battle', 'siege', 'lobby', 'badcode', 'norelay', 'drop',
  */
 const DEFAULT_ARMS = ARMS.filter((a) => a !== 'xengine');
 const FLAGS = ['port', 'relay', 'json', 'shots', 'only', 'seconds', 'keep', 'xsize', 'xticks',
-  'all', 'siege-map', 'siege-scenario', 'siege-seconds'];
+  'all', 'siege-map', 'siege-scenario', 'siege-seconds', 'lan-port', 'lan-relay'];
 
 const args = new Map(process.argv.slice(2).map((a) => {
   const m = a.match(/^--([^=]+)(?:=(.*))?$/);
@@ -165,6 +178,17 @@ const SIEGE_MAP = args.get('siege-map') ?? 'campus-martius';
  */
 const SIEGE_SCENARIO = args.get('siege-scenario') ?? 'assault';
 const SIEGE_SECONDS = Number(args.get('siege-seconds') ?? 45);
+/*
+ * The `lan` arm's own pair of ports, outside both bands the rest of this file uses.
+ *
+ * They cannot be shared with anything: `tools/host-lan.mjs` binds `0.0.0.0`, and a listener on
+ * `0.0.0.0` and one on `127.0.0.1` are the same address from this machine and different
+ * addresses from the next one. `startVite` refuses to hand a loopback server to a caller who
+ * asked for a LAN bind for exactly that reason, and a shared port here would turn that refusal
+ * into a red arm about port allocation rather than about the product.
+ */
+const LAN_PORT = Number(args.get('lan-port') ?? 5938);
+const LAN_RELAY = Number(args.get('lan-relay') ?? 5984);
 if (!Number.isFinite(SECONDS) || SECONDS < 20) {
   console.error(`--seconds must be at least 20; got '${args.get('seconds')}'`);
   process.exit(2);
@@ -270,6 +294,55 @@ async function startRelay(port, extra = [], attempt = 0) {
 }
 const stopRelays = () => { for (const p of relays.splice(0)) { try { p.kill('SIGTERM'); } catch { /* gone */ } } };
 
+/**
+ * `tools/host-lan.mjs` processes, which own *two* listeners each and must be reaped as one.
+ *
+ * Kept separate from `relays` because the handle here is the host command, not either server:
+ * it spawns a relay and a `vite-runner`, both of them watching its PID, so a SIGTERM to this
+ * one and a two-second wait is the whole shutdown. Splitting them into `relays` would kill the
+ * relay and leave a Vite on a LAN port with nobody's name on it.
+ */
+const hosts = [];
+const stopHosts = () => { for (const p of hosts.splice(0)) { try { p.kill('SIGTERM'); } catch { /* gone */ } } };
+
+/**
+ * Start `npm run host`'s tool and read the line it prints about itself.
+ *
+ * `--json` rather than parsing the human block, and `--no-open` because a gate must never put
+ * a browser window on the owner's screen. The JSON is the arm's whole view of what the command
+ * decided: the address, the interface, the two ports, and whether both of them answered *at
+ * that address* rather than at loopback.
+ */
+async function startHostLan(port, relayPort) {
+  const p = spawn('node', [path.join(ROOT, 'tools', 'host-lan.mjs'),
+    `--port=${port}`, `--relay-port=${relayPort}`, '--json', '--no-open'],
+  { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+  hosts.push(p);
+  let out = '';
+  let err = '';
+  p.stdout.on('data', (d) => { out += String(d); });
+  p.stderr.on('data', (d) => { err += String(d); });
+  const end = Date.now() + 150000;
+  let said = null;
+  while (Date.now() < end && !said) {
+    const m = out.match(/^\{.*\}$/m);
+    if (m) { try { said = JSON.parse(m[0]); } catch { /* half a line */ } }
+    if (!said && p.exitCode !== null) break;
+    if (!said) await sleep(300);
+  }
+  const stop = () => {
+    const at = hosts.indexOf(p);
+    if (at >= 0) hosts.splice(at, 1);
+    try { p.kill('SIGTERM'); } catch { /* already gone */ }
+  };
+  if (!said) {
+    stop();
+    throw new Error(`host-lan did not report itself on ${port}/${relayPort}: `
+      + `${(err || out).trim().slice(0, 400) || 'it printed nothing'}`);
+  }
+  return { ...said, proc: p, stop, stderr: () => err };
+}
+
 /*
  * Cleanup first, resources second — and that ordering is the whole point.
  *
@@ -283,6 +356,7 @@ const browsers = [];
 let server = null;
 function cleanup() {
   stopRelays();
+  stopHosts();
   for (const b of browsers.splice(0)) { void b.close().catch(() => { /* already gone */ }); }
   if (server && !KEEP) server.kill('SIGTERM');
 }
@@ -1642,6 +1716,194 @@ if (wanted('lobby')) {
 
   await host.close(); await guest.close();
   relay.stop();
+}
+
+/*
+ * One command, an address the machine next door can reach, and a link that carries it.
+ *
+ * ## What this can prove on one machine, and what it cannot
+ *
+ * It cannot prove the firewall. Traffic from this machine to its own en0 address is
+ * short-circuited before the packet filter sees it, so `fetch('http://192.168.0.238:5938/')`
+ * succeeding here says nothing about whether the laptop on the sofa gets through. That is the
+ * one thing in this arm that needs a second machine, and `docs/MULTIPLAYER.md` §10.4 is the
+ * five-minute procedure for it.
+ *
+ * What it *can* prove is everything up to that line, and every one of those had never been
+ * asserted: that the bind is not loopback, that both halves answer **at the address that is
+ * about to be handed out** rather than merely at `127.0.0.1`, that the lobby builds an invite
+ * out of that address, that the invite works when it is the only thing the second client is
+ * given — and, the check that keeps the previous pass's honesty intact, that a server with no
+ * LAN address still withholds the link and still says why.
+ *
+ * That last one is why the arm ends where it does rather than at the battle. Making the link
+ * appear is easy; the risk this whole change carries is that "withheld honestly" quietly
+ * becomes "usually works", and the only defence against it is a check that goes red when a
+ * link shows up somewhere it cannot work.
+ */
+if (wanted('lan')) {
+  console.log('\n=== one command, and a link the other machine can open ===');
+  const lan = await startHostLan(LAN_PORT, LAN_RELAY);
+  const lanBase = `http://${lan.lan}:${lan.gamePort}`;
+
+  /*
+   * Reached over the wire at the advertised address, not over loopback.
+   *
+   * `waitForServer(base)` on `127.0.0.1` was the check the first draft had and it is the check
+   * that cannot fail: the process is up, which was never the question. The question is whether
+   * the *bind* took, and the only local instrument for that is asking the same interface the
+   * other machine will ask.
+   */
+  const game = await fetch(`${lanBase}/`, { signal: AbortSignal.timeout(8000) })
+    .then((r) => r.status).catch((e) => `${e.name}: ${e.message}`);
+  const health = await fetch(`http://${lan.lan}:${lan.relayPort}/health`, { signal: AbortSignal.timeout(8000) })
+    .then((r) => r.text()).catch((e) => `${e.name}: ${e.message}`);
+  const plaque = await fetch(`${lanBase}/__tc/lan`, { signal: AbortSignal.timeout(8000) })
+    .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const privateV4 = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(lan.lan ?? '');
+  measured.lan = { said: lan.lan, iface: lan.iface, game, health, plaque, ports: [lan.gamePort, lan.relayPort] };
+  record('lan-one-command-serves-both-halves',
+    game === 200 && String(health).startsWith('relay ok') && privateV4 && !!plaque?.relayUrl,
+    'one command puts the game and the relay on an address another machine could route to',
+    `${lan.iface} ${lan.lan}: game ${lan.gamePort} answered ${game}, `
+      + `relay ${lan.relayPort} answered '${String(health).trim().slice(0, 40)}', `
+      + `/__tc/lan names ${plaque?.relayUrl ?? 'no relay'}`,
+    'both defaults were 127.0.0.1, so the documented way to play a two-player game was playable by one');
+
+  /*
+   * The case the lobby could not solve alone: a loopback URL bar over a LAN-bound server.
+   *
+   * Nothing is typed into the relay field here on purpose. `defaultRelay()` fills it with
+   * `ws://127.0.0.1:<relay>` — right for this browser, fatal in an invite — and the plaque is
+   * the only thing that can know better. If the field is still loopback when CREATE is pressed,
+   * the link is withheld and this check is red.
+   */
+  const hostPage = await newPage(chrome);
+  await hostPage.goto(`http://127.0.0.1:${lan.gamePort}/?mp=1`, { waitUntil: 'domcontentloaded' });
+  await hostPage.waitForSelector('.tc-lobby', { timeout: 30000 });
+  await hostPage.waitForFunction(
+    (want) => (document.querySelector('#tc-relay')?.value ?? '') === want,
+    lan.relayUrl, { timeout: 10000 }
+  ).catch(() => { /* asserted below, with the value in the message */ });
+  const relayField = await hostPage.inputValue('#tc-relay');
+  const roomA = nextRoom();
+  await hostPage.click('#tc-room');
+  await hostPage.type('#tc-room', roomA, { delay: 20 });
+  await hostPage.click('#tc-host');
+  await hostPage.waitForSelector('#tc-code', { timeout: 20000 });
+  const loopInvite = await hostPage.textContent('#tc-invite').catch(() => null);
+  const loopHint = ((await hostPage.textContent('#tc-link-hint')) ?? '').replace(/\s+/g, ' ').trim();
+  await shot(hostPage, 'lan-01-loopback-page');
+  measured.lan.fromLoopback = { relayField, invite: loopInvite, hint: loopHint };
+  record('lan-invite-survives-a-loopback-url-bar',
+    relayField === lan.relayUrl && !!loopInvite && loopInvite.includes(lan.lan)
+      && loopInvite.includes(roomA) && !/no invite link/i.test(loopHint),
+    'a host who opened localhost still gets a link naming the address the other machine reaches',
+    loopInvite
+      ? `relay field became ${relayField}; link ${loopInvite}`
+      : `no link — the relay field held ${relayField} and the screen said: ${loopHint.slice(0, 120)}`,
+    'the page cannot know its own machine has a second address; <meta name=tc-lan> is the server saying so');
+
+  /*
+   * And from the LAN address itself, which is the one the host command actually prints.
+   *
+   * The invite is read off the screen and handed to the second client verbatim. Nothing in this
+   * half of the arm builds a URL — that is the claim.
+   */
+  const roomB = nextRoom();
+  await hostPage.goto(`${lanBase}/?mp=1`, { waitUntil: 'domcontentloaded' });
+  await hostPage.waitForSelector('.tc-lobby', { timeout: 30000 });
+  /*
+   * The relay field again, and on this origin it is a *different* wrong answer.
+   *
+   * `defaultRelay()` guesses `ws://<whatever host served this page>:5959`, so on the LAN origin
+   * it produces `ws://192.168.0.238:5959` — plausible, not loopback, and pointing at nothing
+   * when the host chose another relay port. The first version of the plaque handler only
+   * overruled loopback and this arm went red here, which is the reason `relayWasGuessed` exists.
+   */
+  await hostPage.waitForFunction(
+    (want) => (document.querySelector('#tc-relay')?.value ?? '') === want,
+    lan.relayUrl, { timeout: 10000 }
+  ).catch(() => { /* the CREATE below reports it */ });
+  await hostPage.click('#tc-room');
+  await hostPage.type('#tc-room', roomB, { delay: 20 });
+  await hostPage.click('#tc-host');
+  await hostPage.waitForSelector('#tc-code', { timeout: 20000 });
+  const invite = ((await hostPage.textContent('#tc-invite').catch(() => '')) ?? '').trim();
+  const hasButton = await hostPage.evaluate(() => !!document.querySelector('#tc-copy-link'));
+  await shot(hostPage, 'lan-02-room-open');
+  measured.lan.invite = invite;
+  record('lan-invite-carries-the-address-and-the-code',
+    hasButton && invite.startsWith(`http://${lan.lan}:${lan.gamePort}/`)
+      && invite.includes(`room=${roomB}`) && invite.includes(encodeURIComponent(lan.relayUrl)),
+    'the link on the open-room screen names the LAN page, the LAN relay and this room',
+    invite || 'there is no link on the screen and no button to copy one',
+    'built from location.href, which is exactly right once the page is served on a LAN address');
+
+  await hostPage.click('#tc-begin');
+  await driveMenu(hostPage, { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' });
+
+  const guestPage = await newPage(chromeGuest);
+  await guestPage.goto(invite, { waitUntil: 'domcontentloaded' });
+  await guestPage.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
+  await hostPage.evaluate(INSTALL);
+  await guestPage.evaluate(INSTALL);
+  for (const p of [hostPage, guestPage]) {
+    await p.waitForFunction(() => ['deploy', 'battle'].includes(window.__net()?.phase),
+      null, { timeout: 90000 });
+  }
+  const lh = await hostPage.evaluate(() => window.__net());
+  const lg = await guestPage.evaluate(() => window.__net());
+  await shot(guestPage, 'lan-03-guest-followed-the-link');
+  measured.lan.met = { room: roomB, host: lh, guest: lg };
+  record('lan-the-link-is-the-whole-invitation',
+    lh.room === roomB && lg.room === roomB && lh.slot === 0 && lg.slot === 1
+      && lh.myFaction !== lg.myFaction,
+    'a second client given nothing but that link ends up on the other side of the same battle',
+    `${invite.slice(0, 78)}… → room ${lg.room}, slot ${lg.slot}, commanding ${lg.myFaction} `
+      + `against slot ${lh.slot}'s ${lh.myFaction}`,
+    'no code typed, no relay address entered, no URL written by this test');
+
+  /*
+   * The honesty check, and the reason it is in this arm rather than the lobby one.
+   *
+   * `base` is the run's ordinary dev server: `127.0.0.1`, no LAN bind, no `/__tc/lan`. Nothing
+   * about it has changed and nothing about it should. If a link appears here it is a link to
+   * the recipient's own machine, which is the failure the previous pass built the refusal for
+   * — so this check going red is the signal that making the link possible has made it
+   * unconditional.
+   */
+  const plain = await newPage(chrome);
+  const plainRelay = await startRelay(5987);
+  await plain.goto(`${base}/?mp=1`, { waitUntil: 'domcontentloaded' });
+  await plain.waitForSelector('.tc-lobby', { timeout: 30000 });
+  await plain.fill('#tc-relay', plainRelay.base);
+  await plain.click('#tc-room');
+  await plain.type('#tc-room', nextRoom(), { delay: 20 });
+  await plain.click('#tc-host');
+  await plain.waitForSelector('#tc-code', { timeout: 20000 });
+  const plainHint = ((await plain.textContent('#tc-link-hint')) ?? '').replace(/\s+/g, ' ').trim();
+  const plainLink = await plain.evaluate(() => !!document.querySelector('#tc-copy-link'));
+  const plainCode = ((await plain.textContent('#tc-code')) ?? '').trim();
+  await shot(plain, 'lan-04-no-lan-server');
+  measured.lan.withheld = { hint: plainHint, hasButton: plainLink, code: plainCode };
+  record('lan-no-lan-server-still-withholds-the-link',
+    !plainLink && /no invite link/i.test(plainHint) && /127\.0\.0\.1/.test(plainHint)
+      && /npm run host/.test(plainHint) && plainCode.length === 5,
+    'a server bound only to loopback offers no link, says which address is the problem, '
+      + 'and names the command that fixes it',
+    plainLink ? `A COPY THE INVITE LINK button appeared on a loopback-only server. ${plainHint.slice(0, 120)}`
+      : plainHint.slice(0, 210) || 'the screen said nothing about the link at all',
+    'the previous pass withheld the link and this one must not turn that into "usually works"');
+
+  record('lan-console', hostPage.__errs.length === 0 && guestPage.__errs.length === 0
+    && plain.__errs.length === 0,
+    'and no page in the LAN flow raised a console error',
+    [...hostPage.__errs, ...guestPage.__errs, ...plain.__errs].slice(0, 3).join(' ; ') || 'clean');
+
+  await hostPage.close(); await guestPage.close(); await plain.close();
+  plainRelay.stop();
+  lan.stop();
 }
 
 /*

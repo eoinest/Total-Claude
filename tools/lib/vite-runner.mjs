@@ -39,6 +39,29 @@
  *
  * so a caller can wait for readiness without polling HTTP, and knows the real PID.
  *
+ * ## `--host`, and the plaque that only exists on a LAN bind
+ *
+ * `127.0.0.1` remains the default and every harness keeps it. `tools/host-lan.mjs` passes
+ * `--host=0.0.0.0 --relay-port=5959`, and that combination — and only that combination — makes
+ * this server state the address the machine next door reaches it at.
+ *
+ * It exists because of a case the lobby cannot solve on its own. The invite link is built from
+ * `location.href`; a host who opens `http://localhost:5958` while this server is *also* bound
+ * to `192.168.0.238:5958` is on a loopback origin, so the lobby correctly withholds the link —
+ * and correctly withholds a link that could have been made. The page cannot know the machine's
+ * other address; the server can.
+ *
+ * **Two transports, one `lanPlaque()`.** `<meta name="tc-lan">` in the document for the page,
+ * and `/__tc/lan` for anything holding a shell. The meta tag rather than a fetch, and the
+ * reason is measured: a `fetch('/__tc/lan')` that 404s makes Chromium write *"Failed to load
+ * resource: the server responded with a status of 404"* to the console, unsuppressably, on
+ * every origin that is not this one — the deployed site, `npm run dev`, and the dev server
+ * every other arm in `tools/qa-net.mjs` runs on. `lobby-console` went red on it. A fact that
+ * belongs to the document should travel in the document.
+ *
+ * Bound to loopback the tag is **absent**, not empty, so the honest refusal is still the
+ * default and is still what the gate measures.
+ *
  * ## Usage
  *
  *     node tools/lib/vite-runner.mjs --port=5901 --root=/path/to/worktree \
@@ -48,8 +71,10 @@
  * it, and `ensureServer()` in `tools/lib/menu-boot.mjs` goes through that.
  */
 
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
+import { isLoopbackHost, lanAddress } from './lan-address.mjs';
 
 const args = new Map(
   process.argv.slice(2)
@@ -65,6 +90,11 @@ const ROOT = args.get('root') ? path.resolve(args.get('root')) : process.cwd();
 const CACHE_DIR = args.get('cache-dir') || process.env.TC_VITE_CACHE_DIR || '';
 const PARENT = Number(args.get('parent') || process.ppid);
 const WATCH_MS = Number(process.env.TC_VITE_WATCH_MS || 2000);
+const HOST = args.get('host') || '127.0.0.1';
+const RELAY_PORT = Number(args.get('relay-port') || 0);
+/** `--lan=` pins the advertised address when the ranking in `lan-address.mjs` picks wrong. */
+const LAN_PREFER = args.get('lan') || '';
+const LAN_BIND = !isLoopbackHost(HOST);
 
 if (!Number.isFinite(PORT) || PORT <= 0) {
   console.error('vite-runner: --port=<n> is required');
@@ -123,16 +153,56 @@ const treeIdentity = () => ({
   root: ROOT,
   pid: process.pid,
   port: PORT,
+  host: HOST,
   parent: PARENT,
   startedAt: new Date().toISOString(),
 });
+
+/**
+ * The LAN plaque. `null` on a loopback bind, which is what makes its absence meaningful.
+ *
+ * `relayUrl` is only stated when a relay port was given. A page that gets `relayPort: null`
+ * must not go on to invent `ws://<lan>:5959` — it would be guessing at a process nobody
+ * started, which is the exact shape of the wrong answer `defaultRelay()` used to give on the
+ * deployed site.
+ */
+const lanPlaque = () => {
+  if (!LAN_BIND) return null;
+  const pick = lanAddress({ prefer: LAN_PREFER });
+  if (!pick) return null;
+  const mdns = `${os.hostname().replace(/\.local\.?$/, '')}.local`;
+  return {
+    tc: 'host-lan',
+    lan: pick.ip,
+    iface: pick.iface,
+    mdns,
+    gamePort: PORT,
+    gameUrl: `http://${pick.ip}:${PORT}/`,
+    relayPort: RELAY_PORT || null,
+    relayUrl: RELAY_PORT ? `ws://${pick.ip}:${RELAY_PORT}` : null,
+  };
+};
 
 try {
   server = await createServer({
     root: ROOT,
     configFile: path.join(ROOT, 'vite.config.ts'),
     logLevel: 'error',
-    server: { port: PORT, host: '127.0.0.1', strictPort: true },
+    server: {
+      port: PORT,
+      host: HOST,
+      strictPort: true,
+      /*
+       * Vite already allows every IP-address Host header, so the IP this hands out needs no
+       * entry. The `.local` name does, and it is worth having: Mac to Mac, `ernests-air.local`
+       * survives a DHCP lease change and an IP address does not. The list stays explicit
+       * rather than `true` — the DNS-rebinding protection is worth keeping for every name
+       * that is *not* one of these two.
+       */
+      ...(LAN_BIND
+        ? { allowedHosts: [os.hostname(), `${os.hostname().replace(/\.local\.?$/, '')}.local`] }
+        : {}),
+    },
     plugins: [{
       name: 'tc-tree-identity',
       configureServer(s) {
@@ -140,6 +210,28 @@ try {
           res.setHeader('content-type', 'application/json');
           res.end(JSON.stringify(treeIdentity()));
         });
+        s.middlewares.use('/__tc/lan', (_req, res) => {
+          const plaque = lanPlaque();
+          res.setHeader('content-type', 'application/json');
+          res.setHeader('cache-control', 'no-store');
+          if (!plaque) { res.statusCode = 404; res.end('{"error":"not serving on a LAN address"}'); return; }
+          res.end(JSON.stringify(plaque));
+        });
+      },
+      /*
+       * The same plaque, in the document, for the page that must not make a request to get it.
+       * `order: 'pre'` so it is in the head before any module runs; `src/ui/NetLobby.ts` reads
+       * it synchronously on mount and never waits on anything.
+       */
+      transformIndexHtml: {
+        order: 'pre',
+        handler(html) {
+          const plaque = lanPlaque();
+          if (!plaque) return html;
+          const content = JSON.stringify(plaque)
+            .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+          return html.replace(/<head(\s[^>]*)?>/i, (m) => `${m}\n    <meta name="tc-lan" content="${content}">`);
+        },
       },
     }],
   });
@@ -149,8 +241,21 @@ try {
   process.exit(1);
 }
 
+/*
+ * `base` stays a loopback URL even on a LAN bind. Every caller of this line uses it to drive a
+ * browser on *this* machine, and `0.0.0.0` is a bind address, not a destination — `fetch` to it
+ * works on Linux by accident and is not a thing to rely on. The LAN address travels in `lan`,
+ * beside it, for the one caller that wants to print it.
+ */
 process.stdout.write(
-  `TC_VITE_READY ${JSON.stringify({ port: PORT, base: `http://127.0.0.1:${PORT}`, pid: process.pid, root: ROOT })}\n`
+  `TC_VITE_READY ${JSON.stringify({
+    port: PORT,
+    base: `http://127.0.0.1:${PORT}`,
+    host: HOST,
+    lan: lanPlaque(),
+    pid: process.pid,
+    root: ROOT,
+  })}\n`
 );
 
 /*

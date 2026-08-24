@@ -5,6 +5,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "vite",
+    "host": "node tools/host-lan.mjs",
+    "relay": "node tools/relay.mjs",
     "viewer": "vite --open /viewer.html",
     "lint": "node tools/check-determinism.mjs && node tools/check-tool-args.mjs && node tools/check-browser-budget.mjs",
     "check:determinism": "node tools/check-determinism.mjs",

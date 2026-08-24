@@ -43,6 +43,26 @@
  * `ws://<this host>:5959`, which is what `node tools/relay.mjs` serves, and is remembered in
  * `localStorage` so nobody types it twice. On the deployed site that default is a guess that
  * nothing answers, and the form says so rather than failing at it.
+ *
+ * ## The invite link, and the one thing the page cannot work out for itself
+ *
+ * The previous pass established that an invite built from `location.href` on a loopback origin
+ * is a link to the *recipient's* machine, and withheld it. That was right and it is kept. What
+ * it could not do is tell the difference between two loopback origins that are not alike:
+ *
+ *   - `npm run dev`, bound to `127.0.0.1` and nothing else. There is no invite to build and
+ *     there is no address to build one from. Withhold, and say so.
+ *   - `npm run host`, bound to `0.0.0.0`, serving this same page at `192.168.0.238:5958` as
+ *     well — where a host who typed `localhost` into their own bar sees a loopback origin and
+ *     the machine next door has a perfectly good address to be sent. Withholding here is
+ *     honest about the URL bar and wrong about the world.
+ *
+ * `/__tc/lan` is how the second case identifies itself: a same-origin JSON plaque that
+ * `tools/lib/vite-runner.mjs` serves **only** on a non-loopback bind (see `lanPlaque` there).
+ * Present, it names the address and the relay port and the invite is built out of those.
+ * Absent — deployed site, plain dev server, anything else — nothing changes and the refusal is
+ * the one the previous pass wrote. The default is still to withhold; what moved is the set of
+ * cases in which a link genuinely exists, not the willingness to claim one that does not.
  */
 
 import { CODE_ALPHABET, CODE_LEN, validCode } from '../net/protocol';
@@ -133,6 +153,70 @@ const hostOf = (addr: string): string => {
 };
 
 /**
+ * What `tools/lib/vite-runner.mjs` serves at `/__tc/lan` when — and only when — it is bound to
+ * an address other than loopback. See the file docstring.
+ */
+export interface LanPlaque {
+  tc: 'host-lan';
+  /** The IPv4 address the machine next door reaches this server at. */
+  lan: string;
+  iface: string;
+  /** `<hostname>.local`. Mac to Mac it outlives a DHCP lease and the number does not. */
+  mdns: string;
+  gamePort: number;
+  gameUrl: string;
+  /** `null` when the host started a server without a relay beside it. Do not guess a port. */
+  relayPort: number | null;
+  relayUrl: string | null;
+}
+
+const looksLikePlaque = (j: unknown): j is LanPlaque => {
+  const p = j as Partial<LanPlaque> | null;
+  return !!p && p.tc === 'host-lan' && typeof p.lan === 'string' && !!p.lan
+    && !isLoopback(p.lan) && typeof p.gameUrl === 'string' && !!p.gameUrl;
+};
+
+/**
+ * Whether this origin is also being served on a LAN address, read out of the document.
+ *
+ * `<meta name="tc-lan">`, written by `tools/lib/vite-runner.mjs` on a non-loopback bind and by
+ * nothing else. Absent almost everywhere — the deployed site, `npm run dev`,
+ * `npm run host -- --loopback` — and absent is the answer that keeps the honest refusal.
+ *
+ * **Not a `fetch`, and that is not a preference.** The first version asked `/__tc/lan` and got
+ * a 404 on every origin without one, and Chromium writes *"Failed to load resource: the server
+ * responded with a status of 404"* into the console for a failed `fetch` whatever the caller
+ * does with the promise. `qa-net`'s `lobby-console` arm went red on it, which was the correct
+ * verdict: the lobby would have started logging an error on the deployed site to ask a question
+ * it already knew the answer to. A fact the server knows while it is writing the document
+ * belongs in the document.
+ *
+ * Exported for `tools/qa-net.mjs`, which asserts both the presence and the absence.
+ */
+export function readLanPlaque(doc: Document = document): LanPlaque | null {
+  const raw = doc.querySelector('meta[name="tc-lan"]')?.getAttribute('content');
+  if (!raw) return null;
+  try {
+    const j: unknown = JSON.parse(raw);
+    return looksLikePlaque(j) ? j : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The sentence that turns a refusal into an instruction.
+ *
+ * It is appended to both withheld-link cases and to the relay field's own hint, because both
+ * are the same situation seen from different ends: something on this machine is bound to
+ * `127.0.0.1` and the machine next door cannot reach it. One command fixes both, and a screen
+ * that explains why it cannot help without naming the thing that can is only half honest.
+ */
+const LAN_REPAIR = 'To play across two machines on the same network, stop this server and run '
+  + '<code>npm run host</code> instead &mdash; it serves the game and the relay on an address '
+  + 'the other machine can reach, and prints the URL to hand over.';
+
+/**
  * Default relay address: whatever host served the page, on the relay's own port — **unless
  * that guess is one this page can prove wrong**, in which case the field is left empty.
  *
@@ -147,17 +231,35 @@ const hostOf = (addr: string): string => {
  * only thing there, and a browser on an HTTPS page cannot open a plain `ws://` socket anyway.
  * Empty, with the hint underneath asking for an address, is the truthful state.
  */
+/**
+ * Whether the address in the field is a *guess* rather than a decision.
+ *
+ * `defaultRelay()` has three sources and only one of them is somebody's choice. A remembered
+ * value is a choice; `ws://<this host>:5959` is a guess, and the guess is wrong the moment the
+ * host ran `npm run host -- --relay-port=` with anything but the default. Set by
+ * `defaultRelay()` and read once, by the plaque handler, which is the only thing entitled to
+ * overrule a guess.
+ */
+let relayWasGuessed = false;
+
 const defaultRelay = (): string => {
   const stored = localStorage.getItem(KEY);
   if (stored) return stored;
+  relayWasGuessed = true;
   if (location.protocol === 'https:' && !isLoopback(location.hostname)) return '';
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   return `${scheme}://${location.hostname || '127.0.0.1'}:5959`;
 };
 
-/** The URL that boots a relayed battle. One builder, so the invite and the host agree. */
-const battleUrl = (relay: string, code: string, asHost: boolean): URL => {
-  const u = new URL(location.href);
+/**
+ * The URL that boots a relayed battle. One builder, so the invite and the host agree.
+ *
+ * `from` is the page the link should open — `location.href` for the host's own navigation, and
+ * the LAN address for an invite when this origin is loopback and the plaque names one. The
+ * *path* is taken from `from` too, so a build served under a sub-path keeps it.
+ */
+const battleUrl = (relay: string, code: string, asHost: boolean, from = location.href): URL => {
+  const u = new URL(from);
   u.search = '';
   u.searchParams.set('net', relay);
   u.searchParams.set('room', code);
@@ -234,8 +336,8 @@ export function showLobby(host: HTMLElement): void {
     <div class="tc-relaybox">
       <label for="tc-relay">Relay address</label>
       <input id="tc-relay" spellcheck="false" autocomplete="off">
-      <p class="tc-hint">Every order goes through a relay, which is what makes the two
-         simulations one battle rather than two. Run one with
+      <p class="tc-hint" id="tc-relay-hint">Every order goes through a relay, which is what
+         makes the two simulations one battle rather than two. Run one with
          <code>node tools/relay.mjs</code>, or paste the address of one somebody else is
          running.</p>
     </div>
@@ -248,8 +350,41 @@ export function showLobby(host: HTMLElement): void {
   const hostBtn = sheet.querySelector('#tc-host') as HTMLButtonElement;
   const joinBtn = sheet.querySelector('#tc-join') as HTMLButtonElement;
 
+  relayWasGuessed = false;
   relay.value = params.get('net') ?? defaultRelay();
   room.value = (params.get('room') ?? '').toUpperCase();
+
+  /*
+   * If this server is also on a LAN address, prefer the LAN relay over the loopback guess.
+   *
+   * `defaultRelay()` returns `ws://127.0.0.1:5959` on a loopback origin and that address is
+   * *correct for this browser* — the host's own machine can reach its own relay either way,
+   * measured. It is only wrong as the thing that goes into an invite, and the invite carries
+   * whatever is in this field. So the field is moved to the address that works for both of
+   * them.
+   *
+   * Three guards, and each one is a case where the field must be left alone: an explicit
+   * `?net=` in the URL, anything the host has typed, and a remembered value that is neither a
+   * guess nor loopback — which is somebody's earlier decision about a real remote relay.
+   *
+   * `relayWasGuessed` is the guard that took a red arm to find. On the LAN origin the guess is
+   * `ws://192.168.0.238:5959`, which is not loopback and looks entirely plausible; with
+   * `--relay-port=5984` there is nothing on it, and a rule that only replaced loopback left the
+   * form pointed at a port nobody had opened. A guess is a guess whatever host it names.
+   */
+  const plaque = readLanPlaque();
+  const fromUrl = params.has('net');
+  if (plaque?.relayUrl && !fromUrl
+    && (relayWasGuessed || isLoopback(hostOf(relay.value.trim())))
+    && relay.value.trim() !== plaque.relayUrl) {
+    relay.value = plaque.relayUrl;
+    const rh = sheet.querySelector('#tc-relay-hint');
+    if (rh) {
+      rh.innerHTML = `This machine is serving the game and a relay on <b>${esc(plaque.lan)}</b> `
+        + `(${esc(plaque.iface)}), which is the address the other commander can reach. The `
+        + 'field has been set to it. Anything you type here wins.';
+    }
+  }
 
   const say = (html: string, bad = false): void => {
     note.innerHTML = html;
@@ -329,10 +464,23 @@ export function showLobby(host: HTMLElement): void {
    */
   const opened = (code: string): void => {
     const addr = relay.value.trim();
-    const invite = battleUrl(addr, code, false).toString();
+    /*
+     * Which page the invite should open. The URL bar's answer, unless it is a loopback origin
+     * and this server has told us it is *also* reachable at a LAN address — in which case the
+     * URL bar is describing the host's own convenience and not the other machine's route.
+     */
+    const from = plaque && isLoopback(location.hostname) ? plaque.gameUrl : location.href;
+    const invite = battleUrl(addr, code, false, from).toString();
     // Honest about when it cannot work. See `isLoopback`: a link naming this machine, mailed
-    // to somebody else, opens *their* machine and finds nothing there.
-    const deadLink = isLoopback(location.hostname) ? 'page' : isLoopback(hostOf(addr)) ? 'relay' : '';
+    // to somebody else, opens *their* machine and finds nothing there. Both halves are judged
+    // on the addresses that are actually going into the link, not on `location` alone.
+    const deadLink = isLoopback(hostOf(from)) ? 'page' : isLoopback(hostOf(addr)) ? 'relay' : '';
+    /*
+     * A link built out of an address that is not in the host's URL bar has to say so. Otherwise
+     * the screen shows a code, a link naming a machine the host has never typed, and no account
+     * of where it came from — and the first thing anyone would do with that is not trust it.
+     */
+    const rehomed = !deadLink && plaque && from !== location.href;
     sheet.innerHTML = `
       <h1>Room open</h1>
       <p>Read this out to the other commander, or have them type it into their own lobby.</p>
@@ -345,12 +493,18 @@ export function showLobby(host: HTMLElement): void {
       <p class="tc-hint" id="tc-link-hint">${deadLink === 'page'
         ? 'There is no invite link, because this page is served from '
           + `<b>${esc(location.hostname)}</b> &mdash; a link built from it would open the other `
-          + 'commander&rsquo;s own machine and find nothing there. The code is the thing to send.'
+          + 'commander&rsquo;s own machine and find nothing there. The code is the thing to send. '
+          + `${LAN_REPAIR}`
         : deadLink === 'relay'
           ? `There is no invite link, because the relay is at <b>${esc(hostOf(addr))}</b>, which `
             + 'names this machine and not theirs. Put an address you can both reach in the relay '
-            + 'field, or send the code and let them set their own.'
-          : `The link carries the relay address and this code: <code>${esc(invite)}</code>`}</p>
+            + `field, or send the code and let them set their own. ${LAN_REPAIR}`
+          : `${rehomed ? 'This page is open at <b>' + esc(location.hostname) + '</b>, which only '
+            + `this machine can reach &mdash; so the link is built from <b>${esc(plaque.lan)}</b>, `
+            + `which is ${esc(plaque.iface)} on the network you are both on. `
+            + `<b>${esc(plaque.mdns)}</b> reaches this machine too, Mac to Mac. ` : ''}`
+            + 'The link carries the relay address and this code: '
+            + `<code id="tc-invite">${esc(invite)}</code>`}</p>
       <div class="tc-row">
         <button type="button" id="tc-begin">Choose the battle &rarr;</button>
       </div>
