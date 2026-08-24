@@ -216,50 +216,104 @@ exists. A relay, not peer-to-peer, either way — §4.1's total-order problem, n
 - **A prevention you have not verified is a hope.** Fixing a race is half the work; the other half
   is a compared mark that voids the run when the fix did not hold.
 - Worktrees need an isolated vite `cacheDir`. **Port 5173 is the owner's.**
-- **At most four headless browsers on this machine at once, and the filesystem now enforces it.**
+- **The browser cap is enforced by the filesystem, and it is no longer a single number.**
   22 Aug 2026: load average 160 on 16 cores, 136 `vite` and `chrome-headless-shell` processes,
   machine recovered by hand; and nineteen orphaned dev servers swept off it the same morning.
   Use `launchBrowser`/`startVite` from `tools/lib/browser-budget.mjs` — one line each, and they
-  queue rather than pile on. `node tools/browsers.mjs` says what is running and who owns it.
-  **How many agents to run at once is below.** Full account: `docs/tech/BROWSER-BUDGET.md`.
+  queue rather than pile on. **How many agents to run at once is below.**
+  Full account: `docs/tech/BROWSER-BUDGET.md`.
+- **The contended resource is the GPU, not the CPU, and the count-based cap could not say so.**
+  23 Aug 2026, with **one** agent browser rendering: load average 6.25 of 16 cores — 39%,
+  "idle" — and `Device Utilization %` reading `62, 94, 100, 26, 46, 99`. The owner reported lag
+  twice while `browsers.mjs` printed *within budget*, and both times he was right. The cap is
+  now a ladder that depends on what he is doing (4 away / 2 present / 1 playing), a GPU ceiling
+  measured before each grant, and a `taskpolicy -b` demotion applied on the heartbeat to work
+  **already running** — the only lever that reaches a film that took its slot six minutes ago.
+  `docs/tech/RESOURCE-BUDGET.md`.
+- **`node tools/browsers.mjs machine` is the one to run first.** Browsers, servers, GPU against
+  its ceiling, what the owner is doing, memory, disk, and how much of the 28 GB of worktrees is
+  reclaimable and why. It changes nothing. `node tools/browsers.mjs` alone answers only "who
+  holds a slot", which is now half the question.
+- **Push before you stop.** 8 worktrees on this machine hold **43 commits that exist on no
+  remote**, one of them 16 deep. Nothing will ever reclaim those — `tools/reclaim.mjs` refuses
+  them by rule and `tools/qa-reclaim.mjs` proves it refuses them — but nothing protects them
+  from a crash either, and that is how a day of work was lost here once.
 - Unattended agents carry: *where you would normally ask, make the call, write down what you chose
   and why, and name what would change your mind.*
 
-### How many agents to run at once — the rule, and where the number comes from
+### How many agents to run at once — the rule, and where the numbers come from
 
-This is the number that was got wrong on 22 Aug 2026. Roughly a dozen agents were running; the
-machine reached **load average 160 on 16 cores with 136 `vite` and `chrome-headless-shell`
-processes** and had to be recovered by hand.
+This has been got wrong twice, in opposite ways. On **22 Aug 2026** roughly a dozen agents were
+running; the machine reached **load average 160 on 16 cores with 136 `vite` and
+`chrome-headless-shell` processes** and had to be recovered by hand. On **23 Aug** the fix for
+that was in place and holding — and the owner reported lag anyway, twice, with the cap reading
+*within budget*, the CPU at 39%, and **one** browser on the machine. The first failure was a
+count problem. The second was not, and no count could have caught it.
 
-> **Run at most six agents at once, and never dispatch more than four that you expect to run a
-> gate, a probe or a film in the same window.** Before dispatching a wave, run
-> `node tools/browsers.mjs`. If the slots are full and there is a queue, the machine is already
-> at its limit — wait rather than adding to it.
+> **Before every wave: `node tools/browsers.mjs machine`.** One screen, changes nothing, and it
+> answers all three questions below at once. Then:
+>
+> | the owner is | dispatch at most | of which expected to run a gate, probe or film |
+> |---|---|---|
+> | `away` | **6** | **4** |
+> | `present` | **3** | **2** |
+> | `playing` | **nothing new — let what is running finish** | 0 |
+>
+> **And if the GPU line is over the ceiling for the current state, the machine is already at its
+> limit whatever the slot count says.** Wait. That is the line the old rule had no way to read.
 
-**The four is measured and it is now enforced.** `tools/scratch/bb-bench.mjs` ran the shape of a
-real gate job — own Vite, own Chromium, the field battle through the real menu, 8,632 men — at
-N = 1…8, in a CPU arm and a rendering arm. At N=4 the machine sits at **0.45–0.48× its cores**
-and keeps **92–98% of perfect linear scaling**: four browsers cost essentially nothing in
-throughput. At N=8 the CPU arm reaches **1.09× cores**, which is an oversubscribed machine, and
-the rendering arm loses a fifth of its scaling. `tools/lib/browser-budget.mjs` caps it at 4 and
-a fifth caller **queues** rather than piling on, so exceeding it is now slow rather than fatal.
-The whole table is in `docs/tech/BROWSER-BUDGET.md`.
+**You no longer have to enforce the browser count, and it is no longer 4.** The filesystem
+semaphore applies the ladder itself; a caller over it queues rather than piling on, and the wait
+message names *which* limit it hit. Your job is the number of **agents**, which nothing
+enforces, because an agent is bursty and holding a browser is only part of its life.
 
-**The six is a different constraint and is *not* enforced — it is yours.** Agents are bursty:
-an agent spends most of its life reading and editing and only part of it holding a browser. At
-six, typical demand stays under four and nobody queues. At twelve — what was run on 22 August —
-demand is permanently over the cap and half the fleet sits in a queue burning wall clock and
-tokens even when the machine is healthy. The cap protects the *machine*; only you can protect
-the *fleet's throughput*, and the two numbers are not the same.
+**Where each number comes from.**
 
-There is a third limit and it is the one that actually bit: **an orchestrator who dispatches
-twelve cannot read twelve reports.** Nineteen orphaned dev servers sat on this box for more
-than a day before anyone looked.
+- **4 browsers when he is away** is unchanged and measured. `tools/scratch/bb-bench.mjs` ran the
+  shape of a real gate job — own Vite, own Chromium, the field battle through the real menu,
+  8,632 men — at N = 1…8. At N=4 the machine sits at **0.45–0.48× its cores** and keeps
+  **92–98% of perfect linear scaling**. At N=8 the CPU arm reaches **1.09× cores** and the
+  rendering arm loses a fifth of its scaling. Table in `docs/tech/BROWSER-BUDGET.md`.
 
-Scaling to another machine: **one browser slot per four cores**, agents at 1.5× the slot count.
-On anything smaller than 16 cores, set it — `node tools/browsers.mjs cap <n>` writes it once
-for every agent. It is deliberately *not* computed from `os.cpus()`: a cap that changes
-silently with the hardware is one nobody can reason about across two machines.
+- **2 when he is working and 1 when he is playing** are derived from the GPU measurement rather
+  than from a scaling sweep of their own, and that is stated because it matters: **one** agent
+  browser rendering this scene averages **85% of the GPU** while using 24% of the CPU. There is
+  no arrangement of four such browsers that leaves him a GPU. Two is what fits under a 70%
+  ceiling when he wants a responsive terminal; one, demoted to the efficiency cores, is what
+  fits under 45% when he wants the frame rate. The ceilings themselves are a **preference and
+  not a measurement** — see *Reserved for the owner*.
+
+- **6, 3 and 0 agents** preserve the ratio the old rule used — about 1.5 agents per browser slot
+  — applied to the new ladder. The 6 was never a measurement and is not one now: it is the
+  observation that at six, typical demand stays under the cap and nobody queues, while at twelve
+  demand is permanently over it and half the fleet burns wall clock in a queue on a healthy
+  machine. Scale it with the cap, not independently of it.
+
+- **Zero while he is playing** is the one that is a change in kind rather than degree. A wave
+  dispatched then does not fail, it *queues*, for up to the 30-minute browser timeout, and you
+  will have spent an hour of fleet time on nothing. Let the running work finish under the
+  throttle and dispatch when he gets up. If something genuinely cannot wait, `TC_OWNER=away`
+  overrides it for one run — **and you say so in your report**, because you have just decided to
+  spend his frame rate.
+
+**The third limit is unchanged and is still the one that actually bites: an orchestrator who
+dispatches twelve cannot read twelve reports.** Nineteen orphaned dev servers sat on this box
+for more than a day before anyone looked, and there are 118 worktrees on it now for the same
+reason.
+
+**A fourth limit, new: reclaim between waves.** `node tools/reclaim.mjs` is a preview and
+changes nothing; `--apply` needs a fetch newer than ten minutes and refuses without one. Today
+it would take back **13.9 GB** across 48 worktrees and 45 `/tmp` trees. It will never touch a
+worktree with unpushed commits, uncommitted work, an operation in progress, or a live process
+standing in it — `node tools/qa-reclaim.mjs` demonstrates each of those refusals against real
+fixtures on the real `--apply` path, 14 assertions. Full rule in `docs/tech/RESOURCE-BUDGET.md`.
+
+Scaling to another machine: **one browser slot per four cores at `away`, halving at `present`,
+one at `playing`**, agents at 1.5× the slot count. On anything smaller than 16 cores set the
+base — `node tools/browsers.mjs cap <n>` writes it once for every agent. It is deliberately
+*not* computed from `os.cpus()`: a cap that changes silently with the hardware is one nobody can
+reason about across two machines. The GPU ceiling needs no scaling, because a percentage of the
+GPU is already the machine-independent statement of the thing.
 
 ### Reserved for the owner — do not decide these
 
