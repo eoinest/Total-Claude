@@ -1397,7 +1397,15 @@ a cross-engine arm on the gate rather than in a document.
 
 ## 7. Open risks
 
-**7.1 The premise that decides the product is unmeasured.** Every number in this pass is one
+**7.1 The premise that decides the product is unmeasured. — STILL TRUE, AND NOW A FIVE-MINUTE
+JOB. See §10.6.** Nothing below has been measured. What changed on 23 August 2026 is that the
+measurement became possible at all: `npm run host` serves the game and the relay on an address
+a second machine can reach, both machines therefore load *the same bytes from the same server*
+so "same build" is true by construction rather than by agreement, and §10.6 is the procedure —
+which battle, how far to run it, and exactly what a `uf64` divergence at a named tick looks
+like when it arrives. It needs a second laptop and cannot be run by an agent on this one.
+
+Every number in this pass is one
 machine. Cross-*engine* determinism is thoroughly established as broken, but that is not the risk
 a same-engine product runs. The risk is Chrome-on-Alice against Chrome-on-Bob: two machines, same
 version, possibly different CPUs. V8 ships its own fdlibm port so same-version V8 across
@@ -2232,7 +2240,351 @@ fact about the product.
 
 The invite link is withheld rather than repaired when the page is on loopback; making it work
 would mean the lobby knowing an address the machine is reachable at, which it cannot discover from
-inside a browser. `net/worker.ts` takes every change in this pass — CORS, `/new?room=`, the
+inside a browser. **— DONE, §10.4, and the second sentence was exactly right.** The page still
+cannot discover it; the *server* can, and now says so in the document it serves. Withholding is
+unchanged everywhere it was true. `net/worker.ts` takes every change in this pass — CORS, `/new?room=`, the
 `noSuchRoom` refusal against a storage flag — and remains, as it has always been, unrun. And the
 desync ending still speaks through the strip; if the sheet reads better for a peer leaving, it will
 read better for a fork too, and that is a small follow-up rather than a rewrite.
+
+---
+
+## 10. On a LAN — 23 August 2026, `e/net/lan`
+
+The owner's instruction was four words: *"for the relay it should just work on LAN."* This
+section is what that turned out to require, what it turned out to rule out, and — because it is
+the point of the whole exercise — the procedure for the measurement §7.1 has been waiting on
+since this document was written.
+
+### 10.1 Both defaults were 127.0.0.1, and nothing had ever noticed
+
+`vite.config.ts` says `host: '127.0.0.1'`. `tools/relay.mjs` said `server.listen(PORT,
+'127.0.0.1')`. Neither is wrong on its own — the relay's is *right* for a gate that starts a
+dozen of them — but together they mean the documented way to play a two-player game
+(`npm run dev` in one terminal, `node tools/relay.mjs` in another) produced a two-player game
+that exactly one machine could reach.
+
+Fifty-four green checks sat on top of that, and they could not see it: every arm in
+`tools/qa-net.mjs` connects to `127.0.0.1`, so the gate had been measuring a LAN product over
+loopback and reporting it green. §9.12 found the same shape one layer up — 38 checks behind a
+door nobody could open — and the lesson repeats: **a gate can only fail about an address it
+uses.**
+
+### 10.2 The deployed site cannot be part of this, and it is not a matter of degree
+
+The attractive story is "load the game from `total-claude.vercel.app`, run the relay on your
+LAN". It is blocked by the browser, twice, and both blocks were measured rather than assumed —
+`tools/scratch/https-ws-probe.mjs`, Chromium 151.0.7922.34, the real deployed origin with its
+real certificate, and a real `tools/relay.mjs` on this machine's `en0`:
+
+```
+origin https://total-claude.vercel.app   isSecureContext true
+
+  ws://192.168.0.238:5959   error, readyState 3, after 1 ms
+      net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS
+  ws://127.0.0.1:5959       error, readyState 3, after 0 ms
+      net::ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS
+  fetch http://192.168.0.238:5959/health   TypeError: Failed to fetch
+      "Permission was denied for this request to access the `local` address space"
+```
+
+That is Chrome's **Local Network Access** check, which is a permission and therefore in
+principle grantable. So the same probe was run again with it switched off
+(`--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessChecks`), to find out what is
+underneath:
+
+```
+  ws://192.168.0.238:5959   threw synchronously: SecurityError:
+      An insecure WebSocket connection may not be initiated from a page loaded over HTTPS.
+  ws://127.0.0.1:5959       OPEN, 1 ms
+```
+
+**Mixed content, and it throws at construction.** Not a refused connection, not a timeout — the
+`WebSocket` constructor raises before a packet exists. There is no permission for it, no flag a
+player can set, and no amount of relay-side work that changes it. The owner's constraint holds,
+and it holds harder than stated: two independent mechanisms, either one sufficient.
+
+The second line of that transcript is the interesting one. `ws://127.0.0.1` from an HTTPS origin
+**opens** once LNA is out of the way — the loopback carve-out in the Secure Contexts spec is
+real and Chrome implements it. So a deployed page *can* talk to a relay on the same machine, in
+principle, and Chrome 151 denies it anyway by default. Either way it is a single-machine story
+and not the one being asked for.
+
+Three ways round it were priced and all three lost:
+
+| Route | What it costs |
+|---|---|
+| **Local CA** (`mkcert`) | A root certificate installed **on both machines**, by hand, by a person who has been told how — which is the thing this pass exists to avoid. It is also the one item on this list that is a genuine security decision, and asking a guest to trust a CA so they can play a game is not a trade to offer. |
+| **Real cert for a name that resolves to a private IP** (Plex's `plex.direct` trick, or `<ip>.local-ip.sh`) | Either owning a domain, running ACME, and shipping the private key in the repo — where it is public and therefore revocable by anyone who notices — or downloading somebody else's deliberately-published private key and depending on their DNS. Both make the game's availability somebody else's decision. |
+| **Tunnel** (`cloudflared tunnel --url`) | Works, and gives a real `wss://` the deployed site can reach. Costs a Homebrew install, a random hostname per run, and routes a game between two laptops in one room through a datacentre. It is also, precisely, what `net/worker.ts` already is — §4.3 chose that shape deliberately and it remains the right answer for *play with someone who is not in the building*. |
+
+The version that works with nothing installed and nothing explained is the host serving both
+halves over plain HTTP on the LAN. Measured from a page on the LAN origin, everything opens:
+
+```
+origin http://192.168.0.238:5938   isSecureContext false
+  ws://192.168.0.238:5984   OPEN, 3 ms
+  ws://127.0.0.1:5984       OPEN, 1 ms
+  fetch http://192.168.0.238:5984/health   200 relay ok
+```
+
+And it has a property the deployed route never could: **both machines load the same bytes from
+the same server.** "Same build", which §7.1's measurement depends on and which two people
+downloading from Vercel at different times cannot guarantee, is true by construction. A hash
+that differs afterwards is a difference between two CPUs and nothing else.
+
+### 10.3 What was built
+
+**`npm run host`** — `tools/host-lan.mjs`. It starts the relay on `0.0.0.0:5959` and the game on
+`0.0.0.0:5958`, works out which of this machine's addresses the other one can reach, checks both
+halves answer **at that address** rather than at loopback, and prints:
+
+```
+────────────────────────────────────────────────────────────────
+  Hand this to the other commander. They open it and they are in your room:
+
+      http://192.168.0.238:5958/?mp=1
+
+  Or read out the room code from the CREATE A ROOM screen — that works from
+  any address and survives a phone call.
+────────────────────────────────────────────────────────────────
+  game    http://192.168.0.238:5958/
+  relay   ws://192.168.0.238:5959
+  also    http://Ernests-MacBook-Pro-2.local:5958/?mp=1   (Mac to Mac; …)
+  on      en0
+────────────────────────────────────────────────────────────────
+  Both machines must be on the same network. Same Wi-Fi is usually enough;
+  a "guest" network, or one with client isolation on, is not — those exist
+  specifically to stop two devices seeing each other, and nothing here can
+  work round that.
+  If the other machine cannot open it: check the firewall said Allow, and
+  that 192.168.0.238 is the address on the network they are on.
+────────────────────────────────────────────────────────────────
+  Ctrl-C stops both.
+```
+
+**Two ports, not one.** 5959 stays the relay because `defaultRelay()` in `src/ui/NetLobby.ts`
+guesses `ws://<whatever host served this page>:5959` — a guess that has been correct for the LAN
+case since it was written, and which merging the two behind a Vite websocket proxy would break
+for no gain. It costs nothing at the firewall: macOS prompts per *binary*, and both listeners
+are the same `node`.
+
+**Choosing the address is not one line.** `tools/lib/lan-address.mjs` ranks rather than filters.
+`utun*` (VPN), `awdl*`/`llw*` (AirDrop), `bridge*`, `docker*` and `169.254/16` are excluded
+outright, because there is no network on which handing somebody an AirDrop interface is the
+right answer and every one of them produces a URL that resolves and then hangs. A non-private
+address is demoted, not excluded. `en0` before `en1` is a tiebreak. Every runner-up is printed
+with `--lan=` beside it, and no LAN address at all is a stated refusal — Wi-Fi off, or a VPN and
+nothing else — rather than a loopback URL dressed up as an invitation.
+
+### 10.4 The invite link: what changed, and what deliberately did not
+
+§9.12 withheld the invite on a loopback origin and that was right. It is kept. What moved is the
+set of cases in which withholding is *true*, because two loopback origins are not alike:
+
+- `npm run dev` on `127.0.0.1` and nothing else. There is no address to build a link from.
+  Withhold, and say so. **Unchanged.**
+- `npm run host` bound to `0.0.0.0`, where the host happens to have typed `localhost` into their
+  own bar. The page sees loopback; the machine next door has a perfectly good address to be
+  sent. Withholding here is honest about the URL bar and wrong about the world.
+
+The page cannot discover the second case from inside a browser — §9.12's closing paragraph says
+exactly this and it was correct. The server can. A LAN-bound `tools/lib/vite-runner.mjs` writes
+`<meta name="tc-lan" content='{"lan":"192.168.0.238","iface":"en0",…}'>` into the document, and
+the lobby reads it synchronously on mount. Present: the invite is built from that address, the
+relay field is moved to the LAN relay, and the screen **says that it did** — a link naming a
+machine the host never typed, with no account of where it came from, is a link nobody would
+trust. Absent — the deployed site, `npm run dev`, `--loopback` — nothing changes at all.
+
+**A meta tag and not a `fetch`, and that is a measurement rather than a preference.** The first
+version asked `/__tc/lan` and got a 404 everywhere else, and Chromium writes *"Failed to load
+resource: the server responded with a status of 404"* into the console for a failed `fetch`
+whatever the caller does with the promise. `qa-net`'s `lobby-console` arm went red on it, which
+was the correct verdict: the lobby would have started logging an error on the deployed site in
+order to ask a question it already knew the answer to. The endpoint still exists for anything
+holding a shell; the page does not use it.
+
+Both withheld messages now name the repair (`npm run host`) rather than only the problem.
+
+**`relayWasGuessed` cost a red arm and is worth the paragraph.** `defaultRelay()` has three
+sources and only one is a decision: a remembered value is a choice, `ws://<this host>:5959` is a
+guess. The first version of the plaque handler only overruled *loopback* addresses — and on the
+LAN origin the guess is `ws://192.168.0.238:5959`, which is not loopback, looks entirely
+plausible, and points at nothing when the host chose another relay port. A guess is a guess
+whatever host it names.
+
+### 10.5 The gate, and the five ways it was made to go red
+
+`tools/qa-net.mjs --only=lan`. Six checks, two browser slots, ports 5938/5984. It runs the host
+command for real, asks for both halves **at the address that command printed**, has the lobby
+build an invite out of it, and gives the second client nothing but that link — no code typed, no
+relay address entered, no URL written by the test.
+
+```
+  PASS  lan-one-command-serves-both-halves
+        en0 192.168.0.238: game 5938 answered 200, relay 5984 answered 'relay ok …',
+        /__tc/lan names ws://192.168.0.238:5984
+  PASS  lan-invite-survives-a-loopback-url-bar
+        relay field became ws://192.168.0.238:5984;
+        link http://192.168.0.238:5938/?net=ws%3A%2F%2F192.168.0.238%3A5984&room=QAQQ8&host=0
+  PASS  lan-invite-carries-the-address-and-the-code
+  PASS  lan-the-link-is-the-whole-invitation
+        … → room QAQQ9, slot 1, commanding 1 against slot 0's 0
+  PASS  lan-no-lan-server-still-withholds-the-link
+  PASS  lan-console
+```
+
+**What it cannot prove is the firewall.** Traffic from this machine to its own `en0` address is
+short-circuited before the packet filter sees it, so every green above is a necessary condition
+and none of them is sufficient. That is the one thing that needs the second machine, and §10.6
+is how to find out in five minutes.
+
+Made to fail on purpose, five ways, because a check that has never gone red is a decoration.
+Which checks survive each injection is the part worth reading:
+
+| Injected | Red | Green, and why that is right |
+|---|---|---|
+| `relay.mjs` back to `listen(PORT, '127.0.0.1')` | `lan-one-command-serves-both-halves`, then `lan-arm-can-run` stops the arm | the command refuses to print a URL it has not verified, and one sentence beats five Playwright timeouts about a server that is not there |
+| `opened()` builds the invite from `location.href` unconditionally | `lan-invite-survives-a-loopback-url-bar` only | the LAN origin never needed the plaque; the withholding check is unaffected |
+| the invite lower-cases the room code | `lan-invite-survives-…` and `lan-invite-carries-…` | `lan-the-link-is-the-whole-invitation` **stays green**, correctly: the relay upper-cases the code, so the link still works and only the two checks that assert the literal code fail |
+| the invite drops `host=0` | `lan-the-link-is-the-whole-invitation` only | the link is still well-formed, so the three checks about its *shape* pass; the second client reports *"the link opened and no battle started in 150 s — the second client is showing «The relay would not let you in»"* |
+| `deadLink` forced to `''` — the link is never withheld | `lan-no-lan-server-still-withholds-the-link` only | *"A COPY THE INVITE LINK button appeared on a loopback-only server. The link carries the relay address and this code: `http://127.0.0.1:5937/?net=…`"* — the exact dead link the previous pass protected the owner from, named by the gate |
+
+`lan-console` went red without being asked, during the `/__tc/lan` 404 above, which is the
+unforced kind.
+
+#### The one red that was not this pass, and now has a second home
+
+`siege-same-battle` went red twice over the course of this work — *"they stopped at different
+ticks: 1353 and 1358"*, then *"1365 and 1370"* — and green three times, and `--only=siege` at
+this branch's base `546f453` is green as well. It is §9.12's `settleTogether` flake, wearing the
+siege arm instead of the battle arm, and the tell is that **`siege-checkpoints-agreed` stays
+green through it**: *"the relay's last agreed tick is 1350 against a final tick of 1365"*. Every
+checkpoint the two clients exchanged agreed. No hash was ever compared, because the comparison
+requires equal ticks and never got that far.
+
+It correlates with load and nothing else: both reds were at load average 8–10 with another
+agent's `qa-determinism` on the machine, and every green was at load 4–5. The comparison is
+untouched by this pass. Two practical consequences. **Run the full gate on a quiet machine** —
+`node tools/browsers.mjs` says who else is on it. And `settleTogether`'s release-and-restop loop,
+which §9.12 raised to six attempts for the battle arm, is evidently not always enough for the
+siege arm, whose clients are 3,180 men against 2,337 and drain more slowly; raising the cap or
+scaling it with the headcount is the obvious next move and it belongs to whoever next has cause
+to touch that helper.
+
+#### And one gate hazard found by falling into it
+
+Three runs of this gate were thrown away because a source file under `src/` was edited *while*
+they were running. `tools/lib/vite-runner.mjs`'s own docstring warns about exactly this — "a
+file edited mid-run reloads the page and destroys the execution context, which surfaces as a
+spurious crash at a random simulation time" — and what it surfaced as here was `one-ulp`
+reporting **NOT DETECTED** on an injected divergence it had caught in the run before. An agent
+holding a 25-minute gate must treat the tree as frozen for the duration; a comment is a source
+edit.
+
+#### The gate, at this branch's head
+
+`tsc` clean, `lint` 3/3, **`qa-net` 60/60** (54 before this pass, plus the six above),
+`qa-deploy` 33/33, `qa-replay` 27/27, `probe-seams` PASS on both maps, `qa-freeze` 32/32, and
+all three determinism arms **UNCHANGED at every one of their seven checkpoints on `hash`, `uf64`
+and `uctl`** — 8,632, 3,072 and 3,440 men. `tools/determinism-baseline.json` is byte-identical
+to its state at `546f453`; this pass is transport and tooling and had no business moving a
+number in it.
+
+### 10.6 §7.1, at last: the two-machine procedure
+
+This is the measurement this whole document rests on and nobody has ever run it. **Every number
+in this file is one laptop.** Two browsers on one machine share a V8 build, a libm, a CPU and a
+microcode revision, so they cannot disagree in the way the product's central hypothesis says
+they might not. Chrome-on-Alice against Chrome-on-Bob is a different question and it has never
+been asked.
+
+Five minutes. You need a second machine on the same Wi-Fi with any modern browser on it.
+
+**1. On this machine.**
+
+```
+git checkout main && npm run host
+```
+
+Allow the firewall if macOS asks. It asks per node binary and *may not ask at all*: measured on
+this machine, `--getallowsigned` reports *"Automatically allow downloaded signed software
+ENABLED"*, node 24.13.0 is Developer-ID signed with a valid timestamp, and it bound `0.0.0.0`
+with no dialog and without being added to `socketfilterfw --listapps`. An unsigned or
+locally-built node, or that setting turned off, is when the dialog appears.
+
+**2. Open the printed URL here**, press CREATE A ROOM, and read the code — or copy the link.
+
+**3. On the other machine**, open the link (or `http://<the printed address>:5958/?mp=1` and
+type the code). If it does not load, the fault is the network and not the game: check they are
+on the same SSID and not a guest network. `curl http://<address>:5958/` from the other machine
+separates "cannot reach the server" from "cannot start the battle".
+
+**4. Choose the battle here.** Take **`campus-martius` / `field` at `ultra`** — 8,632 men, which
+is both the pinned arm and the largest number of chances for a divergence to happen. §7.2's
+escape is a stochastic boundary crossing, so the number of men is the number of dice.
+
+**5. Deploy on both machines, fight, and let it run past t+250.** The fork the one-machine
+measurements found in the cross-*engine* case was at **t+205.5**, so anything that stops before
+t+210 has not asked the question. Ten minutes of wall clock is a thorough answer; four is a
+useful one.
+
+**What you are looking for.** Nothing. A battle that plays to a result on both screens, with the
+session strip showing the same room and the tick clocks tracking, is the hypothesis holding.
+
+**What a failure looks like, exactly.** §9.4 already built this and it has never been pointed at
+two real CPUs. The session halts at a named tick and both screens say the same thing:
+
+```
+uf64 diverged at tick 1746 — host 3e91c0aa, challenger 3e91c0af
+  IX Hispana (17), Cohors III (23), Ala Gallorum (31)
+```
+
+- **`uf64` alone**, with `hash` and `uctl` unchanged, is *the* result this measurement exists to
+  find: the continuous float64 state disagreed and nothing discrete has yet noticed. That is a
+  libm difference between two CPUs, it is the finding, and the tick is the number to write down.
+- **`uctl` or `hash`** means the disagreement has already reached a control-flow decision, which
+  is a bigger and later event; it will usually be preceded by a `uf64` divergence you can find
+  by looking earlier.
+- **`pool`** with the others clean would be a rendering-side bug rather than a simulation one.
+
+Write down: both machines' CPU (`sysctl -n machdep.cpu.brand_string`), both browsers' full
+version (`chrome://version`), the tick, the layer, the two hashes, and the named regiments. Then
+`--only=xengine` and `tools/qa-determinism.mjs` have somewhere to start.
+
+**And if it holds**, that is the sentence §7.1 has been missing since this file was written, and
+the product's premise stops being a hypothesis.
+
+### 10.7 Two things for the owner
+
+1. **A fixed default port.** 5958 for the game and 5959 for the relay are chosen here, and they
+   are chosen rather than obvious: 5173 is the playtest server, the rest of the 5900s is full of
+   other agents' dev servers, and a port that moves per run is a URL that cannot be written on a
+   sticky note. `--port=` and `--relay-port=` override. Whether the default should instead be
+   something a person would recognise — 8080, say — is a taste call rather than a technical one.
+2. **The deployed site's Multiplayer plaque.** `noRelay()` in `src/ui/NetLobby.ts`, the
+   non-loopback branch — the sentence a visitor to `total-claude.vercel.app` gets when CREATE
+   finds nothing at the address in the field. It says, correctly, that the site is a static
+   upload with no server in it, that a relay is a separate process, and that the Cloudflare
+   Worker in `net/worker.ts` is the other shape. It has been left exactly as it was.
+
+   §10.2 is now measured, so it *could* additionally say that the way to play with somebody in
+   the same building is to clone the repository and run `npm run host` on one of the two
+   machines. Against it: that sentence is only actionable for somebody who has a checkout, and
+   the deployed site's audience is mostly people who do not — it would be an instruction most
+   readers cannot follow, on the screen where they are already being told no. For it: the
+   people who reach that screen at all are people trying to play two-player, and it is the only
+   route that works. **A product decision about who the deployed site is for, and not one to
+   make in a transport pass.** The loopback branch of the same function *does* now name
+   `npm run host`, because there the reader demonstrably has a checkout.
+
+### 10.8 What is still not done
+
+The firewall is untested by anything but a person; there is no instrument for it on one machine
+and there should not be a pretend one. IPv6 is not offered — a link-local address carries a zone
+index that means nothing on the other machine — so a v6-only network has no path here. The
+`.local` name is printed and is not checked by the gate, because mDNS resolution is the other
+machine's business. And `npm run host` serves the dev server rather than a production build: it
+is the same source through the same transforms, so the simulation is the same simulation, but a
+production-parity two-machine run wants `npm run build` and a static server, which nothing here
+provides.

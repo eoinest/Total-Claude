@@ -715,11 +715,20 @@ export async function launchBrowser({
  * refused, because measuring another worktree and reporting it as yours is the failure mode
  * that is impossible to notice from the output. A listener that does not answer at all is an
  * older-style server; that is a warning, and `TC_STRICT_TREE=1` promotes it to a refusal.
+ *
+ * `host` is the bind address and defaults to loopback, which is what every harness wants. A
+ * caller that asks for a LAN bind will **not** be given a loopback listener it happens to find
+ * on the port: the two are indistinguishable from this machine and entirely different from the
+ * machine next door, and silently handing back the wrong one is how a host ends up reading out
+ * a URL nobody else can open. `relayPort` and `lan` are passed through to the runner and only
+ * do anything on a LAN bind; see `/__tc/lan` there.
  */
 export async function startVite({
   port, root = REPO_ROOT, cacheDir, label = 'vite', slot = null, timeoutMs = 120_000,
+  host = '127.0.0.1', relayPort = 0, lan = '',
 } = {}) {
   const base = `http://127.0.0.1:${port}`;
+  const wantLan = !(host === 'localhost' || host === '127.0.0.1' || host === '::1' || /^127\./.test(host));
   const existing = await probeTree(base, 1500);
   if (existing.up) {
     if (existing.tree && path.resolve(existing.tree.root) !== path.resolve(root)) {
@@ -730,19 +739,29 @@ export async function startVite({
         + '  Reusing it would measure that branch under this branch\'s name. Pick another port.'
       );
     }
+    if (wantLan && existing.tree?.host !== host) {
+      throw new Error(
+        `startVite: a server is already on ${port}, bound to ${existing.tree?.host ?? 'an unknown address'}, `
+        + `and a LAN bind (${host}) was asked for.\n`
+        + '  From this machine the two are the same server. From the other machine one of them\n'
+        + '  does not exist. Stop that one, or pick another port with --port=.'
+      );
+    }
     if (!existing.tree) {
       const msg = `startVite: reusing an unidentified listener on ${port}. It predates`
         + ' tools/lib/vite-runner.mjs, so which tree it is serving cannot be established.';
       if (process.env.TC_STRICT_TREE === '1') throw new Error(`${msg}\n  TC_STRICT_TREE=1 is set, so this is a refusal.`);
       process.stderr.write(`!! ${msg}\n!! Confirm by headcount, or restart it. TC_STRICT_TREE=1 makes this fatal.\n`);
     }
-    return { base, server: null, started: false, pid: existing.tree?.pid ?? null, close: async () => {} };
+    return { base, server: null, started: false, pid: existing.tree?.pid ?? null, lan: null, close: async () => {} };
   }
 
   const runner = path.join(LIB_DIR, 'vite-runner.mjs');
   const child = spawn(
     process.execPath,
-    [runner, `--port=${port}`, `--root=${root}`, `--parent=${process.pid}`,
+    [runner, `--port=${port}`, `--root=${root}`, `--parent=${process.pid}`, `--host=${host}`,
+      ...(relayPort ? [`--relay-port=${relayPort}`] : []),
+      ...(lan ? [`--lan=${lan}`] : []),
       ...(cacheDir || process.env.TC_VITE_CACHE_DIR ? [`--cache-dir=${cacheDir || process.env.TC_VITE_CACHE_DIR}`] : [])],
     {
       cwd: root,
@@ -764,12 +783,17 @@ export async function startVite({
   let stderr = '';
   child.stderr.on('data', (d) => { stderr += String(d); });
 
+  let hello = null;
   const ready = await new Promise((resolve) => {
     const timer = setTimeout(() => resolve(false), timeoutMs);
     let buf = '';
     child.stdout.on('data', (d) => {
       buf += String(d);
-      if (buf.includes('TC_VITE_READY')) { clearTimeout(timer); resolve(true); }
+      const m = buf.match(/TC_VITE_READY (\{.*\})/);
+      if (!m) return;
+      try { hello = JSON.parse(m[1]); } catch { /* the line is the signal; the payload is a bonus */ }
+      clearTimeout(timer);
+      resolve(true);
     });
     child.once('exit', () => { clearTimeout(timer); resolve(false); });
   });
@@ -790,7 +814,7 @@ export async function startVite({
   }
 
   registerCleanup(killGroup);
-  return { base, server: child, started: true, pid: child.pid, close };
+  return { base, server: child, started: true, pid: child.pid, close, lan: hello?.lan ?? null };
 }
 
 /** Ask a listener what tree it is serving. `up` is whether anything answered at all. */

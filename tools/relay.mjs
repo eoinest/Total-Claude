@@ -3,7 +3,7 @@
  * The relay, locally: one WebSocket server, one `Room` per code, no dependencies.
  *
  * Usage:
- *   node tools/relay.mjs [--port=5959] [--delay=2] [--turn-ms=100] [--lag=0]
+ *   node tools/relay.mjs [--port=5959] [--host=127.0.0.1] [--delay=2] [--turn-ms=100] [--lag=0]
  *                        [--pairs=exact,chromium+webkit] [--unknown=refuse|allow]
  *                        [--fatal=uf64,uctl,pool,alive]
  *                        [--max-lag-turns=300] [--quiet]
@@ -42,6 +42,19 @@
  * Default 5959. The 5900s are this pass's band; 5173 belongs to whoever is playing the game.
  * 5901, 5911 and 5949 were held by other agents' dev servers on the day this was written, so
  * the default is deliberately at the top of the band rather than the bottom of it.
+ *
+ * ## `--host`, and why loopback stays the default
+ *
+ * `listen(PORT, '127.0.0.1')` is the only bind this had, which is correct for the twelve relays
+ * `tools/qa-net.mjs` starts and kills over a run and wrong for the one thing a person wants to
+ * do with it. A relay the machine next door cannot reach is not a relay; it is half of one.
+ *
+ * The default does not move, and the reason is not caution. Binding `0.0.0.0` on macOS raises
+ * the *Allow incoming connections* dialog against the node binary, and it raises it again
+ * whenever that binary's path changes — an `nvm` upgrade is a new path. A gate that runs a
+ * dozen relays must never be able to put a modal in front of an unattended run. So the harness
+ * keeps loopback and `tools/host-lan.mjs`, which is a thing a person types and watches, passes
+ * `--host=0.0.0.0` and warns about the prompt before it happens.
  */
 
 import { createHash, randomBytes } from 'node:crypto';
@@ -54,7 +67,7 @@ import { makeCode, noSuchRoom, Room } from '../src/net/room.ts';
 // Arguments. An unknown flag is fatal — see tools/qa-replay.mjs for the reason.
 // ---------------------------------------------------------------------------
 
-const FLAGS = ['port', 'pairs', 'unknown', 'fatal', 'delay', 'turn-ms', 'lag',
+const FLAGS = ['port', 'host', 'pairs', 'unknown', 'fatal', 'delay', 'turn-ms', 'lag',
   'max-lag-turns', 'quiet', 'fault', 'fault-slot', 'fault-from', 'fault-every', 'fault-phase',
   'parent'];
 const args = new Map(process.argv.slice(2).map((a) => {
@@ -68,6 +81,8 @@ if (bad.length) {
   process.exit(2);
 }
 const PORT = Number(args.get('port') ?? 5959);
+/** See "`--host`, and why loopback stays the default" above. `0.0.0.0` is the LAN bind. */
+const HOST = args.get('host') ?? '127.0.0.1';
 /*
  * The pairing table, as a flag, because the measurement behind it moved twice on the day this
  * was written. `--pairs=exact,chromium+webkit` overrides the default list;
@@ -343,7 +358,7 @@ const server = createServer((req, res) => {
   }
   if (url.pathname === '/status') {
     sendJson(res, 200, {
-      port: PORT, pairs: PAIRS, fatal: FATAL, delayTurns: DELAY, turnMs: TURN_MS,
+      port: PORT, host: HOST, pairs: PAIRS, fatal: FATAL, delayTurns: DELAY, turnMs: TURN_MS,
       lagMs: LAG, fault: FAULT, sends, recvs,
       rooms: [...rooms.values()].map((e) => e.room.status()),
     });
@@ -465,8 +480,8 @@ server.on('upgrade', (req, sock) => {
   sock.on('error', gone);
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  log(`relay on ws://127.0.0.1:${PORT}/room/<CODE>  `
+server.listen(PORT, HOST, () => {
+  log(`relay on ws://${HOST === '0.0.0.0' ? '<this machine>' : HOST}:${PORT}/room/<CODE>  `
     + `pairs=${PAIRS.allow.map((r) => (r.a === 'exact' ? 'exact' : `${r.a}+${r.b}`)).join('/')}`
     + `(unknown=${PAIRS.unknown}) fatal=${FATAL.join('/')} `
     + `delay=${DELAY} turn=${TURN_MS}ms lag=${LAG}ms`
