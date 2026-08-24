@@ -413,6 +413,27 @@ them once the daily preview has been boring for a week.
 Every removal is appended to `/tmp/tc-browser-budget/reclaim-log.jsonl` with path, branch and
 HEAD sha, so even a mistake leaves the commits nameable.
 
+### Run in anger, 24 August 2026
+
+`node tools/reclaim.mjs --apply --min-age=48h --skip=servers` — 48 hours rather than the default
+24, because other agents were live on the machine and the one residual risk is a session idle
+long enough to have no process but not long enough to be dead.
+
+```
+                        before      after
+registered worktrees       118         59
+.claude/worktrees        28 GB      19 GB
+/tmp/tc-*               612 MB     132 MB
+disk free                92 GB     102 GB
+
+removed 113 things; 0 refused at the last moment
+```
+
+`0 refused` is the line worth reading: **git's independent re-check agreed with all 113
+decisions.** Afterwards, the eight worktrees holding 43 commits that exist on no remote were
+still there, all 43 commits still named by their branches, and `git fsck --connectivity-only`
+found nothing broken. The one worktree with a live process in it was untouched.
+
 ---
 
 ## 7. One command
