@@ -274,30 +274,48 @@ export const makeThrottle = ({ pids = [], label = 'run' } = {}) => {
 };
 
 /**
- * The PID of the browser process a Playwright `Browser` is driving, or `null`.
+ * The PIDs of every `chrome-headless-shell` **browser** process this node process launched.
  *
- * Playwright exposes no public accessor. The private path is stable across the 1.x line and is
- * tried first; the fallback walks `ps` for a `chrome-headless-shell` whose user-data-dir is the
- * temporary profile this process created. Both can fail, and a `null` here costs throttling for
- * one run rather than correctness for any of them, so neither is allowed to throw.
+ * A browser line has no `--type=`; its GPU, network and renderer children do. Only direct
+ * children are counted, because a browser launched by a sibling agent is not ours to demote.
  */
-export const browserPid = (browser) => {
+export const ourBrowserPids = () => {
+  const out = new Set();
   try {
-    const p = browser?._channel?._connection?._transport?._process?.pid
-      ?? browser?._process?.pid
-      ?? browser?.process?.()?.pid;
-    if (Number.isFinite(p) && p > 1) return p;
-  } catch { /* private shape changed */ }
-  try {
-    const out = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,command='], { encoding: 'utf8', maxBuffer: 64 << 20 });
-    for (const line of out.split('\n')) {
+    const ps = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,command='], { encoding: 'utf8', maxBuffer: 64 << 20 });
+    for (const line of ps.split('\n')) {
       const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
-      if (!m) continue;
-      if (Number(m[2]) !== process.pid) continue;
-      if (/chrome-headless-shell/.test(m[3]) && !/--type=/.test(m[3])) return Number(m[1]);
+      if (!m || Number(m[2]) !== process.pid) continue;
+      if (/chrome-headless-shell/.test(m[3]) && !/--type=/.test(m[3])) out.add(Number(m[1]));
     }
-  } catch { /* ps failed */ }
-  return null;
+  } catch { /* ps failed; the caller gets an empty set and skips throttling */ }
+  return out;
+};
+
+/**
+ * Which browser did *this* launch produce?
+ *
+ * Playwright 1.62 exposes no PID for a locally launched browser — `browser.process()`,
+ * `browser._process` and `browser._channel._connection._transport._process` are all undefined,
+ * verified on this tree rather than assumed. So the only reliable identification is a
+ * before-and-after diff of our own direct children.
+ *
+ * **This replaces a version that was wrong, and the bench caught it.** The first draft scanned
+ * `ps` for the first `chrome-headless-shell` whose parent is us and returned that. With one
+ * browser it is right; with two it returns the same PID twice. `tools/scratch/gpu-bench.mjs`
+ * runs an "owner" browser and an "agent" browser from one process, asked for the agent to be
+ * demoted, and the owner was demoted instead — 88.7 fps to 6.5 fps, and the arm that was
+ * supposed to demonstrate the throttle helping demonstrated it hurting. Any harness that opens
+ * a second browser would have hit this silently, because a demotion produces no error.
+ *
+ * `before` is the set captured immediately prior to `type.launch()`. If the diff is not exactly
+ * one PID — two launches racing inside one process, or a `ps` that failed — this returns `null`
+ * rather than guessing, and the cost is that one run is not throttled.
+ */
+export const newBrowserPid = (before) => {
+  const after = ourBrowserPids();
+  const fresh = [...after].filter((p) => !before.has(p));
+  return fresh.length === 1 ? fresh[0] : null;
 };
 
 /** Human-readable one-liner for a snapshot, shared by every caller that prints one. */

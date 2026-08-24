@@ -113,7 +113,9 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { admit, browserPid, describe, makeThrottle, ownerState, workBudgetEnabled } from './work-budget.mjs';
+import {
+  admit, describe, makeThrottle, newBrowserPid, ourBrowserPids, ownerState, workBudgetEnabled,
+} from './work-budget.mjs';
 
 const LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TOOLS_DIR = path.resolve(LIB_DIR, '..');
@@ -657,6 +659,13 @@ export async function launchBrowser({
   });
 
   let browser;
+  /*
+   * Snapshot our own browser children *before* launching, so the one that appears can be
+   * identified by difference. Playwright 1.62 exposes no PID for a locally launched browser —
+   * see `newBrowserPid` for the three private paths that are all undefined, and for the bug
+   * that shipped when this guessed instead.
+   */
+  const before = engine === 'chromium' ? ourBrowserPids() : new Set();
   try {
     // Only Chromium takes these; Firefox and WebKit reject unknown flags.
     const finalArgs = engine === 'chromium'
@@ -676,7 +685,7 @@ export async function launchBrowser({
    * nine-thousand-man battle at foreground GPU priority is precisely the stutter he reports.
    * After this the heartbeat keeps it in step.
    */
-  const bpid = browserPid(browser);
+  const bpid = engine === 'chromium' ? newBrowserPid(before) : null;
   if (bpid) {
     handle.throttle.add(bpid);
     try { handle.throttle.reconcile(ownerState().state); } catch { /* sensors are advisory */ }

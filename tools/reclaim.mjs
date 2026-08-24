@@ -92,6 +92,7 @@
  *     node tools/reclaim.mjs --min-age=48h          be more conservative
  *     node tools/reclaim.mjs --under=<dir> --apply  restrict everything to one subtree
  *     node tools/reclaim.mjs --include=screenshots  offer untracked screenshot trees too
+ *     node tools/reclaim.mjs --install-schedule     write a launchd job (does not load it)
  *
  * Groups for `--only` / `--skip`: `stale`, `worktrees`, `scratch`, `screenshots`, `servers`.
  *
@@ -100,7 +101,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { bootId, listSlots, paths, reapStale } from './lib/browser-budget.mjs';
@@ -550,6 +551,89 @@ const fetchHeadAgeMs = () => {
   }
   return null;
 };
+
+/* ──────────────────────────────── the schedule ──────────────────────────────── */
+
+const PLIST_LABEL = 'com.total-claude.reclaim';
+const PLIST_PATH = path.join(process.env.HOME ?? '/tmp', 'Library', 'LaunchAgents', `${PLIST_LABEL}.plist`);
+const SCHED_LOG = path.join(process.env.HOME ?? '/tmp', 'Library', 'Logs', 'total-claude-reclaim.log');
+
+/**
+ * A launchd job, written but **not loaded**.
+ *
+ * Loading it is a decision about somebody's machine that deletes files while he is asleep, and
+ * that is his to make, not this tool's. So `--install-schedule` writes the plist, prints the
+ * one line that starts it and the one that stops it, and stops.
+ *
+ * The default job is deliberately **not** the full reclaimer. It runs
+ * `--apply --only=stale,scratch,servers`:
+ *
+ *   - `stale`   — registrations whose directory is already gone. `git worktree prune` re-checks
+ *                 this itself; there is nothing on disk to lose.
+ *   - `scratch` — `/tmp/tc-*` older than 24 h with no process in it. `/tmp` is by definition
+ *                 not where anything is kept, and this is where the 612 MB is.
+ *   - `servers` — Vite servers that no live slot claims, never 5173, never one with no `--port`.
+ *
+ * **Worktrees are excluded from the scheduled job by default.** They are 28 GB and they are the
+ * point, but they are also the only class where a mistake costs work rather than disk, and the
+ * difference between "I ran it" and "it ran while I was out" is the whole of the risk. Pass
+ * `--groups=stale,scratch,servers,worktrees` to include them once the daily preview has been
+ * boring for a week.
+ */
+const installSchedule = () => {
+  const groups = value('groups', 'stale,scratch,servers');
+  const hour = Number(value('at', '3'));
+  const node = process.execPath;
+  const tool = path.join(ROOT, 'tools', 'reclaim.mjs');
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>${PLIST_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${node}</string>
+    <string>${tool}</string>
+    <string>--apply</string>
+    <string>--only=${groups}</string>
+    <string>--min-age=${Math.round(MIN_AGE_MS / 3600e3)}h</string>
+  </array>
+  <key>WorkingDirectory</key><string>${ROOT}</string>
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>${hour}</integer><key>Minute</key><integer>17</integer></dict>
+  <key>StandardOutPath</key><string>${SCHED_LOG}</string>
+  <key>StandardErrorPath</key><string>${SCHED_LOG}</string>
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
+  <key>Nice</key><integer>10</integer>
+</dict>
+</plist>
+`;
+  mkdirSync(path.dirname(PLIST_PATH), { recursive: true });
+  writeFileSync(PLIST_PATH, plist);
+  console.log(`wrote ${PLIST_PATH}`);
+  console.log(`  runs: reclaim --apply --only=${groups} --min-age=${Math.round(MIN_AGE_MS / 3600e3)}h, daily at ${String(hour).padStart(2, '0')}:17`);
+  console.log(`  log:  ${SCHED_LOG}`);
+  console.log('  ProcessType=Background and LowPriorityIO, so it cannot itself be the thing that');
+  console.log('  makes the fans audible.\n');
+  console.log('It is NOT loaded. Deleting files on a schedule is your decision, not this tool\'s:');
+  console.log(`  start it:  launchctl bootstrap gui/$(id -u) ${PLIST_PATH}`);
+  console.log(`  stop it:   launchctl bootout gui/$(id -u)/${PLIST_LABEL}`);
+  console.log(`  run once:  launchctl kickstart -p gui/$(id -u)/${PLIST_LABEL}`);
+  if (!groups.includes('worktrees')) {
+    console.log('\nWorktrees are NOT in the scheduled job. They are 28 GB and they are the point, but');
+    console.log('they are also the only class where a mistake costs work rather than disk. Add them');
+    console.log('with --groups=stale,scratch,servers,worktrees once the daily preview has been');
+    console.log('boring for a week — or keep running that one by hand, which is also a defensible');
+    console.log('answer and the one this tool would choose.');
+  }
+};
+
+if (argv.includes('--install-schedule')) { installSchedule(); process.exit(0); }
+if (argv.includes('--uninstall-schedule')) {
+  try { rmSync(PLIST_PATH); console.log(`removed ${PLIST_PATH}`); } catch { console.log(`${PLIST_PATH} was not there`); }
+  console.log(`  if it was loaded:  launchctl bootout gui/$(id -u)/${PLIST_LABEL}`);
+  process.exit(0);
+}
 
 /* ──────────────────────────────── the report ──────────────────────────────── */
 
