@@ -249,6 +249,36 @@ on, two agents rendering are very nearly free.** The `82.7 fps` "before" referen
 the contamination the paired design exists to survive. The per-cycle gains are within 0.15x of
 each other across four cycles, which a drifting machine does not produce.
 
+### And the wiring is proved separately from the effect
+
+The bench applies the demotion itself, with a direct `setQosTree`. That leaves the part that
+matters in production untested: whether `launchBrowser` identifies its own browser, whether the
+heartbeat notices, and whether release puts the process back. All three have been wrong once
+already, and **a QoS demotion produces no error when it lands on the wrong process, or on
+none**.
+
+`node tools/qa-throttle.mjs` — 7 assertions against a real browser through the real
+`launchBrowser` path. The observable is `ps -o pri`: the background band reads **4**.
+
+```
+1. launch with the owner away
+   family of 4 process(es): 33532:46 33582:47 33583:47 33647:47
+2. the owner sits down and starts playing
+   after 9s:  33532:4 33582:4 33583:4 33647:4      ← the whole family, not just the parent
+3. the owner leaves again
+   after 10s: 33532:46 33582:47 33583:47 33647:47
+4. demoted, then released
+   after release: 33532:46 33582:47 33583:47 33647:47
+```
+
+Step 2's second assertion is the one worth having: **a renderer left at normal priority while
+its parent is demoted is the process still competing for the GPU**, and it would look like a
+working throttle that simply did not help much.
+
+Step 4 is the one that costs somebody else if it is wrong. A process left in the background
+band outlives us, and the next thing to inherit it gets a quarter of the machine with nothing
+saying why.
+
 ### And the cap ladder bites
 
 `acquireSlot` with a private budget directory, configured cap 4 throughout, five callers each
