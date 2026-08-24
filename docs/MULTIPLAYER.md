@@ -2169,6 +2169,37 @@ out, and without a `pageerror`.
 `peer-left-offers-the-record-only-if-there-is-one` and `session-strip-clears-the-hud` join the
 `leave` arm. All four were red before this pass, which is the only reason to believe them.
 
+Made to fail on purpose, which is the only reason to believe the other two. With the
+`want === 'join' && !rooms.has(code)` guard taken back out of `tools/relay.mjs`:
+
+```
+$ node tools/qa-net.mjs --only=badcode
+  FAIL  wrong-code-is-refused    nothing said anything in 25.1 s — this is the silent wait
+  FAIL  wrong-code-has-a-way-back  there is no link off this screen
+  PASS  wrong-code-no-pageerror  clean
+  ✗ 1/3 checks passed        exit 1
+```
+
+and with `throw e` put back in `main.ts` where `netFailed` now stands:
+
+```
+$ node tools/qa-net.mjs --only=norelay
+  PASS  no-relay-says-so         No answer from ws://127.0.0.1:5901 — the browser could not
+                                 reach it. Start one with node tools/relay.mjs …
+  FAIL  no-relay-is-a-screen-and-not-a-splash   nothing was drawn
+  FAIL  no-relay-no-pageerror
+  ✗ 1/3 checks passed        exit 1
+```
+
+Note which check survived each injection: the form's own message is unaffected by the relay's
+join guard, and the form's own message is unaffected by `main.ts` throwing, because those are
+three different failures on three different paths. An arm that went all-red on any injection
+would be measuring one thing and reporting three.
+
+`no-relay-no-pageerror` counts `pageerror` and not `console.error`, deliberately: a refused TCP
+connection makes the browser write two network lines that nothing in this repository emits or
+can suppress, and failing on those would make an honest refusal screen look like a defect.
+
 One further hazard was found by writing them, and is fixed in `tools/lib/menu-boot.mjs`: both menu
 sheets are in the DOM at once and the visible one is chosen by a class on the root, so waiting on
 `.menu-sheet` waits on the *hidden* home sheet for the full sixty seconds on any URL that opens

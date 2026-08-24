@@ -1717,11 +1717,21 @@ if (wanted('norelay')) {
       'and a battle URL pointed at nothing gets a refusal with a way back, not a red splash',
       sheet.slice(0, 170) || 'nothing was drawn',
       'a relayed battle cannot start without a relay; saying so is not the same as crashing');
-    record('no-relay-no-pageerror',
-      form.__errs.filter((e) => e.startsWith('pageerror')).length === 0
-        && direct.__errs.filter((e) => e.startsWith('pageerror')).length === 0,
+    /*
+     * `pageerror` only, and the browser's own network log is allowed to be noisy.
+     *
+     * A refused TCP connection writes two `console.error` lines nothing in this repository
+     * emits or can suppress — "Failed to load resource: net::ERR_CONNECTION_REFUSED" and the
+     * WebSocket equivalent — and counting those would make an honest failure report look like
+     * a defect. What must not appear is an *uncaught exception*, which is what a top-level
+     * throw on this path produced, and it is reported by name so the reason is legible.
+     */
+    const thrown = [...form.__errs, ...direct.__errs].filter((e) => e.startsWith('pageerror'));
+    record('no-relay-no-pageerror', thrown.length === 0,
       'neither path raises an uncaught exception',
-      [...form.__errs, ...direct.__errs].slice(0, 2).join(' ; ') || 'clean',
+      thrown.slice(0, 2).join(' ; ')
+        || `clean (${form.__errs.length + direct.__errs.length} network console line(s), which `
+          + 'the browser writes for a refused connection and nothing here can prevent)',
       'main.ts spends a paragraph on why the lobby must not throw; this is the other branch');
     await form.close(); await direct.close();
   }
