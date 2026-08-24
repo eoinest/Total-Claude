@@ -205,8 +205,31 @@ export const observe = ({ force = false, cpuMs = 1200, gpuSamples = 8 } = {}) =>
  * deadlock on the owner's own activity is one that gets switched off. With zero holders the
  * ladder alone applies, which still means one browser while he plays and never more.
  */
-export const admit = ({ liveCount, snapshot = null, state = null } = {}) => {
+export const admit = ({ liveCount, selfHeld = 0, snapshot = null, state = null } = {}) => {
   if (!workBudgetEnabled()) return { ok: true, reason: 'work budget disabled (TC_WORK_BUDGET=off)' };
+
+  /*
+   * A process that already holds a slot is never refused by the work gate.
+   *
+   * `tools/qa-net.mjs` opens a host browser and a guest browser from one process, and adds a
+   * third for the Firefox arm. Under `owner=playing` the ladder is 1, so without this the gate
+   * would grant the host, refuse the guest for thirty minutes, and then fail — **a gate in the
+   * required set, deadlocked against itself, by a mechanism whose entire purpose is to make the
+   * machine calmer.** Wasting the first slot for half an hour is worse for the owner than the
+   * second browser ever was.
+   *
+   * This is not a hole in the cap. The hard `TC_MAX_BROWSERS` count still applies in the slot
+   * table, and the QoS demotion still applies to every browser this run opens, so a two-browser
+   * gate running while he plays runs demoted on the efficiency cores — which is the lever that
+   * actually protects his frame rate. What is given up is only the *admission* half, for runs
+   * that are already underway.
+   */
+  if (selfHeld > 0) {
+    return { ok: true, why: 'self-held', selfHeld,
+      reason: `this process already holds ${selfHeld} slot(s); a multi-browser run is not refused`
+        + ' half way through — the hard cap and the QoS demotion still apply' };
+  }
+
   const snap = snapshot ?? observe();
   const who = state ?? snap.owner?.state ?? 'present';
   const pol = policyFor(who);

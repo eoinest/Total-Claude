@@ -409,7 +409,11 @@ export async function acquireSlot({
        */
       let gate = null;
       if (mayTry) {
-        gate = admit({ liveCount: live.length });
+        // `selfHeld` is what stops a two-browser gate deadlocking against itself; see `admit`.
+        gate = admit({
+          liveCount: live.length,
+          selfHeld: live.filter((s) => s.rec?.pid === process.pid).length,
+        });
         if (!gate.ok) mayTry = false;
       }
 
