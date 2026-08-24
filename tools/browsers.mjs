@@ -17,11 +17,23 @@
  *
  *     node tools/browsers.mjs                 status (the default)
  *     node tools/browsers.mjs status --json   the same, machine-readable
+ *     node tools/browsers.mjs machine         **everything**: browsers, servers, worktrees, disk
+ *     node tools/browsers.mjs owner           what the machine thinks the owner is doing
+ *     node tools/browsers.mjs owner playing   tell it, rather than letting it guess
+ *     node tools/browsers.mjs owner auto      go back to detecting
  *     node tools/browsers.mjs reap            drop lock records whose holder is dead
  *     node tools/browsers.mjs sweep           list servers and browsers nobody owns
  *     node tools/browsers.mjs sweep --force   …and kill them
  *     node tools/browsers.mjs cap             print the machine-wide cap and where it came from
  *     node tools/browsers.mjs cap 6           set it, for every agent, until it is set again
+ *
+ * ## `machine` is the one to run first
+ *
+ * `status` answers "who holds a browser slot". That was the right question on 22 August and it
+ * is half the question now: on 23 August the owner reported lag with **one** agent browser
+ * running, load average 6.25 of 16 cores, and the GPU pinned at 62–100 %. `machine` prints the
+ * GPU, what the owner is doing, the memory, the disk, and how much of the 28 GB of worktrees is
+ * reclaimable and why — one screen, no greps, and it changes nothing.
  *
  * ## Two counts, and they are not the same number
  *
@@ -40,6 +52,9 @@ import process from 'node:process';
 import {
   BUDGET_DIR, budgetCap, budgetEnabled, capSource, listSlots, listWaiters, paths, reapStale,
 } from './lib/browser-budget.mjs';
+import {
+  OWNER_FLAG, POLICY, observe, ownerState, policyFor, qosEnabled, workBudgetEnabled,
+} from './lib/work-budget.mjs';
 
 const argv = process.argv.slice(2);
 const cmd = argv.find((a) => !a.startsWith('-')) ?? 'status';
@@ -204,6 +219,184 @@ if (cmd === 'cap') {
     console.log(`cap ${cap}  (from ${from})`);
     console.log(`  TC_MAX_BROWSERS beats ${paths.CAP_FILE}, which beats the default.`);
   }
+  process.exit(0);
+}
+
+/* ─────────────────────────────────── owner ─────────────────────────────────── */
+
+/**
+ * What the machine believes the owner is doing, and how to tell it otherwise.
+ *
+ * Detection is a guess made from three signals — a locked screen (a fact, no false positives),
+ * `HIDIdleTime` (says *input*, not attention: reading a diff looks like leaving the building),
+ * and the frontmost application. His own statement is not a guess, so the flag beats all of it,
+ * and it is written where every agent on the machine reads it rather than into one shell.
+ */
+if (cmd === 'owner') {
+  const want = argv.find((a) => /^(away|present|playing|auto)$/.test(a));
+  if (want) {
+    mkdirSync(BUDGET_DIR, { recursive: true });
+    writeFileSync(OWNER_FLAG, `${want}\n`);
+    const pol = policyFor(want === 'auto' ? ownerState().state : want);
+    console.log(`owner set to ${want} (${OWNER_FLAG}).`);
+    if (want === 'auto') console.log('  Back to detection: locked screen, then HID idle time, then the frontmost app.');
+    else console.log(`  Every agent that starts a browser from now on sees this: cap ${pol.cap}, GPU ceiling ${pol.gpuCeiling}%.`);
+    console.log('  Runs already holding a slot pick it up on their next heartbeat, within 10 s,');
+    console.log(`  and ${pol.qos === 'background' ? 'move to the background band' : 'return to normal priority'}.`);
+    process.exit(0);
+  }
+  const st = ownerState();
+  const pol = policyFor(st.state);
+  console.log(`owner: ${st.state}   (from ${st.from})`);
+  if (st.from === 'auto') {
+    console.log(`  screen locked   ${st.locked === null ? 'unreadable' : st.locked ? 'yes — nobody is looking at this machine' : 'no'}`);
+    console.log(`  last input      ${st.idleMs == null ? 'unreadable' : `${(st.idleMs / 1000).toFixed(0)}s ago`}`
+      + `  (over ${(Number(process.env.TC_OWNER_IDLE_MS || 180000) / 1000).toFixed(0)}s means away)`);
+    console.log(`  frontmost app   ${st.app ?? 'unreadable'}`);
+  }
+  console.log(`\npolicy while ${st.state}: at most ${pol.cap} browser(s), GPU ceiling ${pol.gpuCeiling}%, `
+    + `running work ${pol.qos === 'background' ? 'demoted to the efficiency cores' : 'at normal priority'}`);
+  console.log(`  because ${pol.why}`);
+  console.log('\nthe whole ladder:');
+  for (const [k, v] of Object.entries(POLICY)) {
+    console.log(`  ${k.padEnd(8)} cap ${v.cap}  gpu <= ${String(v.gpuCeiling).padStart(3)}%  ${v.qos.padEnd(10)}  ${v.why}`);
+  }
+  console.log('\n  set it:  node tools/browsers.mjs owner playing|present|away|auto');
+  console.log('  one run: TC_OWNER=away <command>');
+  process.exit(0);
+}
+
+/* ────────────────────────────────── machine ────────────────────────────────── */
+
+/**
+ * Everything, on one screen, changing nothing.
+ *
+ * The 22 August recovery needed "what is running". The 23 August lag report needed "what is
+ * *contended*", and those turned out to be different questions with different answers: one
+ * browser, 39 % of the CPU, and a GPU at 100 %. This prints both, plus the disk, because the
+ * third question nobody had a command for was "why is there 28 GB of worktrees on here".
+ *
+ * The worktree section shells out to `tools/reclaim.mjs --json --sizes` rather than
+ * reimplementing its rule. There must be exactly one definition of what is safe to delete, and
+ * a second copy of it in a status command is the way that stops being true.
+ */
+if (cmd === 'machine') {
+  const snap = observe({ force: true });
+  const pol = policyFor(snap.owner.state);
+  const procs = scanProcesses();
+  const gpuBack = gpuBackend();
+  reapStale();
+  const live = listSlots().filter((s) => !s.stale);
+  const { cap, from } = capSource();
+
+  let reclaim = null;
+  if (!flags.has('--no-disk')) {
+    try {
+      reclaim = JSON.parse(execFileSync(process.execPath,
+        [path.join(paths.TOOLS_DIR, 'reclaim.mjs'), '--json', '--sizes', '--quiet'],
+        { cwd: paths.REPO_ROOT, encoding: 'utf8', timeout: 300_000, maxBuffer: 128 << 20 }));
+    } catch { /* reclaim is advisory here; a failure must not take down status */ }
+  }
+
+  let df = null;
+  try {
+    const out = execFileSync('df', ['-g', '/'], { encoding: 'utf8' }).split('\n')[1].split(/\s+/);
+    df = { totalGB: Number(out[1]), freeGB: Number(out[3]) };
+  } catch { /* no df */ }
+
+  if (JSON_OUT) {
+    console.log(JSON.stringify({ machine: snap, policy: pol, cap, capFrom: from,
+      slots: live.length, browsers: procs.browsers.length, viteServers: procs.vites.length,
+      gpuBackend: gpuBack, disk: df, reclaim: reclaim?.summary ?? null }, null, 2));
+    process.exit(0);
+  }
+
+  const bar2 = (n, max, width = 24) => {
+    const f = Math.max(0, Math.min(width, Math.round((n / max) * width)));
+    return `[${'#'.repeat(f)}${'.'.repeat(width - f)}]`;
+  };
+  const gb = (n) => (n == null ? '?' : n >= 1024 ? `${(n / 1024).toFixed(1)} GB` : `${Math.round(n)} MB`);
+
+  console.log(`machine — ${snap.cores.total} cores (${snap.cores.performance}P + ${snap.cores.efficiency}E), `
+    + `${snap.memory.totalGB} GB\n`);
+
+  const o = snap.owner;
+  console.log(`owner        ${o.state.toUpperCase()}   (${o.from === 'auto'
+    ? `detected: screen ${o.locked ? 'locked' : 'unlocked'}, last input ${o.idleMs == null ? '?' : `${(o.idleMs / 1000).toFixed(0)}s`} ago, front ${o.app ?? '?'}`
+    : `set in ${o.from}`})`);
+  console.log(`             policy: at most ${pol.cap} browser(s), GPU ceiling ${pol.gpuCeiling}%, `
+    + `running work ${pol.qos === 'background' ? 'DEMOTED' : 'at normal priority'}`);
+  if (!workBudgetEnabled()) console.log('             !! TC_WORK_BUDGET=off in THIS shell — no admission control, no demotion.');
+  else if (!qosEnabled()) console.log('             !! TC_QOS=off in THIS shell — running browsers are not demoted.');
+
+  console.log('');
+  if (snap.gpu.available) {
+    const over = snap.gpu.mean > pol.gpuCeiling;
+    console.log(`gpu          ${snap.gpu.mean.toFixed(0)}% mean, p90 ${snap.gpu.p90}%, max ${snap.gpu.max}%  ${bar2(snap.gpu.mean, 100)}`
+      + `${over ? '  ← OVER the ceiling; new browsers are refused' : ''}`);
+    console.log(`             renderer ${snap.gpu.renderer}%, tiler ${snap.gpu.tiler}%, ${snap.gpu.inUseMB} MB in use`);
+    console.log('             This is the contended resource. A count of browsers does not price it.');
+  } else {
+    console.log('gpu          unavailable on this machine — the ladder still applies, the ceiling does not');
+  }
+  console.log(`cpu          ${snap.cpu.all.toFixed(1)} of ${snap.cores.total} cores  ${bar2(snap.cpu.all, snap.cores.total)}`);
+  console.log(`             chromium ${snap.cpu.chrome.toFixed(1)}, vite ${snap.cpu.vite.toFixed(1)}, other node ${snap.cpu.node.toFixed(1)}`
+    + `; load ${os.loadavg().map((l) => l.toFixed(1)).join(' / ')}`);
+  console.log(`memory       ${snap.memory.freePct}% free of ${snap.memory.totalGB} GB`
+    + `${snap.memory.compressedMB ? `, ${gb(snap.memory.compressedMB)} compressed` : ''}`
+    + `${snap.memory.swapping ? '   !! SWAPPING — this is felt harder than any CPU number' : ''}`);
+  if (df) console.log(`disk         ${df.freeGB} GB free of ${df.totalGB} GB`);
+
+  console.log('');
+  console.log(`browsers     ${live.length} slot(s) held of ${cap} configured (from ${from}); `
+    + `${procs.browsers.length} running = ${procs.browsers.length + procs.children.length} OS processes`);
+  for (const s of live) {
+    console.log(`             slot ${s.slot}: ${(s.rec?.label ?? '?').slice(0, 22).padEnd(22)} pid ${String(s.rec?.pid ?? '?').padEnd(7)}`
+      + ` ${String(s.rec?.port ?? '—').padEnd(5)} held ${dur(s.heldMs).padEnd(8)} ${s.rec?.root ? path.basename(s.rec.root) : '?'}`);
+  }
+  const unbudgeted = procs.browsers.length - live.length;
+  if (unbudgeted > 0) console.log(`             !! ${unbudgeted} browser(s) hold no slot — an unconverted tool, or TC_BROWSER_BUDGET=off`);
+  if (gpuBack.swiftshader) console.log(`             !! ${gpuBack.swiftshader} GPU process(es) on swiftshader, not metal — a boot goes from seconds to minutes`);
+
+  console.log(`servers      ${procs.vites.length} vite (${procs.vites.filter((v) => v.style === 'runner').length} runner, `
+    + `${procs.vites.filter((v) => v.style === 'npx').length} npx)`);
+  if (reclaim) {
+    const orph = reclaim.servers?.filter((x) => x.verdict === 'reclaimable') ?? [];
+    if (orph.length) console.log(`             !! ${orph.length} unowned: ${orph.map((x) => `pid ${x.pid} port ${x.port} up ${x.etime}`).join('; ')}`);
+  }
+
+  console.log('');
+  if (!reclaim) {
+    console.log('worktrees    (tools/reclaim.mjs did not answer — run it directly for the reason)');
+  } else {
+    const wt = reclaim.worktrees ?? [];
+    const onDisk = wt.filter((w) => w.exists);
+    const recl = wt.filter((w) => w.verdict === 'reclaimable');
+    const prot = wt.filter((w) => w.verdict === 'protected');
+    const staleMeta = wt.filter((w) => w.verdict === 'stale-metadata');
+    console.log(`worktrees    ${wt.length} registered, ${onDisk.length} on disk`
+      + `${staleMeta.length ? `, ${staleMeta.length} registrations whose directory is gone` : ''}`);
+    console.log(`             ${recl.length} reclaimable (${gb(reclaim.summary.reclaimableMB)}) — clean, every commit pushed, `
+      + `merged, idle, nothing using them`);
+    const byReason = new Map();
+    for (const w of prot) for (const x of w.protections) byReason.set(x.test, (byReason.get(x.test) ?? 0) + 1);
+    console.log(`             ${prot.length} protected: ${[...byReason].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n} ${k}`).join(', ')}`);
+    const unpushed = prot.filter((w) => w.protections.some((x) => x.test === 'unpushed'));
+    if (unpushed.length) {
+      console.log(`             !! ${unpushed.length} hold ${unpushed.reduce((a, b) => a + (b.unpushed ?? 0), 0)} commits that exist on no remote.`);
+      console.log(`                ${unpushed.sort((a, b) => b.unpushed - a.unpushed).slice(0, 4)
+        .map((w) => `${path.basename(w.path)} (${w.unpushed})`).join(', ')}${unpushed.length > 4 ? ' …' : ''}`);
+      console.log('                Push them. Nothing here will ever delete one, but nothing protects them');
+      console.log('                from a crash either — that is how a day of work was lost once.');
+    }
+    const scr = (reclaim.scratch ?? []).filter((x) => x.verdict === 'reclaimable');
+    if (scr.length) console.log(`scratch      ${scr.length} /tmp/tc-* trees reclaimable (${gb(scr.reduce((a, b) => a + (b.sizeMB ?? 0), 0))})`);
+  }
+
+  console.log('');
+  console.log('  what the owner is doing:  node tools/browsers.mjs owner [playing|present|away|auto]');
+  console.log('  what would be reclaimed:  node tools/reclaim.mjs');
+  console.log('  do it:                    node tools/reclaim.mjs --apply');
   process.exit(0);
 }
 

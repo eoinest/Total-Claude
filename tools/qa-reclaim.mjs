@@ -89,6 +89,8 @@ const cleanup = () => {
     git(['worktree', 'remove', '--force', path.join(TMP, name)], ROOT, true);
     git(['branch', '-D', `${TAG}-${name}`], ROOT, true);
   }
+  // Repo-global, and deliberately so: it removes only registrations whose directory is
+  // missing, which git re-checks itself, and this run is likely to have created some.
   git(['worktree', 'prune'], ROOT, true);
   try { rmSync(TMP, { recursive: true, force: true }); } catch { /* gone */ }
 };

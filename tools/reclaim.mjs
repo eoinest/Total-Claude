@@ -123,6 +123,8 @@ const JSON_OUT = argv.includes('--json');
 const ANY_PUSHED = argv.includes('--any-pushed');
 const EXPLAIN = value('explain');
 const QUIET = argv.includes('--quiet');
+/** Force the `du` pass even under `--json`, for `node tools/browsers.mjs machine`. */
+const SIZES = argv.includes('--sizes');
 /**
  * Restrict everything to one subtree.
  *
@@ -607,7 +609,7 @@ const main = () => {
   }
 
   // Sizes only for things we might act on; `du` over 118 trees is a minute of disk.
-  if (!JSON_OUT || APPLY) {
+  if (!JSON_OUT || APPLY || SIZES) {
     for (const w of reclaimableWt) w.sizeMB = sizeMB(w.path);
     for (const s of scratch.filter((x) => x.verdict === 'reclaimable')) s.sizeMB = sizeMB(s.path);
     for (const s of shots.filter((x) => x.verdict === 'reclaimable')) s.sizeMB = sizeMB(s.path);
