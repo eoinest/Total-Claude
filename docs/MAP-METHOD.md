@@ -364,6 +364,19 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    water was deleted after the fact instead of being routed around. Each is the same sentence at
    a smaller scale, each was worth one to five points of coverage, and the phase that fixed the
    first one wrote the diagnosis for the third down in a comment and left the behaviour alone.
+36. **A sample lifted out of an extended thing keeps the point it was taken at, and the rest
+   of the extent becomes invisible rather than merely approximate.** Rule 31's mirror, and the
+   more expensive of the two, because a wrong constant is at least wrong everywhere while a
+   wrong sample is right where you look. `probe-fabric` G22 asked *"does this structure stand
+   under water"* of five points and gated on one of them, and answered **PASS, 0 of 1,106** on
+   a Rome with the Mausoleum of Hadrian standing 1,932 m² — a quarter of its podium — under
+   4.6 m of Tiber, because the centre of an 89 m box was on the bank. The same shape sat in the
+   placement rule that put it there: `FAR_BANK` is a centre-to-bank clearance evaluated at the
+   monument's own row, and over the podium's own hundred metres of z the channel swings 250 m
+   west across it. **Test: name the extent of the thing and the extent of the sample, and if
+   the first is bigger, the check is about a different object.** And the tell is loud when you
+   look for it — a report that prints the fault beside the pass. This one had printed *"0 under
+   water, same 3 wet corners"* for a week.
 
 ---
 
@@ -2257,6 +2270,169 @@ frames over 20 ms**. The density is free.
   its roof is the ring, so the number reads high against a photograph by an amount nothing here
   has measured. `MAP-METHOD.md` rule 11 one level down, and the honest reading of a pass is the
   change rather than the level.
+
+### 23 August 2026 — "there are some big buildings still in the river", and the gate that said there were none
+
+**The report, verbatim.** *"there are some big buildings still in the river."* And
+`probe-fabric` G22, on the same tree: **`PASS — no structure stands below the water surface`,
+0 of 1,106 solids.** One of the two was wrong and finding out which was the whole brief.
+
+**What we expected.** Four hypotheses were handed over in priority order: the gate tests the
+wrong point; monuments are not in its population; the drawn water is wider than the modelled
+channel; the terrace is right and the ground under it is not. The first was expected to be the
+answer and it was — but the *reason* it was the answer is a different and worse thing than
+"corners are not gated", and two of the other three turned out to be measurably false in ways
+worth writing down.
+
+**Measure the complaint first, in the units of the complaint** (rule 11). Before touching
+source: `tools/shots/tiber-solids.shot.mjs`, five cameras on the water, none above 62 m.
+`screenshots/rome-river-solids/01` is the frame. The Mausoleum of Hadrian's podium wall goes
+into the Tiber; `02`, at 1.75 m on the bank, shows the same wall **hanging in the air over the
+water** with daylight under it, because monument prisms are drawn from one ground sample at the
+centre with `bottom: false`; `03` is the same podium from the north-east, bone dry. The fault is
+one-sided, which is the first clue about why a centre test could not see it.
+
+#### The cause: a sample lifted out of an extended thing
+
+G22 sampled five points — the centre and the four corners of the oriented box — and gated on the
+centre. Rasterising the whole footprint at 2 m against the same `terrain.heightAt` it already
+used:
+
+| row | wet plan | of | % | worst ground | centre datum | old G22 |
+|---|---|---|---|---|---|---|
+| `mausoleum-hadrian` | 1,932 m² | 9,069 | 24 % | **0.40 m** | 7.80 m | pass |
+| `theatre-marcellus` | 435 m² | 2,476 | 18 % | 1.32 m | 7.80 m | pass |
+| `wall#33` | 14 m² | 67 | 21 % | 1.68 m | 9.22 m | pass |
+
+Water is drawn at 5.0 m, so 0.40 m of ground is **four and a half metres under the surface**,
+over a fifth of an 89 m podium, and the check that owns the question answered *pass* because the
+one point it looked at was on the bank.
+
+**This is rule 31's mirror, one level up.** Rule 31 is a week old — *a constant lifted out of a
+two-sided thing keeps the side it was lifted from, and the other side then becomes impossible
+rather than merely wrong.* Here: **a sample lifted out of an extended thing keeps the point it
+was taken at, and the rest of the extent becomes invisible rather than merely approximate.** A
+centre is not a footprint, and the difference is not a tolerance — it is a different question.
+
+**And the evidence was already written down, twice, by the people who wrote the check.** The
+Transtiberim pass recorded *"0 under water, same 3 wet corners"* — a check reporting the fault
+in the same sentence as the pass. And `probe-fabric`'s own `WATER_EXPECTED` comment asserted, in
+prose, *"So G22 fails on it"* about the Theatre of Marcellus, on a tree where it did not. **A
+comment claiming a check fails is not the check failing**, and it is more dangerous than no
+comment, because the next reader budgets for a known failure that is not being detected.
+
+#### Why the footprint does not fit: the projection folds the meander onto the building
+
+The deeper cause is not the check. Measured against the survey rather than the model
+(`tools/scratch/riverfit.mjs`):
+
+| | real clearance to the channel edge | projected | own half-reach, world m |
+|---|---|---|---|
+| `mausoleum-hadrian` | 77 real m | 34 (`KX`) / **27** (`KZ`) | **48** |
+| `theatre-marcellus` | 60 real m | 26 / **21** | **28** |
+
+**The building is nearly twice as wide as the gap it has**, and it is wide because its plan is
+held in *world* metres while the gap is a *projected* distance. That is rule 22 applied to a
+footprint instead of a cross-section — *a constant in world metres is a variable in real metres
+whenever the projection is anisotropic* — and rule 10 one level up: **compute whether the module
+fits inside the projection before choosing it.** Nobody had asked the question of a monument,
+only of an insula between two cross-streets.
+
+`layout.ts` had already written the prediction and then reasoned past it. `FAR_BANK(z, 100)` is
+a centre-to-bank clearance and its own comment says: *"a 100 m centre clearance is not 100 m of
+clearance for an 89 m podium."* It then concludes the override is **inert**, and it is — *at the
+monument's own row*, where the bank stands 146 m west. Over the podium's own 101 m of z the
+Tiber swings 250 world metres west across it, and at z 867 the box's east edge is **71 m east of
+the west bank**, i.e. in the channel. A clearance evaluated at one row of a footprint that spans
+many rows of a bending river is the same fault as the centre test, in the placement rule instead
+of the gate.
+
+#### Two hypotheses measured and closed
+
+- **"The drawn water is wider than the modelled channel" — no, and it is worth knowing.**
+  `WaterSurface`'s fragment shader discards where `vWater.y - bedHeight(vWater.xz) <= 0`, reading
+  the *same* baked height texture `terrain.heightAt` reads, with `uSurge` 0 on Rome. So in the
+  near field the water is drawn exactly where `heightAt < waterLevel`, and G22's ruler is the
+  drawn waterline rather than a model of it. The one real divergence is at range: the water's
+  bed is sampled at screen-derivative mip while the ground mesh is sampled at clipmap LOD, so a
+  distant shoreline drifts laterally by metres. **Not the fault here, and the right thing for the
+  gate to keep using.**
+- **"Monuments are not in the population" — half true, and the half that is true is the
+  interesting one.** G22 walks `getObstacles()`, which does contain monuments. What it does not
+  contain is `soft` rows, and those left the denominator *silently* — rule 13's check going dark.
+  On Rome that is three (`tiber-island`, `janiculum`, `gardens-sallust`), on Carthage two
+  (`tophet`, `forum`, both `solid: false`).
+
+  **And not walking them is a measurement, not laziness.** The Janiculum's reserved box has a
+  south-east corner on ground at 0.40 m — under water — and the ridge is *drawn* as a mound of
+  radius 230 whose nearest stone is **281 m from that corner**. Grading the box would report a
+  landform standing in a river it is not in. That is the same shape as the keep-out circle drawn
+  for an elliptical mound one file over: **a landform's plan is ground, not a cross-section, and
+  the reserved rectangle is not the drawn shape.** So the rows are named, counted and gated on
+  membership instead, and `--inject=water-population-drop` proves the gate.
+
+#### What the gate does now, and that it can fail
+
+G22 rasterises each solid's own oriented rectangle at `WATER_SAMPLE_M` = 2 m — the terrain
+field's own 1.367 m spacing rounded up, so the pitch cannot step across a 28 m channel — and
+grades the wet **area** against `WATER_FOOT_TOL_M2` = 4 m². **The tolerance is one sample cell
+and nothing was fitted to the data**: rule 12 says a test tangent to its own threshold answers by
+rounding, so the tolerance absorbs the one arbitrary thing, which is where the raster's cells
+fall against a continuous waterline. The populations are two orders of magnitude either side of
+it on both maps — 1,932 / 435 / 14 m² against a field of zeroes on Rome.
+
+| | before | after |
+|---|---|---|
+| Rome | 15/27, 12 failing | **14/27, 13 failing** |
+| Carthage | 13/22, 9 failing | **13/22, 9 failing** |
+
+**The control does not move and it finds four faults instead of one**: `temple-sea` (2,732 m²,
+97 % of plan, 9.7 m under, which the centre test already had), plus `quay-fort` at 360 m² and
+two curtain segments, which it did not. **Three of Rome's three and three of Carthage's four
+have a dry centre**, and the run prints that integer every time, because it is the whole argument
+for the change in one number.
+
+**Three injections, all shown red.** `water-in-the-channel` puts a 40 × 30 m solid at the deepest
+water *found by search against the live terrain*, so it cannot go stale when the channel moves.
+`water-population-drop` drops a row from the no-solid list. And the one that matters:
+**`water-straddle-the-bank`** puts a 60 × 40 m solid on **dry ground** whose plan reaches into
+the water — the Mausoleum's shape, synthesised. On Rome it lands at (−416, 8) with a centre
+datum of **7.80 m, above the surface**, and 500 m² of wet plan. The form this replaces passes it
+by construction; the area form cannot. **That is the difference between the two checks, isolated
+in one run**, and it is rule 18's test for a repair: the new class must be able to fail.
+
+#### What is NOT fixed, and why it is the owner's call and not this branch's
+
+**Rome's G22 is red on this branch and the buildings are still in the river.** Every fix
+available spends fidelity on an axis the survey exists to protect, and the numbers are:
+
+| option | what it costs | does it clear the water? |
+|---|---|---|
+| give `mausoleum-hadrian` the `draw` it is missing | it is drawn at **1.058** of its published plan against a cohort median of **0.59** — the largest ratio on the map, and one of only two masonry rows with no `draw` at all. At 0.5 it is out of the channel (155 m² of bank left); at **0.35** it is dry | yes, at 0.35 — which is `KZ`, and that is not a coincidence: the binding perpendicular on an east–west reach is compressed by `KZ`, so a plan compressed by the same factor keeps its real clearance ratio |
+| make `FAR_BANK` footprint-aware | the direct repair of the mirror above — evaluate the bank over the footprint's whole z-span and subtract its half-width. Moves the Mausoleum **102 m west** of a survey row the judge called *"the best-placed monument on the map"*, 8 m from the inked mausoleum on the plate | yes, and 102 m is inside the declared 120 m override bound |
+| leave it and stop drawing it | the `offMapSouth` treatment, name printed at boot | yes |
+
+And the Theatre of Marcellus is harder than any of them: it is *already* the smallest ratio on
+the map (0.252) and at 0.3 it is still 95 m² wet. Its real clearance is 60 m. **It stood on the
+Ripa, and Rome genuinely built out over that water.** So "should Rome have structures on piles
+over the Tiber at all" is a design question with a real historical answer on both sides, and it
+went to the owner rather than being decided in a probe branch.
+
+**The methodological point, which is the reusable part**: the gate change and the city change
+are separable, and the gate change is worth shipping on its own even though it makes the score
+go down and fixes nothing the player can see. It converts a fault the owner could see and the
+project could not measure into one that is measured, named, counted and printed every run. The
+city change then has a target and a receipt. Shipping them together would have hidden which of
+the two did the work.
+
+**One thing reported and deliberately not gated, and it is still live.** **Eight** solids on
+Rome and four on Carthage are dry but stand within 0.6 m of the surface — the city's own
+`QUAY_FREEBOARD`, quoted rather than chosen. That is `e/city/rome-fill`'s open item
+(*"four Transtiberim blocks stand on ground 0.02–0.25 m over the water, and the fix is to raise
+the terrace in `topography.ts`, not to lower the freeboard"*) made visible without being made a
+fault, so a reader can see whether it is still live without opening a branch. It is: eight, not
+four, and every one of them becomes a G22 fault the day the terrace moves the wrong way. A
+number printed beside a gate is how an open item stops being folklore.
 
 <!-- Append new entries above this line. -->
 
