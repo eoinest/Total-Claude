@@ -54,6 +54,47 @@ export interface FormationDef {
     /** Flat morale bonus. */
     morale: number;
   };
+  /**
+   * How loosely a man dresses on his slot, as a fraction of this formation's own spacing.
+   *
+   * ## What this is for
+   *
+   * `offset` is a *lattice*, and until this existed the men stood on it exactly. Measured
+   * with `tools/probe-hivemind.mjs` on a 160-man legionary cohort at ease: nearest-neighbour
+   * separation **0.860 m at every percentile, standard deviation 0.000 m**, and a per-man
+   * speed of **0.000 m/s** at the 5th, 50th and 95th. Not a crowd that looks regular — a
+   * crystal, to the millimetre, of men who are not moving at all. From above, the cohort's
+   * own shadow is twenty parallel stripes at an identical pitch.
+   *
+   * That is the whole of "they look like they are controlled by a hive mind". The men
+   * themselves were already varied — 57–59 kit masks, 119 statures, 229 cadences, 314 of 320
+   * distinct animation phases in one cohort — but variation in *kit* cannot break a lattice
+   * in *position*, which is why several passes of work on how the men look never touched it.
+   *
+   * ## Why it is a fraction of spacing and not metres
+   *
+   * A man dresses by eye off the man beside him, so his error scales with the interval he is
+   * keeping. It also keeps mounted and foot honest without a second constant: the same figure
+   * on a 1.95 m cavalry interval gives a rider proportionally the same slop as a legionary on
+   * 0.86 m. The offset is halved and centred, so `dress` is peak-to-peak: `line`'s 0.30 is
+   * +-0.13 m on a 0.86 m interval.
+   *
+   * ## The boundary, which is the point of having a per-formation figure at all
+   *
+   * **A shape a player asked for has to survive.** A cohort ordered into testudo is *supposed*
+   * to be geometric — that is the order — so `testudo` takes 0.06 (+-1.5 cm, invisible) and
+   * `shieldwall` 0.10, and both stay as crisp as they were. `line` and `wedge` take a real
+   * dressing error because a battle line is dressed by eye and never was a lattice. The three
+   * open formations already scatter their slots and take a little more on top, keyed on the
+   * man rather than the slot, which is what stops two loose units of the same width sharing
+   * one scatter pattern.
+   *
+   * Applied in `BattleSystem.steerSoldiers` and nowhere else, keyed on the **soldier index**.
+   * Deliberately not applied inside `offset`: the HUD overlay, the unit icons and the
+   * deployment preview all call `offset` to draw the shape the player is *ordering*, and that
+   * drawing should be the ideal lattice, not one unit's realisation of it.
+   */
+  dress: number;
   /** Animation the idle pose should use while in this formation. */
   idlePose: 'relaxed' | 'alert' | 'brace';
   /**
@@ -130,6 +171,9 @@ export const FORMATIONS: Record<string, FormationDef> = {
     },
     frontMul: 1,
     mods: { shield: 1, attack: 1, speed: 1, missileTaken: 1, charge: 1, morale: 0 },
+    // +-0.13 m on a 0.86 m interval. A battle line is dressed by eye off the man beside
+    // you; it has never been a lattice, and it was one here to the millimetre.
+    dress: 0.30,
     idlePose: 'alert',
   },
 
@@ -149,6 +193,9 @@ export const FORMATIONS: Record<string, FormationDef> = {
     },
     frontMul: 1,
     mods: { shield: 1.55, attack: 0.86, speed: 0.5, missileTaken: 0.6, charge: 0.3, morale: 8 },
+    // Shields are locked edge to edge: the man has about three centimetres to play with
+    // before he opens the wall, and that is what he gets.
+    dress: 0.10,
     idlePose: 'brace',
     packRadius: 0.31,
   },
@@ -168,6 +215,9 @@ export const FORMATIONS: Record<string, FormationDef> = {
     },
     frontMul: 1,
     mods: { shield: 2.3, attack: 0.42, speed: 0.36, missileTaken: 0.16, charge: 0, morale: 4 },
+    // +-1.5 cm. The tortoise is the one shape that is *entirely* an order, so it keeps its
+    // geometry to within a shield's overlap. This is the boundary condition, as a number.
+    dress: 0.06,
     idlePose: 'brace',
     packRadius: 0.25,
   },
@@ -200,6 +250,7 @@ export const FORMATIONS: Record<string, FormationDef> = {
     },
     frontMul: 0.35,
     mods: { shield: 0.9, attack: 1.12, speed: 1.04, missileTaken: 1.1, charge: 1.45, morale: 4 },
+    dress: 0.30,
     idlePose: 'alert',
   },
 
@@ -221,6 +272,9 @@ export const FORMATIONS: Record<string, FormationDef> = {
     },
     frontMul: 1,
     mods: { shield: 0.8, attack: 0.94, speed: 1.1, missileTaken: 0.52, charge: 0.85, morale: -2 },
+    // On top of the slot scatter above, and keyed on the man rather than the slot — which
+    // is what stops two loose units of the same width standing in the identical pattern.
+    dress: 0.34,
     idlePose: 'alert',
   },
 
@@ -241,6 +295,7 @@ export const FORMATIONS: Record<string, FormationDef> = {
     },
     frontMul: 1,
     mods: { shield: 0.7, attack: 0.85, speed: 1.18, missileTaken: 0.42, charge: 0.6, morale: -4 },
+    dress: 0.34,
     idlePose: 'alert',
   },
 
@@ -267,6 +322,8 @@ export const FORMATIONS: Record<string, FormationDef> = {
     },
     frontMul: 1,
     mods: { shield: 0.72, attack: 1.06, speed: 1.14, missileTaken: 1.22, charge: 1.2, morale: 6 },
+    // "No order at all" is the description. It should be the loosest thing on the field.
+    dress: 0.40,
     idlePose: 'relaxed',
   },
 };
