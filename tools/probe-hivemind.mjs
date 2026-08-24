@@ -22,6 +22,26 @@
  * **period** — the dominant period of the unit-mean lateral offset, by autocorrelation. A
  *   real crowd has no one period; a crowd driven by a function does.
  *
+ * ## Why this advances in ticks and stops the clock, which it did not at first
+ *
+ * The first cut of this probe used `advance(seconds)` and left the page's rAF loop running,
+ * and it was **not repeatable on the case that mattered**. Three runs of one unchanged tree
+ * gave the melee case 134, 135 and 136 living men and a coherence of 0.247, 0.320 and 0.454 —
+ * a spread three times any effect worth reporting, and it clustered into discrete modes
+ * rather than scattering, which is the tell that the run was branching rather than jittering.
+ *
+ * Two causes, both documented elsewhere in this repo and both live here at once. The rAF race
+ * is `tools/lib/simclock.mjs`: the world keeps stepping between Playwright round trips, so a
+ * case starts at a different tick every run. The second is that `advance()` rebases its clock
+ * and leaves the accumulator holding whatever real time had passed — `tools/probe-frametime.mjs`
+ * names it in the line where it drops its first six frames. With `stopClockOnReady` **and**
+ * every `advance(s)` rewritten as `advanceTicks(s * 30)`, two runs of a tree now return
+ * identical figures to the last printed digit, on every case including the melee.
+ *
+ * The standing cases were always exact, which is exactly why the melee number needed the
+ * work: a probe that is trustworthy on the easy case and silently load-dependent on the hard
+ * one is worse than one that is noisy everywhere, because it invites you to believe it.
+ *
  * Usage:
  *   node tools/probe-hivemind.mjs --port=5610 [--json=path] [--label=before]
  */
@@ -31,6 +51,7 @@ import { execSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
 import { launchBrowser, startVite } from './lib/browser-budget.mjs';
+import { stopClockOnReady } from './lib/simclock.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const args = new Map(process.argv.slice(2).map((a) => {
@@ -100,11 +121,11 @@ window.__hmRun = async (spec) => {
   // Settle to the state we want to look at.
   if (spec.toContact) {
     let hit = -1;
-    for (let t = 0; t < 40 && hit < 0; t++) { g.advance(1); if (units.some((u) => u.contactLock)) hit = t; }
+    for (let t = 0; t < 40 && hit < 0; t++) { g.advanceTicks(30); if (units.some((u) => u.contactLock)) hit = t; }
     if (hit < 0) return { case: spec.id, error: 'no contact in 40 s' };
-    g.advance(spec.after ?? 30);
+    g.advanceTicks((spec.after ?? 30) * 30);
   } else {
-    g.advance(spec.settle ?? 8);
+    g.advanceTicks((spec.settle ?? 8) * 30);
   }
 
   const subject = units[0];
@@ -114,28 +135,54 @@ window.__hmRun = async (spec) => {
 
   // ---- sample the window, one row per tick -----------------------------------
   const TICKS = spec.ticks ?? 240;         // 8 s at 30 Hz
+  const FIGHTING = 4;
   const xs = new Float64Array(TICKS * n), zs = new Float64Array(TICKS * n);
   const stillAlive = new Uint8Array(TICKS * n);
+  const inContact = new Uint8Array(TICKS * n);
   for (let t = 0; t < TICKS; t++) {
     g.advanceTicks(1);
     for (let k = 0; k < n; k++) {
       const i = men[k];
       xs[t * n + k] = p.x[i]; zs[t * n + k] = p.z[i];
       stillAlive[t * n + k] = H.alive(i) ? 1 : 0;
+      inContact[t * n + k] = p.state[i] === FIGHTING ? 1 : 0;
     }
   }
 
   // ---- coherence R -----------------------------------------------------------
+  //
+  // Two of them, and the second is the one that answers the question.
+  //
+  // R is over every living man of the unit, and a unit that is being walked backwards is
+  // *supposed* to move as one — the anchor gives ground and the rear ranks follow their
+  // slots, which is the shoving match working. So R can never approach 1/sqrt(n) for a unit
+  // in contact and it would be wrong to want it to.
+  //
+  // Rfight is over only the men whose state is Fighting. Those are the men the owner is
+  // looking at when he says a melee should be individual fights, and there is no legitimate
+  // reason for two men working on two different opponents to step the same way at the same
+  // moment. This is the honest number for "does a man in that line fight for himself".
   let sumMeanLen = 0, sumLenMean = 0;
+  let fSumMeanLen = 0, fSumLenMean = 0, fMenMean = 0, fTicks = 0;
   const lateral = [];               // unit-mean lateral offset, per tick
   const cos = Math.cos(subject.facing), sin = Math.sin(subject.facing);
   for (let t = 1; t < TICKS; t++) {
     let mx = 0, mz = 0, sl = 0, m = 0;
+    let fx2 = 0, fz2 = 0, fl = 0, fm = 0;
     for (let k = 0; k < n; k++) {
       if (!stillAlive[t * n + k] || !stillAlive[(t - 1) * n + k]) continue;
       const dx = xs[t * n + k] - xs[(t - 1) * n + k];
       const dz = zs[t * n + k] - zs[(t - 1) * n + k];
-      mx += dx; mz += dz; sl += Math.sqrt(dx * dx + dz * dz); m++;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      mx += dx; mz += dz; sl += len; m++;
+      if (inContact[t * n + k] && inContact[(t - 1) * n + k]) {
+        fx2 += dx; fz2 += dz; fl += len; fm++;
+      }
+    }
+    if (fm >= 10) {
+      fSumMeanLen += Math.sqrt((fx2 / fm) ** 2 + (fz2 / fm) ** 2);
+      fSumLenMean += fl / fm;
+      fMenMean += fm; fTicks++;
     }
     if (m < 10) continue;
     mx /= m; mz /= m; sl /= m;
@@ -150,6 +197,8 @@ window.__hmRun = async (spec) => {
     lateral.push((cx / c) * cos - (cz / c) * sin);
   }
   const R = sumLenMean > 1e-9 ? sumMeanLen / sumLenMean : 0;
+  const Rfight = fSumLenMean > 1e-9 ? fSumMeanLen / fSumLenMean : 0;
+  const fightN = fTicks ? fMenMean / fTicks : 0;
 
   // ---- dominant period of the unit-mean lateral offset, by autocorrelation ----
   const detrend = (() => {
@@ -181,6 +230,10 @@ window.__hmRun = async (spec) => {
     if (wentNegative && r > bestAc) { bestAc = r; bestLag = lag; }
   }
   const swingAmp = detrend.length ? Math.max(...detrend.map(Math.abs)) : 0;
+  // A period fitted to a centroid that is not moving is a period fitted to rounding. Five
+  // millimetres of unit-centroid swing is the floor below which there is nothing to have a
+  // period *of*, and reporting one anyway is how a number becomes a finding it cannot carry.
+  if (swingAmp < 0.005) { bestLag = 0; bestAc = 0; }
 
   // ---- lattice: nearest-neighbour distance across the whole field -------------
   const all = [];
@@ -240,7 +293,7 @@ window.__hmRun = async (spec) => {
   const r3 = (v) => Math.round(v * 1000) / 1000;
   return {
     case: spec.id, n, ticks: TICKS,
-    R: r3(R),
+    R: r3(R), Rfight: r3(Rfight), fightN: Math.round(fightN),
     swingAmp: r3(swingAmp), periodS: bestLag ? r3(bestLag / 30) : 0, periodStrength: r3(bestAc),
     nnd: {
       n: nnd.length, mean: r3(nndMean), std: r3(nndStd),
@@ -287,8 +340,15 @@ const page = await browser.newPage({ viewport: { width: 480, height: 270 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.setDefaultTimeout(300000);
+// Before goto, and not negotiable. Without it the page's own rAF loop keeps stepping the
+// world between every Playwright round trip, so a case is measured after a different number
+// of ticks each run and the whole probe reports load average. It did: three runs of one
+// unchanged tree gave the melee case 135, 136 and 134 living men and a coherence of 0.320,
+// 0.442 and 0.454 — a spread wider than the effect being measured. See tools/lib/simclock.mjs.
+await stopClockOnReady(page);
 await page.goto(`${base}/?harness=1&quality=high&autoplay=1&w=480&h=270`, { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 300000 });
+await page.evaluate(() => window.__game.engine.stop());   // belt as well as braces
 await page.evaluate((s) => { new Function(s)(); }, HELPERS);
 await page.evaluate((s) => { new Function(s)(); }, CASES);
 
@@ -300,6 +360,10 @@ for (const spec of SPECS) {
   if (r.error) { console.log(`\n${r.case}: ERROR ${r.error}`); continue; }
   console.log(`\n=== ${r.case} — ${r.n} men in the subject unit, ${r.ticks} ticks ===`);
   console.log(`  coherence R        ${r.R.toFixed(3)}   (1 = one organism, ~${(1 / Math.sqrt(r.n)).toFixed(3)} = independent)`);
+  if (r.fightN) {
+    console.log(`  ...men in contact  ${r.Rfight.toFixed(3)}   over ${r.fightN} fighting men `
+      + `(independent would be ~${(1 / Math.sqrt(r.fightN)).toFixed(3)})`);
+  }
   console.log(`  lateral swing      ${r.swingAmp.toFixed(3)} m   period ${r.periodS.toFixed(2)} s   strength ${r.periodStrength.toFixed(3)}`);
   console.log(`  nearest neighbour  mean ${r.nnd.mean.toFixed(3)} m  std ${r.nnd.std.toFixed(3)}  p05/p50/p95 ${r.nnd.p05.toFixed(2)}/${r.nnd.p50.toFixed(2)}/${r.nnd.p95.toFixed(2)}  at floor ${(r.nnd.atFloorShare * 100).toFixed(0)}%`);
   console.log(`  front line RMS     ${r.frontStd.toFixed(3)} m over ${r.frontN} files`);
