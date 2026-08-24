@@ -2412,6 +2412,42 @@ available spends fidelity on an axis the survey exists to protect, and the numbe
 | make `FAR_BANK` footprint-aware | the direct repair of the mirror above — evaluate the bank over the footprint's whole z-span and subtract its half-width. Moves the Mausoleum **102 m west** of a survey row the judge called *"the best-placed monument on the map"*, 8 m from the inked mausoleum on the plate | yes, and 102 m is inside the declared 120 m override bound |
 | leave it and stop drawing it | the `offMapSouth` treatment, name printed at boot | yes |
 
+
+**And a fourth, found by sweeping instead of arguing, which is much the cheapest**
+(`tools/scratch/riverbudge.mjs` sweeps plan scale, northing and easting against the same wet-area
+measure G22 gates on):
+
+| | to clear the 4 m² gate | wet plan at that setting |
+|---|---|---|
+| `mausoleum-hadrian`, shrink the plan | `draw` **0.35** | 0 m², worst ground 5.97 |
+| `mausoleum-hadrian`, move west | **−120 m** | 0 m², worst 7.48 |
+| `mausoleum-hadrian`, move **north** | **−30 m in z** | **0 m², worst 5.08** |
+| `theatre-marcellus`, shrink the plan | does not clear at any scale down to 0.30 | 95 m² at 0.30 |
+| `theatre-marcellus`, move west | **gets worse**, 407 → 2,003 m² by −80 m | — |
+| `theatre-marcellus`, move **north** | **−20 m in z** | **2 m², worst 4.75** |
+
+Thirty world metres and twenty. Every other axis costs three to six times as much or does not
+converge at all, and moving the Theatre west makes it five times worse — which is worth knowing
+before anyone reasons about it from a plan view, because west *looks* like the way out of a
+river that runs north–south and this reach does not.
+
+**It is still not free and it is still not this branch's call.** 30 world metres of z is
+**86 real metres** of northing on a row the judge's plate control placed to 8 m, and 20 is 57
+real metres on a row that was moved 39 m *to* a plate control this month with a stated error of
+30. And it would break `assertRomeFrame`'s z-clamp check, which gates at 10 m over 28 rows and
+currently reads 7.6.
+
+**The deeper reading, which is why none of these is obviously right.** The channel is digitised
+from 451 stations and agrees with a second independent survey to 1.1 world metres. The monument
+is on a plate control to 8 m. **Both data are good and they still overlap**, which means the
+overlap is manufactured by the projection rather than by either datum: at `KZ` 0.35 the Vatican
+meander is folded onto a building whose plan did not compress with it. So the repair that is a
+correction rather than a nudge is the plan (rule 22 applied to a footprint), and its cost is
+that `drawHeightOf` defaults to `draw`, so `draw: 0.35` also makes Castel Sant'Angelo **11 m
+tall**. Rule 14 permits the escape — a named anisotropy with the ratio printed — and it was
+earned against exactly this, so invoking it deliberately for one row is a decision and not an
+oversight. That is the shape of the question, and it is the owner's.
+
 And the Theatre of Marcellus is harder than any of them: it is *already* the smallest ratio on
 the map (0.252) and at 0.3 it is still 95 m² wet. Its real clearance is 60 m. **It stood on the
 Ripa, and Rome genuinely built out over that water.** So "should Rome have structures on piles
