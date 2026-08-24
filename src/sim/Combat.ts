@@ -1352,16 +1352,43 @@ export class CombatSystem implements Subsystem {
       // `BattleSystem` does not read them, and clobbering them every tick destroyed the
       // standing order the unit will resume the moment the lock releases.
 
-      // Local buckling: front-rank men inherit the push with a fixed per-man bias,
-      // so the contact line reads as an irregular seam rather than a ruled edge.
+      // Local buckling: front-rank men inherit the push with a per-man bias, so the contact
+      // line reads as an irregular seam rather than a ruled edge.
+      //
+      // ## Why the bias alone was not enough
+      //
+      // `bias` is a *positive scalar* on a direction every man in the unit shares. It varies
+      // how far a man is pushed and never which way, so the whole fighting line moves along
+      // one axis, in one sign, at one moment — and `balance` swings smoothly with the nerve
+      // and kill pulses, so that one axis reverses on a slow beat. Measured with
+      // `tools/probe-hivemind.mjs` on a 135-man cohort thirty seconds into a melee: coherence
+      // **R = 0.454**, against the 0.086 that independent men of that number would give.
+      //
+      // What the probe did *not* find, and it was looking: any genuine periodic oscillation in
+      // the positions, on this tree or the one before it. An earlier cut of the probe reported
+      // one and it was an artefact of taking an argmax over all autocorrelation lags, which
+      // returns the shortest lag searched for any smooth signal. So the coherent thing here is
+      // a shared *direction*, not a shared rhythm, and this is the half of the report that is
+      // real. The other half was that the men were standing in an exact lattice; see
+      // `FormationDef.dress`.
+      //
+      // `skew` adds the missing dimension: a per-man rotation of his own share of the push,
+      // drawn from his stable hash and **zero-mean**, so the unit's aggregate displacement is
+      // unchanged to the tick — the anchor still walks at `speed`, whoever is winning still
+      // wins — while no two neighbours give ground along the same line. It is a texture
+      // change on top of an unchanged bulk motion, which is the only kind of decorrelation
+      // that is safe to make here.
       const members = u.members;
       for (let m = 0; m < members.length; m++) {
         const i = members[m];
         if (p.state[i] !== SoldierState.Fighting) continue;
         if (this.matchedWith[i] >= 0) continue;
         const bias = 0.55 + hash01(i, 91) * 0.9;
-        p.vx[i] += edx * speed * bias * 2.2 * dt;
-        p.vz[i] += edz * speed * bias * 2.2 * dt;
+        const skew = (hash01(i, 137) - 0.5) * 1.3;
+        const ax = edx * bias - edz * skew;
+        const az = edz * bias + edx * skew;
+        p.vx[i] += ax * speed * 2.2 * dt;
+        p.vz[i] += az * speed * 2.2 * dt;
       }
     }
   }

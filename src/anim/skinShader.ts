@@ -437,9 +437,30 @@ const body = (withNormal: boolean): string => /* glsl */ `
     // through the ground, which is instantly readable as wrong.
     float bendT = clamp( sp.y / SOLDIER_LEAN_H, 0.0, 1.0 );
     float lean = iOrient.z * bendT * bendT;
-    // A slow, per-man sway on top. Nothing in a crowd is ever perfectly still, and the
-    // phase comes from the man's stable hash so it never resynchronises.
-    lean += sin( uTime * 0.55 + iAnimB.w * 43.0 ) * 0.014 * bendT * bendT;
+    // A slow, per-man sway on top. Nothing in a crowd is ever perfectly still.
+    //
+    // The phase came from the man's stable hash, which is the right idea and not enough of
+    // it: the *frequency* was 0.55 rad/s for every man on the field and the amplitude 0.014
+    // rad for every man on the field, so nine thousand men breathed with one period of
+    // 11.4 seconds and differed only in where in it they happened to be. A crowd of
+    // identical-period oscillators is a crowd the eye can find a beat in, and finding a beat
+    // in a crowd is exactly the report — "sway left and right along some sort of function".
+    // Random phase does not fix that; only a spread of periods does.
+    //
+    // So the rate and the size are the man's too, and there are two terms at incommensurate
+    // rates rather than one, on the same reasoning the cloak above uses: a single sine has a
+    // period whatever its rate, and two do not. fract() of two different multiples of the
+    // same hash gives three independent draws out of one attribute and costs no bandwidth.
+    // Range 0.31–0.83 rad/s (7.6–20 s) and 0.008–0.023 rad, so the slowest man is two and a
+    // half times the period of the quickest and no two adjacent men agree.
+    //
+    // Presentation, and provably so: it is a function of uTime, which lives outside the
+    // fixed step, writes nothing, and cannot perturb the simulation hash. No pin moves.
+    float swayF = 0.31 + fract( iAnimB.w * 7.13 ) * 0.52;
+    float swayA = 0.008 + fract( iAnimB.w * 3.71 ) * 0.015;
+    lean += ( sin( uTime * swayF + iAnimB.w * 43.0 )
+            + sin( uTime * swayF * 0.41 + iAnimB.w * 17.0 ) * 0.55 )
+            * swayA * bendT * bendT;
     float cl = cos( lean ), sl = sin( lean );
     sp = vec3( sp.x, sp.y * cl - sp.z * sl, sp.y * sl + sp.z * cl );
     ${withNormal ? 'sn = vec3( sn.x, sn.y * cl - sn.z * sl, sn.y * sl + sn.z * cl );' : ''}

@@ -547,6 +547,38 @@ const MAX_SEPARATION_STEP = 0.22;
 const MAX_SEPARATION_FIGHTING = 0.08;
 
 /**
+ * How far from his dressed slot a man in melee may work, metres.
+ *
+ * A fighting man used to be frozen: `steerSoldiers` damped his velocity to zero the tick he
+ * acquired a target and he never chose a footing again. Measured with
+ * `tools/probe-hivemind.mjs`, that is why a melee thirty seconds old is still two rectangles
+ * with the file-stripes visible from above — the lattice the cohort *marched* in is the
+ * lattice it *fights* in, because nothing was ever allowed to disturb it.
+ *
+ * This is the radius inside which he owns his own feet. It is deliberately smaller than a
+ * rank interval (1.02 m for a line): the formation still decides where he stands, and he only
+ * decides the last third of a metre of it. Bigger and the line stops reading as a line, which
+ * is a different fault and not an improvement; the owner's boundary is that a shape a player
+ * ordered has to survive.
+ *
+ * This is a gameplay change and not only a visual one — a front-ranker who can lean 0.34 m
+ * into the seam is inside a reach he was outside of — so `tools/determinism-baseline.json` is
+ * re-recorded in the same commit, and `tools/matchup.mjs` is the thing that says what it did
+ * to the result.
+ */
+const MELEE_FOOTING = 0.34;
+
+/**
+ * And how fast he may take it, metres per second.
+ *
+ * A shuffle, not a step: 0.45 m/s crosses `MELEE_FOOTING` in about three quarters of a
+ * second, so a man settles onto his opponent over a couple of exchanges rather than
+ * snapping onto him. Anything quicker and the whole front rank arrives at the seam on the
+ * same tick, which is the coherent motion this is meant to remove.
+ */
+const MELEE_FOOTING_SPEED = 0.45;
+
+/**
  * How near his place a man on a structure has to get before he stops walking at it.
  *
  * Six centimetres — the value this replaced — is a tenth of a body and is unreachable by
@@ -2736,14 +2768,6 @@ export class BattleSystem implements Subsystem {
       for (const i of u.members) {
         const st = p.state[i] as SoldierState;
         if (st === SoldierState.Dead || st === SoldierState.Dying) continue;
-        // A man locked in melee holds his ground rather than chasing his slot — unless he
-        // has been ordered out of it.
-        if (st === SoldierState.Fighting && !disengaging) {
-          this.press[i] = 0;
-          p.vx[i] = damp(p.vx[i], 0, 9, dt);
-          p.vz[i] = damp(p.vz[i], 0, 9, dt);
-          continue;
-        }
         if (st === SoldierState.Fighting && disengaging) {
           // Break off: drop the opponent and let the state machine pick a locomotion clip,
           // so the man visibly turns and walks out instead of swinging at nothing.
@@ -2752,6 +2776,80 @@ export class BattleSystem implements Subsystem {
         }
 
         f.offset(SCRATCH, p.slot[i], u.width, ranks, u.spacingX, u.spacingZ);
+        // How loosely this man dresses on his slot. See `FormationDef.dress`: the lattice
+        // was exact — 0.860 m at every percentile, standard deviation 0.000 — and no amount
+        // of variation in kit, stature or gait can break a lattice that is in the positions.
+        // Keyed on the soldier index so two units of the same width never share a pattern.
+        if (f.dress > 0) {
+          SCRATCH.x += (hash01(i, 0x5d4e) - 0.5) * u.spacingX * f.dress;
+          SCRATCH.z += (hash01(i, 0x2b17) - 0.5) * u.spacingZ * f.dress;
+        }
+
+        // A man locked in melee is not on a parade slot. He holds his *place* — the press
+        // behind him and the crowd solver see to that — but he works on the man in front of
+        // him, and where that man is standing is his own business and not the formation's.
+        //
+        // Until this existed he was frozen outright: `v` damped to zero the tick he acquired
+        // a target, so the rectangle a cohort marched in was exactly the rectangle it fought
+        // in, thirty seconds later, with the file-stripes still legible from above. That is
+        // the whole of "two lines meeting stay two rectangles".
+        //
+        // The footing he is allowed is bounded to `MELEE_FOOTING` around his dressed slot, so
+        // the line still reads as a line and nobody wanders off into the enemy mass. Within
+        // that radius he closes on his own opponent to a working distance and no closer.
+        if (st === SoldierState.Fighting && !disengaging) {
+          this.press[i] = 0;
+          let wx = 0;
+          let wz = 0;
+          const tgt = p.target[i];
+          if (tgt >= 0 && p.state[tgt] !== SoldierState.Dead) {
+            // Where he would stand if only his opponent existed: a working distance short of
+            // him, along the line between them.
+            const ddx = p.x[tgt] - p.x[i];
+            const ddz = p.z[tgt] - p.z[i];
+            const d = Math.sqrt(ddx * ddx + ddz * ddz);
+            if (d > 1e-4) {
+              // How close *this* man likes to work, and which way he works around his
+              // opponent's shield. Both from his own hash, and both are the difference
+              // between a rank closing on the enemy and a rank of men each closing on his
+              // own: with one shared working distance every front-ranker leans in on the
+              // same tick by the same amount, which is coherent motion added in the course
+              // of removing some. A bolder man stands 0.70 of his reach off, a warier one
+              // 0.96, and each circles his man one way or the other.
+              const want = Math.max(0.55, def.reach * (0.70 + hash01(i, 203) * 0.26));
+              const step = d - want;
+              // Zero-mean across the unit, so the fighting line keeps its bulk position and
+              // only loses its straightness.
+              const circle = (hash01(i, 211) - 0.5) * 0.55;
+              // Clamp the footing to a bounded shuffle around the dressed slot, so the
+              // formation still owns where he is and he only owns the last few centimetres.
+              const sx0 = u.x + SCRATCH.x * c + SCRATCH.z * s;
+              const sz0 = u.z - SCRATCH.x * s + SCRATCH.z * c;
+              // Along the line to his man, plus a sidestep perpendicular to it.
+              let fx = p.x[i] + (ddx / d) * step - (ddz / d) * circle;
+              let fz = p.z[i] + (ddz / d) * step + (ddx / d) * circle;
+              const ox = fx - sx0;
+              const oz = fz - sz0;
+              const od = Math.sqrt(ox * ox + oz * oz);
+              if (od > MELEE_FOOTING) {
+                fx = sx0 + (ox / od) * MELEE_FOOTING;
+                fz = sz0 + (oz / od) * MELEE_FOOTING;
+              }
+              const gx = fx - p.x[i];
+              const gz = fz - p.z[i];
+              const gd = Math.sqrt(gx * gx + gz * gz);
+              if (gd > 0.01) {
+                const v = Math.min(MELEE_FOOTING_SPEED, gd * 2.2);
+                wx = (gx / gd) * v;
+                wz = (gz / gd) * v;
+              }
+            }
+          }
+          p.vx[i] = damp(p.vx[i], wx, 9, dt);
+          p.vz[i] = damp(p.vz[i], wz, 9, dt);
+          continue;
+        }
+
         if (pressing) {
           // Creep forward, but never in front of the front rank: `-SCRATCH.z` is this
           // man's own setback, so the press closes his own gap and no more. Crowd
