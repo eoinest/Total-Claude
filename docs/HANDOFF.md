@@ -199,6 +199,13 @@ exists. A relay, not peer-to-peer, either way — §4.1's total-order problem, n
 - **Agents do not merge to `main`.** Leave the branch, report, integration belongs to the
   orchestrator, who is the only one who sees every branch. One agent self-merged on 20 Aug and
   tripped a security review.
+- **Two agents in the primary checkout will merge into each other's branch.** 23 Aug 2026,
+  22:20:26, reflog: `merge origin/e/net/lan: Merge made by the 'ort' strategy` — nine seconds
+  after an unrelated agent's commit on `e/tools/resource-budget`, in the same checkout, by a
+  second agent that had no idea which branch was out. Nothing was lost and nothing was wrong
+  with the merge; the branch simply stopped being about one thing, and **a gate run before it
+  was a gate run on a different tree**. `git branch --show-current` before every commit, and
+  work in a worktree rather than here whenever the task takes more than a few minutes.
 - **Never `git stash` in this repo while other agents run.** The stash stack is repo-global; two
   agents pushed in the same window and each popped the other's work. *Earlier guidance in this file
   said to stash — it was wrong.* Park work on a branch.
