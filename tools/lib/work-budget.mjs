@@ -73,6 +73,8 @@
  * | `TC_OWNER_IDLE_MS` | `180000` | HID idle before `auto` decides `away` |
  * | `TC_GPU_CEILING` | per-state | override the admission ceiling, in percent |
  * | `TC_QOS` | `on` | `off` leaves running browsers at foreground priority |
+ * | `TC_MAX_PROCS` | derived | the ladder in OS processes; see `procPolicy` |
+ * | `TC_PROC_BUDGET` | `on` | `off` disables the process ceiling and keeps everything else |
  */
 
 import { execFileSync } from 'node:child_process';
@@ -80,6 +82,7 @@ import { linkSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync 
 import path from 'node:path';
 import process from 'node:process';
 import { gpuUtilisation, coresInUse, memory, owner, setQosTree, coreSplit } from './machine-load.mjs';
+import { admitProcesses, procCeiling } from './process-registry.mjs';
 
 export const BUDGET_DIR = process.env.TC_BUDGET_DIR || '/tmp/tc-browser-budget';
 const OBS_FILE = path.join(BUDGET_DIR, 'machine.json');
@@ -112,6 +115,25 @@ export const POLICY = {
   away: { cap: 4, gpuCeiling: 92, qos: 'foreground', why: 'nobody is inconvenienced by a hot machine' },
   present: { cap: 2, gpuCeiling: 70, qos: 'foreground', why: 'he wants his terminal and editor responsive' },
   playing: { cap: 1, gpuCeiling: 45, qos: 'background', why: 'the GPU is the thing he needs and agents must yield it' },
+};
+
+/**
+ * The same ladder, said in OS processes — the unit the owner actually counts in.
+ *
+ * He has asked twice how many *processes* are running, and `browsers.mjs` answers with a warning
+ * that the number is misleading. That is a true warning and an unhelpful one. So the ladder is now
+ * published in both units, and the process figure is **derived from the browser cap** rather than
+ * set beside it, so that `node tools/browsers.mjs cap <n>` moves both and they cannot drift into
+ * disagreeing about how much machine there is.
+ *
+ * `procCeiling` in `tools/lib/process-registry.mjs` holds the arithmetic and the measurement it
+ * rests on: one unit of gate work is **five** OS processes on this machine, measured, not the
+ * "six or seven" the older prose quotes.
+ */
+export const procPolicy = (state) => {
+  const pol = policyFor(state);
+  const { ceiling, from } = procCeiling(pol.cap);
+  return { ...pol, procCeiling: ceiling, procCeilingFrom: from };
 };
 
 /** The policy for a state, with `TC_GPU_CEILING` applied if set. */
@@ -274,7 +296,28 @@ export const admit = ({ liveCount, selfHeld = 0, snapshot = null, state = null }
         + ` while owner is ${who}; ${liveCount} browser(s) already rendering`,
     };
   }
-  return { ok: true, owner: who, policy: pol, snapshot: snap, reason: `owner ${who}, cap ${pol.cap}, gpu ok` };
+
+  /*
+   * The third refusal: the OS-process ceiling.
+   *
+   * It is last because it is the cheapest to be wrong about and the most likely to surprise —
+   * "there are two free slots and it still said no" needs the clearest possible message, which it
+   * gets from `admitProcesses`. It is *not* redundant with the slot count, and the three cases
+   * where it is the only test that can fire are named in `process-registry.mjs`: a browser holding
+   * no slot, one slot holding twenty pages, and a spawned tree that is not a browser at all — the
+   * 23 Aug loop, which held no slot at any moment a sweep looked at it.
+   *
+   * Like the other two it is transient by construction: re-tested every poll, so it queues.
+   */
+  const procs = admitProcesses({ browserCap: pol.cap });
+  if (!procs.ok) {
+    return {
+      ok: false, why: 'procs', owner: who, policy: pol, snapshot: snap, procs,
+      reason: `${procs.reason} while owner is ${who}`,
+    };
+  }
+  return { ok: true, owner: who, policy: pol, snapshot: snap, procs,
+    reason: `owner ${who}, cap ${pol.cap}, gpu ok, ${procs.reason}` };
 };
 
 /* ──────────────────────────── in-flight throttling ──────────────────────────── */

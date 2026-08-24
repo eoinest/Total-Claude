@@ -143,7 +143,7 @@ const coresInUse = (ms = 2000) => {
  * a browser. That distinction is the whole reason this function exists.
  */
 const scanProcesses = () => {
-  const browsers = []; const children = []; const vites = [];
+  const browsers = []; const children = []; const vites = []; const guards = [];
   for (const line of ps('pid=,ppid=,etime=,command=').split('\n')) {
     const m = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/);
     if (!m) continue;
@@ -151,6 +151,14 @@ const scanProcesses = () => {
     const rec = { pid: Number(pid), ppid: Number(ppid), etime, command };
     if (/chrome-headless-shell/.test(command)) {
       (/--type=/.test(command) ? children : browsers).push(rec);
+    } else if (/spawn-guard\.mjs/.test(command)) {
+      /*
+       * A guard's command line contains the command it supervises, so `node spawn-guard.mjs …
+       * -- node vite-runner.mjs --port=5947` matches every Vite pattern below. Counted as a Vite
+       * server it makes one server look like two — measured on the first run of the supervisor,
+       * `vite 2` where there was one. Classify the guard first and continue.
+       */
+      guards.push({ ...rec, pgid: null });
     } else if (/vite-runner\.mjs|node_modules\/\.bin\/vite|bin\/vite\.js|npm exec vite/.test(command)) {
       const p = command.match(/--port[= ](\d+)/);
       vites.push({
@@ -174,7 +182,7 @@ const scanProcesses = () => {
     const prev = byPort.get(key);
     if (!prev || (prev.wrapper && !v.wrapper)) byPort.set(key, v);
   }
-  return { browsers, children, vites: [...byPort.values()], viteProcs: vites };
+  return { browsers, children, vites: [...byPort.values()], viteProcs: vites, guards };
 };
 
 /**

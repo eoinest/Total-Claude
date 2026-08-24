@@ -113,6 +113,10 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { bootId as bootGeneration, pidAlive } from './liveness.mjs';
+import {
+  identity, procCensus, reapOwned, spawnOwned,
+} from './process-registry.mjs';
 import {
   admit, describe, makeThrottle, newBrowserPid, ourBrowserPids, ownerState, workBudgetEnabled,
 } from './work-budget.mjs';
@@ -138,29 +142,20 @@ const ensureDirs = () => {
 };
 
 /**
- * The boot generation.
+ * The boot generation, re-exported.
  *
  * A PID is not an identity across a reboot, and the event this exists for **was** a reboot: a
  * lock file recording pid 4711 from before the crash will match some unrelated process
- * afterwards, and `kill(4711, 0)` will say "alive". Stamping every record with the kernel's
- * boot time makes every pre-crash lock unambiguously dead without waiting for any timeout.
+ * afterwards, and `kill(4711, 0)` will say "alive". Stamping every record with the kernel's boot
+ * time makes every pre-crash lock unambiguously dead without waiting for any timeout.
  *
- * `sysctl kern.boottime` on Darwin; elsewhere, `Date.now() - uptime`, rounded to ten seconds
- * because `os.uptime()` has enough jitter to disagree with itself between two processes.
+ * It now lives in `tools/lib/liveness.mjs` because `tools/lib/process-registry.mjs` has to reach
+ * the *same* verdict about the *same* PID: a reaper that thought a holder was dead while this
+ * file thought it alive would kill a process that still holds a slot, and the slot would then be
+ * released by nobody. Re-exported here so `tools/reclaim.mjs`, which imports it from this file,
+ * is unaffected.
  */
-let bootIdCache = null;
-export const bootId = () => {
-  if (bootIdCache) return bootIdCache;
-  if (process.platform === 'darwin') {
-    try {
-      const out = execFileSync('sysctl', ['-n', 'kern.boottime'], { encoding: 'utf8' });
-      const m = out.match(/sec\s*=\s*(\d+)/);
-      if (m) return (bootIdCache = `darwin:${m[1]}`);
-    } catch { /* fall through */ }
-  }
-  const approx = Math.round((Date.now() / 1000 - os.uptime()) / 10) * 10;
-  return (bootIdCache = `uptime:${approx}`);
-};
+export const bootId = bootGeneration;
 
 export const capSource = () => {
   if (process.env.TC_MAX_BROWSERS) return { cap: Number(process.env.TC_MAX_BROWSERS), from: 'TC_MAX_BROWSERS' };
@@ -183,11 +178,6 @@ export const budgetCap = () => {
 };
 
 export const budgetEnabled = () => (process.env.TC_BROWSER_BUDGET || 'on').toLowerCase() !== 'off';
-
-const pidAlive = (pid) => {
-  if (!Number.isFinite(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (err) { return err?.code === 'EPERM'; }
-};
 
 const readRecord = (file) => {
   try {
@@ -269,13 +259,44 @@ export const reapStale = ({ killVite = true } = {}) => {
     if (fresh && !isStale(fresh)) continue;
     try { unlinkSync(entry.file); } catch { continue; }
     reaped.push({ file: entry.file, why: entry.stale, rec: entry.rec });
-    // A dead holder may have left a dev server behind. The runner kills itself within two
-    // seconds of losing its parent, so this is the third line of defence, not the first.
+    /*
+     * A dead holder may have left processes behind, and after a *reboot* the PIDs in the record
+     * name strangers — so nothing is signalled in that case, ever.
+     *
+     * The dev server first. The runner kills itself within two seconds of losing its parent and
+     * `spawnOwned` puts it under a guard, so this is the third line of defence and not the first.
+     */
+    if (entry.stale === 'reboot') continue;
     const vpid = entry.rec?.vitePid;
-    if (killVite && Number.isFinite(vpid) && vpid > 1 && entry.stale !== 'reboot' && pidAlive(vpid)) {
+    if (killVite && Number.isFinite(vpid) && vpid > 1 && pidAlive(vpid)) {
       try { process.kill(-vpid, 'SIGTERM'); } catch { try { process.kill(vpid, 'SIGTERM'); } catch { /* gone */ } }
     }
+    /*
+     * Then the browser itself, and this one is new and it closes a measured hole.
+     *
+     * Playwright launches the browser with `detached: true`, so it is in a **process group of its
+     * own** — `tools/scratch/pgid-of-browser.mjs` measured pid 75520 pgid 75520 as the child of a
+     * harness in group 75122. So when the harness is SIGKILLed, no group kill anywhere reaches
+     * that browser and no ppid links it to anything: it is the one orphan the process registry's
+     * tree closure cannot see, because the process that would have led to it is the one that died.
+     *
+     * The slot already knows the answer. `launchBrowser` records the browser PID it identified,
+     * and killing *that* group takes the browser and its gpu, utility and renderer children,
+     * because Chromium's own children are in Chromium's group.
+     */
+    const bpid = entry.rec?.browserPid;
+    if (Number.isFinite(bpid) && bpid > 1 && pidAlive(bpid)) {
+      try { process.kill(-bpid, 'SIGTERM'); } catch { try { process.kill(bpid, 'SIGTERM'); } catch { /* gone */ } }
+    }
   }
+  /*
+   * The registry sweep rides along here, because this function is already called from every path
+   * that cares — `acquireSlot`, `browsers.mjs status`, `reap`, `sweep`, and `reclaim.mjs`. Making
+   * the process registry a second thing everybody has to remember to call is how it ends up not
+   * being called; `reapStale()` is the name everything already knows.
+   */
+  try { reaped.push(...reapOwned({ quiet: true }).map((r) => ({ ...r, registry: true }))); }
+  catch { /* the registry is advisory to the semaphore; its failure must not block a launch */ }
   // Sweep the scratch directory too; a crash between write and link leaves a file there.
   try {
     for (const name of readdirSync(TMP_DIR)) {
@@ -342,16 +363,28 @@ export async function acquireSlot({
       + '!! machine. This is the setting that produced load average 160 on 22 Aug 2026.\n'
     );
     return {
-      slot: -1, disabled: true, release: () => {}, setVitePid: () => {}, record: null,
+      slot: -1, disabled: true, release: () => {}, setVitePid: () => {}, setBrowserPid: () => {},
+      record: null,
       throttle: { add: () => {}, reconcile: () => null, restore: () => {}, applied: false },
     };
   }
 
   const cap = budgetCap();
   const token = `${process.pid}-${Date.now()}-${rand()}`;
+  /*
+   * Who owns this slot, recorded rather than left to be inferred.
+   *
+   * On 23 Aug an agent killed a Vite server on port 5901 that belonged to a sibling and wrote
+   * afterwards that one `lsof -a -p <pid> -d cwd` would have told it. `identity()` puts the agent
+   * session id, the agent's own PID and the branch into the record, so `browsers.mjs machine` can
+   * name the owner without inference and `sweep` can refuse to kill somebody else's.
+   */
+  const who = identity({ root });
   const base = {
     token, label, pid: process.pid, port, root,
-    cwd: process.cwd(), bootId: bootId(), cap, argv: process.argv.slice(1, 4), ...meta,
+    cwd: process.cwd(), bootId: bootId(), cap, argv: process.argv.slice(1, 4),
+    agent: who.agent, agentPid: who.agentPid, branch: who.branch, human: who.human,
+    ...meta,
   };
 
   reapStale();
@@ -572,15 +605,19 @@ const makeHandle = ({ file, rec, cap, quiet }) => {
 
   registerCleanup(release);
 
-  const setVitePid = (pid) => {
-    rec.vitePid = pid;
-    try { writeFileSync(file, JSON.stringify(rec, null, 2)); } catch { /* reaped */ }
-  };
+  const stamp = () => { try { writeFileSync(file, JSON.stringify(rec, null, 2)); } catch { /* reaped */ } };
+  const setVitePid = (pid) => { rec.vitePid = pid; stamp(); };
+  /*
+   * The browser PID goes in the record for the same reason the Vite PID does, and for a sharper
+   * one: it is the only handle on a browser whose launcher has been SIGKILLed. See the note in
+   * `reapStale`.
+   */
+  const setBrowserPid = (pid) => { rec.browserPid = pid; stamp(); };
 
   if (!quiet && process.env.TC_BUDGET_VERBOSE === '1') {
     process.stderr.write(`browser budget: took slot ${rec.slot} of ${cap} for ${rec.label}\n`);
   }
-  return { slot: rec.slot, cap, file, record: rec, release, setVitePid, throttle, disabled: false };
+  return { slot: rec.slot, cap, file, record: rec, release, setVitePid, setBrowserPid, throttle, disabled: false };
 };
 
 /*
@@ -692,6 +729,7 @@ export async function launchBrowser({
   const bpid = engine === 'chromium' ? newBrowserPid(before) : null;
   if (bpid) {
     handle.throttle.add(bpid);
+    handle.setBrowserPid(bpid);
     try { handle.throttle.reconcile(ownerState().state); } catch { /* sensors are advisory */ }
   }
   browser.budgetPid = bpid;
@@ -757,7 +795,23 @@ export async function startVite({
   }
 
   const runner = path.join(LIB_DIR, 'vite-runner.mjs');
-  const child = spawn(
+  /*
+   * The server goes through `spawnOwned`, which is three changes from the `spawn` this replaces.
+   *
+   *   - **A guard, and therefore an anchor on the agent.** The runner already watches `--parent`
+   *     and exits within two seconds of losing it, and that watch stays. What it could not do is
+   *     notice that the *agent* had been stopped while the harness was still alive — the 23 Aug
+   *     shape. The guard watches both.
+   *   - **A registry entry naming the owner.** This is the missing sentence from the port-5901
+   *     incident: the server now says which agent, which worktree and which branch it belongs to,
+   *     so `sweep` can refuse to kill a sibling's rather than inferring and guessing.
+   *   - **A tree kill rather than a group kill.** Vite spawns esbuild; both come down together.
+   *
+   * `--parent=${process.pid}` is deliberately kept rather than left to default to the guard. Two
+   * independent watches of the same fact is the point: if the guard is SIGKILLed, the runner still
+   * notices the harness dying on its own.
+   */
+  const job = spawnOwned(
     process.execPath,
     [runner, `--port=${port}`, `--root=${root}`, `--parent=${process.pid}`, `--host=${host}`,
       ...(relayPort ? [`--relay-port=${relayPort}`] : []),
@@ -765,14 +819,15 @@ export async function startVite({
       ...(cacheDir || process.env.TC_VITE_CACHE_DIR ? [`--cache-dir=${cacheDir || process.env.TC_VITE_CACHE_DIR}`] : [])],
     {
       cwd: root,
-      // Its own process group, so one `kill(-pid)` takes the server and anything it spawned.
-      // The old `spawn('npx', ...)` left the wrapper in ours and Vite in a third place.
-      detached: true,
+      root,
+      port,
+      label: `vite:${port}`,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, TC_NO_HMR: '1' },
+      env: { TC_NO_HMR: '1' },
+      meta: { kind: 'vite', viteRoot: root },
     }
   );
-  child.unref();
+  const child = job.child;
   if (slot?.setVitePid) slot.setVitePid(child.pid);
   // The server is part of this run's footprint and yields with it. Vite is a CPU cost, not a
   // GPU one, so demoting it does nothing for the frame rate — it is here so that an agent that
@@ -798,11 +853,10 @@ export async function startVite({
     child.once('exit', () => { clearTimeout(timer); resolve(false); });
   });
 
-  const killGroup = () => {
-    try { process.kill(-child.pid, 'SIGTERM'); } catch {
-      try { child.kill('SIGTERM'); } catch { /* already gone */ }
-    }
-  };
+  // `job.kill()` takes the guard's whole tree — the runner, and esbuild under it — and drops the
+  // registry entry. It is idempotent, so `close()` is safe to call twice and safe to call after
+  // the reaper has already been through.
+  const killGroup = () => { job.kill({ graceMs: 800 }); };
   const close = async () => { cleanups.delete(killGroup); killGroup(); };
 
   if (!ready) {
@@ -814,7 +868,22 @@ export async function startVite({
   }
 
   registerCleanup(killGroup);
-  return { base, server: child, started: true, pid: child.pid, close, lan: hello?.lan ?? null };
+  /*
+   * Two PIDs, and the difference matters to two different readers.
+   *
+   * `pid` is the **Vite process itself**, taken from its own hello line — that is the process
+   * holding the port, and it is what `browsers.mjs sweep` matches against `ps` when it decides
+   * whether a running server is owned. Recording the guard's PID there would have made every
+   * server this function starts look unowned, which is the failure the guard was added to prevent,
+   * inverted.
+   *
+   * `pgid` is the **guard**, which is what you signal. It is also the group id, because the guard
+   * is the group leader.
+   */
+  const vitePid = Number.isFinite(hello?.pid) ? hello.pid : child.pid;
+  if (slot?.setVitePid) slot.setVitePid(vitePid);
+  return { base, server: child, started: true, pid: vitePid, pgid: child.pid, guardPid: child.pid,
+    entry: job.entry, close, lan: hello?.lan ?? null };
 }
 
 /** Ask a listener what tree it is serving. `up` is whether anything answered at all. */
