@@ -2453,6 +2453,44 @@ Which checks survive each injection is the part worth reading:
 `lan-console` went red without being asked, during the `/__tc/lan` 404 above, which is the
 unforced kind.
 
+#### The one red that was not this pass, and now has a second home
+
+`siege-same-battle` went red twice over the course of this work — *"they stopped at different
+ticks: 1353 and 1358"*, then *"1365 and 1370"* — and green three times, and `--only=siege` at
+this branch's base `546f453` is green as well. It is §9.12's `settleTogether` flake, wearing the
+siege arm instead of the battle arm, and the tell is that **`siege-checkpoints-agreed` stays
+green through it**: *"the relay's last agreed tick is 1350 against a final tick of 1365"*. Every
+checkpoint the two clients exchanged agreed. No hash was ever compared, because the comparison
+requires equal ticks and never got that far.
+
+It correlates with load and nothing else: both reds were at load average 8–10 with another
+agent's `qa-determinism` on the machine, and every green was at load 4–5. The comparison is
+untouched by this pass. Two practical consequences. **Run the full gate on a quiet machine** —
+`node tools/browsers.mjs` says who else is on it. And `settleTogether`'s release-and-restop loop,
+which §9.12 raised to six attempts for the battle arm, is evidently not always enough for the
+siege arm, whose clients are 3,180 men against 2,337 and drain more slowly; raising the cap or
+scaling it with the headcount is the obvious next move and it belongs to whoever next has cause
+to touch that helper.
+
+#### And one gate hazard found by falling into it
+
+Three runs of this gate were thrown away because a source file under `src/` was edited *while*
+they were running. `tools/lib/vite-runner.mjs`'s own docstring warns about exactly this — "a
+file edited mid-run reloads the page and destroys the execution context, which surfaces as a
+spurious crash at a random simulation time" — and what it surfaced as here was `one-ulp`
+reporting **NOT DETECTED** on an injected divergence it had caught in the run before. An agent
+holding a 25-minute gate must treat the tree as frozen for the duration; a comment is a source
+edit.
+
+#### The gate, at this branch's head
+
+`tsc` clean, `lint` 3/3, **`qa-net` 60/60** (54 before this pass, plus the six above),
+`qa-deploy` 33/33, `qa-replay` 27/27, `probe-seams` PASS on both maps, `qa-freeze` 32/32, and
+all three determinism arms **UNCHANGED at every one of their seven checkpoints on `hash`, `uf64`
+and `uctl`** — 8,632, 3,072 and 3,440 men. `tools/determinism-baseline.json` is byte-identical
+to its state at `546f453`; this pass is transport and tooling and had no business moving a
+number in it.
+
 ### 10.6 §7.1, at last: the two-machine procedure
 
 This is the measurement this whole document rests on and nobody has ever run it. **Every number
