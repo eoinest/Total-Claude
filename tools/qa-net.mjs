@@ -677,37 +677,71 @@ async function settleTogether(host, guest, ms = 40000, relay = null) {
    * way to 2,640. The clients were right and the instrument was wrong.
    *
    * SIGSTOP rather than a protocol message, because the protocol should not grow a pause verb
-   * for a test's convenience. Whatever turns are already in flight still arrive — SIGSTOP stops
-   * the process, not the kernel's socket buffers — so both clients drain to the ceiling of the
-   * same last turn and stop there, at the same tick, by construction rather than by luck.
-   * SIGCONT afterwards, because the `late` and `leave` arms reuse this match.
+   * for a test's convenience. SIGCONT afterwards, because the `late` and `leave` arms reuse
+   * this match.
+   *
+   * ## And one SIGSTOP is not enough, which cost this arm two red runs on a busy machine
+   *
+   * The paragraph that used to be here said the two clients "drain to the ceiling of the same
+   * last turn and stop there, at the same tick, by construction rather than by luck", on the
+   * grounds that SIGSTOP stops the process and not the kernel's socket buffers. That is true of
+   * the *kernel's* buffer and false of node's. `sock.write` returns false when the kernel buffer
+   * is full and node queues the remainder in the process; a frozen process never flushes it. The
+   * two sockets fill at different rates, because the two pages read at different rates, so a
+   * relay frozen mid-backlog can leave one client holding three turns the other will now never
+   * receive — and no amount of waiting converges them, because the thing that would send them
+   * is stopped.
+   *
+   * Measured on this tree, four runs of `--only=battle` on a machine at load 4: two settled
+   * (2,106 and 2,115, every layer identical) and two reported *"they stopped at different
+   * ticks: 2,112 and 2,117"* — with `checkpoints-agreed` green in both failures and no hash
+   * ever compared, because the comparison never got that far. A red that means "the laptop was
+   * busy" is the thing this file's own header says teaches people to ignore a gate.
+   *
+   * So when both clients have gone static *and are apart*, the relay is let go for a quarter of
+   * a second and stopped again. That flushes whatever was stuck to whichever client was short,
+   * and the next stop finds them level. Bounded, because a loop that could run for ever is a
+   * different way to fail. The comparison itself is untouched: equal ticks are still required
+   * and the five layers are still compared bit for bit.
    */
-  try { relay?.proc.kill('SIGSTOP'); } catch { /* already gone */ }
+  const stop = () => { try { relay?.proc.kill('SIGSTOP'); } catch { /* already gone */ } };
+  const go = () => { try { relay?.proc.kill('SIGCONT'); } catch { /* already gone */ } };
+  stop();
   const t0 = Date.now();
   let last = [-1, -2];
+  let nudges = 0;
   while (Date.now() - t0 < ms) {
     const a = await host.evaluate(() => window.__mark().tick);
     const b = await guest.evaluate(() => window.__mark().tick);
     const na = await host.evaluate(() => window.__net());
     if (a === b && a === last[0] && b === last[1]) {
-      try { relay?.proc.kill('SIGCONT'); } catch { /* already gone */ }
-      return { tick: a, ended: na?.ended ?? '' };
+      go();
+      return { tick: a, ended: na?.ended ?? '', nudges };
     }
     if (na?.ended) {
       // An ended session stops moving; one more read confirms it.
       await sleep(400);
       const a2 = await host.evaluate(() => window.__tick());
       const b2 = await guest.evaluate(() => window.__tick());
-      try { relay?.proc.kill('SIGCONT'); } catch { /* already gone */ }
-      return { tick: Math.min(a2, b2), ended: na.ended, apart: a2 !== b2 };
+      go();
+      return { tick: Math.min(a2, b2), ended: na.ended, apart: a2 !== b2, nudges };
+    }
+    // Both static, and apart: the laggard is missing turns nothing is going to send it.
+    if (a !== b && a === last[0] && b === last[1] && nudges < 6) {
+      nudges++;
+      go();
+      await sleep(250);
+      stop();
+      last = [-1, -2];
+      continue;
     }
     last = [a, b];
     await sleep(350);
   }
   const a = await host.evaluate(() => window.__tick());
   const b = await guest.evaluate(() => window.__tick());
-  try { relay?.proc.kill('SIGCONT'); } catch { /* already gone */ }
-  return { tick: Math.min(a, b), ended: '', timedOut: true, apart: a !== b };
+  go();
+  return { tick: Math.min(a, b), ended: '', timedOut: true, apart: a !== b, nudges };
 }
 
 /** Both clients' final state, for comparison. */
