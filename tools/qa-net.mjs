@@ -1330,6 +1330,35 @@ if (wanted('leave')) {
   const m = mainMatch ?? await bootMatch(relay);
   if (!mainMatch) { await deployWith(m.host, 'leave-h'); await deployWith(m.guest, 'leave-g'); await sleep(1500); }
   const before = await m.host.evaluate(() => window.__net());
+  /*
+   * Where the session strip sits, measured against the bar it used to sit on top of.
+   *
+   * `.tc-net` was `top: 8px` and `.topbar` is `top: 0.8em` in a HUD whose em is
+   * `10px * var(--ui-scale)`: the same strip, centred the same way, so the room code and the
+   * link status were drawn straight over the turn clock and both armies' strength. Checked
+   * here because this is the only arm that has a live battle, a HUD and a session at once.
+   */
+  const strips = await m.host.evaluate(() => {
+    const r = (s) => {
+      const el = document.querySelector(s);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { top: Math.round(b.top), bottom: Math.round(b.bottom),
+        left: Math.round(b.left), right: Math.round(b.right) };
+    };
+    return { net: r('.tc-net'), bar: r('.topbar') };
+  });
+  const overlap = strips.net && strips.bar
+    && strips.net.top < strips.bar.bottom && strips.net.bottom > strips.bar.top
+    && strips.net.left < strips.bar.right && strips.net.right > strips.bar.left;
+  measured.stripPlacement = strips;
+  record('session-strip-clears-the-hud', !!strips.net && !!strips.bar && !overlap,
+    'the session strip parks under the top bar instead of on top of it',
+    strips.net && strips.bar
+      ? `strip ${strips.net.top}–${strips.net.bottom}, top bar ${strips.bar.top}–${strips.bar.bottom}`
+      : `strip ${strips.net ? 'found' : 'MISSING'}, top bar ${strips.bar ? 'found' : 'MISSING'}`,
+    'measured from the bar rather than written down, because the bar moves with --ui-scale');
+
   await m.guest.close();
   let after = null;
   const t0 = Date.now();
@@ -1349,6 +1378,48 @@ if (wanted('leave')) {
   record('peer-left-halts', still === stopped,
     'and it stops rather than running on into a battle nobody else is in',
     `tick ${stopped} then ${still} a second later`);
+
+  /*
+   * And the screen the survivor is left looking at, which is the owner's second decision:
+   * halt, state the result, offer a way out — and record no result at all.
+   *
+   * `peer-left` above proves the *session* knows. It proved nothing about the person, who until
+   * this pass got an eleven-point line of red text above the top bar over a battle that would
+   * never move again, and whose only exit was the browser's back button.
+   */
+  await sleep(600);
+  const over = await m.host.evaluate(() => {
+    const el = document.querySelector('.tc-over');
+    if (!el) return null;
+    return {
+      title: (el.querySelector('h2')?.textContent ?? '').trim(),
+      body: (el.textContent ?? '').replace(/\s+/g, ' ').trim(),
+      menu: el.querySelector('#tc-over-menu')?.getAttribute('href') ?? null,
+      save: !!el.querySelector('#tc-over-save'),
+      haveRecord: !!window.__game?.net?.record(),
+    };
+  });
+  await shot(m.host, 'leave-01-peer-left-screen');
+  measured.leaveScreen = { ...(over ?? {}), errs: m.host.__errs.slice(0, 4) };
+  if (!over && m.host.__errs.length) console.log(`  page said: ${m.host.__errs.join(' ; ')}`);
+  record('peer-left-has-a-screen',
+    !!over && /left/i.test(over.title) && /The battle stood at t\+\d+/.test(over.body)
+      && !!over.menu,
+    'the survivor gets a sheet that says the opponent left, where the battle stood, and a way out',
+    over ? `${over.title} — ${over.body.slice(0, 150)}` : 'there is no sheet; the strip is all there is',
+    'the owner\'s shape for it: "The battle stood at t+337, turn 101."');
+  record('peer-left-records-no-result',
+    !!over && /No result has been recorded/.test(over.body)
+      && !/\b(VICTORY|DEFEAT|Victory|Defeat)\b/.test(over.body),
+    'and it does not manufacture a verdict out of an abandoned battle',
+    over ? over.body.slice(-180) : 'no sheet',
+    'BattleFlow\'s dispatch is deliberately not reused: that card exists to print a verdict');
+  record('peer-left-offers-the-record-only-if-there-is-one',
+    !!over && over.save === over.haveRecord,
+    'Save the replay is offered exactly when there is a record to save',
+    over ? `record ${over.haveRecord ? 'present' : 'absent'}, button ${over.save ? 'shown' : 'absent'}`
+      : 'no sheet',
+    'a button that fails when a stranded player presses it is worse than an absent one');
   await m.host.close();
   mainMatch = null;
   relay.stop();

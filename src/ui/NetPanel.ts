@@ -141,7 +141,6 @@ export class NetPanel {
     this.root = document.createElement('div');
     this.root.className = 'tc-net';
     host.append(this.root);
-    addEventListener('resize', () => { this.topAt = -1; });
   }
 
   /** Called from the render loop. Rebuilds only when something a reader would notice moved. */
@@ -154,18 +153,23 @@ export class NetPanel {
     if (key === this.lastKey) return;
     this.lastKey = key;
     /*
-     * Re-measure the bar we are parking under, but only here.
+     * Re-measure the bar we are parking under, on every rebuild and never between them.
      *
      * `getBoundingClientRect` forces a layout, and this runs inside a render loop that is
-     * already writing to the HUD's DOM every frame — doing it per frame would be a flush per
-     * frame for a number that changes when the phase changes, the window resizes or somebody
-     * moves the UI-scale slider. All three of those either change `key` or fire `resize`.
+     * already writing to the HUD's DOM every frame — a flush per frame for a number that moves
+     * on a phase change, a resize or a drag of the UI-scale slider would be a real cost for no
+     * information. A rebuild is roughly once a second at worst (`key` carries `turn >> 3`),
+     * which is cheap and, unlike measuring once, survives the fact that **`.topbar` animates
+     * in**: `drop-in` runs for 0.7 s, so the first reading after the HUD appears is of a bar
+     * that has not finished arriving. Measured once, the strip landed at 84 under a bar whose
+     * settled bottom is 89 — a five-pixel overlap that only a gate would ever have caught.
      */
-    if (this.topAt < 0) {
-      const bar = document.querySelector('.topbar') as HTMLElement | null;
-      const r = bar?.getBoundingClientRect();
-      this.topAt = r && r.height > 0 ? Math.round(r.bottom + 8) : 8;
-      this.root.style.top = `${this.topAt}px`;
+    const bar = document.querySelector('.topbar') as HTMLElement | null;
+    const r = bar?.getBoundingClientRect();
+    const want = r && r.height > 0 ? Math.round(r.bottom + 8) : 8;
+    if (want !== this.topAt) {
+      this.topAt = want;
+      this.root.style.top = `${want}px`;
     }
 
     const bits: string[] = [
@@ -194,7 +198,26 @@ export class NetPanel {
     this.root.classList.toggle('wide', !!d || !!s.ended);
     this.root.innerHTML = bits.join('');
 
-    if (!d && s.ended && STRANDING.has(s.ended) && !this.sheetShown) this.raise(s.ended, s.message);
+    /*
+     * Guarded, because `Engine`'s frame loop has no `try` around `update`.
+     *
+     * `fixedUpdate` does — it reports once and keeps the frame alive, and its docstring says
+     * why at length — but `for (const s of this.systems) s.update?.(…)` does not, so a throw
+     * here takes the whole rAF loop down with it. That is a bad trade for any UI, and an
+     * indefensible one for *this* UI: the sheet exists because a stranded player had a frozen
+     * picture and no explanation, and a sheet that crashed on the way up would hand them the
+     * identical frozen picture with the message it was carrying. The first draft did exactly
+     * that — `BattleSystem.strength` is a record and not an array, `.reduce` is not a function,
+     * and the survivor got nothing.
+     */
+    if (!d && s.ended && STRANDING.has(s.ended) && !this.sheetShown) {
+      this.sheetShown = true;
+      try {
+        this.raise(s.ended, s.message);
+      } catch (e) {
+        console.warn(`[net] the session-over sheet could not be drawn: ${String(e)}`);
+      }
+    }
   }
 
   /**
@@ -209,13 +232,20 @@ export class NetPanel {
     if (!t) return '';
     const s = this.session.status();
     const turn = s.readyTurn >= 0 ? `, turn ${s.readyTurn}` : '';
+    /*
+     * `BattleSystem.strength` is a `Record<Faction, number>` and not an array — see its own
+     * docstring, which exists because a missing faction key made every `+=` produce NaN. So
+     * this reads it through `Object.entries`, and treats an unreadable one as no sentence at
+     * all rather than printing "NaN of your men".
+     */
     const b = this.ctx?.tryGet?.('battle') as unknown as
-      { strength?: number[]; initialStrength?: number[] } | undefined;
-    const mine = b?.strength?.[s.myFaction];
-    const theirs = (b?.strength ?? []).reduce(
-      (a, n, f) => (f === s.myFaction ? a : a + (n ?? 0)), 0);
-    const men = mine !== undefined && (mine > 0 || theirs > 0)
-      ? `, with ${fmt(mine)} of your men still on the field against ${fmt(theirs)}`
+      { strength?: Record<string, number> } | undefined;
+    const rows = Object.entries(b?.strength ?? {});
+    const mine = b?.strength?.[String(s.myFaction)];
+    const theirs = rows.reduce(
+      (a, [f, n]) => (Number(f) === s.myFaction ? a : a + (Number(n) || 0)), 0);
+    const men = Number.isFinite(mine) && ((mine ?? 0) > 0 || theirs > 0)
+      ? `, with ${fmt(mine ?? 0)} of your men still on the field against ${fmt(theirs)}`
       : '';
     return `The battle stood at t+${t.tick}${turn} &mdash; ${clock(t.simTime)} on the field`
       + `${men}.`;
@@ -224,13 +254,17 @@ export class NetPanel {
   /** The wall, when there is one, in the words the siege plaque already uses for it. */
   private wall(): string {
     if (!this.ctx) return '';
-    const sg = readSiege(this.ctx);
-    if (!sg) return '';
-    return `At the wall: ${sg.objective}`;
+    // Null on any field battle, and `readSiege` reaches into three systems to decide that.
+    // A clause is worth having and is not worth a thrown frame.
+    try {
+      const sg = readSiege(this.ctx);
+      return sg ? `At the wall: ${sg.objective}` : '';
+    } catch {
+      return '';
+    }
   }
 
   private raise(why: string, detail: string): void {
-    this.sheetShown = true;
     const sheet = document.createElement('div');
     sheet.className = 'tc-over';
     const token = this.session.token();
