@@ -192,7 +192,9 @@ const looksLikePlaque = (j: unknown): j is LanPlaque => {
  * it already knew the answer to. A fact the server knows while it is writing the document
  * belongs in the document.
  *
- * Exported for `tools/qa-net.mjs`, which asserts both the presence and the absence.
+ * Exported, and takes its `Document`, so the parse can be exercised without a lobby around it.
+ * `tools/qa-net.mjs`'s `lan` arm asserts the *behaviour* — the link that comes out the other
+ * end, and its absence — rather than this function, because the behaviour is the claim.
  */
 export function readLanPlaque(doc: Document = document): LanPlaque | null {
   const raw = doc.querySelector('meta[name="tc-lan"]')?.getAttribute('content');

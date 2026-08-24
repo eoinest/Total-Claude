@@ -99,7 +99,9 @@ export function lanAddress({ prefer = '', interfaces = os.networkInterfaces() } 
   const all = lanCandidates({ interfaces });
   if (prefer) {
     const hit = all.find((c) => c.ip === prefer);
-    return hit ?? { ip: prefer, iface: '(given)', private: isPrivate4(prefer), score: Infinity,
+    // A finite score, not `Infinity`: this object is JSON-serialised into `--json` output and
+    // `JSON.stringify(Infinity)` is `null`, which reads as "unscored" rather than "top".
+    return hit ?? { ip: prefer, iface: '(given)', private: isPrivate4(prefer), score: 9999,
       why: 'given on the command line with --lan=', overridden: true };
   }
   return all[0] ?? null;

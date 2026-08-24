@@ -156,12 +156,22 @@ let relay = null;
 let vite = null;
 let stopping = false;
 
+/**
+ * Stop both listeners, and — when given a code — stop *here*, on this line.
+ *
+ * `process.exit` rather than a deferred one, because everything below this in the file is
+ * written as if the two servers came up. An earlier version scheduled the exit for 150 ms
+ * later and carried on, so a relay that failed to bind was followed by twenty seconds of
+ * polling a game server that was in the middle of being killed. Nothing is lost by exiting
+ * immediately: `child.kill` and `startVite`'s `close` both deliver their signal synchronously,
+ * and both children watch this PID and close themselves within two seconds regardless.
+ */
 const stop = (code) => {
   if (stopping) return;
   stopping = true;
   try { relay?.kill('SIGTERM'); } catch { /* already gone */ }
   void vite?.close().catch(() => {});
-  if (typeof code === 'number') setTimeout(() => process.exit(code), 150).unref?.();
+  if (typeof code === 'number') process.exit(code);
 };
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => stop(0));
 process.on('exit', () => stop());

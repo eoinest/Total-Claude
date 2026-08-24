@@ -1886,7 +1886,11 @@ if (wanted('lan')) {
     (document.querySelector('.tc-lobby h1')?.textContent
       ?? document.querySelector('.menu h1, .menu-home')?.textContent
       ?? document.title).replace(/\s+/g, ' ').trim().slice(0, 80)).catch(() => 'nothing readable');
+  // A second and a half, because the phase flips while the loading splash is still fading out
+  // and the frame is then a title card with a session strip over it rather than a battle.
+  if (guestReady) await sleep(1500);
   await shot(guestPage, 'lan-03-guest-followed-the-link');
+  await shot(hostPage, 'lan-05-host-in-battle');
   measured.lan.met = { room: roomB, host: lh, guest: lg, guestReady, showing };
   record('lan-the-link-is-the-whole-invitation',
     lh?.room === roomB && lg?.room === roomB && lh.slot === 0 && lg.slot === 1

@@ -95,6 +95,14 @@ const RELAY_PORT = Number(args.get('relay-port') || 0);
 /** `--lan=` pins the advertised address when the ranking in `lan-address.mjs` picks wrong. */
 const LAN_PREFER = args.get('lan') || '';
 const LAN_BIND = !isLoopbackHost(HOST);
+/**
+ * `<hostname>.local`, spelled once.
+ *
+ * `os.hostname()` on a Mac already ends in `.local` on some networks and does not on others,
+ * so the suffix is stripped before it is added. Used in two places that must agree: the name
+ * the plaque advertises, and the name Vite's DNS-rebinding guard will answer to.
+ */
+const MDNS = `${os.hostname().replace(/\.local\.?$/, '')}.local`;
 
 if (!Number.isFinite(PORT) || PORT <= 0) {
   console.error('vite-runner: --port=<n> is required');
@@ -170,12 +178,11 @@ const lanPlaque = () => {
   if (!LAN_BIND) return null;
   const pick = lanAddress({ prefer: LAN_PREFER });
   if (!pick) return null;
-  const mdns = `${os.hostname().replace(/\.local\.?$/, '')}.local`;
   return {
     tc: 'host-lan',
     lan: pick.ip,
     iface: pick.iface,
-    mdns,
+    mdns: MDNS,
     gamePort: PORT,
     gameUrl: `http://${pick.ip}:${PORT}/`,
     relayPort: RELAY_PORT || null,
@@ -200,7 +207,7 @@ try {
        * that is *not* one of these two.
        */
       ...(LAN_BIND
-        ? { allowedHosts: [os.hostname(), `${os.hostname().replace(/\.local\.?$/, '')}.local`] }
+        ? { allowedHosts: [os.hostname(), MDNS] }
         : {}),
     },
     plugins: [{
