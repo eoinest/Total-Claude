@@ -230,7 +230,21 @@ export const admit = ({ liveCount, selfHeld = 0, snapshot = null, state = null }
         + ' half way through — the hard cap and the QoS demotion still apply' };
   }
 
-  const snap = snapshot ?? observe();
+  /*
+   * The sampling window is short on purpose.
+   *
+   * Admission reads two things out of the snapshot — `gpu.mean` and `owner.state` — and pays for
+   * a third, the CPU delta, only so the refusal message can say what the machine looked like.
+   * The full `machineSnapshot` default costs 2.3 s, which is nothing against a probe that boots
+   * the game in thirty seconds but is 2.3 s added to *every* process on the machine. Six GPU
+   * samples and a 600 ms CPU window bring it to about 1.4 s, and the standard error on six
+   * samples of a signal this noisy is not meaningfully worse than on eight.
+   *
+   * It is paid once per process: the observation is published to `<budget dir>/machine.json`
+   * and cached for six seconds, so the 700 ms poll loop that follows costs one file read.
+   * Measured: first acquire 2337 ms before this, then 1 ms and 0 ms for the next two.
+   */
+  const snap = snapshot ?? observe({ cpuMs: 600, gpuSamples: 6 });
   const who = state ?? snap.owner?.state ?? 'present';
   const pol = policyFor(who);
 

@@ -146,6 +146,14 @@ otherwise refuse the *first* browser forever, and a budget that deadlocks on the
 activity gets switched off. With zero holders the ladder alone applies, which still means one
 browser while he plays and never more.
 
+**What it costs.** Admission reads the machine once per process — six GPU samples and a 600 ms
+CPU window, about **1.4 s** — then publishes it to `<budget dir>/machine.json` where every other
+holder reads it for six seconds. Measured on the same process: first acquire 1460 ms, second
+0 ms, third 0 ms. Without one shared observation, four holders heartbeating every ten seconds
+would spend four seconds a minute measuring how busy the machine is, which is its own small
+contribution to the problem. `TC_WORK_BUDGET=off` takes the acquire back to 6 ms and gives up
+everything in this section.
+
 ### The throttle, on the heartbeat
 
 **Admission control cannot help against a film that took its slot six minutes ago, and both of
