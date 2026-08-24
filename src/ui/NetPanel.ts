@@ -33,8 +33,8 @@ import { FACTION_UI } from './theme';
  * leave. Those were an eleven-point line above the top bar, and the player's next move was to
  * find out whether the browser's back button lost anything.
  *
- * So an ending that strands somebody gets a sheet — `peerLeft`, `linkLost`, `abandoned` — and
- * it obeys three rules the owner set:
+ * So an ending that strands somebody gets a sheet — which is *every* ending bar two; see
+ * `KEEPS_THE_STRIP` — and it obeys three rules the owner set:
  *
  * - **Halt and say where.** The tick, the turn and the clock, and what the two armies looked
  *   like at that moment. His words for the shape: *"The battle stood at t+337, turn 101."*
@@ -46,15 +46,21 @@ import { FACTION_UI } from './theme';
  *   absent one.
  *
  * A desync keeps the strip. §9.4's answer there — tick, layer, both hashes, the regiments —
- * is a paragraph of evidence and the strip already prints all of it.
+ * is a paragraph of evidence and the strip already prints all of it. So does a completed
+ * battle, which has `BattleFlowSystem`'s dispatch up already.
  *
  * ## Where the strip sits, and why it is measured rather than written down
  *
  * `top: 8px` put it exactly on top of `.topbar`, which is `top: 0.8em` in a HUD whose em is
  * `10px * var(--ui-scale)` — the same strip, centred the same way, with the session line drawn
- * over the turn clock and both armies' strength. It now parks under the bar, from the bar's own
- * measured bottom, because that bar's height depends on the UI scale, the viewport and what is
- * in it, and a constant would be wrong at every setting but the one it was written at.
+ * over the turn clock and both armies' strength. It now parks under the lowest of `OVERHEAD`,
+ * measured, because those bars' heights depend on the UI scale, the viewport and what is in
+ * them, and a constant would be wrong at every setting but the one it was written at.
+ *
+ * Centred with `left: 0; right: 0; margin-inline: auto` rather than a translate, because a
+ * shrink-to-fit fixed element positioned at `left: 50%` has the viewport *minus that offset*
+ * for a containing width — 640 px on a 1280 px page — so three short phrases wrapped into six
+ * lines and the strip was twice as tall as it needed to be.
  *
  * Its own styles, like `NetLobby`, and for the same reason: `hud.css` has several agents live
  * in it and this is nine rules.
@@ -110,8 +116,22 @@ const CSS = `
  */
 const OVERHEAD = ['.topbar', '.deploy', '.replay-bar'];
 
-/** Endings that leave a player with a stopped battle and nowhere to go. See the docstring. */
-const STRANDING = new Set(['peerLeft', 'linkLost', 'abandoned']);
+/**
+ * The two endings that keep the strip and get no sheet. Everything else gets one.
+ *
+ * A deny-list rather than an allow-list, and that is the second version of this. The first
+ * named `peerLeft`, `linkLost` and `abandoned` — the three the owner asked about — and quietly
+ * left a *pairing* refusal stranded exactly as before: `libm` and `tick` are refused after
+ * `announce`, on a page that has already built a whole battle, so the player got a red line
+ * above the top bar and no way off the screen. Whatever ends a relayed session, the player is
+ * owed the same three things, so a sheet is the default and the exceptions are argued for:
+ *
+ * - `desync` keeps the strip, because §9.4's answer is a paragraph of evidence — tick, layer,
+ *   both hashes, the named regiments — that wants to be read together and already is.
+ * - `complete` keeps the strip, because `BattleFlowSystem`'s dispatch is already up with the
+ *   verdict, the roll of honour and the record. Two closing screens is one too many.
+ */
+const KEEPS_THE_STRIP = new Set(['desync', 'complete']);
 
 const HEADLINE: Record<string, string> = {
   peerLeft: 'The other commander left',
@@ -230,7 +250,7 @@ export class NetPanel {
      * that — `BattleSystem.strength` is a record and not an array, `.reduce` is not a function,
      * and the survivor got nothing.
      */
-    if (!d && s.ended && STRANDING.has(s.ended) && !this.sheetShown) {
+    if (!d && s.ended && !KEEPS_THE_STRIP.has(s.ended) && !this.sheetShown) {
       this.sheetShown = true;
       try {
         this.raise(s.ended, s.message);
@@ -289,9 +309,9 @@ export class NetPanel {
     sheet.className = 'tc-over';
     const token = this.session.token();
     sheet.innerHTML = `<div class="tc-over-fit"><div class="tc-over-sheet" role="dialog"
-        aria-modal="true" aria-label="${HEADLINE[why] ?? 'The session ended'}">
+        aria-modal="true" aria-label="${HEADLINE[why] ?? 'The battle stopped'}">
         <button class="tc-over-x" type="button" title="Dismiss (Esc)" aria-label="Dismiss">&times;</button>
-        <h2>${HEADLINE[why] ?? 'The session ended'}</h2>
+        <h2>${HEADLINE[why] ?? 'The battle stopped'}</h2>
         <p>${OPENING[why] ?? detail}</p>
         <p>${this.stood()}</p>
         ${this.wall() ? `<p>${this.wall()}</p>` : ''}
