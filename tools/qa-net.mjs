@@ -72,11 +72,11 @@ import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { bootThroughMenu, ensureServer, waitForServer } from './lib/menu-boot.mjs';
+import { bootThroughMenu, driveMenu, ensureServer, waitForServer } from './lib/menu-boot.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const ARMS = ['proto', 'battle', 'siege', 'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 'lag',
-  'xengine'];
+const ARMS = ['proto', 'battle', 'siege', 'lobby', 'badcode', 'norelay', 'drop', 'dup', 'swap',
+  'ulp', 'late', 'leave', 'lag', 'xengine'];
 /**
  * `xengine` is opt-in, and that is a judgement rather than an omission.
  *
@@ -1352,6 +1352,284 @@ if (wanted('leave')) {
   await m.host.close();
   mainMatch = null;
   relay.stop();
+}
+
+// ---------------------------------------------------------------------------
+// The window every other arm in this file has looked straight past
+// ---------------------------------------------------------------------------
+
+/*
+ * Two clients who find each other through the form, with nobody hand-building a URL.
+ *
+ * **This is the blind spot, and it is structural rather than an oversight.** Every net arm
+ * above waits for `phase === 'battle'` before it asserts anything, and `bootMatch` reaches that
+ * phase by writing `?net=…&room=…` itself. So not one of them has ever loaded `?mp=1`, and the
+ * lobby in front of a working netcode was free to be anything at all. It was: the panel took
+ * `hud.css`'s `.card` rule and rendered 135 px wide with every control below y=1059 on a page
+ * that could not scroll, `#menu-root`'s `pointer-events: none` meant no click could land on any
+ * of them anyway, and CREATE A ROOM had never once succeeded because `/new` came back without
+ * an `Access-Control-Allow-Origin`. Thirty-eight green checks over a front door nobody could
+ * open.
+ *
+ * The pass condition is deliberately the whole flow and not a geometry assertion: type a code,
+ * press CREATE, the other client types the same code and presses JOIN, and a battle happens.
+ * A regression in any one of the three faults above breaks it, and so does a fourth nobody has
+ * thought of yet.
+ *
+ * 5988 is the last free port in the band (see the `siege` arm's note); the three lobby arms run
+ * one after another and each stops its own relay, so they share it.
+ */
+if (wanted('lobby')) {
+  console.log('\n=== two clients through the real form ===');
+  const relay = await startRelay(5988);
+  const room = nextRoom();
+  const host = await newPage(chrome);
+  await host.goto(`${base}/?mp=1`, { waitUntil: 'domcontentloaded' });
+  await host.waitForSelector('.tc-lobby', { timeout: 30000 });
+
+  /*
+   * Geometry and hit-testing first, because it is the measurement that named the bug.
+   *
+   * Not decoration on top of the flow test: a panel that is 135 px wide and cannot be clicked
+   * *also* fails the flow test, but it fails it as a thirty-second Playwright timeout with
+   * "waiting for locator" and no indication of why. This turns that into a sentence.
+   */
+  const geo = await host.evaluate(() => {
+    const at = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return { missing: true, reaches: false, blockedBy: 'no such element' };
+      const r = el.getBoundingClientRect();
+      const cx = Math.round(r.x + r.width / 2);
+      const cy = Math.round(r.y + r.height / 2);
+      const inView = cx >= 0 && cy >= 0 && cx < innerWidth && cy < innerHeight;
+      const top = inView ? document.elementFromPoint(cx, cy) : null;
+      return {
+        w: Math.round(r.width), h: Math.round(r.height), y: Math.round(r.y), inView,
+        pe: getComputedStyle(el).pointerEvents,
+        reaches: !!top && (top === el || el.contains(top)),
+        blockedBy: top ? `${top.tagName.toLowerCase()}${top.id ? `#${top.id}` : ''}` : 'nothing',
+      };
+    };
+    return {
+      sheet: at('.tc-sheet'), room: at('#tc-room'), create: at('#tc-host'),
+      join: at('#tc-join'), relay: at('#tc-relay'), back: at('.tc-back'),
+    };
+  });
+  const unreachable = ['room', 'create', 'join', 'relay', 'back'].filter((k) => !geo[k].reaches);
+  measured.lobby = { geo };
+  record('lobby-is-clickable', unreachable.length === 0 && geo.sheet.w >= 480,
+    'every control in the lobby is where it says it is and a real mouse reaches it',
+    unreachable.length
+      ? `${unreachable.join(', ')} — elementFromPoint returns `
+        + unreachable.map((k) => `${k}:${geo[k].blockedBy}`).join(', ')
+      : `panel ${geo.sheet.w}x${geo.sheet.h}, all five controls hit-test to themselves`,
+    'hud.css .card clamped this panel to 135x210 and #menu-root swallowed every click');
+
+  /*
+   * The field used to delete a character and say nothing. `O` is the one people type.
+   *
+   * Typed at 30 ms a key, which is the measurement that mattered: the first fix wrote the
+   * explanation on the keystroke that caused it and the *next* keystroke overwrote it with
+   * "3 more characters", so the sentence existed for a fifth of a second and nobody saw it.
+   */
+  await host.click('#tc-room');
+  await host.type('#tc-room', 'ROMEX', { delay: 30 });
+  const filtered = await host.inputValue('#tc-room');
+  const hintText = ((await host.textContent('#tc-room-hint')) ?? '').replace(/\s+/g, ' ').trim();
+  record('lobby-names-the-character-it-dropped',
+    filtered === 'RMEX' && hintText.includes('“O”') && /read aloud/.test(hintText),
+    'a character the alphabet does not have is removed and *named*, not removed in silence',
+    `typing ROMEX leaves ${filtered} and the field says: ${hintText.slice(0, 120)}`,
+    'the alphabet exists because codes get read aloud, which is exactly why O is what gets typed');
+
+  await host.fill('#tc-room', '');
+  await host.fill('#tc-relay', relay.base);
+  await host.type('#tc-room', room, { delay: 20 });
+  await shot(host, 'lobby-01-form');
+  await host.click('#tc-host');
+  await host.waitForSelector('#tc-code', { timeout: 20000 });
+  const shown = ((await host.textContent('#tc-code')) ?? '').trim();
+  const rs0 = await relayStatus(relay);
+  await shot(host, 'lobby-02-room-open');
+  record('lobby-create-opens-the-room-asked-for',
+    shown === room && !!rs0?.rooms?.some((r) => r.code === room),
+    'CREATE A ROOM reaches the relay, and the code on screen is the one that was typed',
+    `the sheet reads ${shown || '(nothing)'}; the relay holds `
+      + `${(rs0?.rooms ?? []).map((r) => r.code).join(', ') || 'no rooms'}`,
+    'before CORS this fetch always rejected and the lobby blamed a relay that had just answered');
+
+  await host.click('#tc-begin');
+  await driveMenu(host, { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' });
+
+  const guest = await newPage(chromeGuest);
+  await guest.goto(`${base}/?mp=1`, { waitUntil: 'domcontentloaded' });
+  await guest.waitForSelector('.tc-lobby', { timeout: 30000 });
+  await guest.fill('#tc-relay', relay.base);
+  await guest.click('#tc-room');
+  await guest.type('#tc-room', room, { delay: 20 });
+  await shot(guest, 'lobby-03-guest-form');
+  await guest.click('#tc-join');
+  await guest.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
+  // `window.__net` and the rest of the readers live in `INSTALL`; `bootMatch` runs it and this
+  // arm does not go through `bootMatch`, which is the whole point of it.
+  await host.evaluate(INSTALL);
+  await guest.evaluate(INSTALL);
+  for (const p of [host, guest]) {
+    await p.waitForFunction(() => ['deploy', 'battle'].includes(window.__net()?.phase),
+      null, { timeout: 90000 });
+  }
+  const nh = await host.evaluate(() => window.__net());
+  const ng = await guest.evaluate(() => window.__net());
+  await shot(host, 'lobby-04-host-in-battle');
+  await shot(guest, 'lobby-05-guest-in-battle');
+  measured.lobby.met = { room, host: nh, guest: ng };
+  record('lobby-two-clients-meet',
+    nh.room === room && ng.room === room && nh.slot === 0 && ng.slot === 1
+      && nh.myFaction !== ng.myFaction,
+    'two people find each other by typing a code, and end up on opposite sides of one battle',
+    `room ${room}: host is slot ${nh.slot} commanding ${nh.myFaction}, `
+      + `challenger is slot ${ng.slot} commanding ${ng.myFaction}`,
+    'no URL was built by this test — the form wrote both of them');
+
+  /*
+   * A host alone in a room, watched past six seconds.
+   *
+   * The exact clock the false verdict fired on: `Room.tick` returned `none()` in the lobby, so
+   * `NetLink.gapMs` never left 0, `linkFault`'s threshold collapsed to its `LINK_SILENT_S`
+   * floor, and a healthy session ended at 6.0 s with the socket open. It belongs here rather
+   * than in a fault arm because nothing had to go wrong for it to fire: it needed a player to
+   * take longer than six seconds to read a code out.
+   */
+  record('lobby-alone-is-not-a-dead-link',
+    !nh.ended && !ng.ended && nh.got > 1,
+    'a host who waited alone in the room was not told the link had died',
+    `host ended='${nh.ended || 'not ended'}' after ${nh.got} frames in; `
+      + `challenger ended='${ng.ended || 'not ended'}'`,
+    'the lobby now beats once a second, so the silence test measures silence and not a phase');
+
+  record('lobby-console', host.__errs.length === 0 && guest.__errs.length === 0,
+    'and neither page raised a console error anywhere in the flow',
+    [...host.__errs, ...guest.__errs].slice(0, 3).join(' ; ') || 'clean');
+
+  await host.close(); await guest.close();
+  relay.stop();
+}
+
+/*
+ * A code nobody opened. The relay knew; before this, nobody told the player.
+ *
+ * `roomFor` created on demand, so a mistyped code conjured a second empty room and the
+ * challenger waited in it — no timeout, no message, no way back, for as long as they were
+ * willing to sit there. This arm goes red the moment that silence comes back: its pass
+ * condition is a *named* refusal with a way onward, inside twenty-five seconds.
+ */
+if (wanted('badcode')) {
+  console.log('\n=== a code nobody opened ===');
+  const relay = await startRelay(5988);
+  const page = await newPage(chromeGuest);
+  await page.goto(`${base}/?mp=1`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.tc-lobby', { timeout: 30000 });
+  await page.fill('#tc-relay', relay.base);
+  await page.click('#tc-room');
+  await page.type('#tc-room', 'ZZZZZ', { delay: 20 });
+  const t0 = Date.now();
+  await page.click('#tc-join');
+  let told = null;
+  while (Date.now() - t0 < 25000) {
+    told = await page.evaluate(() => {
+      const h = document.querySelector('.tc-lobby h1');
+      if (!h || !/would not|no relay/i.test(h.textContent ?? '')) return null;
+      const b = document.querySelector('.tc-lobby a[href*="mp=1"]');
+      return {
+        title: (h.textContent ?? '').trim(),
+        body: (document.querySelector('.tc-sheet')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+        back: b ? b.getAttribute('href') : null,
+      };
+    }).catch(() => null);
+    if (told) break;
+    await sleep(300);
+  }
+  const waited = Date.now() - t0;
+  await shot(page, 'lobby-06-wrong-code');
+  measured.badcode = { told, waitedMs: waited, errs: page.__errs.slice(0, 3) };
+  record('wrong-code-is-refused',
+    !!told && /ZZZZZ/.test(told.body ?? '') && waited < 25000,
+    'a code nobody opened is refused by name in a sentence, instead of waiting for ever',
+    told ? `after ${(waited / 1000).toFixed(1)} s: ${told.body.slice(0, 150)}`
+      : `nothing said anything in ${(waited / 1000).toFixed(1)} s — this is the silent wait`,
+    'the relay always knew; what was missing was anybody telling the person who typed it');
+  record('wrong-code-has-a-way-back',
+    !!told?.back && /mp=1/.test(told.back) && /room=ZZZZZ/.test(told.back),
+    'and the way out carries the code back to the form, so a typo is one correction',
+    told?.back ? told.back : 'there is no link off this screen',
+    'the previous screen offered the browser back button and nothing else');
+  record('wrong-code-no-pageerror',
+    page.__errs.filter((e) => e.startsWith('pageerror')).length === 0,
+    'and nothing about the refusal reaches window.onerror',
+    page.__errs.slice(0, 2).join(' ; ') || 'clean',
+    'the old path threw at module top level, which every gate in tools/ collects as a failure');
+  await page.close();
+  relay.stop();
+}
+
+/*
+ * Nothing listening at all, from both directions.
+ *
+ * Two different failures wearing one sentence until now. Through the form it reported *"No
+ * relay at ws://… — start one with node tools/relay.mjs"* even when the relay was running and
+ * had answered; through a battle URL it threw at module top level, which reached
+ * `window.onerror`, and painted the failure in red capitals across the title card with no
+ * control anywhere on the page.
+ *
+ * No relay is started here, deliberately. 5901 was one of the ports six other agents' dev
+ * servers were scattered through, so the arm first proves nothing is on it and says why it
+ * cannot run rather than reporting a dead relay it did not actually have.
+ */
+if (wanted('norelay')) {
+  console.log('\n=== nothing listening ===');
+  const DEAD = 'ws://127.0.0.1:5901';
+  const occupied = await fetch('http://127.0.0.1:5901/health').then(() => true).catch(() => false);
+  if (occupied) {
+    record('no-relay-says-so', false, 'port 5901 has something on it, so this arm cannot run',
+      'something answered http://127.0.0.1:5901/health', 'rerun when it is free');
+  } else {
+    const form = await newPage(chrome);
+    await form.goto(`${base}/?mp=1`, { waitUntil: 'domcontentloaded' });
+    await form.waitForSelector('.tc-lobby', { timeout: 30000 });
+    await form.fill('#tc-relay', DEAD);
+    await form.click('#tc-host');
+    await form.waitForSelector('#tc-note.tc-bad', { timeout: 20000 }).catch(() => { /* asserted */ });
+    const said = ((await form.textContent('#tc-note')) ?? '').replace(/\s+/g, ' ').trim();
+    const stillHere = await form.evaluate(() => !!document.querySelector('#tc-host'));
+    await shot(form, 'lobby-07-no-relay-form');
+    record('no-relay-says-so', /5901/.test(said) && /No answer from/.test(said) && stillHere,
+      'CREATE names the address that did not answer and leaves you on the form to fix it',
+      said.slice(0, 170) || 'the form said nothing at all',
+      'it used to blame a relay that was running, and it navigated away from the field to edit');
+
+    const direct = await newPage(chromeGuest);
+    await direct.goto(`${base}/?net=${encodeURIComponent(DEAD)}&room=QAQQQ&host=0`,
+      { waitUntil: 'domcontentloaded' });
+    await direct.waitForSelector('.tc-lobby h1', { timeout: 40000 }).catch(() => { /* asserted */ });
+    const sheet = ((await direct.textContent('.tc-sheet').catch(() => '')) ?? '')
+      .replace(/\s+/g, ' ').trim();
+    const way = await direct.getAttribute('.tc-lobby a[href*="mp=1"]', 'href').catch(() => null);
+    await shot(direct, 'lobby-08-no-relay-direct');
+    measured.norelay = { form: said, direct: sheet, back: way,
+      errs: [...form.__errs, ...direct.__errs] };
+    record('no-relay-is-a-screen-and-not-a-splash',
+      /No relay answered/i.test(sheet) && /5901/.test(sheet) && !!way,
+      'and a battle URL pointed at nothing gets a refusal with a way back, not a red splash',
+      sheet.slice(0, 170) || 'nothing was drawn',
+      'a relayed battle cannot start without a relay; saying so is not the same as crashing');
+    record('no-relay-no-pageerror',
+      form.__errs.filter((e) => e.startsWith('pageerror')).length === 0
+        && direct.__errs.filter((e) => e.startsWith('pageerror')).length === 0,
+      'neither path raises an uncaught exception',
+      [...form.__errs, ...direct.__errs].slice(0, 2).join(' ; ') || 'clean',
+      'main.ts spends a paragraph on why the lobby must not throw; this is the other branch');
+    await form.close(); await direct.close();
+  }
 }
 
 // ---------------------------------------------------------------------------

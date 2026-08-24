@@ -37,7 +37,7 @@ import { decodeReplay, type ReplayRecord, ReplaySystem } from './sim/replay';
 import { NetLink, netParams } from './net/NetLink';
 import { NetSession } from './net/NetSession';
 import { setPlayerFaction } from './ui/theme';
-import { showLobby } from './ui/NetLobby';
+import { esc, showLobby, showNetNotice } from './ui/NetLobby';
 import { NetPanel } from './ui/NetPanel';
 import { stateHashes, UNIT_CTL_FIELDS, UNIT_F64_FIELDS } from './sim/stateHash';
 
@@ -134,15 +134,58 @@ const skipMenu = harness || params.get('menu') === '0' || replayToken !== null
 let config = resolveConfig(params, !harness);
 let link: NetLink | null = null;
 let netDeployPhase = false;
+/**
+ * A relay that will not have us, and the two rules it has to obey.
+ *
+ * **It never throws.** A top-level throw here is an unhandled rejection, which reaches
+ * `window.onerror`, which every harness in `tools/` collects as a `pageerror` — the same thing
+ * the `?mp=1` branch above spends a paragraph avoiding, and it was doing it on the one path
+ * where something had genuinely gone wrong and the player most needed a readable screen.
+ *
+ * **It offers a way onward.** What used to happen was the loading splash shouting the failure
+ * in red capitals across the middle of the title card, with no control anywhere on the page:
+ * the only exit was the browser's back button. The lobby is one navigation away and it can be
+ * handed back the address and the code that just failed, so a mistyped character is one
+ * correction rather than a restart.
+ */
+const netFailed = (title: string, lines: string[]): Promise<never> => {
+  loading?.remove();
+  const back = new URL(location.href);
+  back.search = '';
+  back.searchParams.set('mp', '1');
+  if (net) {
+    back.searchParams.set('net', net.base);
+    back.searchParams.set('room', net.room);
+  }
+  showNetNotice(document.getElementById('menu-root') as HTMLElement, {
+    title, lines, back: { label: 'Back to the lobby', href: `?${back.searchParams.toString()}` },
+  });
+  // `warn`, not `error`: this is a stated outcome with a screen behind it, and a gate that
+  // treats every `console.error` as a failure is right to, which makes shouting here a lie.
+  console.warn(`[net] ${title}: ${lines.join(' ')}`);
+  // A promise that never settles, exactly as `?mp=1` does. Nothing below this line runs.
+  return new Promise<never>(() => { /* the notice is the end of this page's life */ });
+};
 if (net) {
   link = new NetLink(net.base, net.room, net.want);
   try {
     await link.connect();
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
-    if (loadText) { loadText.textContent = `Multiplayer: ${why}`; loadText.style.color = '#e2564b'; }
-    console.error(`[net] ${why}`);
-    throw e;
+    // `refusedByRelay` and not `refusal`: the second is also set by a socket that never
+    // opened, and "nothing is listening" is a different problem with a different fix from
+    // "the relay read your code and said no".
+    const refused = link.refusedByRelay;
+    await netFailed(
+      refused ? 'The relay would not let you in' : 'No relay answered',
+      refused
+        ? [esc(refused.charAt(0).toUpperCase() + refused.slice(1)),
+          `Room <b>${esc(net.room)}</b> on <b>${esc(net.base)}</b>.`]
+        : [`${esc(why.charAt(0).toUpperCase() + why.slice(1))}.`,
+          'A relay is a separate process: <code>node tools/relay.mjs</code> on a machine you '
+          + 'can both reach. The battle cannot start without one, and there is nothing to '
+          + 'reconnect to, so this stops here rather than pretending.'],
+    );
   }
 }
 {
@@ -217,8 +260,27 @@ if (link) {
     netDeployPhase = params.get('deploy') !== '0';
     link.send({ k: 'setup', cfg: config, deployPhase: netDeployPhase });
   } else {
-    if (loadText) loadText.textContent = 'Waiting for the host to choose the battle…';
-    const cm = await link.once(['config']) as { cfg: unknown; deployPhase: boolean };
+    if (loadText) {
+      loadText.textContent = `Room ${link.room} — waiting for the host to choose the battle…`;
+    }
+    /*
+     * And if they never do, say so. This used to reject into the top level.
+     *
+     * Two ways it ends badly and they are different sentences: the host closes their tab, which
+     * closes this socket and rejects immediately, or the host walks away and the two-minute
+     * timeout expires. Neither is an exception in the sense the word usually carries — the
+     * challenger did nothing wrong and has somewhere to go — but both reached `window.onerror`
+     * as one, over a loading screen with no way off it.
+     */
+    const cm = await link.once(['config']).catch(() => netFailed(
+      link!.dropped ? 'The host left before choosing a battle' : 'The host never chose a battle',
+      [`You were in room <b>${esc(link!.room)}</b> and nothing came back from the other side.`,
+        link!.dropped
+          ? 'Their end of the link closed. Open a new room, or join theirs again when they '
+            + 'are ready.'
+          : 'The room is still open on the relay. You can wait longer by joining again, or '
+            + 'give them a different code.'],
+    )) as { cfg: unknown; deployPhase: boolean };
     config = sanitiseConfig(cm.cfg as Parameters<typeof sanitiseConfig>[0]);
     netDeployPhase = cm.deployPhase;
   }
@@ -609,7 +671,7 @@ async function boot(): Promise<void> {
    * rather than an edit to somebody else's file.
    */
   if (session) {
-    const panel = new NetPanel(document.body, session);
+    const panel = new NetPanel(document.body, session, engine.context);
     engine.add({ name: 'net-panel', order: 900, update: () => panel.update() });
   }
 

@@ -107,10 +107,37 @@ export async function bootThroughMenu(page, {
 } = {}) {
   if (stopClock) await stopClockOnReady(page);
   await page.goto(`${base}/?${query}`, { waitUntil: 'domcontentloaded' });
-  // Either sheet may be the one that appears: `startStep` opens on the setup screen for
-  // `?menu=battle` and for any URL that already names a battle, and on the front door for
-  // everything else. Ask which, rather than assuming.
-  await page.waitForSelector('.menu-sheet', { timeout: 60000 });
+  return driveMenu(page, { map, scenario, tier, size, onSetup, readyTimeout });
+}
+
+/**
+ * The same menu sequence, on a page that is **already there**.
+ *
+ * Split out of `bootThroughMenu` for the lobby arm of `tools/qa-net.mjs`, which cannot navigate:
+ * the whole point of that arm is that the *page* decides where to go — the host presses CREATE
+ * A ROOM and then CHOOSE THE BATTLE, and `NetLobby` writes the `?net=…&room=…&menu=battle` URL
+ * itself. A driver that called `page.goto` with a URL it had built would be testing the driver.
+ *
+ * `bootThroughMenu` is this plus the `goto`, so there is still one menu sequence in the
+ * repository rather than two that drift.
+ */
+export async function driveMenu(page, {
+  map, scenario, tier = 'high', size, onSetup, readyTimeout = 240000,
+} = {}) {
+  /*
+   * Either sheet may be the one that appears: `startStep` opens on the setup screen for
+   * `?menu=battle` and for any URL that already names a battle, and on the front door for
+   * everything else. Ask which, rather than assuming.
+   *
+   * **Waited for by step class and not by `.menu-sheet`.** Both sheets are in the DOM at once —
+   * `MainMenu` renders `.menu-sheet.menu-home` and `.menu-sheet.menu-setup` and shows one of
+   * them by toggling `at-home`/`at-setup` on the root — so on a URL that opens straight on the
+   * setup screen the *first* `.menu-sheet` is the hidden home one, and a visibility wait on it
+   * sits there for the full sixty seconds. That is not hypothetical: it is what the lobby arm
+   * of `tools/qa-net.mjs` hit the first time it pressed CHOOSE THE BATTLE, which is the only
+   * caller that arrives here already on the setup step.
+   */
+  await page.waitForSelector('.menu.at-home .menu-home, .menu.at-setup .begin', { timeout: 60000 });
   const atHome = await page.evaluate(() =>
     !!document.querySelector('.menu.at-home'));
   if (atHome) {

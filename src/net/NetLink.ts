@@ -52,6 +52,17 @@ export class NetLink {
   slot = -1;
   /** Set from `refuse`, or from a transport failure. A non-empty string is fatal. */
   refusal = '';
+  /**
+   * The relay's own words, set **only** from a `refuse` message — never from a socket error.
+   *
+   * `refusal` conflates the two, and the interface cannot: "nothing answered at this address"
+   * and "the relay read your code and said no" are different problems with different fixes,
+   * and the screen a player gets has to pick one. Before this, an unreachable relay produced
+   * *"the relay at ws://…/room/RMEXQ?want=join&v=1 refused the connection"* — a sentence that
+   * names a relay, quotes an internal URL and blames a refusal, when what happened is that
+   * there was no relay at all.
+   */
+  refusedByRelay = '';
   peer: 'absent' | 'joined' | 'ready' | 'left' = 'absent';
   closed = false;
   /**
@@ -88,6 +99,8 @@ export class NetLink {
   private waiters: { kinds: string[]; ok: (m: RelayMsg) => void; fail: (e: Error) => void }[] = [];
   private ws: WebSocket | null = null;
   private url: string;
+  /** The relay address as the player typed it, for messages a player reads. */
+  private base: string;
   private sent = 0;
   private got = 0;
 
@@ -96,7 +109,8 @@ export class NetLink {
     this.room = room;
     this.want = want;
     const q = `?want=${want}&v=${RELAY_V}`;
-    this.url = `${base.replace(/\/+$/, '')}/room/${room}${q}`;
+    this.base = base.replace(/\/+$/, '');
+    this.url = `${this.base}/room/${room}${q}`;
   }
 
   /**
@@ -139,7 +153,9 @@ export class NetLink {
       ws.onerror = () => {
         clearTimeout(timer);
         drop(`the link to the relay at ${this.url} failed`);
-        die(`the relay at ${this.url} refused the connection`);
+        // Only reachable before `welcome`, so this is "the socket never opened" and not a
+        // refusal — a refusal arrives as a `refuse` message and is handled below.
+        die(`nothing answered at ${this.base}`);
       };
       ws.onclose = () => {
         clearTimeout(timer);
@@ -165,6 +181,7 @@ export class NetLink {
         }
         if (m.k === 'refuse') {
           this.refusal = `${m.why}: ${m.detail ?? ''}`.trim();
+          this.refusedByRelay = (m.detail ?? m.why).trim();
           clearTimeout(timer);
           die(this.refusal);
         }

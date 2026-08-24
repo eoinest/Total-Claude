@@ -737,6 +737,17 @@ export class NetSession implements Subsystem {
   /** The match, as a record. The same `.tcr` a single-player battle produces. */
   record(): ReplayRecord | null { return this.replay.record(); }
 
+  /**
+   * The record as the `.tcr` bytes, or `null` when there is nothing to give.
+   *
+   * Null rather than a rejecting promise, because the caller is a button: the session-over
+   * sheet offers `Save the replay` only when this returns something, and a button that fails
+   * when a stranded player presses it is worse than a button that was never there.
+   */
+  token(): Promise<string> | null {
+    return this.replay?.record() ? this.replay.token() : null;
+  }
+
   /** Tell the relay we are going, so the peer gets `peerLeft` rather than a timeout. */
   dispose(): void { this.link.close('page closed'); }
 }
