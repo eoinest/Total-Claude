@@ -332,12 +332,25 @@ const NO_SHADOW: ReadonlySet<CityMatKey> = new Set<CityMatKey>(['metal', 'road',
 export class Batch {
   private streams = new Map<CityMatKey, GeoStream>();
 
-  constructor(
-    private readonly mats: CityMaterials,
-    private readonly collapseTo?: CityMatKey,
-    /** Fold the trim materials into their structural neighbours. */
-    private readonly mergeTrim = false
-  ) {}
+  private readonly mats: CityMaterials;
+  private readonly collapseTo?: CityMatKey;
+  /** Fold the trim materials into their structural neighbours. */
+  private readonly mergeTrim: boolean;
+
+  /**
+   * Written out longhand rather than as TypeScript parameter properties, and the reason is
+   * `MAP-METHOD.md` rule 29 rather than style. Node's `--experimental-strip-types` refuses
+   * a parameter property outright — it is the one TypeScript construct that *emits* code —
+   * so these three lines were the whole reason no offline tool could import `build.ts`, and
+   * therefore the reason nothing outside a four-minute browser boot could measure what a
+   * monument builder actually draws. `tools/scratch/mon-extents.mjs` does it in a second.
+   * Same fields, same access, same initialisation order; `tsc` is what says so.
+   */
+  constructor(mats: CityMaterials, collapseTo?: CityMatKey, mergeTrim = false) {
+    this.mats = mats;
+    this.collapseTo = collapseTo;
+    this.mergeTrim = mergeTrim;
+  }
 
   s(key: CityMatKey): GeoStream {
     const k = this.collapseTo ?? (this.mergeTrim ? (TRIM_MERGE[key] ?? key) : key);
