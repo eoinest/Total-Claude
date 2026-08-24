@@ -91,6 +91,14 @@ Automatic detection, with an explicit flag that beats it.
 looking at this machine, and it fires the instant he walks away where an idle timer needs its
 full window to agree. It has no false positives. It is checked first.
 
+*The key is absent when the screen is unlocked* — not `=No`, simply not in the dictionary. The
+first version of `screenLocked()` matched `(Yes|No)` and returned `null`, "unreadable", for the
+entire unlocked case: **the strongest signal here was silently unavailable exactly when somebody
+was at the machine**, and `node tools/browsers.mjs owner` printed `screen locked  unreadable`
+while its owner was typing into the next window. It was caught by reading that output, not by
+any test, which is the argument for printing each signal separately rather than only the
+conclusion.
+
 **`IOHIDSystem.HIDIdleTime`** is nanoseconds since the last key, click or trackpad event,
 maintained by the window server, needing no entitlement and no accessibility permission. Three
 reads two seconds apart gave 307.7 s, 309.8 s, 311.9 s — it is real-time and it is exact.

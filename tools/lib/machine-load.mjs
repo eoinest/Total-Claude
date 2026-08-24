@@ -251,17 +251,29 @@ export const hidIdleMs = () => {
 /**
  * Is the screen locked?
  *
- * `CGSSessionScreenIsLocked` in the console-user dictionary is a yes/no fact rather than an
- * inference, and it is the one presence signal with **no false positives at all**: a locked
- * screen means nobody is looking at this machine, full stop. It also fires *instantly* when he
- * walks away, where `HIDIdleTime` needs the full three-minute window to agree.
+ * `CGSSessionScreenIsLocked` in the console-user dictionary is a fact rather than an inference,
+ * and it is the one presence signal with **no false positives at all**: a locked screen means
+ * nobody is looking at this machine, full stop. It also fires *instantly* when he walks away,
+ * where `HIDIdleTime` needs the full three-minute window to agree.
  *
- * Returns `null` when the key cannot be read, which must not be confused with `false`.
+ * **The key is absent when the screen is unlocked.** It is not `=No`; it is simply not in the
+ * dictionary. The first version of this matched `(Yes|No)` and returned `null` — "unreadable" —
+ * for the entire unlocked case, so the strongest signal here was silently unavailable exactly
+ * when somebody was at the machine, and `node tools/browsers.mjs owner` printed
+ * `screen locked   unreadable` while its owner was typing into the next window. Caught by
+ * reading the output rather than by any test, which is the argument for printing each signal
+ * separately instead of only the conclusion.
+ *
+ * So: presence of `IOConsoleUsers` is what makes the answer knowable, and the presence of the
+ * lock key inside it is what makes it `true`. `null` now means only that the console-user
+ * dictionary could not be read at all — a headless box, or a `ioreg` that failed.
  */
 export const screenLocked = () => {
   const out = sh('ioreg', ['-n', 'Root', '-d', '1', '-w', '0']);
-  const m = out.match(/"CGSSessionScreenIsLocked"\s*=\s*(Yes|No)/);
-  return m ? m[1] === 'Yes' : null;
+  const dict = out.match(/"IOConsoleUsers"\s*=\s*\(\{[^}]*\}/)?.[0];
+  if (!dict) return null;
+  const m = dict.match(/"CGSSessionScreenIsLocked"\s*=\s*(Yes|No)/);
+  return m ? m[1] === 'Yes' : false;
 };
 
 /** The frontmost application's display name, or `null` if it cannot be read. */
