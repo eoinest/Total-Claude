@@ -340,9 +340,10 @@ export function showLobby(host: HTMLElement): void {
       <label for="tc-relay">Relay address</label>
       <input id="tc-relay" spellcheck="false" autocomplete="off">
       <p class="tc-hint" id="tc-relay-hint">Every order goes through a relay, which is what
-         makes the two simulations one battle rather than two. Run one with
-         <code>node tools/relay.mjs</code>, or paste the address of one somebody else is
-         running.</p>
+         makes the two simulations one battle rather than two. For two machines on one
+         network, <code>npm run host</code> starts the game and a relay together on an address
+         you can both reach. <code>node tools/relay.mjs</code> starts a relay on its own, and
+         you can paste the address of one somebody else is running.</p>
     </div>
     <a class="tc-back" href="?">&lsaquo; Back to the front door</a>`;
 
@@ -450,7 +451,9 @@ export function showLobby(host: HTMLElement): void {
     const local = isLoopback(location.hostname);
     say(`No answer from <b>${esc(addr)}</b> &mdash; ${esc(why)}. `
       + (local
-        ? 'Start one with <code>node tools/relay.mjs</code> and press Create again.'
+        ? 'Start one with <code>node tools/relay.mjs</code> and press Create again &mdash; or '
+          + 'stop this server and run <code>npm run host</code>, which starts both halves on an '
+          + 'address the other machine can reach as well.'
         : 'This site does not host a relay and cannot: it is a static upload with no server '
           + 'in it. A relay is a separate process &mdash; <code>node tools/relay.mjs</code> on '
           + 'a machine you can both reach, or the Cloudflare Worker in <code>net/worker.ts</code> '

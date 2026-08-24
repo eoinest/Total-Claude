@@ -2524,11 +2524,21 @@ the product's premise stops being a hypothesis.
    other agents' dev servers, and a port that moves per run is a URL that cannot be written on a
    sticky note. `--port=` and `--relay-port=` override. Whether the default should instead be
    something a person would recognise — 8080, say — is a taste call rather than a technical one.
-2. **The deployed site's Multiplayer plaque.** It currently says, correctly, that the site is a
-   static upload with no server in it and cannot host a relay. §10.2 is now measured, so it
-   *could* additionally say that the way to play with somebody in the same building is to clone
-   the repository and run `npm run host` on one of the two machines. That is a product decision
-   about who the deployed site is for, and it is not one to make in a transport pass.
+2. **The deployed site's Multiplayer plaque.** `noRelay()` in `src/ui/NetLobby.ts`, the
+   non-loopback branch — the sentence a visitor to `total-claude.vercel.app` gets when CREATE
+   finds nothing at the address in the field. It says, correctly, that the site is a static
+   upload with no server in it, that a relay is a separate process, and that the Cloudflare
+   Worker in `net/worker.ts` is the other shape. It has been left exactly as it was.
+
+   §10.2 is now measured, so it *could* additionally say that the way to play with somebody in
+   the same building is to clone the repository and run `npm run host` on one of the two
+   machines. Against it: that sentence is only actionable for somebody who has a checkout, and
+   the deployed site's audience is mostly people who do not — it would be an instruction most
+   readers cannot follow, on the screen where they are already being told no. For it: the
+   people who reach that screen at all are people trying to play two-player, and it is the only
+   route that works. **A product decision about who the deployed site is for, and not one to
+   make in a transport pass.** The loopback branch of the same function *does* now name
+   `npm run host`, because there the reader demonstrably has a checkout.
 
 ### 10.8 What is still not done
 

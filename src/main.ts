@@ -182,9 +182,21 @@ if (net) {
         ? [esc(refused.charAt(0).toUpperCase() + refused.slice(1)),
           `Room <b>${esc(net.room)}</b> on <b>${esc(net.base)}</b>.`]
         : [`${esc(why.charAt(0).toUpperCase() + why.slice(1))}.`,
-          'A relay is a separate process: <code>node tools/relay.mjs</code> on a machine you '
-          + 'can both reach. The battle cannot start without one, and there is nothing to '
-          + 'reconnect to, so this stops here rather than pretending.'],
+          'A relay is a separate process. The battle cannot start without one, and there is '
+          + 'nothing to reconnect to, so this stops here rather than pretending.',
+          /*
+           * This page loaded, and that is a diagnosis rather than a consolation.
+           *
+           * Somebody who followed an invite link got this document from the host's machine
+           * before the socket was tried — so the machine is reachable, the network is fine,
+           * and it is specifically the relay's port that did not answer. Saying "start a
+           * relay on a machine you can both reach" to a person who has just been sent a link
+           * blames the wrong party, which is the mistake §9.12 spent a section on.
+           */
+          `You reached this page, so the machine serving it is reachable and it is <b>${esc(net.base)}</b> `
+          + 'specifically that did not answer. If you were sent a link, tell whoever sent it: '
+          + 'one command, <code>npm run host</code>, serves the game and the relay together on '
+          + 'an address you can both reach.'],
     );
   }
 }

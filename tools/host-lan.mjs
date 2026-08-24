@@ -21,14 +21,17 @@
  *
  * ## Why the deployed site is not part of this
  *
- * Because a browser will not let it be. `https://total-claude.vercel.app` is an HTTPS origin,
- * and the mixed-content rules make a plain `ws://` to anything that is not loopback a blocked
- * request — not a slow one, not a refused one; the socket is never opened and the failure is a
- * console line. Measured on the live site against a real relay on this machine's en0 address;
- * `docs/MULTIPLAYER.md` §10.2 has the transcript and prices the three ways round it. The short
- * version is that they all end in either a certificate somebody has to install on both machines
- * or a tunnel out to the public internet, and the second of those is what `net/worker.ts` is
- * already for.
+ * Because a browser will not let it be, and it will not let it be twice over. Measured on the
+ * live site — a real certificate, a real origin — against a real relay on this machine's en0
+ * address, in Chromium 151: `ws://192.168.0.238:5959` fails in 1 ms with
+ * `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`, and with that check switched off the
+ * `WebSocket` constructor throws `SecurityError: An insecure WebSocket connection may not be
+ * initiated from a page loaded over HTTPS` before a packet exists. The first is a permission
+ * somebody could in principle grant; the second is not a permission at all.
+ *
+ * `docs/MULTIPLAYER.md` §10.2 has both transcripts and prices the three ways round it. They end
+ * in either a certificate somebody has to install on both machines or a tunnel out to the
+ * public internet, and the second of those is what `net/worker.ts` is already for.
  *
  * So: the host serves both halves, over plain HTTP, on the LAN. Which has a property the
  * deployed path does not — **both machines are loading the same bytes from the same server**,
@@ -44,7 +47,15 @@
  *
  * It costs nothing at the firewall either way, because macOS's application firewall prompts per
  * *binary*, not per port: both listeners are the same `node`, so the dialog appears at most
- * once. It does appear again after an `nvm` upgrade, because that is a different path.
+ * once whatever this opens.
+ *
+ * It may not appear at all, which is worth knowing before writing a paragraph telling somebody
+ * to expect it. Measured here: `socketfilterfw --getallowsigned` reports *"Automatically allow
+ * downloaded signed software ENABLED"*, node 24.13.0 is Developer-ID signed with a valid
+ * timestamp, and binding `0.0.0.0` raised no dialog and did not add the binary to
+ * `--listapps`. The dialog is for an unsigned or locally-built node, or a machine with that
+ * setting turned off. So the message below is conditional — *if* macOS asks — rather than an
+ * instruction to go looking for a window that is not there.
  */
 
 import { spawn } from 'node:child_process';
@@ -143,8 +154,9 @@ if (!LOOPBACK) {
   say('');
   say('  Binding an address other than 127.0.0.1. If macOS asks whether');
   say(`  "${path.basename(process.execPath)}" may accept incoming network connections, say Allow —`);
-  say('  the relay cannot hear the other machine otherwise. It asks once per node');
-  say('  binary, so an nvm or Homebrew upgrade brings the dialog back.');
+  say('  the relay cannot hear the other machine otherwise. It often will not ask:');
+  say('  a signed node is allowed automatically. It asks once per node binary,');
+  say('  so an unsigned or freshly-built one can bring the dialog back.');
   say('');
 }
 
@@ -279,8 +291,9 @@ if (JSON_OUT) {
   say(`  game    ${gameUrl}${gameOk ? '' : '   NOT ANSWERING'}`);
   say(`  relay   ${relayUrl}${relayOk ? '' : '   NOT ANSWERING'}`);
   if (!LOOPBACK) {
-    say(`  also    http://${MDNS}:${PORT}/?mp=1   (Mac to Mac; ${MDNS} follows this`);
-    say('          machine across a DHCP lease change and the numbers do not)');
+    say(`  also    http://${MDNS}:${PORT}/?mp=1`);
+    say('          Mac to Mac. This name follows the machine across a DHCP lease');
+    say('          change; the numbers above do not.');
     say(`  on      ${chosen.iface}${chosen.overridden ? ', given with --lan=' : ''}`);
     for (const c of candidates.filter((c) => c.ip !== ADDR)) {
       say(`          not chosen: ${c.ip} (${c.why}) — --lan=${c.ip} to use it instead`);
