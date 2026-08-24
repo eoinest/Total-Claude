@@ -438,6 +438,15 @@ of it inside a status command is how one of them stops being true.
   the honest trade and it is what "his experience is the requirement" costs. `TC_OWNER=away`
   overrides it for one run, and the orchestrator rule in `docs/HANDOFF.md` is written so that
   the situation is rare rather than managed.
+- **A process that already holds a slot is never refused by the work gate.** `qa-net` needs two
+  browsers and sometimes three from one process, and refusing its second under a ladder of 1
+  would deadlock a required gate against itself for thirty minutes. So the admission half is
+  given up for runs already underway — the hard count cap still applies, and so does the
+  demotion, which is the part that protects his frame rate. It means a single two-browser gate
+  can be rendering while he plays. Demoted, that measured at 2% of his frame rate.
+- **A run SIGKILLed while demoted leaves its browser in the background band.** Every other exit
+  path restores. That orphan is also still *running*, which is the larger problem, and
+  `tools/reclaim.mjs` and `browsers.mjs sweep` are what catch it.
 - **Nothing here bounds *memory*.** It is measured and reported and it has never been the
   binding constraint on a 137 GB machine, but six browsers each holding a nine-thousand-man
   scene is not free, and the day this machine swaps, every number above stops mattering.
