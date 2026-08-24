@@ -338,8 +338,9 @@ export function showLobby(host: HTMLElement): void {
       <p>Read this out to the other commander, or have them type it into their own lobby.</p>
       <div class="tc-code" id="tc-code">${esc(code)}</div>
       <div class="tc-row">
-        <button type="button" class="tc-ghost" id="tc-copy-code">Copy the code</button>
-        ${deadLink ? '' : '<button type="button" class="tc-ghost" id="tc-copy-link">Copy the invite link</button>'}
+        <button type="button" id="tc-copy-code">Copy the code</button>
+        ${deadLink ? ''
+    : '<button type="button" class="tc-ghost" id="tc-copy-link">Copy the invite link</button>'}
       </div>
       <p class="tc-hint" id="tc-link-hint">${deadLink === 'page'
         ? 'There is no invite link, because this page is served from '
