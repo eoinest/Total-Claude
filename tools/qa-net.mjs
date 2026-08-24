@@ -3,11 +3,12 @@
  * QA: two clients, one relay, one battle — driven through the real menu with a real mouse.
  *
  * Usage: node tools/qa-net.mjs [--port=5937] [--relay=5989] [--json=path] [--shots=dir]
- *                              [--only=proto,battle,drop,dup,swap,ulp,late,leave,lag,xengine]
+ *                              [--only=proto,battle,siege,lobby,badcode,norelay,drop,dup,swap,
+ *                                      ulp,late,leave,lag,xengine]
  *                              [--all] [--seconds=70] [--keep] [--xsize=ultra] [--xticks=1500]
  *
- * Nine arms by default. `xengine` — two full-scale battles in two browser engines — is opt-in;
- * see `DEFAULT_ARMS`.
+ * Thirteen arms by default. `xengine` — two full-scale battles in two browser engines — is
+ * opt-in; see `DEFAULT_ARMS`.
  *
  * An unknown flag, or an unknown `--only=` arm, exits 2 rather than quietly running nothing —
  * `tools/qa-replay.mjs` explains why at length and the reason is that this project has shipped
@@ -38,6 +39,18 @@
  *
  * Every one of those arms **fails if the session does not notice**. There is no arm here whose
  * pass condition is "nothing happened".
+ *
+ * ## And the lobby, which for weeks it could not see
+ *
+ * Every arm listed above waits for `phase === 'battle'` before it asserts anything, and
+ * `bootMatch` gets there by writing `?net=…&room=…` itself. So for as long as this file has
+ * existed, **not one check had ever loaded `?mp=1`** — the page a player actually starts from,
+ * which was meanwhile unusable by a mouse in three separate ways and had a CREATE A ROOM button
+ * that had never once succeeded. Thirty-eight green checks behind a door nobody could open.
+ *
+ * `lobby`, `badcode` and `norelay` close that. The first types a code and presses the buttons;
+ * the other two press them at a room nobody opened and at an address nothing is listening on,
+ * and pass only if the failure is *named*, with a way out, and without a `pageerror`.
  *
  * ## Ports
  *
@@ -1455,7 +1468,16 @@ if (wanted('lobby')) {
   const relay = await startRelay(5988);
   const room = nextRoom();
   const host = await newPage(chrome);
-  await host.goto(`${base}/?mp=1`, { waitUntil: 'domcontentloaded' });
+  /*
+   * In through the front door, not at `?mp=1`.
+   *
+   * The one URL this arm is allowed to type is the site's own root. Everything after it — the
+   * lobby, the host's `?net=…&room=…&menu=battle`, the challenger's `&host=0` — is written by
+   * the product, which is the entire claim being made.
+   */
+  await host.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+  await host.waitForSelector('.menu.at-home .dest-multiplayer', { timeout: 60000 });
+  await host.click('.menu-home .dest-multiplayer');
   await host.waitForSelector('.tc-lobby', { timeout: 30000 });
 
   /*
@@ -1533,7 +1555,9 @@ if (wanted('lobby')) {
   await driveMenu(host, { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' });
 
   const guest = await newPage(chromeGuest);
-  await guest.goto(`${base}/?mp=1`, { waitUntil: 'domcontentloaded' });
+  await guest.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+  await guest.waitForSelector('.menu.at-home .dest-multiplayer', { timeout: 60000 });
+  await guest.click('.menu-home .dest-multiplayer');
   await guest.waitForSelector('.tc-lobby', { timeout: 30000 });
   await guest.fill('#tc-relay', relay.base);
   await guest.click('#tc-room');
@@ -1560,7 +1584,7 @@ if (wanted('lobby')) {
     'two people find each other by typing a code, and end up on opposite sides of one battle',
     `room ${room}: host is slot ${nh.slot} commanding ${nh.myFaction}, `
       + `challenger is slot ${ng.slot} commanding ${ng.myFaction}`,
-    'no URL was built by this test — the form wrote both of them');
+    'the only URL this test typed is the site root; the product wrote both of the others');
 
   /*
    * A host alone in a room, watched past six seconds.

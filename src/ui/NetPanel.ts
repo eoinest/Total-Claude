@@ -61,7 +61,8 @@ import { FACTION_UI } from './theme';
  */
 
 const CSS = `
-.tc-net{position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:60;
+.tc-net{position:fixed;left:0;right:0;top:8px;margin-inline:auto;width:max-content;
+  max-width:min(880px,94vw);z-index:60;
   display:flex;gap:14px;align-items:center;padding:5px 14px;pointer-events:none;
   border:1px solid #6b5735aa;border-radius:2px;background:#100c08d9;
   font:500 11.5px/1.35 ui-serif,Georgia,serif;letter-spacing:.1em;text-transform:uppercase;
@@ -69,8 +70,7 @@ const CSS = `
 .tc-net b{color:#e9c877;font-weight:600}
 .tc-net .warn{color:#e0a03c;text-transform:none;letter-spacing:.02em}
 .tc-net .bad{color:#e2564b;text-transform:none;letter-spacing:.02em}
-.tc-net.wide{max-width:min(880px,94vw);flex-wrap:wrap;justify-content:center;
-  pointer-events:auto}
+.tc-net.wide{flex-wrap:wrap;justify-content:center;pointer-events:auto}
 .tc-over{position:fixed;inset:0;z-index:130;overflow:auto;pointer-events:auto;
   background:radial-gradient(120% 90% at 50% 0%,#241a12dd 0%,#0a0806f2 70%);
   font:400 15px/1.55 ui-serif,Georgia,serif;color:#e8dcc6}
@@ -96,6 +96,19 @@ const CSS = `
 .tc-over .tc-over-esc{color:#7c6d52;font-size:11px;letter-spacing:.12em;text-transform:uppercase}
 .tc-over a:focus,.tc-over button:focus{outline:2px solid #c9a24a;outline-offset:3px}
 `;
+
+/**
+ * Everything that owns the top of the screen, in the order it is stacked there.
+ *
+ * The strip parks under the lowest of whichever of these is on screen. It is a list and not
+ * just `.topbar` because the deployment plaque is a second full-width bar directly beneath it,
+ * and parking under the top bar alone put the room code straight across ADD UNITS / REMOVE /
+ * BEGIN BATTLE for the whole of a phase that lasts as long as two people take to lay out two
+ * armies. `.replay-bar` is here for completeness: it is already positioned to clear the top bar
+ * and a relayed battle has no reason to show one, but if one ever appears this does not have to
+ * be rediscovered.
+ */
+const OVERHEAD = ['.topbar', '.deploy', '.replay-bar'];
 
 /** Endings that leave a player with a stopped battle and nowhere to go. See the docstring. */
 const STRANDING = new Set(['peerLeft', 'linkLost', 'abandoned']);
@@ -164,9 +177,12 @@ export class NetPanel {
      * that has not finished arriving. Measured once, the strip landed at 84 under a bar whose
      * settled bottom is 89 — a five-pixel overlap that only a gate would ever have caught.
      */
-    const bar = document.querySelector('.topbar') as HTMLElement | null;
-    const r = bar?.getBoundingClientRect();
-    const want = r && r.height > 0 ? Math.round(r.bottom + 8) : 8;
+    let want = 8;
+    for (const sel of OVERHEAD) {
+      const el = document.querySelector(sel) as HTMLElement | null;
+      const r = el?.getBoundingClientRect();
+      if (r && r.height > 0 && r.width > 0) want = Math.max(want, Math.round(r.bottom + 8));
+    }
     if (want !== this.topAt) {
       this.topAt = want;
       this.root.style.top = `${want}px`;
@@ -180,7 +196,11 @@ export class NetPanel {
       bits.push(`<span class="warn">${s.peer === 'absent'
         ? 'waiting for the other player to join' : s.message}</span>`);
     } else if (s.phase === 'deploy') {
-      bits.push('<span>Deployment &mdash; the clock starts when both armies are laid out</span>');
+      // Short, because the deployment plaque is directly above this and says the rest of it.
+      // What the plaque cannot say is whether the other commander is here yet.
+      bits.push(s.peer === 'absent'
+        ? '<span class="warn">the other player has not arrived</span>'
+        : '<span>Deployment &mdash; the clock starts when both are laid out</span>');
     } else if (s.phase === 'battle') {
       bits.push(`<span>Turn <b>${s.turn}</b></span>`);
       if (s.rttMs) bits.push(`<span>${s.rttMs} ms round trip, ${s.delayTicks} ticks of delay</span>`);

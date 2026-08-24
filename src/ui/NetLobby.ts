@@ -132,10 +132,25 @@ const hostOf = (addr: string): string => {
   try { return new URL(addr).hostname; } catch { return ''; }
 };
 
-/** Default relay address: whatever host served the page, on the relay's own port. */
+/**
+ * Default relay address: whatever host served the page, on the relay's own port — **unless
+ * that guess is one this page can prove wrong**, in which case the field is left empty.
+ *
+ * `ws://<this host>:5959` is exactly right for the case it was written for, which is somebody
+ * running `npm run dev` and `node tools/relay.mjs` side by side, and for a dev server reached
+ * over a LAN address by the machine next door.
+ *
+ * It is a lie on the deployed site. `tools/deploy-vercel.mjs` uploads a static tree with no
+ * server in it (§4.3), so `wss://<vercel-host>:5959` names a port nothing has ever listened on,
+ * and pre-filling it means the first thing the form does is hand the player a wrong answer and
+ * then fail at it. An HTTPS origin that is not loopback is that case: the static host is the
+ * only thing there, and a browser on an HTTPS page cannot open a plain `ws://` socket anyway.
+ * Empty, with the hint underneath asking for an address, is the truthful state.
+ */
 const defaultRelay = (): string => {
   const stored = localStorage.getItem(KEY);
   if (stored) return stored;
+  if (location.protocol === 'https:' && !isLoopback(location.hostname)) return '';
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   return `${scheme}://${location.hostname || '127.0.0.1'}:5959`;
 };
@@ -366,7 +381,17 @@ export function showLobby(host: HTMLElement): void {
     begin.focus();
   };
 
+  const noAddress = (): boolean => {
+    if (relay.value.trim()) return false;
+    say('There is no relay address in the field below. A relay is a separate process &mdash; '
+      + '<code>node tools/relay.mjs</code> on a machine you can both reach &mdash; and this '
+      + 'page cannot be one, because it is a static upload with no server in it.', true);
+    relay.focus();
+    return true;
+  };
+
   hostBtn.addEventListener('click', () => {
+    if (noAddress()) return;
     const addr = relay.value.trim();
     const asked = room.value.trim().toUpperCase();
     if (asked && !validCode(asked)) {
@@ -399,6 +424,7 @@ export function showLobby(host: HTMLElement): void {
   });
 
   joinBtn.addEventListener('click', () => {
+    if (noAddress()) return;
     const code = room.value.trim().toUpperCase();
     if (!validCode(code)) {
       say(`A room code is ${CODE_LEN} characters from ${CODE_ALPHABET}. `
