@@ -307,7 +307,15 @@ export class NetPanel {
   private raise(why: string, detail: string): void {
     const sheet = document.createElement('div');
     sheet.className = 'tc-over';
-    const token = this.session.token();
+    /*
+     * Ask whether there *is* a record; do not encode it yet.
+     *
+     * `token()` gzips the whole order log and base64s it, which is work worth doing when
+     * somebody presses the button and not on the frame a battle collapses on. `record()` is
+     * the same question with no cost, and it is the one that decides whether the button
+     * appears at all.
+     */
+    const haveRecord = !!this.session.record();
     sheet.innerHTML = `<div class="tc-over-fit"><div class="tc-over-sheet" role="dialog"
         aria-modal="true" aria-label="${HEADLINE[why] ?? 'The battle stopped'}">
         <button class="tc-over-x" type="button" title="Dismiss (Esc)" aria-label="Dismiss">&times;</button>
@@ -319,7 +327,9 @@ export class NetPanel {
            have one, and this will not invent one out of a headcount.</p>
         <div class="tc-over-row">
           <a class="tc-over-go" id="tc-over-menu" href="?">Back to the menu</a>
-          ${token ? '<button class="tc-over-ghost" type="button" id="tc-over-save">Save the replay</button>' : ''}
+          ${haveRecord
+    ? '<button class="tc-over-ghost" type="button" id="tc-over-save">Save the replay</button>'
+    : ''}
           <span class="tc-over-esc">Esc</span>
         </div>
       </div></div>`;
@@ -329,7 +339,7 @@ export class NetPanel {
     const save = sheet.querySelector('#tc-over-save') as HTMLButtonElement | null;
     save?.addEventListener('click', () => {
       void (async () => {
-        const text = await token;
+        const text = await this.session.token();
         if (!text) { save.textContent = 'No record to save'; return; }
         const a = document.createElement('a');
         a.href = URL.createObjectURL(new Blob([text], { type: 'application/octet-stream' }));
