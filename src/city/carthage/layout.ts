@@ -1,9 +1,11 @@
 import {
   BYRSA_FOOTPRINT, BYRSA_SUMMIT, BYRSA_X, BYRSA_Z,
 } from '../../maps/carthage/topography';
-import type { WayClass } from '../layout';
+import type { OverWaterDeclaration, WayClass } from '../layout';
+import { carthageBayLattice } from '../carthageWall';
 import {
-  buildLineZAt, CIRCUIT_GATES, CIRCUIT_X_MAX, CIRCUIT_X_MIN, circuitZAt, shoreZAt,
+  buildLineZAt, CARTHAGE_WALL_LINE, CIRCUIT_GATES, CIRCUIT_X_MAX, CIRCUIT_X_MIN, circuitZAt,
+  shoreZAt,
 } from './circuit';
 
 /**
@@ -214,8 +216,22 @@ export const MONUMENTS: readonly Monument[] = [
     // On the waterfront east of the two moles, not on the quay itself: a 60 × 20 m fort will
     // not share a 25 m quay belt with the 10 m quay road, and putting it there was 8% of
     // `via-navalis` running through solid masonry.
+    //
+    // **Moved 27 m landward, from z 1120, and the reason is that it was not on the waterfront
+    // at all.** `probe-fabric` G22 measures a footprint now rather than a centre, and it found
+    // 360 m² of this 1,200 m² platform — 30 % of it — standing over water **7.57 m deep**,
+    // with a dry centre that the old five-point form read as a pass. Seven and a half metres
+    // of open gulf under a third of the plan is not a quay; §6.4 puts the fort *on* the
+    // captured quay of the rectangular harbour, and a quay is land. The alternative — writing
+    // it into `OVER_WATER_DECLARED` beside Rome's Ripa and Carthage's own drowned anchor —
+    // was refused for the same reason `temple-sea` is refused it: that list is for masonry
+    // built into the water on purpose with a source, and it is bounded to a dry centre, under
+    // half the plan wet and no deeper than the substructure is drawn. This is 7.57 m under.
+    // At z 1093 the whole plan stands on ground at 0.77 m or better, the nearest way
+    // (`via-ad-byrsam-3`) clears its reserved belt by 61 m and the nearest monument
+    // (`stoa-seaward`) by 17 m. Swept in `tools/scratch/seasolids.mjs`.
     id: 'quay-fort', name: 'The Roman Quay-Fort', kind: 'quay-fort',
-    x: -250, z: 1120, hw: 30, hd: 10, rot: 0, clear: 6, solid: true,
+    x: -250, z: 1093, hw: 30, hd: 10, rot: 0, clear: 6, solid: true,
   },
   // ---- the tophet --------------------------------------------------------
   // §2.5: e −71, n −1645 → x = 0.45·(−1645) = −740, z = 945 + 0.22·(−71) = 929. The prior
@@ -251,9 +267,33 @@ export const MONUMENTS: readonly Monument[] = [
     id: 'horrea-north', name: 'The Harbour Warehouses', kind: 'warehouse',
     x: -540, z: 878, hw: 120, hd: 18, rot: 0, clear: 5, solid: true,
   },
+  /**
+   * **Moved 107 m onto the land, from (150, 1245), and it was not near the water — it was in
+   * it.**
+   *
+   * `probe-fabric` G22's footprint form found **2,732 of its 2,816 m² — 97 % of the plan —
+   * standing on a sea bed 9.7 m below the surface, with a wet centre**. This row had no cite
+   * when it was written and no source now; it was placed offshore and nothing in the tree had
+   * ever named it, which is exactly what a check that samples five points and gates on one
+   * cannot see. It is not a wharf, it is not a mole, and it must not be written into
+   * `OVER_WATER_DECLARED` — that list is bounded to masonry founded on the bank, and every
+   * limb of the bound refuses this: wet centre, 97 % wet, 9.7 m under.
+   *
+   * The seat is chosen by a rule and swept in `tools/scratch/seasolids.mjs`: of the dry seats
+   * that also keep every way's reserved belt and every monument's clearance, take the one with
+   * the least **relief** under the plan inside 120 m of where it stood. The nearest dry seat is
+   * (110, 1165) at 89 m, and it is worse than this one: the north shore here is a **28-36 %
+   * bluff**, so a 64 m plan on it crosses 23 m of ground and the monument builder seats a
+   * chunk on `heightAt(centre)`, which would float the seaward end 13 m in the air. At
+   * (100, 1150) the same plan crosses 16.7 m, its worst ground is 10.7 m above the sea, and it
+   * is 15 m clear of `via-portae-maris`. That is still steep, and it is *within this map's own
+   * range* rather than exceptional: the forum sits on 12.5 m of relief, the merchant harbour
+   * on 25.0 and the Byrsa on 31.7. Levelling ground under a Carthaginian monument the way
+   * Rome's `buildSubstructure` does is a real gap and it is not this pass's.
+   */
   {
     id: 'temple-sea', name: 'The Temple by the Sea', kind: 'temple',
-    x: 150, z: 1245, hw: 22, hd: 32, rot: 0, clear: 8, solid: true,
+    x: 100, z: 1150, hw: 22, hd: 32, rot: 0, clear: 8, solid: true,
   },
   // ---- the citadel -------------------------------------------------------
   // Only the revetted platform, not the hill. The hill's slope carries the Hannibalic
@@ -277,6 +317,59 @@ export const MONUMENTS: readonly Monument[] = [
     x: -560, z: 780, hw: 44, hd: 17, rot: -0.02, clear: 7, solid: true,
   },
 ];
+
+/**
+ * **Carthage's masonry in its own water, declared. One entry, and the spec asked for it.**
+ *
+ * See `OverWaterDeclaration` in `../layout` for what a declaration costs. In short:
+ * `probe-fabric` G22 fails every solid whose footprint stands under the drawn water surface,
+ * licenses only what is listed here, gates the list's MEMBERSHIP against a copy typed into
+ * the probe, and refuses the licence anyway unless the solid is still founded on the bank —
+ * dry centre, under half its plan wet, and no deeper than the substructure is drawn.
+ *
+ * **The south anchor of the land wall.** `circuit.ts:CARTHAGE_WALL_LINE` states it as a
+ * design intent and measures it: *"Both anchors die on water and the south one dies* in *it.
+ * Measured on the centreline, the ground crosses the datum at x ≈ −956 and the anchor is at
+ * −968, so the last 12 m of curtain stands in up to 0.94 m of the Lake of Tunis. §2.2 wants
+ * exactly that — a wall that ends in a lagoon is a wall with no flank march round it."* G22's
+ * footprint form now sees it: bay 0's two casemate skins carry 18.1 and 12.1 m² of wet plan
+ * down to −0.71 m, with dry centres, which is the anchor doing what it was built to do.
+ *
+ * The same docstring is also why the answer is a declaration and not a move: the bay count is
+ * `round(length / (PUNIC.towerSpacing * 0.5)) & ~1`, so pulling the anchor east drops the
+ * circuit by two bays and relays every bay, tower, postern, ramp and casemate on it — to bury
+ * 30 m² of ankle-deep footing that the spec wants underwater.
+ *
+ * The envelope is the first bay, computed from the same `circuitZAt` the wall is laid on, and
+ * it is drawn loosely rather than shaved to the two casemate skins. That is safe because
+ * **G22 licenses a solid only when the declaration CONTAINS it**, every corner: it ends 2 m
+ * past the first bay, so bay 1 runs out of it at its second metre and nothing bigger than the
+ * envelope could be licensed by it in any case. A tight envelope would only make the licence
+ * go stale the first time the bay pitch moved by a metre. If the anchor does move out from
+ * under it, the licence goes stale and G22 says so.
+ */
+export const OVER_WATER_DECLARED: readonly OverWaterDeclaration[] = (() => {
+  // The bay lattice from the function that lays it, not a copy of its arithmetic. A literal
+  // here would mis-place the envelope the day the frontage changes and the failure would read
+  // as a stale licence rather than as a transcribed constant — and the transcription is not
+  // hypothetical: `circuit.ts`'s own docstring quoted `round(length / 30.8) & ~1` and "64 bays"
+  // for two passes, while `carthageBayLattice` divides by `PUNIC.towerSpacing * 0.5` = 29.6 and
+  // lays **66**. Writing this envelope is what found it; the docstring is corrected there.
+  const { pitch } = carthageBayLattice(CARTHAGE_WALL_LINE);
+  const x0 = CIRCUIT_X_MIN - 6;
+  const x1 = CIRCUIT_X_MIN + pitch + 2;
+  return [{
+    id: 'south-anchor',
+    why: 'circuit.ts:CARTHAGE_WALL_LINE — "both anchors die on water and the south one dies IN '
+      + 'it", CARTHAGE.md 2.2: a wall that ends in the Lake of Tunis is a wall with no flank '
+      + 'march round it. The last 12 m of bay 0 stands in the lagoon, by design',
+    x: (x0 + x1) * 0.5,
+    z: circuitZAt(CIRCUIT_X_MIN + pitch * 0.5),
+    hw: (x1 - x0) * 0.5,
+    hd: 14,
+    rot: 0,
+  }];
+})();
 
 // ---------------------------------------------------------------------------
 // The street armature

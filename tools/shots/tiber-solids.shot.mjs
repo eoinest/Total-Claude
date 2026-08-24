@@ -3,7 +3,7 @@
  *
  * *"there are some big buildings still in the river."* `probe-fabric` G22 answered
  * *"PASS — no structure stands below the water surface"*, so one of the two was wrong and the
- * first job was to find out which. This film is the reproduction: five shots, all of them low
+ * first job was to find out which. This film is the reproduction: six shots, all of them low
  * over the channel, framed on the two structures an offline footprint scan
  * (`tools/scratch/riversolids.mjs`) says have a quarter and a seventh of their plan under
  * 4.6 m of Tiber while their **centres** stand dry at 7.80 m.
@@ -17,6 +17,27 @@
  *
  * Water is drawn at 5.0 m, so 0.40 m of ground is **4.6 metres under the surface**, and both
  * rows pass a check that samples the centre of an 89 m podium.
+ *
+ * ## AND IT IS THE AFTER FRAME TOO. Do not re-point the cameras.
+ *
+ * The repair shipped on the same branch and **every coordinate below is unchanged**, which is
+ * the single most useful property this file has: the Mausoleum's `track` is its own projected
+ * centre and the fix did not move it. `survey.ts` gives it `draw` 0.35 with `drawY` 1 — the
+ * plan comes down to 31 m and the height is pinned — so the *same camera* photographs a podium
+ * whose worst ground has gone from **0.40 m to 5.97 m** against a 5.0 m surface. A before/after
+ * pair with two different cameras proves nothing, and re-framing to flatter the repair is the
+ * temptation this note exists to refuse. If you need a different composition, add a shot.
+ *
+ * The Theatre is the other half and it is *not* fixed by being moved: it declares `overWater`
+ * and `monuments.ts:buildRipaPiles` draws the pile field and opens its wet perimeter bays into
+ * piers. **`marcellus-piles` is the shot to look at for that, and `marcellus-from-the-water`
+ * is not** — that camera was framed before the fabric filled the block behind it and both of
+ * its stills are now a wall three metres from the lens. It is left where it is because it is a
+ * before frame of record; the new shot is aimed by arithmetic against the wet plan, and says
+ * so.
+ *
+ * Measured after, same tool: `probe-fabric` G22 reads **0 m² of unlicensed masonry under
+ * water** on both maps, with 449 m² licensed on Rome across two named declarations.
  *
  * **Why every camera is over the water and none of them is above 30 m.** `MAP-METHOD.md`
  * rule 15 — grade from 1.75 m before grading from 150 m. From a tactical camera a monument
@@ -136,6 +157,43 @@ export default {
       rail: [
         { at: 0, lift: 0, eye: 12, aim: 8, dist: 150, fov: 38, yaw: 1.1 },
         { at: 1, lift: 0, eye: 8, aim: 6, dist: 105, fov: 38, yaw: 1.1, ease: 'smootherstep' },
+      ],
+    },
+    {
+      /*
+       * **The Theatre's piles, from the channel — and this shot exists because
+       * `marcellus-from-the-water` above cannot see them.**
+       *
+       * That camera sits at yaw 1.1, which is *inland* of the cavea: `RTSCamera` puts the eye
+       * at `focus − (sin yaw, cos yaw) · dist`, so 1.1 rad lands it at (95, 1209), on dry
+       * ground behind an insula, and both of its stills are a wall. It was framed before the
+       * fabric filled that block and nothing re-checked it. Left in place rather than
+       * re-pointed, because it is a *before* frame of record and re-aiming a published camera
+       * to flatter a repair is the thing this file's header refuses.
+       *
+       * This one is aimed by arithmetic instead: the Theatre's wet plan runs to (148, 1289),
+       * so the eye wants to be west-south-west of the centre. yaw 1.75 at 88–120 m puts it at
+       * (72–92, 1293–1297), and 6 m of eye is a boat rather than a drone.
+       *
+       * **What is there is a paved quay, not water, and the gap between the two numbers is
+       * worth keeping.** `topography.ts`'s analytic profile reads 0.45–3.08 m at that point,
+       * under a 5.0 m surface; the *baked* field the scene is built from reads above it,
+       * because `e/city/rome-fill` raised the Ripa terrace there. So the eye stands on the
+       * quay looking across at the cavea's substructure, which is the frame the piers and the
+       * pile field need, and the analytic sweep in `tools/scratch/riversolids.mjs` is a
+       * *model* of the ground rather than the ground — `probe-fabric` G22 reads the baked
+       * field for exactly that reason.
+       */
+      id: 'marcellus-piles',
+      scene: 'rome-river',
+      desc: 'The Theatre of Marcellus from the channel: the piers and the pile field under it.',
+      start: 2,
+      len: 3,
+      speed: 0,
+      track: { kind: 'world', x: 180.53, z: 1277.35 },
+      rail: [
+        { at: 0, lift: 0, eye: 10, aim: 8, dist: 120, fov: 40, yaw: 1.75 },
+        { at: 1, lift: 0, eye: 6, aim: 6, dist: 88, fov: 40, yaw: 1.75, ease: 'smootherstep' },
       ],
     },
     {

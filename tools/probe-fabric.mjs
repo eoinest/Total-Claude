@@ -149,6 +149,65 @@
  * ground at 0.40 m and its drawn mound is 281 m from that corner, so grading the box would
  * report a landform in a river it is not in.
  *
+ * ----------------------------------------------------------------------------
+ * AND THEN IT WENT BACK UP, BECAUSE THE CITY WAS REPAIRED AND THE LICENCE IS GATED
+ * ----------------------------------------------------------------------------
+ *
+ * Same branch, same day, after the owner ruled on the three options the pass above costed.
+ *
+ * | | before | after |
+ * |---|---|---|
+ * | Rome     | 14/27, 13 failing | **15/27, 12 failing** — G22 green with 0 m² unlicensed |
+ * | Carthage | 13/22, 9 failing  | **14/22, 8 failing** — the control moves, and it should |
+ *
+ * **Read the Carthage line carefully: the control moved, and the reason is not that the gate
+ * was loosened.** Two of its four faults were real and old — `temple-sea` standing 9.7 m under
+ * the sea across 97 % of its plan with a WET centre, and `quay-fort` hanging a third of its
+ * platform over 7.57 m of open gulf — and both were invisible until this check measured a
+ * footprint. They were moved onto the land. The other two are the south anchor of the land
+ * wall, which `CARTHAGE_WALL_LINE`'s own docstring designs into the Lake of Tunis on purpose.
+ *
+ * Three repairs, one per shape of fault, and none of them is "turn the check down":
+ *
+ *  - **Shrink the plan and pin the height.** `mausoleum-hadrian` takes `draw` 0.35 and
+ *    `drawY` 1. The position does not move, because the position is a plate control good to
+ *    8 m and the alternative was 86 real metres of northing. The cost is stated on the row:
+ *    a 22 m drum under a 46 m total, where the real building is 64 across and 48 tall. This
+ *    is rule 14's anisotropy used deliberately and named where it is authored.
+ *  - **Move it, when it is simply in the wrong place.** Carthage's two. Neither was declared
+ *    over water and neither could have been: the envelope below refuses both.
+ *  - **Declare it, when it belongs there.** Three rows, on two maps, every one of them
+ *    already written down in `src/` before this check could see it. See `OVER_WATER_AGREED`.
+ *
+ * **The licence is the interesting half and it is built to be a gate.** The plan publishes
+ * `OVER_WATER_DECLARED`; this file publishes `OVER_WATER_AGREED`; G22 compares the two sets
+ * **both ways**, licenses only their intersection, and refuses the licence anyway unless the
+ * solid is still *founded on the bank* — dry centre, under half its plan wet, and no deeper
+ * than its substructure is drawn. A plan cannot buy silence by writing a sentence in `src/`;
+ * it buys an argument with whoever maintains this list. Three injections show it red:
+ * `over-water-drop` (declared, not agreed — and the masonry comes back as a fault),
+ * `over-water-phantom` (agreed, not declared), `over-water-shallow` (the envelope refusing a
+ * row that is declared, agreed and dry-centred). And `water-straddle-the-bank` is unchanged
+ * and still red, because an undeclared solid reaching into the channel is exactly what the
+ * owner saw.
+ *
+ * The declaration is a **rectangle on the ground**, not an obstacle id, because two of the
+ * three rows are curtain bays and a curtain bay's id here is positional (`wall#33`) and moves
+ * when a gate opens or a ram takes a bay down. It licenses a solid only when it **contains**
+ * it, every corner — not by the solid's centre, which would be rule 36 again in the thing that
+ * exists to fix rule 36, and would let a 300 m insula be absolved by a 36 m envelope.
+ *
+ * **What is drawn, not only declared.** `monuments.ts:buildRipaPiles` puts a pile field under
+ * the wet part of the Theatre of Marcellus and builds its wet perimeter bays as open piers
+ * instead of a battered wall, so from the water you can see under the building. A solid plinth
+ * running down into the Tiber is the picture the owner reported; piers on piles is the Ripa.
+ *
+ * **The freeboard watch is now named rather than counted.** Eight Rome solids stand within
+ * 0.6 m of the surface and the check prints every one with its id, kind and freeboard, because
+ * a count cannot be acted on and the eight are two different repairs: six are insulae at
+ * 0.16–0.55 m, which is `e/city/rome-fill`'s open terrace item, and two are MONUMENTS at 0.03
+ * and 0.05 m, which the plot generator never placed and the freeboard rule was never about.
+ *
  * The judge's prediction of 7/25 and 18 is exactly right and **its composition is not**: the
  * table has G15 passing and does not score G11, and the measurement has G11 passing and G15
  * failing. Two pairs are declared one complex and stand 3.1 m apart — inside G8c's own
@@ -246,7 +305,10 @@
  *   G22      no structure's FOOTPRINT stands below the water surface — the oriented rectangle
  *            rasterised at 2 m and graded on wet AREA, not five points graded on the centre.
  *            Every excluded row named and its list gated; every monument that publishes no
- *            collision solid named and ITS list gated, so the population cannot go dark.
+ *            collision solid named and ITS list gated, so the population cannot go dark; and
+ *            masonry the plan DECLARES as standing over water licensed only where this file
+ *            has agreed to the name, only where the declaration contains the whole solid, and
+ *            only inside an envelope that keeps it founded on the bank.
  *   G18-G19  the layout REGIONS partition the ground — no overlapping pair, and claimed area
  *            over available ground = 1.00. This is the second, independent fault
  *            (`docs/ROME-FABRIC.md` §2.3): seventeen rectangles claiming 266% of the city.
@@ -368,6 +430,28 @@ const INJECTIONS = {
       + 'construction, so the five-point form this replaces passes it and the area form '
       + 'cannot; the run prints the injected row\'s own centre datum beside its wet area so '
       + 'the reader can see which limb caught it.',
+  },
+  'over-water-drop': {
+    hits: 'G22',
+    what: 'removes the first row from OVER_WATER_AGREED. Two limbs at once, which is why it is '
+      + 'the one to run first: the plan is still declaring a row this file no longer agrees '
+      + 'to (**a plan cannot license its own masonry by writing a sentence in `src/`**), and '
+      + 'the masonry that row covered loses its licence and comes back as a water fault. The '
+      + 'Theatre of Marcellus on Rome; the south anchor on Carthage.',
+  },
+  'over-water-phantom': {
+    hits: 'G22',
+    what: 'adds an AGREED declaration the plan does not publish. Proves the other direction of '
+      + 'the membership gate — a licence held against masonry that is not there is rule 13\'s '
+      + 'check gone dark, and it fails rather than passing quietly.',
+  },
+  'over-water-shallow': {
+    hits: 'G22',
+    what: 'sets OVER_WATER_MAX_DEPTH_M to 0.5 m. Proves the ENVELOPE is load-bearing and not '
+      + 'decoration: a row that is declared, agreed and dry-centred is still refused the '
+      + 'moment its plan reaches deeper than the substructure under it, and it is reported as '
+      + 'a fault naming the limb that refused it. Fires on both maps — Rome\'s Theatre at '
+      + '3.68 m and Carthage\'s anchor at 0.71 m.',
   },
   'band-ceiling': {
     hits: 'G13a',
@@ -839,6 +923,45 @@ const T = {
    * than to an exclusion.
    */
   WATER_FOOT_TOL_M2: 4,
+
+  /**
+   * **The envelope a declared over-water structure has to stay inside, and why it has one.**
+   *
+   * A plan may declare masonry as standing over its own water — the Theatre of Marcellus on
+   * the Ripa, Rome's river-wall return three metres into the channel, Carthage's south anchor
+   * dying in the Lake of Tunis. `OVER_WATER_AGREED` gates *which* rows may say that. This
+   * gates *how far* saying it gets them, and without it a declaration would be an exemption
+   * with a sentence attached, which is the thing `MAP-METHOD.md` rule 18 and this file's own
+   * header exist to refuse: **an exemption from a check is not a weaker check, it is no
+   * check.**
+   *
+   * Two limbs, each with a meaning rather than a fit:
+   *
+   *  - **Under half the plan wet.** "Over the water" means a building on the bank reaching
+   *    out over the channel. Past half, it is a building in the channel that happens to touch
+   *    the bank, and the word for that is not "wharf". One half is a definition, not a tuned
+   *    number, and the population is nowhere near it: the Theatre is at 17.6 %, the river-wall
+   *    return at 21.4 %, Carthage's two anchor skins at 40.0 % and 33.3 %.
+   *  - **No deeper than the substructure is drawn.** A licence covers a building standing on
+   *    piles; it stops where the piles do. 4.0 m is what `monuments.ts:buildRipaPiles` and
+   *    `works.ts:buildRiverWall` actually reach — the pile foot is driven 1.4 m into a bed
+   *    that the licensed rows meet at 1.32 m (Rome, 3.68 m of water) and −0.71 m (Carthage).
+   *    It is stated as an envelope and not as a measurement of the current tree: if the
+   *    channel deepens under a licensed row past the depth its own substructure is drawn to,
+   *    the licence stops covering it and the check goes red, which is the correct behaviour
+   *    and the reason the number is here rather than absent.
+   *
+   * A third limb is not a threshold and is not here: a licensed solid's **centre must be dry**.
+   * That is what "founded on the bank" means and there is nothing to tune about it.
+   *
+   * Measured against the two rows that were refused: Carthage's `temple-sea` was 97 % wet,
+   * 9.69 m under, with a WET centre — it fails all three limbs — and `quay-fort` was 30 % wet
+   * over 7.57 m of open gulf, which passes the fraction limb and fails the depth limb. Both
+   * were moved onto the land instead of being written into the list, and that is the check
+   * doing its job before anybody wrote the licence.
+   */
+  OVER_WATER_MAX_WET_FRAC: 0.5,
+  OVER_WATER_MAX_DEPTH_M: 4.0,
 };
 
 // ===========================================================================
@@ -1034,7 +1157,13 @@ const PUBLISHED = {
       len: 84, wid: 84, conf: 'repo-cited', gate: false,
       src: 'docs/ROME.md §6.3: podium c. 84 m square and 10 m high, drum 64 m diameter and 21 m '
         + 'high, tomb chamber 9 × 8 m. Standing today as the Castel Sant\'Angelo, so the podium '
-        + 'is measurable; I have not measured it. Outside the circuit in 271, so it is scenery.',
+        + 'is measurable; I have not measured it. Outside the circuit in 271, so it is scenery. '
+        + '**The drawn plan is 0.35 of this ON PURPOSE and the height is NOT** — survey.ts gives '
+        + 'the row `draw` 0.35 with `drawY` 1, because at the full published plan a quarter of '
+        + 'the podium stood 4.6 m under the Tiber and the alternative repair was 86 real metres '
+        + 'of position error on a plate control. So a future pass that sets `gate: true` here '
+        + 'will fail this row, and the row is not the fault: read its cite before touching '
+        + 'either number.',
     },
     {
       id: 'trajan-column', name: 'Column of Trajan',
@@ -1202,6 +1331,87 @@ const NO_SOLID_AGREED = {
   ],
 };
 
+/**
+ * **The declarations this gate will accept, by name — the third list, and the newest.**
+ *
+ * `WATER_EXPECTED` above answers *"this obstacle box IS water"* — the Cothon is a harbour, not
+ * a building in one. This answers a different question that the same pass turned up and that
+ * no list could answer before it: *"this masonry stands OVER the water, on purpose, and here
+ * is the source."* Three rows do, on two maps, and every one of them was already written down
+ * somewhere in `src/` before the check could see it:
+ *
+ *  - the Theatre of Marcellus stands on the **Ripa** with its stage flank toward the Tiber,
+ *    and this map carries that flank on piles — the position is Platner's and the
+ *    substructure is a stated modelling decision;
+ *  - Rome's **river-wall return** is authored to run three metres *past* the east bank,
+ *    because a wall that stops at the waterline leaves a cell of dry bank the occupancy
+ *    raster can round at the one place the Aurelian circuit meets the Tiber;
+ *  - Carthage's **south anchor** dies in the Lake of Tunis, and `CARTHAGE_WALL_LINE`'s own
+ *    docstring says so and measures it: *"a wall that ends in a lagoon is a wall with no flank
+ *    march round it."*
+ *
+ * **Why this is a gate and not a hole, in four properties.** The owner's condition on allowing
+ * any of it was *"the gate must stay a real gate"*, and the pattern is `NO_SOLID_AGREED`'s:
+ *
+ *  1. **The plan declares; this list agrees.** The build publishes `OVER_WATER_DECLARED` from
+ *     `layout.ts` on each map, and G22 compares the two sets **both ways**. A plan that
+ *     declares something not on this list fails, by name — so a future row cannot buy silence
+ *     by writing a sentence in `src/`, only an argument with whoever maintains this file. A
+ *     row on this list that the plan no longer declares fails too.
+ *  2. **The licence is bounded.** `TH.OVER_WATER_MAX_WET_FRAC` and
+ *     `TH.OVER_WATER_MAX_DEPTH_M`, plus a dry centre. A declared row that is really standing
+ *     *in* the water is refused and reported as a fault with the limb that refused it.
+ *  3. **An unused licence is a fault.** Same rule as `staleLicences`: a declaration that
+ *     covers no wet solid is describing a city that is no longer here.
+ *  4. **A declaration licenses only what it CONTAINS**, every corner of the solid's own
+ *     oriented rectangle inside the declared one. A centre test here would be rule 36 living
+ *     inside the fix for rule 36. Containment is also why the envelopes in `src/` are drawn
+ *     loosely: a rectangle can never absolve something bigger than itself. And it is why the
+ *     monument envelope is published **axis-aligned** — `CitySystem:occRot` negates plan
+ *     rotation at the sim boundary, so the plan's rectangle and the collision set's rectangle
+ *     are mirror images at any non-zero bearing, and an AABB is the one envelope that does
+ *     not care which convention it is read in. Turning containment on found that in one run:
+ *     the Theatre faulted while its own declaration was reported STALE.
+ *  5. **Nothing else is touched.** The `water-straddle-the-bank` injection lands on dry ground
+ *     at (−416, 8) on Rome, 400 m from any declaration, and stays red — which is the case the
+ *     owner actually reported.
+ *
+ * Rows deliberately NOT here, and the measurement that refused each:
+ *
+ *  - `mausoleum-hadrian` (Rome). 1 932 m², 24 % of plan, 4.6 m under. It is not on the Ripa
+ *    and it never was; the overlap is the projection's, and the repair was `draw` 0.35 with
+ *    `drawY` 1 so the position — a plate control good to 8 m — did not have to move.
+ *  - `temple-sea` (Carthage). 2 732 m², 97 % of plan, 9.69 m under, wet centre. Fails all
+ *    three limbs. Moved 107 m onto the land.
+ *  - `quay-fort` (Carthage). 360 m², 30 % of plan, 7.57 m under. Passes the fraction limb and
+ *    fails the depth limb by nearly a factor of two: seven and a half metres of open gulf
+ *    under a third of the plan is not a quay. Moved 27 m landward.
+ */
+const OVER_WATER_AGREED = {
+  'campus-martius': [
+    {
+      id: 'theatre-marcellus',
+      why: 'on the Ripa with its stage flank toward the Tiber — Platner-Ashby s.v. Theatrum '
+        + 'Marcelli, "the stage is toward the river". The piles under that flank are a stated '
+        + 'modelling decision, not a citation: survey.ts declares the row and '
+        + 'monuments.ts:buildRipaPiles draws them. No plan scale clears it (95 m2 wet still at '
+        + 'draw 0.30) and moving west makes it 5x worse',
+    },
+    {
+      id: 'river-wall-return',
+      why: 'works.ts:riverWallPlan runs the west return to riverBankX - 3 on purpose; ROME.md '
+        + '4.6, the Testaccio fragment stands IN the embankment. 1.20 m thick, 14 m2 wet',
+    },
+  ],
+  carthage: [
+    {
+      id: 'south-anchor',
+      why: 'circuit.ts:CARTHAGE_WALL_LINE — "both anchors die on water and the south one dies '
+        + 'IN it"; CARTHAGE.md 2.2. Moving the anchor east relays every bay on the circuit',
+    },
+  ],
+};
+
 // ---------------------------------------------------------------------------
 // Server. Never reuse one this process did not start.
 // ---------------------------------------------------------------------------
@@ -1302,7 +1512,7 @@ try {
   );
   await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 300000 });
 
-  const out = await page.evaluate(async ({ MAPID, PUB, TH, OFF_FRAME, WATER_OK, NO_SOLID, INJ, DRY_ROW }) => {
+  const out = await page.evaluate(async ({ MAPID, PUB, TH, OFF_FRAME, WATER_OK, NO_SOLID, OVER_WATER_OK, INJ, DRY_ROW }) => {
     // =====================================================================
     // FAULT INJECTION. See `INJECTIONS` above the browser boundary for what each one proves.
     // Every one of these perturbs the PROBE's reference data or the PROBE's thresholds. None
@@ -1329,6 +1539,21 @@ try {
     if (injected.has('water-stale-licence')) {
       WATER_OK = [...WATER_OK, { id: DRY_ROW, why: 'INJECTED — this row is dry and publishes solids' }];
       injectNotes.push(`WATER_EXPECTED += ${DRY_ROW} (dry)`);
+    }
+    if (injected.has('over-water-drop')) {
+      injectNotes.push(`OVER_WATER_AGREED -= ${OVER_WATER_OK[0]?.id ?? '(empty)'}`);
+      OVER_WATER_OK = OVER_WATER_OK.slice(1);
+    }
+    if (injected.has('over-water-phantom')) {
+      OVER_WATER_OK = [...OVER_WATER_OK, {
+        id: 'INJECTED-phantom-wharf',
+        why: 'INJECTED — agreed here and declared by no plan',
+      }];
+      injectNotes.push('OVER_WATER_AGREED += INJECTED-phantom-wharf (which no plan declares)');
+    }
+    if (injected.has('over-water-shallow')) {
+      TH = { ...TH, OVER_WATER_MAX_DEPTH_M: 0.5 };
+      injectNotes.push('OVER_WATER_MAX_DEPTH_M 4.0 -> 0.5 m, under every licensed row\'s bed');
     }
     if (injected.has('band-ceiling')) {
       PUB = PUB.map((r) => (r.gate ? { ...r, len: r.len / 2, wid: r.wid / 2 } : r));
@@ -1687,6 +1912,19 @@ try {
      */
     let declaredOffFrame = null;
     /**
+     * **The plan's own claim about which masonry stands over its own water.**
+     *
+     * Read as a DECLARATION — `MAP-METHOD.md` rule 16 — and graded against
+     * `OVER_WATER_AGREED`, which is typed into this file. The build says what it means to do;
+     * the probe says which of those meanings has been agreed to, and both directions of the
+     * comparison fail. See `OVER_WATER_AGREED` for the four properties that keep this a gate.
+     *
+     * `null` if the import failed, which reads as NOT MEASURED rather than as "no
+     * declarations" — an empty list and a missing module must not look the same, because the
+     * second one would silently license nothing and fail three rows that are correct.
+     */
+    let declaredOverWater = null;
+    /**
      * The **block plan** — the faces of the road graph, their inset polygons and whether each
      * one is a garden by design. Read as the object under test, exactly as `regions` is: the
      * question asked of it is "does every block that ends with no roof on it have somewhere
@@ -1721,6 +1959,9 @@ try {
         regions = RG.REGIONS.map((r) => ({ id: r.id, poly: r.poly.map((p) => ({ x: p.x, z: p.z })) }));
         regionsOffFrame = (RG.OFF_FRAME_REGIONES ?? []).map((r) => `${r.numeral} ${r.name}`);
         declaredOffFrame = (L.OFF_MAP_SOUTH ?? []).map((m) => m.id);
+        declaredOverWater = (L.OVER_WATER_DECLARED ?? []).map((d) => ({
+          id: d.id, why: d.why, x: d.x, z: d.z, hw: d.hw, hd: d.hd, rot: d.rot,
+        }));
         // `cityPlan()` is memoised and the game has already called it, so this is the same
         // object the scene was built from and not a second evaluation of it.
         const FB = await import('/src/city/rome/fabric.ts');
@@ -1740,6 +1981,9 @@ try {
         }));
         regions = L.QUARTERS.map((q) => ({ id: q.id, x: q.x, z: q.z, hw: q.hw, hd: q.hd, rot: q.rot }));
         declaredOffFrame = [];
+        declaredOverWater = (L.OVER_WATER_DECLARED ?? []).map((d) => ({
+          id: d.id, why: d.why, x: d.x, z: d.z, hw: d.hw, hd: d.hd, rot: d.rot,
+        }));
       }
     } catch (e) {
       importNotes.push(`plan import failed: ${e && e.message ? e.message : String(e)}`);
@@ -2775,6 +3019,8 @@ try {
             centreWet: centreH <= level,
             allWet: hs.every((h) => h <= level),
             areaM2: e.area, x: r2(e.o.x), z: r2(e.o.z),
+            /** The oriented rectangle itself, for the over-water containment test. */
+            box: { x: e.o.x, z: e.o.z, hw: e.o.hw, hd: e.o.hd, rot: e.o.rot },
             wetM2: r2(f.wetM2), wetPct: r2(f.wetFrac * 100), footSamples: f.samples,
             worstDatumM: r2(f.worstDatumM),
             worstAt: { x: r2(f.worstAt.x), z: r2(f.worstAt.z) },
@@ -2796,6 +3042,7 @@ try {
           corners: hs.length, centreWet: centreH <= level,
           allWet: centreH <= level && hs.every((h) => h <= level),
           areaM2: 4 * inj.o.hw * inj.o.hd, x: r2(inj.o.x), z: r2(inj.o.z),
+          box: { x: inj.o.x, z: inj.o.z, hw: inj.o.hw, hd: inj.o.hd, rot: inj.o.rot },
           wetM2: r2(f.wetM2), wetPct: r2(f.wetFrac * 100), footSamples: f.samples,
           worstDatumM: r2(f.worstDatumM),
           worstAt: { x: r2(f.worstAt.x), z: r2(f.worstAt.z) },
@@ -2805,7 +3052,113 @@ try {
       }
       const wet = sampled.filter((r) => r.footWet);
       const excluded = wet.filter((r) => okIds.has(r.id));
-      const faults = wet.filter((r) => !okIds.has(r.id));
+      /*
+       * ==================================================================
+       * THE OVER-WATER LICENCE, and the four things that keep it a gate
+       * ==================================================================
+       *
+       * `WATER_EXPECTED` above answers *"this box IS water"*. This answers *"this masonry
+       * stands OVER the water on purpose"*, which is a different claim and needed a different
+       * mechanism, because the rows that make it are not all monuments: two of the three are
+       * curtain bays, whose ids in every consumer here are positional (`wall#33`) and change
+       * the moment a gate opens or a ram takes a bay down. So a declaration is a **rectangle
+       * on the ground** published by the plan (`layout.ts:OVER_WATER_DECLARED`), and a wet
+       * solid is a candidate for its licence when its own centre falls inside that rectangle.
+       *
+       *  1. **Two sets, compared both ways.** The plan DECLARES; `OVER_WATER_AGREED`, typed
+       *     into this file with a citation per row, AGREES. A declaration this file has not
+       *     agreed to fails; an agreement no plan declares fails. Writing a sentence in `src/`
+       *     buys an argument with a human, not silence.
+       *  2. **Only the intersection licenses anything.** A declaration that is unagreed cannot
+       *     absolve the solids under it, so the failure in (1) cannot be paid for by the
+       *     licence it was trying to buy.
+       *  3. **The licence is bounded by an envelope** — dry centre, under
+       *     `OVER_WATER_MAX_WET_FRAC` of the plan wet, and no deeper than
+       *     `OVER_WATER_MAX_DEPTH_M`. A declared row that is really standing *in* the water is
+       *     REFUSED, stays a fault, and the run prints which limb refused it.
+       *  4. **A licence that covers nothing is stale**, exactly as `staleLicences` is: rule
+       *     13's check gone dark.
+       *
+       * `--inject=over-water-drop`, `over-water-phantom` and `over-water-shallow` show (1) in
+       * both directions and (3) going red.
+       */
+      const declarations = (declaredOverWater ?? []).map((d) => ({ ...d }));
+      const declarationsRead = declaredOverWater !== null;
+      const agreedIds = new Set(OVER_WATER_OK.map((o) => o.id));
+      const declaredIds = new Set(declarations.map((d) => d.id));
+      const declaredUnagreed = declarations.filter((d) => !agreedIds.has(d.id)).map((d) => d.id);
+      const agreedUndeclared = OVER_WATER_OK.filter((o) => !declaredIds.has(o.id)).map((o) => o.id);
+      /** Live: declared by the plan AND agreed here. Nothing else may license a solid. */
+      const liveDecls = declarations
+        .filter((d) => agreedIds.has(d.id))
+        .map((d) => ({ ...d, granted: 0, refused: 0, wetM2: 0, worstDatumM: 99, wetPctWorst: 0 }));
+      /**
+       * **A declaration licenses a solid only when it CONTAINS it — every corner, not the
+       * centre.** The first draft tested the centre, and a centre test is the fault this whole
+       * pass is about one level up (rule 36): a 300 m insula whose centre happened to fall
+       * inside a 36 m river-wall envelope would have been absolved by it. Containment cannot
+       * do that, because a solid bigger than the declaration can never be inside it — which is
+       * also why the envelopes below are drawn generously rather than shaved to the masonry:
+       * with containment doing the discrimination, a loose envelope costs nothing and a tight
+       * one just makes the licence go stale the first time a bay pitch moves by a metre.
+       *
+       * The pad is `WATER_SAMPLE_M / 2` — the raster's own half-cell, taken from the constant
+       * rather than typed, so a solid flush with its declaration is not refused by where the
+       * cells happened to fall and the two numbers cannot drift apart.
+       */
+      const cornersOf = (o) => {
+        const c = Math.cos(o.rot);
+        const sn = Math.sin(o.rot);
+        const ux = c * o.hw;
+        const uz = sn * o.hw;
+        const vx = -sn * o.hd;
+        const vz = c * o.hd;
+        return [
+          { x: o.x - ux - vx, z: o.z - uz - vz }, { x: o.x + ux - vx, z: o.z + uz - vz },
+          { x: o.x + ux + vx, z: o.z + uz + vz }, { x: o.x - ux + vx, z: o.z - uz + vz },
+        ];
+      };
+      const declPad = TH.WATER_SAMPLE_M * 0.5;
+      const inDecl = (d, x, z) => {
+        const c = Math.cos(d.rot);
+        const sn = Math.sin(d.rot);
+        const dx = x - d.x;
+        const dz = z - d.z;
+        return Math.abs(dx * c + dz * sn) <= d.hw + declPad
+          && Math.abs(-dx * sn + dz * c) <= d.hd + declPad;
+      };
+      const containedBy = (d, r) =>
+        r.box !== undefined && cornersOf(r.box).every((q) => inDecl(d, q.x, q.z));
+      const overWaterRefusals = [];
+      for (const r of wet) {
+        if (okIds.has(r.id)) continue;
+        const d = liveDecls.find((q) => containedBy(q, r));
+        if (!d) continue;
+        r.declaredBy = d.id;
+        const limbs = [];
+        if (r.centreWet) limbs.push(`its centre is wet at ${r.centreDatumM} m`);
+        if (r.wetPct / 100 > TH.OVER_WATER_MAX_WET_FRAC) {
+          limbs.push(`${r.wetPct}% of its plan is wet, over the`
+            + ` ${(TH.OVER_WATER_MAX_WET_FRAC * 100).toFixed(0)}% a bank structure may be`);
+        }
+        if (r.worstDatumM < level - TH.OVER_WATER_MAX_DEPTH_M) {
+          limbs.push(`it reaches ${r2(level - r.worstDatumM)} m under the surface, past the`
+            + ` ${TH.OVER_WATER_MAX_DEPTH_M} m its substructure is drawn to`);
+        }
+        if (limbs.length === 0) {
+          r.overWaterGranted = true;
+          d.granted++;
+        } else {
+          r.overWaterRefused = limbs.join('; ');
+          d.refused++;
+          overWaterRefusals.push({ id: r.id, decl: d.id, why: r.overWaterRefused });
+        }
+        d.wetM2 = r2(d.wetM2 + r.wetM2);
+        d.worstDatumM = Math.min(d.worstDatumM, r.worstDatumM);
+        d.wetPctWorst = Math.max(d.wetPctWorst, r.wetPct);
+      }
+      const staleDeclarations = liveDecls.filter((d) => d.granted + d.refused === 0).map((d) => d.id);
+      const faults = wet.filter((r) => !okIds.has(r.id) && !r.overWaterGranted);
       /*
        * The exclusion accounting, gated on MEMBERSHIP rather than on length — and it
        * distinguishes two ways a licence can go unused, because the first draft of this check
@@ -2874,8 +3227,54 @@ try {
          * the population that becomes one the moment the terrain moves. Printing the count
          * is how a reader finds out whether that item is still live without opening a branch.
          * 0.6 m is the city's own `QUAY_FREEBOARD`, quoted rather than chosen.
+         *
+         * **It now prints them by NAME and by KIND, which is the whole of this pass's answer
+         * to "decide the eight".** A count cannot be acted on: eight solids within 0.6 m of
+         * the Tiber is a fact about the *terrace* if they are insulae and a fact about a
+         * *monument* if one of them is a monument, and those are two different repairs owned
+         * by two different branches. The list is what tells a reader which.
          */
         dryButUnder060: sampled.filter((r) => !r.footWet && r.worstDatumM > level && r.worstDatumM <= level + 0.6).length,
+        dryButUnder060Named: sampled
+          .filter((r) => !r.footWet && r.worstDatumM > level && r.worstDatumM <= level + 0.6)
+          .sort((a, b) => a.worstDatumM - b.worstDatumM)
+          .slice(0, 12)
+          .map((r) => ({
+            id: r.id, kind: r.kind, worstDatumM: r.worstDatumM,
+            freeboardM: r2(r.worstDatumM - level), x: r.x, z: r.z,
+          })),
+        dryButUnder060ByKind: {
+          monument: sampled.filter((r) => !r.footWet && r.worstDatumM > level
+            && r.worstDatumM <= level + 0.6 && r.kind === 'monument').length,
+          building: sampled.filter((r) => !r.footWet && r.worstDatumM > level
+            && r.worstDatumM <= level + 0.6 && r.kind === 'building').length,
+          wall: sampled.filter((r) => !r.footWet && r.worstDatumM > level
+            && r.worstDatumM <= level + 0.6 && r.kind === 'wall').length,
+        },
+        /**
+         * The over-water accounting, in the shape `NO_SOLID_AGREED`'s takes: what the plan
+         * declared, what this file agreed, which way the two disagree, what each live
+         * declaration actually licensed, and every refusal with the limb that refused it.
+         */
+        overWater: {
+          declarationsRead,
+          declared: declarations.map((d) => ({ id: d.id, why: d.why })),
+          agreed: OVER_WATER_OK.map((o) => ({ id: o.id, why: o.why })),
+          declaredUnagreed,
+          agreedUndeclared,
+          staleDeclarations,
+          maxWetFrac: TH.OVER_WATER_MAX_WET_FRAC,
+          maxDepthM: TH.OVER_WATER_MAX_DEPTH_M,
+          granted: liveDecls.reduce((a, d) => a + d.granted, 0),
+          refused: liveDecls.reduce((a, d) => a + d.refused, 0),
+          grantedM2: r2(wet.filter((r) => r.overWaterGranted).reduce((a, r) => a + r.wetM2, 0)),
+          perDeclaration: liveDecls.map((d) => ({
+            id: d.id, granted: d.granted, refused: d.refused, wetM2: d.wetM2,
+            worstDatumM: d.worstDatumM === 99 ? null : d.worstDatumM,
+            wetPctWorst: d.wetPctWorst,
+          })),
+          refusals: overWaterRefusals,
+        },
         faultStructures: [...byName.values()].sort((a, b) => b.wetM2 - a.wetM2),
         faultsByKind: {
           monument: faults.filter((r) => r.kind === 'monument').length,
@@ -3833,9 +4232,13 @@ try {
       } else {
         const mons22 = W.faultStructures.filter((f) => f.kind === 'monument');
         const desc = (f) => `${f.id} ${f.wetM2} m2 (${f.wetPct}% of plan) down to ${f.worstDatumM} m`;
+        const OW = W.overWater;
         gate('G22', "no structure's FOOTPRINT stands below the water surface",
           W.faultSolids === 0 && W.staleLicences.length === 0
-            && W.noSolidUnagreed.length === 0 && W.noSolidStale.length === 0,
+            && W.noSolidUnagreed.length === 0 && W.noSolidStale.length === 0
+            && OW.declarationsRead
+            && OW.declaredUnagreed.length === 0 && OW.agreedUndeclared.length === 0
+            && OW.staleDeclarations.length === 0,
           `${W.faultSolids} solids with more than ${W.footToleranceM2} m2 of their FOOTPRINT under`
           + ` water, of ${W.solidsSampled} sampled at a ${W.footPitchM} m pitch`
           + ` (${W.footSamples} ground samples; water at ${W.waterLevelM} m)`
@@ -3857,6 +4260,40 @@ try {
             : '')
           + `; ${W.dryButUnder060} solids are dry but stand within 0.6 m of the surface — the`
           + ' population that becomes a fault if the terrace moves, reported and not gated'
+          + (W.dryButUnder060
+            ? ` (${W.dryButUnder060ByKind.monument} monument,`
+              + ` ${W.dryButUnder060ByKind.building} building,`
+              + ` ${W.dryButUnder060ByKind.wall} wall: `
+              + W.dryButUnder060Named.map((d) => `${d.id} +${d.freeboardM} m at (${d.x}, ${d.z})`).join('; ')
+              + ')'
+            : '')
+          + ` | OVER WATER, declared by the plan and agreed here — ${OW.granted} solid(s)`
+          + ` licensed over ${OW.grantedM2} m2, ${OW.refused} REFUSED`
+          + `; the plan declares [${OW.declared.map((d) => d.id).join(', ') || 'none'}]`
+          + ` and this file agrees [${OW.agreed.map((d) => d.id).join(', ') || 'none'}]`
+          + (OW.declarationsRead ? '' : '; THE PLAN\'S DECLARATIONS DID NOT IMPORT — not measured')
+          + (OW.declaredUnagreed.length
+            ? `; DECLARED BUT NOT AGREED — a plan cannot license its own masonry:`
+              + ` [${OW.declaredUnagreed.join(', ')}]`
+            : '')
+          + (OW.agreedUndeclared.length
+            ? `; AGREED BUT NOT DECLARED — a licence held against masonry no plan claims:`
+              + ` [${OW.agreedUndeclared.join(', ')}]`
+            : '')
+          + (OW.staleDeclarations.length
+            ? `; STALE DECLARATION — it licenses nothing, so it describes a city that is no`
+              + ` longer here: [${OW.staleDeclarations.join(', ')}]`
+            : '')
+          + (OW.perDeclaration.length
+            ? `; per declaration: ${OW.perDeclaration.map((d) => `${d.id} ${d.granted} granted`
+              + `${d.refused ? ` / ${d.refused} REFUSED` : ''}, ${d.wetM2} m2 wet`
+              + `${d.worstDatumM === null ? '' : ` down to ${d.worstDatumM} m`}`).join('; ')}`
+            : '')
+          + (OW.refusals.length
+            ? `; REFUSED, and still faults: ${OW.refusals.map((r) => `${r.id} under ${r.decl} — ${r.why}`).join('; ')}`
+            : '')
+          + `; the envelope a licence may not leave: dry centre,`
+          + ` <= ${(OW.maxWetFrac * 100).toFixed(0)}% of plan wet, <= ${OW.maxDepthM} m deep`
           + ` | POPULATION: ${W.monumentsWalked} of ${W.planMonuments} planned monuments publish a`
           + ` collision solid and are walked; the ${W.monumentsWithoutSolid.length} that do not are`
           + ` named and gated on MEMBERSHIP: [${W.monumentsWithoutSolid.map((m) => m.id + (m.soft ? ' (soft)' : '')).join(', ') || 'none'}]`
@@ -3879,8 +4316,10 @@ try {
               + ` gated: [${W.licencesNotBuiltAsSolids.join(', ')}]`
             : ''),
           `no solid with more than ${W.footToleranceM2} m2 of its plan at or below the drawn water`
-          + ' surface, outside WATER_EXPECTED; no stale licence; and the monuments that publish no'
-          + ' solid are exactly NO_SOLID_AGREED, by name');
+          + ' surface, outside WATER_EXPECTED and outside a declaration that is BOTH published by'
+          + ' the plan and named in OVER_WATER_AGREED and inside the licence envelope; no stale'
+          + ' licence and no stale declaration; the two over-water sets equal in both directions;'
+          + ' and the monuments that publish no solid are exactly NO_SOLID_AGREED, by name');
       }
     }
     const passed = checks.filter((c) => c.ok && !c.na).length;
@@ -4014,6 +4453,7 @@ try {
     MAPID: MAP, PUB: PUBLISHED[MAP] ?? [], TH: T,
     OFF_FRAME: OFF_FRAME_AGREED[MAP] ?? [], WATER_OK: WATER_EXPECTED[MAP] ?? [],
     NO_SOLID: NO_SOLID_AGREED[MAP] ?? [],
+    OVER_WATER_OK: OVER_WATER_AGREED[MAP] ?? [],
     INJ: INJECT,
     /**
      * A dry structure that publishes collision solids, per map, for `water-stale-licence`.

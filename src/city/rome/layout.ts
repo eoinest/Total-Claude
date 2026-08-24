@@ -2,12 +2,17 @@
 import { HALF_EXTENT, worldOf as projectSurvey } from '../../terrain/topography';
 import { TIBER_ISLAND } from '../../terrain/tiberSurvey';
 import { clamp } from '../../util/math';
-import { AX, axisU, axisV, KeepOut, obbOverlap, obbRadius, type Obb, type WayClass } from '../layout';
+import {
+  AX, axisU, axisV, KeepOut, obbOverlap, obbRadius,
+  type Obb, type OverWaterDeclaration, type WayClass,
+} from '../layout';
 import { GATE_X } from './apertures';
 import { ROME_WAYS, wayBearingAt } from './ways';
 // Straight from the terrain, not through `./circuit`: the wall builder now reads
 // `./assertions`, which reads this file, and `./circuit` would close the cycle.
-import { WALL_LENGTH, WALL_X_MIN, romeWallZ as wallCrestZ } from '../../terrain/topography';
+import {
+  WALL_LENGTH, WALL_X_MIN, riverBankX, romeWallZ as wallCrestZ,
+} from '../../terrain/topography';
 import {
   CITY_Z_MAX,
   CITY_Z_MIN,
@@ -94,6 +99,11 @@ export interface LandmarkPlacement {
   farBank?: boolean;
   /** Placed on the river centreline: Tiber Island. */
   onRiver?: boolean;
+  /**
+   * Declared to stand over the water, with the reason. See `RomeMonument.overWater`, and
+   * `OVER_WATER_DECLARED` below for what reads it.
+   */
+  overWater?: string;
   /** Landscape, not masonry: exempt from the overlap resolver. See `RomeMonument.soft`. */
   soft?: boolean;
   /** Fraction of the depth allowed north of the wall crest. See `RomeMonument.atWall`. */
@@ -373,6 +383,7 @@ function place(m: RomeMonument): LandmarkPlacement {
     complex: m.complex,
     farBank: m.farBank,
     onRiver: m.onRiver,
+    overWater: m.overWater,
     soft: m.soft,
     atWall: m.atWall,
     offMapEast: m.offMapEast,
@@ -483,6 +494,83 @@ export const LANDMARKS: LandmarkPlacement[] = ROME.filter((m) => !offMapSouth(m)
 
 /** The rows the frame put past the +Z edge. Printed at boot by `assertRomeFrame`. */
 export const OFF_MAP_SOUTH: readonly RomeMonument[] = ROME.filter(offMapSouth);
+
+/**
+ * **Rome's masonry over the Tiber, declared. Two rows, both with a source.**
+ *
+ * See `OverWaterDeclaration` in `../layout` for what a declaration is and is not. In short:
+ * `probe-fabric` G22 fails every solid whose footprint stands in the water, licenses only the
+ * rows in this list, gates the list's MEMBERSHIP against a copy of its own, and refuses the
+ * licence anyway unless the solid is still founded on the bank. Declaring something here is
+ * how a fact about Rome gets past the gate; it is not how a fault does.
+ *
+ *  - **The Theatre of Marcellus.** Authored on the survey row itself (`RomeMonument.overWater`)
+ *    and lifted from `LANDMARKS`, so the envelope is derived from the placement the game is
+ *    built from and cannot drift from it. Its `cite` carries the measurement: no plan scale
+ *    takes the cavea out of the channel, moving west makes it five times worse, and the
+ *    theatre stands on the Ripa with its stage flank toward the Tiber, and carrying that
+ *    flank on piles is this map's decision rather than a citation. `buildRipaPiles` draws it.
+ *  - **The river-wall return.** `works.ts:riverWallPlan` places the west return's foot at
+ *    `riverBankX(z, 1) - 3` — *into* the channel by three metres, deliberately, because "a
+ *    wall that stops at the waterline leaves a cell of dry bank the raster can round" at the
+ *    one place the Aurelian circuit meets the Tiber. `buildRiverWall` foots it 3.4 m below the
+ *    local ground for the same reason. It is 1.2 m thick, so 14 m² of it is wet.
+ *
+ * **The return is declared as an envelope rather than as its exact rectangle, and the envelope
+ * is drawn loosely on purpose.** `riverWallPlan` takes the *built* first bay, which does not
+ * exist until `buildWall` has run, so this list — which is static plan data — cannot call it.
+ * The envelope is computed from the same two functions the plan is (`romeWallZ` at the
+ * circuit's west anchor, and `riverBankX` at that latitude) and padded out generously in both
+ * axes. That is safe because **G22 licenses a solid only when the declaration CONTAINS it**,
+ * every corner: it stops 4 m past `WALL_X_MIN` and the first curtain bay runs 37 m east of
+ * there, so no part of the land wall is inside it — and nothing bigger than the envelope could
+ * be licensed by it in any case. Shaving it to the masonry would buy nothing and would make
+ * the licence go stale the first time the anchor moved a metre. If the return does move out
+ * from under it, the licence goes **stale** and G22 fails on both counts at once: the
+ * unlicensed masonry and the dead licence.
+ */
+export const OVER_WATER_DECLARED: readonly OverWaterDeclaration[] = (() => {
+  const out: OverWaterDeclaration[] = [];
+  for (const l of LANDMARKS) {
+    if (!l.overWater) continue;
+    /*
+     * **Axis-aligned, and that is not laziness — it is the one convention both sides agree
+     * on.** `CitySystem:occRot` negates plan rotation at the sim boundary, because
+     * `Obstacles.ts` measures yaw the other way round and the fix was a negation there rather
+     * than a change to everyone's axes. So the rectangle this file calls the Theatre and the
+     * rectangle the collision surface calls the Theatre are **mirror images** at any non-zero
+     * bearing, and a containment test between them fails on a monument that is in exactly the
+     * right place. It did: the first draft published `rot: l.rot` and G22 reported the
+     * declaration STALE while faulting the row it was written for.
+     *
+     * The axis-aligned bounding box of an oriented rectangle is **invariant under that
+     * mirroring** — flipping the sign of `rot` leaves `|cos|` and `|sin|` alone — so an AABB
+     * is the same envelope in both conventions and cannot go wrong the day someone changes
+     * one of them. It is bigger than the plan rectangle, and that costs nothing here: the
+     * containment test means an envelope can only ever license something *smaller* than
+     * itself, and the only solids tested against it are ones already standing in the water.
+     */
+    const c = Math.abs(Math.cos(l.rot));
+    const s = Math.abs(Math.sin(l.rot));
+    out.push({
+      id: l.id, why: l.overWater, x: l.x, z: l.z,
+      hw: l.hw * c + l.hd * s, hd: l.hw * s + l.hd * c, rot: 0,
+    });
+  }
+  const crestZ = wallCrestZ(WALL_X_MIN);
+  const bankX = riverBankX(crestZ, 1);
+  const x0 = bankX - 8;
+  const x1 = WALL_X_MIN + 4;
+  out.push({
+    id: 'river-wall-return',
+    why: 'works.ts:riverWallPlan runs the west return 3 m PAST the east bank on purpose — a '
+      + 'wall that stops at the waterline leaves a cell of dry bank the occupancy raster can '
+      + 'round, and the surviving fragment at Testaccio stands in the embankment rather than '
+      + 'beside it. ROME.md 4.6, 1.20 m thick and 5-6 m high',
+    x: (x0 + x1) * 0.5, z: crestZ, hw: (x1 - x0) * 0.5, hd: 10, rot: 0,
+  });
+  return out;
+})();
 
 /**
  * ## `resolveOverlaps` was here, and deleting it is the point of this phase

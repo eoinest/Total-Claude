@@ -27,7 +27,7 @@ import {
 } from '../build';
 // See the note in `circuit.ts`: `TerrainSystem` imports `activeMap`, so taking HALF_EXTENT
 // from there would close an ESM cycle once a map declares its city.
-import { crestZAt, HALF_EXTENT, roadCentreX } from '../../terrain/topography';
+import { crestZAt, HALF_EXTENT, roadCentreX, WATER_LEVEL } from '../../terrain/topography';
 import { CITY_MAT_KEYS, type CityMatKey } from '../materials';
 import { GATE_X } from './apertures';
 import { AQUEDUCTS, LANDMARKS, PRECINCT, type LandmarkPlacement } from './layout';
@@ -692,6 +692,23 @@ const LANDMARK_KEYS: readonly CityMatKey[] = CITY_MAT_KEYS;
  * matter: taking the floor from the centre sample instead of the maximum is what left grass
  * growing through the middle of the racetrack. Returns the floor level. Cost is a couple of
  * hundred triangles; the alternative is a building that either floats or leaks.
+ *
+ * ## The wet bays are piers on piles, and the plinth stops there
+ *
+ * A row that declares `survey.ts:RomeMonument.overWater` stands over the channel on purpose,
+ * and the plinth above is the wrong statement about it: a solid battered wall running down
+ * into the Tiber reads as a building that the river has flooded, which is precisely the thing
+ * the owner reported. What the Theatre of Marcellus actually had on its river flank is
+ * **substructures over the foreshore** — piers with water between them.
+ *
+ * So a bay whose foot is at or below the drawn water surface is built as a run of piers with
+ * daylight between them, standing on a pile field that fills the wet part of the footprint
+ * (`buildRipaPiles`). The floor plate at the top is unchanged, so nothing shows through from
+ * below; what changes is that at water level you can see under the building, which is what
+ * "over the water" is supposed to look like.
+ *
+ * `WATER_LEVEL` is Rome's drawn surface and comes in through the vertical scale for the same
+ * reason every other terrain sample in this function does — see `sample`.
  */
 function buildSubstructure(
   batch: Batch,
@@ -741,6 +758,14 @@ function buildSubstructure(
   const podium = Math.min(high + 0.35, ground + 6.5);
   if (podium - (low - 1.1) < 0.6) return podium;
 
+  /**
+   * The drawn waterline, in the monument's own frame — or `-Infinity` for every row that has
+   * not declared itself over the water, which is all of them but one, so the branch below
+   * never fires and the plinth is byte-identical to what it was.
+   */
+  const waterY = m.overWater === undefined ? -Infinity : WATER_LEVEL / hk;
+  if (m.overWater !== undefined) buildRipaPiles(batch, detail, m, sample, hw, hd, podium, waterY);
+
   // Walk the four sides as segments so the face can be toned per bay and, at close range,
   // carry the blind arcading a real substructure has.
   const corners: [number, number][] = [
@@ -765,6 +790,23 @@ function buildSubstructure(
       // Foot of this bay follows the ground, so the plinth is only as deep as it must be.
       const g0 = Math.min(sample(ax, az), sample(bx, bz)) - 1.1;
       col.copy(PAL.peperino).multiplyScalar(0.9 + hash2(c, i, 0x5f1) * 0.2);
+      /*
+       * A bay standing in the water is piers with daylight between them, not a wall. See the
+       * header: five piers across the bay, each a sixth of it, so the run is half solid and
+       * half open and the water is visibly continuous under the building. The pile field
+       * behind them was laid before this loop.
+       */
+      if (g0 <= waterY) {
+        const piers = 5;
+        for (let p = 0; p < piers; p++) {
+          const t0 = (p + 0.17) / piers;
+          const t1 = (p + 0.83) / piers;
+          quadPrism(st, ax + (bx - ax) * t0, az + (bz - az) * t0,
+            ax + (bx - ax) * t1, az + (bz - az) * t1,
+            -dz, dx, 1.15, g0 - 0.9, podium, col, PAL.travertineDirty, { top: false });
+        }
+        continue;
+      }
       quadPrism(st, ax, az, bx, bz, -dz, dx, 0.9, g0, podium, col, PAL.travertineDirty, {
         top: false,
         ends: false,
@@ -803,6 +845,78 @@ function buildSubstructure(
   st.quadN(UP, q0, q1, q2, q3, PAL.dust);
   void detail;
   return podium;
+}
+
+/**
+ * **The piles under a building that stands over the water.**
+ *
+ * The owner, on the frame that opened this pass: *"there are some big buildings still in the
+ * river."* Two answers were available and only one of them is honest for the Theatre of
+ * Marcellus. The Mausoleum of Hadrian was drawn smaller until its footprint left the channel;
+ * the Theatre cannot be, because **no plan scale takes it out** — swept against `probe-fabric`
+ * G22's own wet-area measure it is still 95 m² wet at `draw` 0.30 — and it should not be,
+ * because the theatre stands on the Ripa with its stage flank toward the Tiber. `survey.ts`
+ * declares that with `RomeMonument.overWater` and `layout.ts` publishes the declaration for
+ * the external check to grade. This is the half that makes it true of the geometry rather
+ * than only of the data.
+ *
+ * A grid of piles, in the monument's own frame, wherever the ground under the plan is at or
+ * below the drawn water surface: a travertine footing block on the bed, a timber pile up to
+ * the floor plate, and a capping beam every other row. The wet perimeter bays above are built
+ * as open piers rather than as a battered wall, so this is visible from the water — which is
+ * the whole point, and is the difference between a building on a wharf and a building the
+ * Tiber has flooded.
+ *
+ * The pitch is authored in the monument's own (true) metres, so it comes out through
+ * `planScale` like every other dimension a builder writes: 5.4 m of real spacing is 2.2 m of
+ * drawn spacing at the Theatre's 0.407. The lattice is clamped to `PILE_MAX` posts so a row
+ * with a large wet plan cannot cost an unbounded number of triangles, and the pitch grows
+ * rather than the field being truncated, for the same reason `probe-fabric`'s raster does it
+ * that way: a coarse measurement of the whole thing beats a fine measurement of part of it.
+ */
+function buildRipaPiles(
+  batch: Batch,
+  detail: number,
+  m: LandmarkPlacement,
+  /** Local ground under a local (u, v). Supplied by `buildSubstructure`; see its `sample`. */
+  sample: (u: number, v: number) => number,
+  hw: number,
+  hd: number,
+  podium: number,
+  /** The drawn water surface in the monument's own frame. */
+  waterY: number
+): void {
+  // Half the posts past the mid LOD switch. A pile field is a texture at 340 m, and the piers
+  // in front of it are what carries the read; the count is what costs.
+  const PITCH = detail >= 1 ? 5.4 : 10.8;
+  const PILE_MAX = 26;
+  const st = batch.s('stone');
+  const tim = batch.s('timber');
+  const nu = Math.min(PILE_MAX, Math.max(1, Math.round((hw * 2) / PITCH)));
+  const nv = Math.min(PILE_MAX, Math.max(1, Math.round((hd * 2) / PITCH)));
+  const du = (hw * 2) / nu;
+  const dv = (hd * 2) / nv;
+  const r = Math.min(1.05, du * 0.16);
+  const col = new THREE.Color();
+  for (let iu = 0; iu < nu; iu++) {
+    const u = -hw + (iu + 0.5) * du;
+    for (let iv = 0; iv < nv; iv++) {
+      const v = -hd + (iv + 0.5) * dv;
+      const g0 = sample(u, v);
+      if (g0 > waterY) continue;
+      // Footing on the bed, then the pile. `g0 - 1.4` is driven in, not resting on it.
+      box(st, u - r * 1.5, g0 - 1.4, v - r * 1.5, u + r * 1.5, g0 + 0.6, v + r * 1.5,
+        PAL.travertineDirty, { bottom: false });
+      col.copy(PAL.timber).multiplyScalar(0.86 + hash2(iu, iv, 0x5f3) * 0.24);
+      box(tim, u - r, g0 + 0.4, v - r, u + r, podium, v + r, col, { bottom: false });
+      // A capping beam every other row, spanning the pitch: a pile field is braced or it is
+      // a row of sticks. Cheap, and it is what stops the field reading as scaffolding.
+      if (detail >= 1 && iv % 2 === 0) {
+        box(tim, u - r * 0.8, podium - 1.5, v - dv * 0.5, u + r * 0.8, podium - 0.5, v + dv * 0.5,
+          PAL.timberDark, { bottom: false });
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
