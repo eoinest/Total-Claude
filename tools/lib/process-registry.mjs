@@ -218,6 +218,25 @@ const linkAtomic = (target, payload) => {
   finally { try { unlinkSync(tmp); } catch { /* already gone */ } }
 };
 
+/**
+ * The substring a kill must find in a group before it is allowed to signal it.
+ *
+ * A recorded pgid is only a number, and after enough PID churn some unrelated process leads that
+ * group. `killTree`'s `expect` guard is what turns "kill group 75122" into "kill group 75122 if it
+ * still contains what the record says it contains", and this decides what to look for.
+ *
+ * **The script, not the interpreter.** The first version derived it from `argv[1]`, which is
+ * `-c` for `/bin/sh -c '…'` and matched by luck, and would have been `node` for everything this
+ * repository actually starts — a check that matches every Node process on the machine is not a
+ * check. So: the first argument that looks like a script file, and only if there is none, the
+ * command itself. `vite-runner.mjs` for a dev server, `browser-loop.mjs` for a probe, `sh` for a
+ * shell one-liner.
+ */
+const expectOf = (command, args) => {
+  const script = args.map(String).find((a) => /\.(?:mjs|cjs|js|ts|sh|py)$/.test(a));
+  return path.basename(script ?? String(command)) || null;
+};
+
 const readEntry = (file) => {
   try {
     const rec = JSON.parse(readFileSync(file, 'utf8'));
@@ -498,6 +517,8 @@ export function spawnOwned(command, args = [], {
     bootId: bootId(),
     registeredAt: new Date().toISOString(),
     keepAlive,
+    // What a kill must find in the group before it signals it. See `expectOf`.
+    expect: expectOf(command, args),
     ...meta,
   };
   if (!linkAtomic(entry, JSON.stringify(record, null, 2))) {
@@ -553,12 +574,35 @@ export function spawnOwned(command, args = [], {
   const done = new Promise((resolve) => {
     child.once('exit', (code, signal) => {
       cleanups.delete(exitKill);
-      // The guard sweeps its own group before exiting, so by here the tree is gone. Drop the
-      // record: an entry outliving its group is a reaper's false positive waiting to happen.
-      try { unlinkSync(entry); } catch { /* already gone */ }
+      /*
+       * **Do not drop the record just because the guard has gone.**
+       *
+       * The first version of this unlinked unconditionally, on the reasoning that the guard sweeps
+       * its own tree before exiting so by here the tree is empty. That is true when the guard exits
+       * *normally* and false in the one case this whole file is a defence against: a guard that was
+       * SIGKILLed. `tools/qa-supervisor.mjs` case 8 caught it — the guard died, its children kept
+       * running, and this handler deleted the only record naming their process group, turning the
+       * supervisor into the single point of failure it was designed not to be.
+       *
+       * So: check. If the tree is still up, kill it here — we are the owner, we are alive, and it
+       * is ours. Only then drop the record. If *we* cannot act either, the record stays on disk and
+       * `reapOwned()` in any other process finishes it, which is the third mechanism doing its job.
+       */
+      const left = treeMembers(child.pid);
+      if (left.length && !killed) {
+        process.stderr.write(
+          `process registry: guard ${child.pid} (${label}) exited with ${left.length} process(es) `
+          + 'still in its tree — killing them here rather than leaving the record to a reaper\n'
+        );
+        killTree(child.pid, { graceMs: 1500 });
+      }
+      if (!treeMembers(child.pid).length) { try { unlinkSync(entry); } catch { /* already gone */ } }
       resolve(signal ? 143 : (code ?? 0));
     });
-    child.once('error', () => { try { unlinkSync(entry); } catch { /* gone */ } resolve(127); });
+    child.once('error', () => {
+      if (!treeMembers(child.pid).length) { try { unlinkSync(entry); } catch { /* gone */ } }
+      resolve(127);
+    });
   });
 
   return {
@@ -614,7 +658,8 @@ export const reapOwned = ({ quiet = false, dryRun = false } = {}) => {
        * from any process at any time: if the pgid now names an unrelated group, the kill is
        * refused and reported instead of performed.
        */
-      const expect = path.basename(String(fresh.argv?.[1] ?? fresh.argv?.[0] ?? fresh.command ?? ''));
+      const expect = fresh.expect
+        ?? expectOf(fresh.command ?? fresh.argv?.[0] ?? '', fresh.argv?.slice(1) ?? []);
       killResult = dryRun
         ? { pgid: fresh.pgid, killed: treeMembers(fresh.pgid), why: 'dry run' }
         : killTree(fresh.pgid, { expect: expect || null });

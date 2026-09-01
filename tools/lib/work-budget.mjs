@@ -127,8 +127,9 @@ export const POLICY = {
  * disagreeing about how much machine there is.
  *
  * `procCeiling` in `tools/lib/process-registry.mjs` holds the arithmetic and the measurement it
- * rests on: one unit of gate work is **five** OS processes on this machine, measured, not the
- * "six or seven" the older prose quotes.
+ * rests on: one unit of gate work is **six** OS processes on this machine — four chrome-headless-
+ * shell, one Vite, one guard — measured with `tools/scratch/procs-per-browser.mjs` rather than
+ * quoted from the older "six or seven" prose, which was counting full Chromium.
  */
 export const procPolicy = (state) => {
   const pol = policyFor(state);
