@@ -21,7 +21,11 @@ advances on each. For r8 and r9 the comparison was taken further: all nine build
 SHA-256, and the SHA-1 digest Vercel holds for every one of the deployment's **86 files matched the
 rebuild's, in both directions, with nothing deployed that is not in `dist/`.** For r9 the three
 live maps were additionally read twice five seconds apart and the clock had moved 5.0 s on each,
-with zero page errors and zero console errors. See
+with zero page errors and zero console errors. **r10 was proved the same four ways**: `index.html`
+byte-identical to a rebuild of the commit, all **86** build outputs SHA-256 identical to an
+independent second rebuild in a separate pinned worktree, all **86 of 86** files matching the SHA-1
+digests Vercel holds for the deployment in **both** directions, and all three maps booted against
+the live URL with the clock advancing 6.2 s on each and no page or console errors. See
 [`docs/RELEASING.md`](docs/RELEASING.md) for the procedure.
 
 Every figure quoted here comes from a commit message, from `docs/HANDOFF.md`, or from a measurement
@@ -42,10 +46,439 @@ text than as a frame that half-supports them.
 
 ---
 
+## r10 — the two-commander screen, and a relay you can reach from the next room
+
+**1 September 2026** · commit [`c20aa4b`](https://github.com/eoinest/Total-Claude/commit/c20aa4b) ·
+deployment `total-claude-2kyjemfqg` · **live now**
+
+Fifty-nine commits, and the one that matters most is the front door to the thing r9 shipped.
+**Multiplayer worked and nobody could get to it.** The lobby had been written, reviewed and
+documented without anybody once pressing a button on it: the panel rendered at 135 px wide, every
+control sat below the bottom of a page that could not scroll, nothing on it could be clicked at
+all, and CREATE A ROOM had **never once succeeded in any session** — it reached the relay, the
+relay minted the room, and the browser threw the answer away for want of one header while the
+screen blamed the relay that had just done the work. That is fixed, and the gate now clicks the
+form rather than writing the URL the form was supposed to write.
+
+**And you can now play across two machines with one command.** `npm run host` serves the game and
+the relay together on an address the laptop on the sofa can reach. Both defaults were `127.0.0.1`,
+so the documented way to play a two-player game had been playable by one person.
+
+Under that: the buildings came out of the Tiber, the troops stopped standing in a crystal, and the
+work budget this project runs on stopped counting browsers and started pricing the GPU.
+
+**The gate, re-measured on the deployed commit rather than inherited:** `tsc` clean, `npm run lint`
+3/3, `qa-deploy` 33/33, `probe-seams` PASS on both maps, `qa-replay` 27/27, `qa-net` **60/60**,
+`qa-freeze` 32/32, and all three determinism arms unchanged at all seven checkpoints and identical
+at all four quality tiers — **8,632 / 3,072 / 3,440**.
+
+### Fixed
+
+- **The lobby had never been usable by a mouse, and three separate faults were stacked in front of
+  it.** The owner's verdict on the screen was *"a complete mess"*, and the measurement agrees.
+
+  ![The deployed lobby before this release: a narrow dark panel a fifth of the width of the window, the heading TWO COMMANDERS wrapping onto two lines, and the introductory paragraph spilling out of the bottom of the box one or two words per line and running off the bottom of the page. No room-code field, no buttons and no relay field are visible anywhere on the screen](docs/images/releases/r10-lobby-before.jpg)
+
+  *`total-claude.vercel.app`, Multiplayer, shot from the live site immediately before this deploy
+  went out. Nothing is missing from the frame: the controls are all there, below the bottom of a
+  page that cannot scroll to them.*
+
+  1. **The panel was called `card`.** `hud.css`'s `.card` is the unit card, it is loaded on every
+     page, and it contributes `max-width: 9em`, `max-height: 14em` and a column flex. `max-width`
+     clamps whatever the specificity, so the lobby's own `width: min(620px, 92vw)` computed to 620
+     and rendered at **135**, as a **135×210** panel with every control below y=1059. Re-measured
+     on the deployed r9 bytes as the last thing before this release went out: the room-code field
+     65×40 px at y=1119, CREATE A ROOM 97×63 at y=1178, JOIN THAT ROOM 82×63 beside it, and the
+     relay field 65×40 at y=1026 — on a page 800 px tall. Every class in the lobby is
+     `tc-`-prefixed now, and `hud.css` is untouched: a global stylesheet is a shared namespace and
+     one screen does not get to take common nouns out of it.
+  2. **The page could not scroll to them.** `scrollHeight` 800 against `innerHeight` 800. The
+     controls were not below the fold; they were unreachable, and a full-page screenshot could not
+     show them either. A fixed centred overlay has to *be* the scroll container, and it has to
+     centre with `min-height: 100%` on an inner box rather than `place-items: center`, which
+     overflows equally in both directions and puts the top of a tall sheet out of reach.
+  3. **`#menu-root` is `pointer-events: none` and the lobby never opted back in.** `.menu` does,
+     and `menu.css` carries the comment explaining why the container must not hit-test. Every one
+     of the six controls computed `pointer-events: none` on the live r9 site, `elementFromPoint` at
+     the centre of the panel returned `canvas#viewport`, and a driver asked to click CREATE A ROOM
+     gave up after eight seconds, because there was nothing there to click.
+
+  ![The same screen after this release: a 620-pixel panel centred in the window, headed TWO COMMANDERS, with a wide monospaced room-code field showing five dashes, the hint 5 characters — leave it empty and Create will pick one for you, the buttons CREATE A ROOM and JOIN THAT ROOM side by side, an empty RELAY ADDRESS field below a rule, and BACK TO THE FRONT DOOR at the foot](docs/images/releases/r10-lobby-after.jpg)
+
+  *The same URL, the same browser and the same 1280×800 window, after. All six controls hit-test to
+  themselves and the whole form is on the page.*
+
+- **"Create a room" had never worked once, and the error message blamed the wrong party.** The
+  relay's `/new` returned 200 with the code and no `Access-Control-Allow-Origin`, so the browser
+  refused to hand the body to the script and the `fetch` rejected. The lobby's `.catch` then
+  printed **"No relay at ws://… — start one with `node tools/relay.mjs`"** *while that relay was
+  running and had just done exactly what was asked* — and the room it had minted stayed there with
+  nobody in it. **Every press leaked one.** This is why the entire netcode pass could only ever
+  test the join path. CORS headers on every answer now, plus `/new?room=CODE` so a player can claim
+  a code they typed rather than take whatever they are given, plus a reaper for rooms nobody ever
+  walked into. An occupied room is never reaped.
+
+- **A host alone in a healthy room was told the link had died at exactly 6.0 seconds.**
+  `Room.tick`'s first line was `if (this.phase === 'lobby') return none();`, so the one phase where
+  nothing else is ever on the wire was also the one phase with no heartbeat. The silence detector
+  measures against the observed interval between inbound frames; with only `welcome` ever received
+  that interval stayed 0, the threshold collapsed to its floor, and a match ended with the socket
+  open, the relay running and nothing wrong. `ping` had been in the protocol since the first draft
+  and had been sent by nobody. The lobby now beats once a second, which makes the detector's stated
+  premise true in every phase rather than in three of four, and a relay that really does die while
+  somebody waits is named at about 8 s.
+
+  **And that false verdict swallowed the true one.** The "first verdict wins" guard is right for a
+  relay `end` followed by the `onclose` it provokes, and wrong here: a stale local `linkLost`
+  discarded the relay's `peerLeft`, so a survivor whose opponent had walked away was told the wire
+  had failed. That is a different accusation about a different party. A verdict inferred on the
+  client no longer outranks one the relay observed, whichever arrives first, because the relay can
+  see both sockets and the client cannot.
+
+- **A mistyped code was the worst failure in the product.** The relay created rooms on demand,
+  which is correct for a host and catastrophic for a challenger: a mistyped code conjured a second,
+  empty room and the joiner waited in it — no timeout, no message, no way back — for as long as
+  they were willing to sit there. `want=join` into a code nobody has opened is now refused by name,
+  in one sentence both adapters share, and the way out carries the code back to the form so a typo
+  is one correction rather than a fresh start.
+
+- **The code field stopped eating characters in silence.** `ROMEX` became `RMEX`, because `O` is
+  not in the code alphabet — and the alphabet leaves out `I`, `O`, `0` and `1` *because* codes get
+  read aloud, which is exactly why `O` is the single likeliest thing a person will type. The filter
+  stays, so the field always holds something valid; what is new is that it says what it took and
+  why, and the complaint outlives the keystroke that caused it. The first attempt at this wrote the
+  explanation on the press of `O` and overwrote it with "3 more characters" a fifth of a second
+  later.
+
+### New
+
+- **The room code is the object on the screen, and the invite link is a convenience beside it.**
+  The owner's call. CREATE opens a screen whose subject is five characters at 40 px, selectable,
+  captioned *"Read this out to the other commander"*, and it stays up until the host presses CHOOSE
+  THE BATTLE. The old screen showed the code for **900 ms** and then navigated, which is not long
+  enough to read five characters, let alone say them to somebody.
+
+  ![The ROOM OPEN screen: the room code WQU69 set at 40 pixels in wide-tracked monospace inside a bordered box, a COPY THE CODE button beneath it, a paragraph explaining that there is no invite link because the page is served from 127.0.0.1 and that npm run host is the way to serve it where the other machine can reach it, and a CHOOSE THE BATTLE button below](docs/images/releases/r10-room-open.jpg)
+
+  *The link is built from the page's own address, so on `127.0.0.1` it is a link to the
+  **recipient's** machine. When either the page or the relay is loopback there is no link, and the
+  screen says which of the two is the problem and what to run instead. The code still works, which
+  is the whole point of having both.*
+
+- **When the other commander leaves, the battle halts, says where it stood, and records no result.**
+  A sheet rather than eleven points of red text over a battle that will never move again:
+
+  > **THE OTHER COMMANDER LEFT**
+  > Their end of the link closed. The battle stopped where it stood rather than playing on without
+  > them.
+  > The battle stood at t+54, turn 17 — 0:01 on the field, with 1,032 of your men still on the
+  > field against 1,305.
+  > No result has been recorded. A battle nobody finished does not have one, and this will not
+  > invent one out of a headcount.
+
+  The results card is deliberately not reused: that card exists to print a verdict, and there is no
+  verdict here. SAVE THE REPLAY appears only when there is a record to give, because a button that
+  fails when a stranded player presses it is worse than an absent one. A desync keeps the strip
+  instead, where the tick, the layer, both hashes and the named regiments already live and want to
+  be read together.
+
+- **The session strip has moved off the top bar.** It was `top: 8px`; the top bar is `top: 0.8em`
+  in a HUD whose em is `10px × --ui-scale`, centred the same way — so the room code and the link
+  status were being drawn straight over the turn clock and both armies' strength. It parks under
+  the bar now, measured from the bar's own bottom on every rebuild rather than from a constant,
+  because the bar moves with the UI scale and because its drop-in animates for 0.7 s: measuring
+  once put the strip five pixels inside a bar that had not finished arriving.
+
+  ![The host's window: a field battle at 00:26 with the banner THE CLASH across the top bar, and a strip beneath the bar reading ROOM WQU69 — YOU ARE ROME (SLOT 0) — TURN 256. Five Roman standards stand in line on open farmland with a sixth advancing, and the unit card at the foot names LEGIONARY COHORT I, Cohors Legionaria, holding and steady](docs/images/releases/r10-two-commanders-rome.jpg)
+
+  ![The challenger's window at the same instant: the same farmland, the same five standards and the same 00:26 clock, with the strip reading ROOM WQU69 — YOU ARE JUTHUNGI (SLOT 1) — TURN 264, and the unit card naming TRIBAL WARBAND I, Juthungi Harjis, holding and steady](docs/images/releases/r10-two-commanders-juthungi.jpg)
+
+  *Two browser windows taken through the real front door for this release: Multiplayer, a typed
+  code, CREATE on one and JOIN on the other, both commanders deploying, then twenty-five seconds of
+  battle. Host slot 0 commands Rome, challenger slot 1 commands the Juthungi, the room code is the
+  one that was typed, and no URL in the run was written by anything but the product itself.*
+
+- **`npm run host` — one command that serves the game and the relay where the other machine can
+  reach them.** `vite.config.ts`'s `host` and the relay's `listen` were both `127.0.0.1`, and
+  nothing had ever noticed, so §7.1's two-machine measurement — the one the whole multiplayer
+  design rests on — had no procedure that could be followed. The command binds both halves, ranks
+  this machine's interfaces rather than guessing (utun, awdl, bridge and 169.254 excluded outright,
+  anything outside a private range demoted, because handing over an AirDrop interface is a link
+  that resolves and hangs), checks both halves answer **at the address it is about to print** rather
+  than at loopback, and prints the URL to hand over.
+
+  The lobby's honest refusal is kept and narrowed to the cases where it is true. A LAN-bound server
+  writes `<meta name="tc-lan">` into the document it serves; the lobby reads it and, on a loopback
+  URL bar over a LAN-bound server, builds the invite out of the address the *other* machine reaches
+  and says that it did. No plaque, no link — the deployed site, `npm run dev`, `--loopback` —
+  exactly as before. The page cannot discover its own machine's second address from inside a
+  browser; the server can, and now says so in the document it writes.
+
+  **`qa-net` went from 38 checks to 60 over this release** — twelve for the lobby, its bad-code
+  refusal and its no-relay refusal, four for the peer-left sheet, and six for the LAN arm, whose
+  last check goes red if an invite link ever appears on a loopback-only server. The LAN arm gives a
+  second client nothing but the link read off the host's screen and requires it to end up on the
+  other side of the same battle.
+
+- **The deployed site cannot host or reach a relay, and it now says so plainly instead of guessing
+  an address.** This was an assumption when the lobby was written and is now measured twice over,
+  against the real deployed origin with its real certificate and a real relay on this machine's
+  `en0`. Chromium 151 refuses `ws://<lan-address>` from an HTTPS page in **1 ms** with
+  `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS` — a permission, and therefore in principle grantable
+  — and with that check disabled the `WebSocket` constructor throws **`SecurityError` before a
+  packet exists**: an insecure socket may not be opened from a page loaded over HTTPS. Two
+  independent mechanisms, either one sufficient, and the second is not a permission anyone can
+  grant. So the relay field on the deployed site is **empty**, with the reason under it, rather than
+  pre-filled with `wss://<vercel-host>:5959` — a port nothing has ever listened on.
+
+  ![The deployed lobby after pressing CREATE A ROOM with the relay field empty: a red paragraph reading There is no relay address in the field below. A relay is a separate process — node tools/relay.mjs on a machine you can both reach — and this page cannot be one, because it is a static upload with no server in it. The relay field below it is empty and focused](docs/images/releases/r10-deployed-refusal.jpg)
+
+  *`total-claude.vercel.app` after this release. This is the correct behaviour rather than a
+  failure: the site is a static upload with no server in it, and the way to play two-player is
+  `npm run host` on a machine you and your opponent can both reach.*
+
+  Three ways round the block were priced and all three lost. A local CA means installing a root
+  certificate on both machines by hand, which is the one item on the list that is a genuine security
+  decision and not a trade to offer a guest. A real certificate for a name that resolves to a
+  private address means either running ACME and shipping the private key in a public repository, or
+  depending on somebody else's deliberately-published key and their DNS. A tunnel works and gives a
+  real `wss://`, and is precisely what the Cloudflare Worker in `net/worker.ts` already is — the
+  right answer for playing with somebody who is not in the building, and a datacentre round trip
+  for two laptops in one room.
+
+### The city
+
+- **There were big buildings standing in the Tiber, and the gate that was supposed to catch them
+  was grading the centre of a 95-metre footprint.** The owner said so; `probe-fabric`'s water check
+  said *"PASS — no structure stands below the water surface"*, 0 of 1,106. Both were true. The check
+  sampled five points — the centre and the four corners of the oriented box — and gated on the
+  centre. The Mausoleum of Hadrian is a 95 m box on a reach where the Tiber swings 250 world metres
+  west across its own southern third, so **1,932 of its 9,069 m² stood on ground 4.6 m under the
+  surface while its centre datum read a dry 7.80 m.** The evidence had been written down twice and
+  gated on neither time: an earlier pass recorded *"0 under water, same 3 wet corners"* in one
+  sentence, and the check's own comment asserted that it failed on a row it was passing.
+
+  The check now rasterises each solid's own oriented rectangle at 2 m and grades the **wet area**,
+  against a tolerance of one sample cell — the instrument's own resolution, and nothing fitted. The
+  ruler is unchanged and is the drawn waterline. Rome went **15/27 to 14/27** on it and named three
+  faults totalling 2,382 m² of plan in the water, **all three with a dry centre**; Carthage, which
+  is the control, found four instead of one, including a temple **97% of its plan under 9.7 m of
+  sea**.
+
+  Then the repair, which is the owner's ruling on what to do about each: **0 m² of unlicensed
+  masonry under water on either map**, against 2,382 on Rome and 3,122 on Carthage. Rome 14/27 →
+  **15/27**, Carthage 13/22 → **14/22**. The Mausoleum takes a plan scale of 0.35 with its height
+  pinned, which moves the worst ground under its footprint from 0.40 m to 5.97 m against a 5.0 m
+  surface and leaves its position alone — the position is a plate control good to 8 m, and the
+  alternative was 30 world metres of northing, which is 86 real metres and breaks the frame's own
+  clamp. The Theatre of Marcellus clears at **no** plan scale and gets five times worse moving west,
+  so it is declared instead: it stands on the Ripa with its stage flank toward the river, that is in
+  the row's existing citation, and the wet part of the plan is now carried on piles with the
+  perimeter bays built as open piers, so from the water you can see under the building. Carthage's
+  two had no citation at all and were simply in the wrong place; one moved 107 m onto land.
+
+  A sweep priced the alternatives before anybody argued about them: the Mausoleum clears at plan
+  0.35, at 120 m west, **or at 30 m north**; the Theatre clears at 20 m north and gets worse going
+  west, 407 m² to 2,003 m² by 80 m. Thirty world metres against three to six times that on any
+  other axis — worth having measured, because west looks like the way out of a river that runs
+  north-south, and this reach does not run north-south.
+
+- **The far bank of the Tiber got streets, and the Vatican became gardens.** Nothing had ever
+  authored a way across the right bank, and what held Regio XIV up was a 230 m ramp off the channel:
+  a ribbon of insulae on the water and a square kilometre of empty field behind it, on 47.2% of
+  the map's city ground. Four ways now, each cited to a plate — the Aurelian Way, the quay pinned to the
+  river survey's own right-bank offset, the road to the Septimian Gate, and the Vatican leg of the
+  Triumphal Way, which is the only place the plate carries that label. A fifth was **not** authored
+  and the reason is recorded: its gate stands 690 m past the last northing the frame can draw.
+
+  North of the Porta Septimiana the right bank is the Horti Agrippinae, the Prata Quinctia, the
+  Gardens of Domitia and the Ager Vaticanus — **73.4 of the region's 108.9 ha** — and those blocks
+  now build at 8% coverage with three times the trees instead of as insulae. The five bridges the
+  map still owes are named, with their coordinates.
+
+- **Every point bar in Rome had been unbuildable by construction, and two agents found it the same
+  afternoon from two different symptoms.** The river's freeboard constant was the **cut bank's**
+  terrace height applied to both banks: the terrain models a terrace at the water level + 2.8 m on
+  the outside of a bend and + 0.8 m on the inside, and the test demanded 2.8 m everywhere. So a plot
+  standing squarely on the point bar's own finished terrace was reported as standing in the river.
+  The Tiber's curvature flips below the Ansa, so that is the whole of Transtiberim *and* the Campus
+  Martius's own quay — and nothing could see it, because the rejection counter is a plot count and
+  the placer refills the ground a rejection frees. One branch found it from the coverage figure and
+  one from the far bank; the constant that ships is the stricter of their two answers, and being in
+  the channel is now a geometric fact asked of the river's own half-width rather than a consequence
+  of a height threshold.
+
+  Three more all-or-nothing tests went the same way: a frontage was built to the depth of its
+  *narrowest* sample and vanished entirely if that end fell under the minimum; a plot a monument
+  clipped was deleted rather than shortened, when what fabric beside a precinct actually does is
+  give up its back and keep its frontage; and the block's perimeter ring ended the fill, so nothing
+  ever came back for the ground it missed. Measured on the deployed commit: **997 insulae across 345
+  blocks**, with 56 blocks building nothing — 23 taken by a monument, a street reservation or an
+  aqueduct, 20 too shallow for a house, **12 garden quarters built at 8 per cent by design**, and
+  one thinned to nothing at the city fringe.
+
+- **Two new gates, and the denominator is the whole difficulty.** The first asks whether the ground
+  between street lines is built at the orthophoto's density — a figure that had been wanted since
+  the rebuild began and that nothing in the gate measured. The first draft got the denominator wrong
+  by 2.7×, because the ground between street lines is not the ground inside a region. Three numbers
+  come out of it, and they differ because **21% of Rome's ground between street lines is monument
+  precinct**: a generator graded on the whole-ground denominator is being asked to build the Baths
+  of Trajan. The second asks that no block builds *nothing* while it still has room for a house —
+  in ground rather than as a count, because a mean can be met with a third of the city bare, and
+  because a block 60% under a precinct can hold 1,264 m² of free ground with no two adjacent square
+  metres of it.
+
+  **And the grain seam was a coin flip.** Of the 29 blocks involved in one, **14 had a second side
+  at a different bearing within 80% of the longest and five within 95%** — one block in Regio IX is
+  93.7 m one way and 88.6 m the other, nineteen degrees apart, so which street it "fronts" was
+  decided by five metres and its neighbour decided it the other way. The block's facing bearing is
+  now the mode over bearing classes rather than the longest single side.
+
+### The men
+
+- **They were standing in a crystal.** Measured before anything was changed, on a 160-man legionary
+  cohort at ease: nearest-neighbour separation **0.860 m at the 5th, 50th and 95th percentile,
+  standard deviation 0.000 m**, and a per-man speed of 0.000 m/s at all three. Not a crowd that
+  reads as regular — a lattice, to the millimetre, of men who are not moving. From 34 m up the
+  cohort's own shadow is twenty parallel stripes at an identical pitch.
+
+  The men were never the problem: a cohort already carries 57–59 kit masks, 119 statures, 229
+  cadences and 314 of 320 distinct animation phases. None of that can break a lattice, because the
+  lattice is in the *positions* — which is why several passes of work on how the men look never
+  touched it.
+
+  Three things changed in the simulation. A man now stands loosely on his slot, by a fraction of the
+  formation's own spacing keyed to his own index, so no two units share a pattern: 0.30 for line and
+  wedge, 0.34 for loose and skirmish, 0.40 for a horde — and **0.10 for a shield wall and 0.06 for a
+  testudo, because a shape the player ordered has to survive.** It does: a testudo still measures
+  0.516 m at every percentile with a standard deviation of 0.000. A man in melee is no longer
+  frozen; the old code damped his velocity to zero the tick he acquired a target, so the rectangle a
+  cohort marched in was the rectangle it was still fighting in thirty seconds later, with the file
+  stripes legible from above. He now works on his own opponent within 0.34 m of his dressed slot, at
+  his own preferred working distance and circling his own way. And the push resolution gave every
+  fighting man in a unit one shared direction and one shared sign, so a whole line moved along one
+  axis at one moment; a zero-mean per-man skew rotates each man's share, and the anchor still walks
+  at the same speed, so **who wins is unchanged**.
+
+  A fourth change is presentation and moves no pin: the shader's idle lean ran at one rate and one
+  amplitude for every man on the field, so nine thousand men shared a single 11.4-second period and
+  differed only in phase. It is the man's own now, over 7.6 to 20 s, in two incommensurate terms.
+
+  **This is a balance change and it is stated rather than left to be discovered.** All three
+  determinism baselines were re-recorded in the commit after the one that moved them. Men take
+  slightly longer to settle onto their own opponents, so the first minute of contact is a little
+  less lethal and the grind that follows is faster: on the 8,632-man field battle, 8,195 → 8,246
+  alive at t+90 and 7,438 → 7,581 at t+150, then 6,562 → 6,421 at t+250 and 5,864 → 5,615 at t+400
+  — **249 fewer men standing at t+400, about 4% more casualties.** t+0 is unchanged on every arm,
+  because the dressing is applied when men steer and not when they spawn.
+
+### The machine
+
+- **The work budget stopped counting browsers and started pricing the GPU.** The cap held and the
+  owner still lagged. With one agent browser rendering the field battle, the load average read
+  **6.25 of 16 cores — 39%, "idle"** — while the GPU read 62, 94, 100, 26, 46 and 99. There is one
+  GPU, every headless Chromium here runs on Metal on purpose, and so every one of them queues behind
+  his game. A count of browsers prices CPU, and CPU was never the contended thing.
+
+  The sensors are all sudo-free: Apple GPU device, renderer and tiler utilisation, per-process CPU
+  deltas, memory pressure, and three presence signals. The lever is a QoS demotion — efficiency
+  cores, throttled I/O and lower GPU priority — applied to a process you own. The policy is a ladder
+  rather than a number, four browsers when the owner is away and one while he is playing, plus a GPU
+  ceiling per state, so three cheap browsers are admitted and two expensive ones are not.
+
+  **Measured, four paired interleaved cycles, the owner full-screen on a Retina panel and two agents
+  at 1920×1080:**
+
+  | | frame rate | p95 frame time | hitches |
+  |---|---|---|---|
+  | agents at foreground priority | 65.2 fps | 25.2 ms | 15% |
+  | agents demoted to the background band | 118.0 fps | 11.4 ms | 0% |
+  | owner with no agents at all | 120.0 fps | 9.6 ms | 0% |
+
+  Two agent browsers at normal priority cost him **46% of his frame rate and a visible hitch on one
+  frame in seven**. Demoted, they cost 2%. The per-cycle gain was 1.91×, 1.83×, 1.76× and 1.76×.
+
+  **The first run of that bench found nothing, and that was the instrument.** At 1280×800 it read
+  exactly 120.0 fps in all eight windows: headless Chromium is vsync-locked at 120 Hz and one
+  megapixel of this scene finishes in 8 ms, so there was nothing for an agent to take. A bench whose
+  owner arm has 40% headroom cannot measure an effect that only appears when it has none — and "no
+  effect" from it would have been the wrong answer, stated confidently.
+
+- **A reclaimer that is mostly a list of reasons not to delete.** 118 registered worktrees, 28 GB,
+  23 of them already gone; 612 MB of scratch; a node process alive 23 hours. The rule a naive
+  version would use — *delete worktrees whose branch is merged* — would have destroyed eight
+  worktrees on this machine carrying up to sixteen unpushed commits each. So the interesting content
+  is the refusals: nine conditions, all evaluated even after one fails, so the report gives every
+  reason rather than the first. Having decided, it still calls `git worktree remove` **without**
+  `--force`, so git re-checks locked and dirty with its own code.
+
+  Run in anger: **118 worktrees to 59, 28 GB to 19, 92 GB of free disk to 102, 113 things removed
+  and 0 refused at the last moment.** That last number is the one worth reading — git's independent
+  re-check agreed with all 113 decisions. The eight worktrees holding 43 commits that exist on no
+  remote were still there afterwards, all 43 still named by their branches, and `git fsck` found
+  nothing broken.
+
+### Corrections to the record
+
+- **The throttle's first bench reported it making the owner thirteen times worse — 6.5 fps against
+  88.7 solo — and the number was real.** The demotion was landing on the wrong browser. The code
+  found a browser by scanning the process table for the first headless Chromium whose parent was us,
+  which is right with one browser and wrong with two: the bench runs an owner browser and an agent
+  browser from one process, so it returned the same pid twice and demoted the owner. Playwright 1.62
+  exposes no pid for a locally launched browser — three private paths were checked on this tree
+  rather than assumed, and all three are `undefined` — so the guess was all there had ever been. It
+  is now a before-and-after diff of our own direct children taken across the launch call, and *not
+  exactly one new pid* means no throttling rather than a demotion aimed at whatever the process
+  table happened to list first. **Any harness opening a second browser would have hit this silently,
+  because a QoS demotion produces no error.**
+
+- **A figure quoted in a shipped comment came from an instrument that was not repeatable, and both
+  halves of it were wrong.** The melee-coherence probe advanced the simulation with the page's frame
+  loop free, so three runs of one unchanged tree gave 134, 135 and 136 living men at coherence 0.247,
+  0.320 and 0.454 — a spread three times the size of the effect, clustering into discrete modes
+  rather than scattering. And its autocorrelation took an argmax over all lags, which returns the
+  shortest lag searched for any smooth signal, so it "found" a dominant 0.10 s period that nothing
+  in the tick order can produce. With the clock stopped and every advance rewritten in exact ticks,
+  two runs of a tree agree to the last printed digit. **The corrected figures: coherence R = 0.454
+  on a 135-man cohort, and no genuine periodic oscillation in the positions on either tree.** The
+  coherent thing in a melee is a shared direction, not a shared rhythm.
+
+- **The screen-lock signal was unreadable for the entire case it was meant to detect.** The macOS
+  key that says whether the screen is locked is *absent* from the session dictionary when the screen
+  is unlocked — it is not `No`, it is not there — so the reader matched `(Yes|No)`, found nothing,
+  and returned "unreadable" whenever somebody was actually at the machine. The one presence signal
+  with no false positives was silently unavailable exactly when it mattered. Caught by reading the
+  output, not by any test, which is the argument for printing each signal separately instead of only
+  the conclusion.
+
+- **The work gate could deadlock the multiplayer gate against itself.** `qa-net` opens a host
+  browser and a guest browser from one process, and a third for the cross-engine arm. With the
+  ladder at one browser, admission would have granted the host, refused the guest for thirty
+  minutes, and then failed — a gate in the required set, deadlocked by a mechanism whose whole
+  purpose is to make the machine calmer. Admission never refuses a process that already holds a
+  slot. The hard count still applies, and so does the QoS demotion, which is the lever that actually
+  protects the owner's frame rate.
+
+- **One check in `qa-freeze` and one in `qa-net` are load-sensitive, and it is recorded rather than
+  papered over.** The multiplayer settle helper stops the relay so two clients drain to a common
+  tick, and its comment claimed that worked "by construction rather than by luck" because a stopped
+  process cannot write. That is true of the kernel's socket buffer and false of node's: `write`
+  returns false when the kernel buffer fills and node queues the remainder *inside* the process,
+  which a frozen process never flushes — so a relay stopped mid-backlog can leave one client holding
+  turns the other will now never receive. The helper releases and re-stops the relay when both
+  clients have gone static and are apart, up to six times; the comparison is untouched, so it can
+  only turn a false red into a real answer. The siege arm is 3,180 men against the field arm's 2,337
+  and drains more slowly, and six attempts is evidently not always enough for it at load 8–10.
+  Cutting this release, `qa-freeze`'s relay-drop check went red once at load — the battle advanced
+  three ticks over six seconds instead of zero — and passed on three consecutive isolated runs and
+  on a clean full re-run.
+
+---
+
 ## r9 — two clients, three browser engines, and a Rome that stands where the survey puts it
 
 **22 August 2026** · commit [`9b9c5f0`](https://github.com/eoinest/Total-Claude/commit/9b9c5f0) ·
-deployment `total-claude-1zztomfa3` · **live now**
+deployment `total-claude-1zztomfa3`
 
 The largest release this project has had — 173 commits — and its shape is three new capabilities
 rather than a list of repairs. **Two people can now fight the same battle over a relay**: real
