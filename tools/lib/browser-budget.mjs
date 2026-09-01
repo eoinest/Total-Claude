@@ -56,6 +56,24 @@
  * env, then that file, then the default; every holder records the cap it believed, so
  * `status` can say when two agents disagree.
  *
+ * ## 23 Aug 2026: the cap was not enough, and here is what it missed
+ *
+ * A count of browsers prices CPU, and CPU was never the contended resource. With **one** agent
+ * browser rendering the field battle the load average sat at 6.25 of 16 cores — 39 %, "idle" —
+ * while the GPU read `62, 94, 100, 26, 46, 99`. The owner reported lag twice while this file
+ * printed *within budget*, and both times he was right and this file was wrong.
+ *
+ * `tools/lib/work-budget.mjs` adds the missing half, and it hooks in at exactly two points:
+ *
+ *   - **`acquireSlot`** consults `admit()` before granting. A free slot is now necessary and
+ *     not sufficient: the cap becomes 4 / 2 / 1 depending on whether the owner is away,
+ *     working or playing, and a new browser is refused while measured GPU utilisation is over
+ *     the ceiling for that state. Both refusals queue, exactly as a full slot table does.
+ *   - **the heartbeat** reconciles QoS. When he sits down, every running agent browser is
+ *     moved to the background band with `taskpolicy -b` — efficiency cores, lower GPU
+ *     priority — and moved back when he leaves. This is the only part that can help a film
+ *     that took its slot six minutes ago, which is the shape both of his reports had.
+ *
  * ## Environment
  *
  * | variable | default | meaning |
@@ -65,6 +83,9 @@
  * | `TC_BUDGET_DIR` | `/tmp/tc-browser-budget` | where the locks live |
  * | `TC_BROWSER_WAIT_MS` | `1800000` (30 min) | how long to queue before failing |
  * | `TC_BROWSER_STALE_MS` | `90000` | no heartbeat for this long and the slot is reaped |
+ * | `TC_WORK_BUDGET` | `on` | `off` disables admission and QoS but keeps the count cap |
+ * | `TC_OWNER` | `auto` | `away` \| `present` \| `playing` — beats detection |
+ * | `TC_QOS` | `on` | `off` keeps running browsers at foreground priority |
  *
  * ## Usage
  *
@@ -92,6 +113,9 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import {
+  admit, describe, makeThrottle, newBrowserPid, ourBrowserPids, ownerState, workBudgetEnabled,
+} from './work-budget.mjs';
 
 const LIB_DIR = path.dirname(fileURLToPath(import.meta.url));
 const TOOLS_DIR = path.resolve(LIB_DIR, '..');
@@ -317,7 +341,10 @@ export async function acquireSlot({
       '!! BROWSER BUDGET DISABLED (TC_BROWSER_BUDGET=off). Nothing is counting browsers on this\n'
       + '!! machine. This is the setting that produced load average 160 on 22 Aug 2026.\n'
     );
-    return { slot: -1, disabled: true, release: () => {}, setVitePid: () => {}, record: null };
+    return {
+      slot: -1, disabled: true, release: () => {}, setVitePid: () => {}, record: null,
+      throttle: { add: () => {}, reconcile: () => null, restore: () => {}, applied: false },
+    };
   }
 
   const cap = budgetCap();
@@ -368,6 +395,28 @@ export async function acquireSlot({
         if (idx >= 0 && idx >= free.length) mayTry = false;
       }
 
+      /*
+       * The work gate. A free slot is necessary and no longer sufficient.
+       *
+       * `admit` prices the machine rather than counting handles: it applies the owner-state
+       * ladder (4 away / 2 present / 1 playing) and refuses while measured GPU utilisation is
+       * over the ceiling for that state. Both refusals are transient by construction — they
+       * are re-tested every poll — so this queues rather than fails, exactly as a full slot
+       * table does. See `tools/lib/work-budget.mjs` for why the count-based cap was not enough.
+       *
+       * The observation is shared through `<budget dir>/machine.json` and cached for six
+       * seconds, so polling this at 700 ms costs one filesystem read almost every time.
+       */
+      let gate = null;
+      if (mayTry) {
+        // `selfHeld` is what stops a two-browser gate deadlocking against itself; see `admit`.
+        gate = admit({
+          liveCount: live.length,
+          selfHeld: live.filter((s) => s.rec?.pid === process.pid).length,
+        });
+        if (!gate.ok) mayTry = false;
+      }
+
       if (mayTry) {
         for (const i of free) {
           const rec = { ...base, slot: i, acquiredAt: new Date().toISOString() };
@@ -392,13 +441,19 @@ export async function acquireSlot({
 
       if (Date.now() > deadline) {
         const holders = listSlots().filter((s) => !s.stale);
+        const lastGate = gate && !gate.ok ? gate : null;
         throw new Error(
           `browser budget: waited ${(waitMs / 60000).toFixed(0)} min for one of ${cap} slots and gave up.\n`
           + `  Asked for: ${label}${port ? ` (port ${port})` : ''} in ${root}\n`
+          + (lastGate
+            ? `  Refused by the work budget, not the slot table: ${lastGate.reason}\n`
+              + `  Machine at the last check: ${describe(lastGate.snapshot)}\n`
+            : '')
           + `  Held by:\n${holders.map((h) => `    ${describeHolder(h)}`).join('\n') || '    (none — the cap may be 0 or the dir unwritable)'}\n`
           + `  Inspect: node tools/browsers.mjs\n`
           + `  Free a wedged slot: node tools/browsers.mjs reap\n`
-          + `  Raise the cap for this run only: TC_MAX_BROWSERS=${cap + 1} <command>`
+          + `  Raise the cap for this run only: TC_MAX_BROWSERS=${cap + 1} <command>\n`
+          + '  If the owner is not actually at the machine: TC_OWNER=away <command>'
         );
       }
 
@@ -410,6 +465,19 @@ export async function acquireSlot({
         process.stderr.write(
           `browser budget: ${holders.length}/${cap} in use, waiting for a slot`
           + `${place >= 0 ? ` (position ${place + 1} of ${queue.length})` : ''}.\n`
+          /*
+           * When the refusal is the *work* gate rather than a full slot table, say so. "Waiting
+           * for a slot" while three slots stand empty is the single most confusing thing this
+           * change could print, and an agent that cannot tell the two apart will conclude the
+           * budget is broken and set TC_BROWSER_BUDGET=off.
+           */
+          + (gate && !gate.ok
+            ? `   work budget: ${gate.reason}\n`
+              + `   ${gate.why === 'gpu'
+                ? 'The GPU is the contended resource, not the CPU. Slots may look free.'
+                : 'Slots may look free; the owner-state ladder is the tighter limit.'}\n`
+              + '   Override for one run: TC_OWNER=away <command>   (say why in your report)\n'
+            : '')
           + holders.map((h) => `   ${describeHolder(h)}\n`).join('')
           + (selfHeld > 0 && selfHeld === holders.length
             ? `   !! every slot is held by THIS process (${process.pid}). It is waiting on itself.\n`
@@ -454,8 +522,33 @@ export const assertPortNotStolen = ({ port, root, label }) => {
 const makeHandle = ({ file, rec, cap, quiet }) => {
   let released = false;
 
+  /*
+   * The lever that reaches work already running.
+   *
+   * Admission control cannot help against a film that took its slot six minutes ago and is
+   * still rendering when the owner sits down — and *both* of his lag reports were of exactly
+   * that shape. The heartbeat is already firing every ten seconds for the life of the run, so
+   * it re-reads the owner state (about 50 ms: two `ioreg` calls and an `lsappinfo`) and
+   * demotes or restores this run's own browser accordingly.
+   *
+   * `reconcile` is a no-op when the state has not changed, so the steady-state cost is the
+   * owner read alone. The `restore()` on release, and on every exit path through
+   * `registerCleanup`, is not optional: a process left in the background band outlives us.
+   */
+  const throttle = makeThrottle({ label: rec.label });
+
   const beat = setInterval(() => {
     try { const t = Date.now() / 1000; utimesSync(file, t, t); } catch { /* reaped */ }
+    if (!workBudgetEnabled()) return;
+    try {
+      const state = ownerState().state;
+      const moved = throttle.reconcile(state);
+      if (moved && !quiet) {
+        process.stderr.write(`work budget: owner is ${state} — ${rec.label} `
+          + `${moved === 'demoted' ? 'moved to the background band (efficiency cores, lower GPU priority)'
+            : 'returned to normal priority'}.\n`);
+      }
+    } catch { /* a sensor failing must never take down a run */ }
   }, HEARTBEAT_MS);
   beat.unref();
 
@@ -463,6 +556,7 @@ const makeHandle = ({ file, rec, cap, quiet }) => {
     if (released) return;
     released = true;
     clearInterval(beat);
+    try { throttle.restore(); } catch { /* the process is probably already gone */ }
     cleanups.delete(release);
     /*
      * Token check before unlink. If this slot was reaped while we were wedged and handed to
@@ -486,7 +580,7 @@ const makeHandle = ({ file, rec, cap, quiet }) => {
   if (!quiet && process.env.TC_BUDGET_VERBOSE === '1') {
     process.stderr.write(`browser budget: took slot ${rec.slot} of ${cap} for ${rec.label}\n`);
   }
-  return { slot: rec.slot, cap, file, record: rec, release, setVitePid, disabled: false };
+  return { slot: rec.slot, cap, file, record: rec, release, setVitePid, throttle, disabled: false };
 };
 
 /*
@@ -569,6 +663,13 @@ export async function launchBrowser({
   });
 
   let browser;
+  /*
+   * Snapshot our own browser children *before* launching, so the one that appears can be
+   * identified by difference. Playwright 1.62 exposes no PID for a locally launched browser —
+   * see `newBrowserPid` for the three private paths that are all undefined, and for the bug
+   * that shipped when this guessed instead.
+   */
+  const before = engine === 'chromium' ? ourBrowserPids() : new Set();
   try {
     // Only Chromium takes these; Firefox and WebKit reject unknown flags.
     const finalArgs = engine === 'chromium'
@@ -579,6 +680,21 @@ export async function launchBrowser({
     handle.release();
     throw err;
   }
+
+  /*
+   * Register the browser with the throttle and reconcile once, immediately.
+   *
+   * Once, here, matters: a run that starts *while* the owner is already playing would otherwise
+   * render at full priority until the first heartbeat ten seconds later, and ten seconds of a
+   * nine-thousand-man battle at foreground GPU priority is precisely the stutter he reports.
+   * After this the heartbeat keeps it in step.
+   */
+  const bpid = engine === 'chromium' ? newBrowserPid(before) : null;
+  if (bpid) {
+    handle.throttle.add(bpid);
+    try { handle.throttle.reconcile(ownerState().state); } catch { /* sensors are advisory */ }
+  }
+  browser.budgetPid = bpid;
 
   const origClose = browser.close.bind(browser);
   browser.close = async (...rest) => {
@@ -599,11 +715,20 @@ export async function launchBrowser({
  * refused, because measuring another worktree and reporting it as yours is the failure mode
  * that is impossible to notice from the output. A listener that does not answer at all is an
  * older-style server; that is a warning, and `TC_STRICT_TREE=1` promotes it to a refusal.
+ *
+ * `host` is the bind address and defaults to loopback, which is what every harness wants. A
+ * caller that asks for a LAN bind will **not** be given a loopback listener it happens to find
+ * on the port: the two are indistinguishable from this machine and entirely different from the
+ * machine next door, and silently handing back the wrong one is how a host ends up reading out
+ * a URL nobody else can open. `relayPort` and `lan` are passed through to the runner and only
+ * do anything on a LAN bind; see `/__tc/lan` there.
  */
 export async function startVite({
   port, root = REPO_ROOT, cacheDir, label = 'vite', slot = null, timeoutMs = 120_000,
+  host = '127.0.0.1', relayPort = 0, lan = '',
 } = {}) {
   const base = `http://127.0.0.1:${port}`;
+  const wantLan = !(host === 'localhost' || host === '127.0.0.1' || host === '::1' || /^127\./.test(host));
   const existing = await probeTree(base, 1500);
   if (existing.up) {
     if (existing.tree && path.resolve(existing.tree.root) !== path.resolve(root)) {
@@ -614,19 +739,29 @@ export async function startVite({
         + '  Reusing it would measure that branch under this branch\'s name. Pick another port.'
       );
     }
+    if (wantLan && existing.tree?.host !== host) {
+      throw new Error(
+        `startVite: a server is already on ${port}, bound to ${existing.tree?.host ?? 'an unknown address'}, `
+        + `and a LAN bind (${host}) was asked for.\n`
+        + '  From this machine the two are the same server. From the other machine one of them\n'
+        + '  does not exist. Stop that one, or pick another port with --port=.'
+      );
+    }
     if (!existing.tree) {
       const msg = `startVite: reusing an unidentified listener on ${port}. It predates`
         + ' tools/lib/vite-runner.mjs, so which tree it is serving cannot be established.';
       if (process.env.TC_STRICT_TREE === '1') throw new Error(`${msg}\n  TC_STRICT_TREE=1 is set, so this is a refusal.`);
       process.stderr.write(`!! ${msg}\n!! Confirm by headcount, or restart it. TC_STRICT_TREE=1 makes this fatal.\n`);
     }
-    return { base, server: null, started: false, pid: existing.tree?.pid ?? null, close: async () => {} };
+    return { base, server: null, started: false, pid: existing.tree?.pid ?? null, lan: null, close: async () => {} };
   }
 
   const runner = path.join(LIB_DIR, 'vite-runner.mjs');
   const child = spawn(
     process.execPath,
-    [runner, `--port=${port}`, `--root=${root}`, `--parent=${process.pid}`,
+    [runner, `--port=${port}`, `--root=${root}`, `--parent=${process.pid}`, `--host=${host}`,
+      ...(relayPort ? [`--relay-port=${relayPort}`] : []),
+      ...(lan ? [`--lan=${lan}`] : []),
       ...(cacheDir || process.env.TC_VITE_CACHE_DIR ? [`--cache-dir=${cacheDir || process.env.TC_VITE_CACHE_DIR}`] : [])],
     {
       cwd: root,
@@ -639,16 +774,26 @@ export async function startVite({
   );
   child.unref();
   if (slot?.setVitePid) slot.setVitePid(child.pid);
+  // The server is part of this run's footprint and yields with it. Vite is a CPU cost, not a
+  // GPU one, so demoting it does nothing for the frame rate — it is here so that an agent that
+  // has been told to get off the owner's performance cores actually gets off all of them.
+  // Cached module serving on an efficiency core is still milliseconds; boot waits are minutes.
+  if (slot?.throttle) slot.throttle.add(child.pid);
 
   let stderr = '';
   child.stderr.on('data', (d) => { stderr += String(d); });
 
+  let hello = null;
   const ready = await new Promise((resolve) => {
     const timer = setTimeout(() => resolve(false), timeoutMs);
     let buf = '';
     child.stdout.on('data', (d) => {
       buf += String(d);
-      if (buf.includes('TC_VITE_READY')) { clearTimeout(timer); resolve(true); }
+      const m = buf.match(/TC_VITE_READY (\{.*\})/);
+      if (!m) return;
+      try { hello = JSON.parse(m[1]); } catch { /* the line is the signal; the payload is a bonus */ }
+      clearTimeout(timer);
+      resolve(true);
     });
     child.once('exit', () => { clearTimeout(timer); resolve(false); });
   });
@@ -669,7 +814,7 @@ export async function startVite({
   }
 
   registerCleanup(killGroup);
-  return { base, server: child, started: true, pid: child.pid, close };
+  return { base, server: child, started: true, pid: child.pid, close, lan: hello?.lan ?? null };
 }
 
 /** Ask a listener what tree it is serving. `up` is whether anything answered at all. */

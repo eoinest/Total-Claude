@@ -1,5 +1,12 @@
 # The browser budget
 
+> **This is half the story.** The cap here counts browsers, which prices CPU, and on 23 August
+> 2026 it was established that the contended resource on this machine is the **GPU**: one agent
+> browser rendering the field battle used 24 % of the CPU and 85 % of the GPU, and the owner
+> reported lag twice while this cap read *within budget*. `docs/tech/RESOURCE-BUDGET.md` is the
+> other half — an owner-state ladder, a measured GPU ceiling, a throttle that reaches work
+> already running, and the reclamation that took this machine from 118 worktrees to 59.
+
 How many headless browsers may run on this machine at once, what enforces it, and the
 measurement the number comes from.
 

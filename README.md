@@ -103,6 +103,23 @@ against pinned SHA-256s):
 npm run assets
 ```
 
+### Two players, two machines, one network
+
+```bash
+npm run host         # prints a URL to hand to the other player
+```
+
+One command, both halves: the game and the relay, bound to an address the machine next door can
+reach rather than to `127.0.0.1`. It works out which of this machine's interfaces to advertise,
+checks both listeners answer *at that address*, and prints the URL. Say Allow if macOS asks
+about incoming connections. Both machines must be on the same network — a guest network with
+client isolation will not work, and nothing here can work round that.
+
+The other player opens the URL, or types the five-character room code from the CREATE A ROOM
+screen into their own lobby. The deployed site cannot host this: an HTTPS page may not open a
+plain `ws://` socket to anything but loopback, which is a browser rule and not a limitation of
+the relay. `docs/MULTIPLAYER.md` §10.2 has the measurement and prices the ways round it.
+
 ### Setting up a battle
 
 The game opens on a Total War-style custom-battle screen before anything loads, so a small
