@@ -261,6 +261,18 @@ if (QUICK) {
   check('and the guard exited rather than spinning on a dead child', guardGone.ok,
     `${reg.treeMembers(job.report?.pgid ?? 0).length} process(es) left after ${guardGone.ms} ms`);
   reg.reapOwned({ quiet: true });
+
+  /*
+   * And now the fixture's parent, which this case deliberately did **not** kill — the whole point
+   * was to kill the child instead. It is still sitting in its `setInterval`, and case 9 is
+   * watching: the first run of this file passed all forty assertions about other people's orphans
+   * and then left one of its own, which is the exact failure mode being tested, with PASS printed
+   * above it.
+   */
+  process.kill(job.parentPid, 'SIGKILL');
+  const parentGone = await waitFor('the fixture parent to go', () => !alive(job.parentPid), 10_000);
+  check('and the fixture parent this case spared is cleaned up before moving on', parentGone.ok,
+    `pid ${job.parentPid} still alive after ${parentGone.ms} ms`);
 }
 
 /* ═══════════════ 4. a sibling's process is refused ═══════════════ */

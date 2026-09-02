@@ -889,24 +889,42 @@ export const attribute = (pid, ctx = {}) => {
     }
   }
 
-  // 2. A live budget slot.
+  /*
+   * 2. A live budget slot.
+   *
+   * **`browserPid` is in this list and leaving it out was a real wrong answer.** The slot records
+   * the harness, the Vite server and the browser; the first version tested only the first two, so a
+   * browser holding a slot with a recorded owner fell through to the parent walk and came back
+   * attributed to a shell. `browsers.mjs procs` printed my own browser as a sibling's.
+   */
   for (const s of slots) {
     const r = s.rec ?? {};
-    if (r.pid === pid || r.vitePid === pid) {
+    if (r.pid === pid || r.vitePid === pid || r.browserPid === pid) {
+      const role = r.browserPid === pid ? 'browser' : r.vitePid === pid ? 'vite' : 'harness';
       return { how: 'slot', recorded: true, agent: r.agent ?? null, agentPid: r.agentPid ?? null,
         worktree: r.root, branch: r.branch ?? null, label: r.label, port: r.port,
-        detail: `browser-budget slot ${s.slot} (${r.label})` };
+        detail: `browser-budget slot ${s.slot} (${r.label}), as its ${role}` };
     }
   }
 
-  // 3. The parent chain, up to a `claude`. Bounded at 24 hops: a cycle in ppid should be
-  //    impossible and a loop here would hang a sweep, which is worse than an unknown owner.
+  /*
+   * 3. The parent chain, up to a `claude`. Bounded at 24 hops: a cycle in ppid should be impossible
+   *    and a loop here would hang a sweep, which is worse than an unknown owner.
+   *
+   * **The test is on argv[0], not on the whole command line, and that is a bug fix.** `\bclaude\b`
+   * matches inside `/Users/…/.claude/shell-snapshots/…`, because a dot and a slash are both word
+   * boundaries — so every shell that sources a snapshot from that directory looked like an agent.
+   * `browsers.mjs procs` attributed a browser to `/bin/zsh -c source …/.claude/shell-snaps` and,
+   * since that shell's PID is not this agent's, called my own browser a sibling's. An attribution
+   * that can name the wrong owner is worse than one that says "unknown", because a sweep acts on it.
+   */
   let cur = pid;
   for (let i = 0; i < 24 && cur && cur > 1; i++) {
     const cmd = cmds.get(cur) ?? '';
-    const m = cmd.match(/\bclaude\b(?:.*--resume\s+([0-9a-f-]{8,}))?/);
-    if (m) {
-      return { how: 'parent-chain', recorded: false, agent: m[1] ?? null, agentPid: cur,
+    const exe = path.basename((cmd.trim().split(/\s+/)[0] ?? '').replace(/:$/, ''));
+    if (exe === 'claude') {
+      const m = cmd.match(/--resume\s+([0-9a-f-]{8,})/);
+      return { how: 'parent-chain', recorded: false, agent: m?.[1] ?? null, agentPid: cur,
         worktree: cwds.get(pid) ?? null, label: null, port: null,
         detail: `descends from ${cmd.slice(0, 60)} (pid ${cur}), ${i} hop(s) up` };
     }
