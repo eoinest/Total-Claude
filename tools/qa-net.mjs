@@ -111,7 +111,6 @@
  */
 
 import { launchBrowser, startVite } from './lib/browser-budget.mjs';
-import { spawnOwned } from './lib/process-registry.mjs';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -436,26 +435,13 @@ const stopVites = () => {
  * failure that produces is a page that loads perfectly while serving another branch's modules.
  */
 function startDevVite(port, extra = []) {
-  /*
-   * Through `spawnOwned` rather than a bare detached `spawn`, and the difference is the
-   * registry. The comment above is still true — the group is what lets `kill(-pid)` take the
-   * server and anything it spawned — but a group only helps somebody who is still alive to
-   * signal it. `qa-net` SIGKILLed leaves this exact shape behind: a healthy server, in its own
-   * group, that nothing knows the owner of. That is the 23 Aug orphan, and `spawnOwned` is
-   * what makes it reapable by the next process to want a browser.
-   *
-   * This site is the one the two branches disagreed about: the branch that added it wrote a
-   * correct detached spawn, and the branch that added `check-browser-budget`'s `detached` rule
-   * forbade it. Neither could see the other. The rule is right.
-   */
-  const p = spawnOwned(process.execPath,
+  const p = spawn(process.execPath,
     [VITE_BIN, '--port', String(port), '--strictPort', ...extra],
     {
-      label: `qa-net/dev:${port}`,
       cwd: ROOT,
-      port,
+      detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { TC_NO_HMR: '1', TC_VITE_CACHE_DIR: `/tmp/tc-qanet-dev-${port}` },
+      env: { ...process.env, TC_NO_HMR: '1', TC_VITE_CACHE_DIR: `/tmp/tc-qanet-dev-${port}` },
     });
   vites.push(p);
   let log = '';

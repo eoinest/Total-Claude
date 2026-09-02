@@ -116,6 +116,15 @@ const EXEMPT = new Set([
  * for it.
  */
 const DETACHED_OK = new Map([
+  ['tools/qa-net.mjs',
+    'a dev server whose log this harness has to read: spawnOwned returns a handle '
+    + '(pgid, done, kill, entry) and not a child, so there is no stdout to watch for the '
+    + '"ready" line. Grouped on purpose, killed as a group by stop(), and cleanup() runs from '
+    + 'both the ordinary exit and unhandledRejection. The residual is real and named: qa-net '
+    + 'SIGKILLed leaves a healthy unowned server, which is the 23 Aug shape. Closing it '
+    + 'properly means teaching spawnOwned to pipe stdio and hand the pipes back -- a change to '
+    + 'the mechanism, not to this call site. Converting it without that broke the dev arm '
+    + 'outright (p.stdout undefined), which is how this entry came to exist.'],
   ['tools/lib/process-registry.mjs',
     'it *is* the mechanism — spawnOwned is the one sanctioned detached spawn in the repository'],
   ['tools/lib/spawn-guard.mjs',
