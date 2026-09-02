@@ -40,10 +40,15 @@
  *
  * ## Two ports, and one firewall prompt
  *
- * 5958 serves the game, 5959 is the relay, and they are separate because `defaultRelay()` in
- * `src/ui/NetLobby.ts` guesses `ws://<whatever host served this page>:5959` — a guess that has
- * been right for the LAN case since it was written and needs no edit here. Merging them behind
- * a Vite websocket proxy would save a port and cost that.
+ * 5958 serves the game and 5959 is the relay, and they are two listeners rather than one behind
+ * a Vite websocket proxy because two processes can be started, killed and diagnosed separately.
+ *
+ * The lobby used to have to *guess* the second number from the first —
+ * `ws://<whatever host served this page>:5959` — which is why this pairing was once load-bearing
+ * and why `--relay-port=` was a way to break the form. It is not any more: the Vite half writes
+ * `<meta name="tc-relay">` naming the port it was given (see `relayPlaque` in
+ * `tools/lib/vite-runner.mjs`), so `src/ui/NetLobby.ts` reads the relay's port rather than
+ * assuming it, and any `--relay-port=` works. §11.2.
  *
  * It costs nothing at the firewall either way, because macOS's application firewall prompts per
  * *binary*, not per port: both listeners are the same `node`, so the dialog appears at most

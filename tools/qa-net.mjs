@@ -225,10 +225,15 @@ const LAN_RELAY = Number(args.get('lan-relay') ?? 5984);
 const DEV_PORT = Number(args.get('dev-port') ?? 5939);
 const STATIC_PORT = Number(args.get('static-port') ?? 5940);
 /*
- * The `ghost` arm's pair: a real `vite-runner` on 5941 told to advertise a relay on 5991, and
+ * The `ghost` arm's pair: a real `vite-runner` on 5945 told to advertise a relay on 5991, and
  * **nothing started on 5991**. The gap between those two numbers is the arm.
+ *
+ * 5945 and not 5941, which was the first choice: `tools/qa-freeze.mjs` defaults to `--port=5941`
+ * and the two gates run back to back in the same sweep. `startVite` would have refused the
+ * second one by tree identity rather than silently measuring the first, so this would have
+ * surfaced — as a red arm about port allocation, in the gate that had nothing to do with it.
  */
-const GHOST_PORT = Number(args.get('ghost-port') ?? 5941);
+const GHOST_PORT = Number(args.get('ghost-port') ?? 5945);
 const GHOST_RELAY = Number(args.get('ghost-relay') ?? 5991);
 if (!Number.isFinite(SECONDS) || SECONDS < 20) {
   console.error(`--seconds must be at least 20; got '${args.get('seconds')}'`);
