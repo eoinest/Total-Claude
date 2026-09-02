@@ -2873,7 +2873,7 @@ opens the host's own browser on that room's *Room open* screen. The host picks a
       █ ███ █ ▄  █  ▀▄▀ █▀▄ █   █ ███ █
       … 21 rows of half blocks, 41 columns …
 
-      http://192.168.1.77:5962/?room=QXWYZ
+      http://192.168.1.77:5958/?room=QXWYZ
 
   The code on its own is QXWYZ, for a phone call.
   Your own browser is opening on this room now.
