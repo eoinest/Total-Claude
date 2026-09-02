@@ -262,6 +262,52 @@
  *     +Z edge by a decision the owner took in writing. The category is gated against those five
  *     BY NAME, so a sixth row falling off the frame fails rather than joining a category.
  *
+ * ----------------------------------------------------------------------------
+ * AND THEN IT WENT UP EIGHT, AND SIX OF THE EIGHT WERE THIS FILE'S OWN FAULT
+ * ----------------------------------------------------------------------------
+ *
+ * `e/city/rome-monuments`, 1 Sep 2026. Nine monument checks were red on Rome and eight of them
+ * close here. **Six of the nine were wrong about the world in the instrument rather than in the
+ * city**, which is a worse ratio than this file would like and is the reason to read the
+ * sections below before trusting a number in them.
+ *
+ * | | before | after |
+ * |---|---|---|
+ * | Rome     | 15/27, 12 failing | **23/27, 4 failing** |
+ * | Carthage | 14/22, 8 failing  | **14/22, 8 failing** — the control does not move |
+ *
+ * The four instrument faults, each with its injection:
+ *
+ *  - **The local frame.** Four transforms in this file read an obstacle box correctly and
+ *    `tools/scratch/mon-extents.mjs` read a PLAN box with the same expression, which mirrors it.
+ *    See `toLocal`. The offline tool reported eleven G14 failures that did not exist and the
+ *    first repair of the pass changed *this file* to match it. `--inject=obb-mirror`.
+ *  - **The percentile.** G12 and G13a ranked a monument's VERTICES, so the Iseum's 200 x 50 m
+ *    podium — two dozen vertices under a temple carrying thousands — was discarded and a 200 m
+ *    building read 59.6. Weighted by triangle area now. `--inject=stone-count-weighted`.
+ *  - **The attribution.** Rome bands its monuments into three meshes, so G15 attributed by
+ *    nearest centre over reach and credited 1.0 % of the city's monument vertices to buildings
+ *    that did not emit them — four trespasses that are not there. `Batch.setProvenance` puts
+ *    the emitter in the scene and this file validates it before believing it.
+ *    `--inject=provenance-blind`, and `--inject=complex-drop` for the harder half: that G15 can
+ *    still go red with the instrument working.
+ *  - **The hill.** G14 and G13a read the Area Capitolina as the Temple of Jupiter.
+ *    `MOUND_AGREED` licenses the platform, grades it against its own published radius, and
+ *    compares the sets both ways. `--inject=mound-invent`.
+ *
+ * And one limb that is neither: `FRAME_CAPPED_AGREED`, for two rows the ground cannot carry at
+ * the published size. It is gated on membership both ways AND on the row being drawn AT its cap,
+ * so it forgives the frame and nothing else. `--inject=frame-cap-invent`.
+ *
+ * **G4 is still red and it is not this file's fault.** 9,150 m² over nine monuments, 1.98 % of
+ * the carriageway. `tools/scratch/mon-corridor.mjs` asks it in the units of the harm — 197 m of
+ * 13,750 severed, six named ways — and the causes are a road survey (the Via Lata is 148 m off
+ * the Mausoleum in three sources) and one place where this file is wrong about the world: the
+ * Via Sacra ran THROUGH the Forum Romanum, which is an open square, which `PUBLISHED`'s own
+ * `forum-romanum` row says in as many words and which Carthage already models with
+ * `solid: false`. Rome has no such field. That repair changes what a cohort may walk across and
+ * belongs with the movement probes rather than here.
+ *
  * **Not applicable is a third outcome, and it is not a pass.** A check whose population is
  * empty on a map — G8c and G8d on Carthage, which declares no complexes — is reported `n/a`
  * with the reason, is excluded from that map's denominator, and can never be mistaken for a
