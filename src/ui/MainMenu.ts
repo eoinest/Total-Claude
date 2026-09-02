@@ -134,8 +134,16 @@ const DESTINATIONS: readonly Destination[] = [
     ic: ICON.swords,
     href: '?mp=1',
     sameTab: true,
-    sub: 'One battle on two machines, both armies under human command. The host chooses the '
-      + 'ground; the challenger takes the other side.',
+    /*
+     * "On one network" is doing real work in this sentence and is not decoration.
+     *
+     * This plaque is on the deployed site too, and multiplayer there cannot start: a page from
+     * the internet may not open a connection into a private network. The lobby says so in full
+     * — see `secureOriginNotice` in `src/ui/NetLobby.ts` — but a visitor should not have to
+     * click to learn the shape of the thing. Four words at the door beat a paragraph behind it.
+     */
+    sub: 'One battle on two machines on one network, both armies under human command. The '
+      + 'host chooses the ground; the challenger takes the other side.',
   },
   {
     id: 'docs',

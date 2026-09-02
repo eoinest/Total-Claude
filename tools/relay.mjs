@@ -60,7 +60,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import process from 'node:process';
-import { CODE_ALPHABET, CODE_LEN, DEFAULT_PAIRS, validCode } from '../src/net/protocol.ts';
+import {
+  CODE_ALPHABET, CODE_LEN, DEFAULT_PAIRS, DEFAULT_RELAY_PORT, validCode,
+} from '../src/net/protocol.ts';
 import { makeCode, noSuchRoom, Room } from '../src/net/room.ts';
 
 // ---------------------------------------------------------------------------
@@ -80,7 +82,7 @@ if (bad.length) {
   console.error(`known: ${FLAGS.map((k) => `--${k}`).join(' ')}`);
   process.exit(2);
 }
-const PORT = Number(args.get('port') ?? 5959);
+const PORT = Number(args.get('port') ?? DEFAULT_RELAY_PORT);
 /** See "`--host`, and why loopback stays the default" above. `0.0.0.0` is the LAN bind. */
 const HOST = args.get('host') ?? '127.0.0.1';
 /*

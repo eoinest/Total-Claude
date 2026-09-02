@@ -7,7 +7,8 @@
  *   npm run host -- --port=5958 --relay-port=5959
  *   npm run host -- --lan=192.168.0.238    # when the ranking picks the wrong interface
  *   npm run host -- --loopback             # bind 127.0.0.1: no firewall prompt, no invite
- *   npm run host -- --open | --no-open     # open the lobby here (default: on a terminal)
+ *   npm run host -- --open | --no-open     # open the room here (default: on a terminal)
+ *   npm run host -- --no-qr                # no square in the terminal, just the URL
  *   npm run host -- --json                 # one machine-readable line, then serve
  *
  * ## Why one command and not two
@@ -32,6 +33,16 @@
  * `docs/MULTIPLAYER.md` §10.2 has both transcripts and prices the three ways round it. They end
  * in either a certificate somebody has to install on both machines or a tunnel out to the
  * public internet, and the second of those is what `net/worker.ts` is already for.
+ *
+ * **One correction to the paragraph above, measured 2 September 2026.** The refusal is not
+ * caused by https as such: it is caused by the *address space* the browser believes the page
+ * came from. From an https page whose own origin is a private address, Chromium 151 opens
+ * `ws://192.168.1.77:5959` without complaint; the same page opens nothing to `ws://1.1.1.1`,
+ * which throws `SecurityError` as mixed content. The live site is refused because it is
+ * **public** reaching into **private**, which is `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`
+ * and is the first of the two transcripts, not the second. The conclusion is unchanged and the
+ * mechanism is not; `tools/qa-net.mjs`'s `https` arm reproduces it with
+ * `--ip-address-space-overrides`, and §12.6 has the table.
  *
  * So: the host serves both halves, over plain HTTP, on the LAN. Which has a property the
  * deployed path does not — **both machines are loading the same bytes from the same server**,
@@ -68,12 +79,14 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { startVite } from './lib/browser-budget.mjs';
+import { DEFAULT_RELAY_PORT } from '../src/net/protocol.ts';
+import { qrEncode, qrHalfBlocks } from '../src/net/qr.ts';
 import { lanCandidates } from './lib/lan-address.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
 const FLAGS = ['port', 'relay-port', 'lan', 'loopback', 'open', 'no-open', 'json', 'quiet',
-  'turn-ms', 'delay'];
+  'turn-ms', 'delay', 'no-qr'];
 const args = new Map(process.argv.slice(2).map((a) => {
   const m = a.match(/^--([^=]+)(?:=(.*))?$/);
   return m ? [m[1], m[2] ?? 'true'] : [a, 'true'];
@@ -86,10 +99,12 @@ if (bad.length) {
 }
 
 const PORT = Number(args.get('port') ?? 5958);
-const RELAY_PORT = Number(args.get('relay-port') ?? 5959);
+const RELAY_PORT = Number(args.get('relay-port') ?? DEFAULT_RELAY_PORT);
 const LOOPBACK = args.has('loopback');
 const JSON_OUT = args.has('json');
 const QUIET = args.has('quiet');
+/* A terminal that cannot draw half blocks, or a transcript that has to stay plain. */
+const NO_QR = args.has('no-qr');
 /*
  * Open the host's own browser when this is a person at a terminal, and never when it is a
  * pipe. `tools/qa-net.mjs` runs this arm with its stdout captured and must not have a window
@@ -268,11 +283,49 @@ const gameUrl = `http://${ADDR}:${PORT}/`;
 const lobbyUrl = `http://${ADDR}:${PORT}/?mp=1`;
 const relayUrl = `ws://${ADDR}:${RELAY_PORT}`;
 
+// ---------------------------------------------------------------------------
+// The room, opened here, so that the thing printed is a thing to scan
+// ---------------------------------------------------------------------------
+
+/*
+ * ## Why the room is minted by the command and not by the browser
+ *
+ * A QR has to encode a code, and until this line ran there was no code: the lobby asked
+ * `/new` when somebody pressed CREATE, which is after the terminal has finished printing. So
+ * what the terminal could offer was a link to *the lobby* — a form, with a field, on the
+ * guest's screen, waiting for five characters somebody would have to read out anyway. That is
+ * the gap the owner was pointing at.
+ *
+ * `/new` is one HTTP request to a relay this process started four lines ago, and it is the
+ * identical request the CREATE button makes. Having the code first turns three things from
+ * intentions into printable facts: the code, the join URL that carries it, and the square.
+ *
+ * The host's browser is then opened on `?mp=1&room=…&create=1`, which claims *this* room by
+ * name rather than opening a form. If the two disagreed — a browser that opened an empty lobby
+ * and minted a second room on CREATE — the terminal's square would point at a room the host had
+ * silently left, which is a worse failure than not printing one at all: it looks like it works.
+ *
+ * A relay that will not mint a room is not fatal. Everything below degrades to what this
+ * command printed before: the lobby URL, no code and no square, with the reason said out loud.
+ */
+const minted = await fetch(`http://127.0.0.1:${RELAY_PORT}/new`, { signal: AbortSignal.timeout(4000) })
+  .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+const ROOM = typeof minted?.room === 'string' ? minted.room : null;
+const joinUrl = ROOM ? `http://${ADDR}:${PORT}/?room=${ROOM}` : null;
+const hostUrl = ROOM ? `http://${ADDR}:${PORT}/?mp=1&room=${ROOM}&create=1` : lobbyUrl;
+/*
+ * No square on a loopback bind, and it is the same judgement the lobby makes about the invite
+ * link. A QR of `http://127.0.0.1:5958/?room=ABCDE` scans perfectly and opens the *scanner's*
+ * own machine, which is the single most confusing thing this command could put on a screen.
+ */
+const showQr = !!(joinUrl && !LOOPBACK && !NO_QR);
+
 if (JSON_OUT) {
   console.log(JSON.stringify({
     tc: 'host-lan', ok: !!(gameOk && relayOk), bind: BIND, lan: ADDR,
     iface: chosen?.iface ?? 'lo0', mdns: LOOPBACK ? null : MDNS,
     gamePort: PORT, relayPort: RELAY_PORT, gameUrl, lobbyUrl, relayUrl,
+    room: ROOM, joinUrl, hostUrl, qr: showQr,
     plaque, alternatives: candidates.filter((c) => c.ip !== ADDR),
     node: process.execPath, pid: process.pid,
   }));
@@ -283,20 +336,41 @@ if (JSON_OUT) {
     say('  Serving on 127.0.0.1 only. Nothing outside this machine can reach it,');
     say('  and the lobby will withhold the invite link and say so.');
     say('');
-    say(`      ${lobbyUrl}`);
+    say(`      ${hostUrl}`);
+  } else if (joinUrl) {
+    say(`  Room ${ROOM} is open. Point the other machine's camera at this, or read`);
+    say('  out the line under it. Either one puts them in the room; nothing is typed.');
+    say('');
+    if (showQr) {
+      /*
+       * Both servers are up by this line and the room is open, so nothing here may be fatal.
+       * `--lan=` accepts whatever it is given, and `qrEncode` throws by name past 213 bytes;
+       * a command that has done its job must not die printing a decoration.
+       */
+      try {
+        for (const line of qrHalfBlocks(qrEncode(joinUrl)).split('\n')) say(`  ${line}`);
+        say('');
+      } catch (err) {
+        say(`  (no square: ${err?.message ?? err})`);
+        say('');
+      }
+    }
+    say(`      ${joinUrl}`);
+    say('');
+    say(`  The code on its own is ${ROOM}, for a phone call.`);
+    if (OPEN) say('  Your own browser is opening on this room now.');
+    else say(`  Open this room here: ${hostUrl}`);
   } else {
-    say('  Hand this to the other commander. They open it and they are in your room:');
+    say('  The relay would not open a room, so there is no code and no square to');
+    say('  print. The lobby still works — press CREATE A ROOM there:');
     say('');
     say(`      ${lobbyUrl}`);
-    say('');
-    say(`  Or read out the room code from the CREATE A ROOM screen — that works from`);
-    say('  any address and survives a phone call.');
   }
   say(rule);
   say(`  game    ${gameUrl}${gameOk ? '' : '   NOT ANSWERING'}`);
   say(`  relay   ${relayUrl}${relayOk ? '' : '   NOT ANSWERING'}`);
   if (!LOOPBACK) {
-    say(`  also    http://${MDNS}:${PORT}/?mp=1`);
+    say(`  also    http://${MDNS}:${PORT}/${ROOM ? `?room=${ROOM}` : '?mp=1'}`);
     say('          Mac to Mac. This name follows the machine across a DHCP lease');
     say('          change; the numbers above do not.');
     say(`  on      ${chosen.iface}${chosen.overridden ? ', given with --lan=' : ''}`);
@@ -327,9 +401,18 @@ if (!gameOk || !relayOk) {
   stop(1);
 }
 
+/*
+ * The host's own browser, on the room this command just opened.
+ *
+ * `hostUrl` and not `lobbyUrl`: see the note above `/new`. A browser landing on an empty form
+ * would let the host mint a *second* room with one press, and the code in this terminal — and
+ * in the square above it, and in whatever the guest has already scanned — would then be a room
+ * nobody is in. The two must be the same room by construction, and they are because one of
+ * them was minted first and the other is told which.
+ */
 if (OPEN) {
   const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
-  spawn(opener, [lobbyUrl], { stdio: 'ignore', detached: true }).unref();
+  spawn(opener, [hostUrl], { stdio: 'ignore', detached: true }).unref();
 }
 
 /*

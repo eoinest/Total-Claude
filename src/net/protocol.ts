@@ -414,6 +414,21 @@ export type RelayMsg =
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const CODE_LEN = 5;
 
+/**
+ * The port a relay listens on when nobody says otherwise. 5959, and it is spelled once.
+ *
+ * `tools/relay.mjs`, `tools/host-lan.mjs` and `src/ui/NetLobby.ts` all had this number written
+ * into them separately, which is the shape of duplication this file's docstring opens by
+ * refusing: the lobby's is the one a *player* can see, and the day one of the three moved the
+ * only symptom would have been a lobby that completes a typed address to a port nothing is on.
+ *
+ * The lobby uses it for one thing only, and it is a completion rather than a guess: somebody
+ * who types a bare `192.168.1.77` into the relay field gets `ws://192.168.1.77:5959` written
+ * back into the field where they can see it. Nothing infers a relay from it — that is what
+ * `<meta name="tc-relay">` is for, and its absence still means absence.
+ */
+export const DEFAULT_RELAY_PORT = 5959;
+
 /** True for a well-formed room code. Case is normalised by the caller, not here. */
 export const validCode = (s: string): boolean =>
   s.length === CODE_LEN && [...s].every((c) => CODE_ALPHABET.includes(c));

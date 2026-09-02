@@ -95,7 +95,8 @@
  * does not.
  */
 
-import { CODE_ALPHABET, CODE_LEN, validCode } from '../net/protocol';
+import { CODE_ALPHABET, CODE_LEN, DEFAULT_RELAY_PORT, validCode } from '../net/protocol';
+import { qrEncode, qrSvg } from '../net/qr';
 
 const KEY = 'tc.net.relay';
 
@@ -145,6 +146,11 @@ const CSS = `
   border-radius:3px;background:#20140d;color:#e6cdaf;font-size:13.5px;line-height:1.6}
 .tc-lobby .tc-blocked b{color:#f0bd85}
 .tc-lobby .tc-blocked[hidden]{display:none}
+/* The only inline link this panel has ever had. Left to the browser it renders default blue
+   with a default underline in the middle of a gold-on-brown sheet, which reads as a defect. */
+.tc-lobby .tc-blocked a{color:#f0bd85;text-decoration:underline;text-underline-offset:2px;
+  text-decoration-color:#8a6238}
+.tc-lobby .tc-blocked a:hover{color:#ffe0bd;text-decoration-color:#c9a24a}
 .tc-lobby details.tc-adv{margin-top:26px;padding-top:16px;border-top:1px solid #3a2e1e}
 .tc-lobby details.tc-adv > summary{cursor:pointer;list-style:none;font-size:11.5px;
   letter-spacing:.14em;text-transform:uppercase;color:#8e7f63}
@@ -160,6 +166,12 @@ const CSS = `
 .tc-lobby .tc-back{margin-top:20px;display:inline-block;color:#8e7d5f;font-size:12.5px;
   text-decoration:none;letter-spacing:.1em;text-transform:uppercase}
 .tc-lobby .tc-back:hover{color:#e9c877}
+.tc-lobby .tc-scan{display:flex;gap:20px;align-items:center;margin:4px 0 14px;flex-wrap:wrap}
+.tc-lobby .tc-qr{flex:0 0 auto;width:200px;height:200px;padding:0;background:#fff;
+  border-radius:3px;line-height:0}
+.tc-lobby .tc-qr svg{display:block;width:100%;height:100%}
+.tc-lobby .tc-scan-said{flex:1 1 14em;min-width:12em}
+.tc-lobby .tc-scan-said p{margin:0 0 8px}
 .tc-lobby a:focus-visible,.tc-lobby button:focus-visible,.tc-lobby summary:focus-visible,
 .tc-lobby a:focus,.tc-lobby button:focus,.tc-lobby summary:focus{outline:2px solid #c9a24a;
   outline-offset:3px;border-radius:2px}
@@ -383,11 +395,81 @@ const RUN_HOST_HERE = 'Stop this server and run <code>npm run host</code> instea
 const RUN_HOST_THERE = 'Run <code>npm run host</code> on either of your two machines, from a '
   + 'checkout of this project, and open the URL it prints on both of them.';
 
+/** Where a stranger would have to go to get a copy. Spelled the same as the front door's. */
+const REPO_URL = 'https://github.com/eoinest/Total-Claude';
+
+/**
+ * Is this the deployed site — an https page from somewhere that is not this machine?
+ *
+ * Called only where `servedByUs()` is already false, so the full test is: nothing on this
+ * origin has signed its own work, the hostname is not loopback, and the scheme is https. In
+ * practice that is `total-claude.vercel.app` and nothing else, because nothing in this
+ * repository serves the game over TLS.
+ *
+ * **What this cannot see, said plainly.** The rule that makes the refusal permanent is not the
+ * scheme; it is the *address space* the browser believes this document came from, and a page
+ * cannot ask about its own. Measured on Chromium 151 (`tools/qa-net.mjs`'s `https` arm, and
+ * the flag comment above `PUBLIC_ORIGIN_OVERRIDE` there): from an https page whose own origin
+ * is a private address, `ws://192.168.1.77:5959` **opens**; from one the browser believes is
+ * public, the same socket is refused with `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`. So the
+ * one case this predicate would over-refuse is somebody serving this build over https on their
+ * own LAN — which nothing here does, and which would still have no relay behind it. The
+ * alternative to over-refusing in that hypothetical is offering a form on the deployed site,
+ * and that is the thing being removed.
+ */
+const secureOrigin = (): boolean =>
+  location.protocol === 'https:' && !isLoopback(location.hostname);
+
+/**
+ * What this page has to say to somebody who has never seen a terminal.
+ *
+ * ## The problem, stated without euphemism
+ *
+ * `total-claude.vercel.app` is public, it is served over https, and multiplayer here runs
+ * between two machines on one home or office network. A page the browser believes came from
+ * the public internet is not allowed to open a connection into a private network — the socket
+ * is refused with `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS` before a packet exists, and
+ * there is no flag on the visitor's side that changes it. Measured on the live site
+ * (`tools/host-lan.mjs`'s docstring, `docs/MULTIPLAYER.md` §10.2) and reproduced under test by
+ * `tools/qa-net.mjs`'s `https` arm.
+ *
+ * The sentence below says *"from the internet"* and not *"over a secure connection"*, and the
+ * distinction is not pedantry: the first draft of it said the second, and the arm written to
+ * prove it found an https page opening exactly the socket the screen claimed was impossible.
+ * What is refused is the reach from a public address space into a private one; https is how you
+ * get served from a public one, not the rule itself.
+ *
+ * So the honest position is that **this screen cannot ever start a battle**, and the only
+ * dishonest things it could do about that are the two it used to do: offer a form field, and
+ * print a shell command at a reader with nothing to run it in.
+ *
+ * ## Why the door stays open
+ *
+ * Hiding the entry was considered and rejected. A visitor who reads "one battle on two
+ * machines, both armies under human command" on the front door and finds no way to ask about
+ * it learns nothing; a visitor who clicks and is told, in four sentences, that it runs on your
+ * own network and where to get it, has been told the truth about the product. The link is to
+ * the repository, which is a thing a stranger can actually open — unlike `npm run host`, which
+ * is an instruction to somebody who already has everything the instruction assumes.
+ */
+const secureOriginNotice = (): string =>
+  '<b>Two commanders is played on your own network, and it cannot be played from this page.</b> '
+  + 'Both players load the game from one of your own two machines, and every order passes '
+  + 'through a small relay that the same machine runs beside it. '
+  + 'This page came to you from the internet, and a browser does not let a page from the '
+  + 'internet open a connection into a private network. That is a rule of the browser rather '
+  + 'than a setting, so nothing typed on this screen can start a battle here. '
+  + `To play it: take a copy from <a href="${REPO_URL}" target="_blank" rel="noopener">`
+  + 'github.com/eoinest/Total-Claude</a> onto either of the two machines and start it there. '
+  + 'It prints a link and a square code; the second machine opens the link or points a phone '
+  + 'camera at the code, and is in the room. Nothing is typed on either side.';
+
 /**
  * Why no match can start from here — said where the player is looking, not in a field label.
  *
- * The second branch keeps the sentence the deployed site already had, because it is the right
- * one: naming what this page *is* explains why no amount of typing into it will help.
+ * Two answers, not three. The https origin never reaches this function: `showLobby` answers
+ * that case before it builds a panel at all, because there is no panel to build — see
+ * `secureOriginNotice`. A branch here for it would be a sentence nothing could ever read.
  */
 const noRelayHere = (ours: boolean): string =>
   '<b>There is no relay behind this page, so a battle cannot start from it.</b> Every order '
@@ -432,6 +514,85 @@ const battleUrl = (relay: string, code: string, asHost: boolean, from = location
   else u.searchParams.set('host', '0');
   return u;
 };
+
+/**
+ * The invitation: this page, and a room code. Nothing else, and the omission is the design.
+ *
+ * The link used to carry the relay address as well — `?net=ws%3A%2F%2F192.168.0.238%3A5959&
+ * room=ABCDE&host=0`, 78 characters of percent-encoding. That was necessary while the page a
+ * guest loaded might have come from anywhere. It is not, and has not been since
+ * `<meta name="tc-relay">` existed: **the only server that can serve this link is the one that
+ * started the relay**, so the address is already in the document the link fetches, stated by
+ * the server rather than copied through a query string. Carrying it twice means the two can
+ * disagree, and the copy in the URL is the one that goes stale — a host who restarts with
+ * `--relay-port=` invalidates every link they sent, and the failure lands on the guest.
+ *
+ * What the short form buys, in order of how much it matters:
+ *
+ *   - **It fits in a small QR.** 36 bytes is a version-4 symbol at level Q, 33 modules square;
+ *     the long form is 79 bytes and version 7, 45 modules. On a terminal at half a character
+ *     cell per module that is the difference between a symbol that scans across a desk and one
+ *     that needs a phone held against the screen.
+ *   - **It can be read out.** `192.168.1.77, colon, 5958, slash, question mark, room equals
+ *     ABCDE` is a sentence. The long form is not.
+ *   - **It survives the host restarting the relay on another port.**
+ *
+ * `?net=…&room=…&host=0` is still understood everywhere it was — `main.ts`'s `netFailed`
+ * builds one, and any link already sent still works. Nothing was removed; one thing stopped
+ * being generated.
+ */
+export const inviteUrl = (code: string, from = location.href): URL => {
+  const u = new URL(from);
+  u.search = '';
+  u.searchParams.set('room', code);
+  return u;
+};
+
+/**
+ * The relay this document's own server started, or `null`. **Never a guess, on any path.**
+ *
+ * Split out of `resolveRelay` because `main.ts` needs exactly this and none of the rest: a
+ * guest arriving on `?room=ABCDE` has no `?net=` to obey and must not be given this browser's
+ * remembered address from some other evening's session, which would silently take them to a
+ * different machine's relay under the host's room code.
+ *
+ * The scheme follows the page. On https it composes `wss`, which is correct and which nothing
+ * currently answers — see `secureOriginNotice`. That is deliberate: composing `ws` there would
+ * produce an address the browser refuses to open, and the refusal would arrive as a
+ * `SecurityError` in the console rather than as a sentence on the screen.
+ */
+export function serverRelay(doc: Document = document): string | null {
+  const plaque = readLanPlaque(doc);
+  if (plaque?.relayUrl) return plaque.relayUrl;
+  const port = readRelayPort(doc);
+  if (port === null) return null;
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${scheme}://${location.hostname || '127.0.0.1'}:${port}`;
+}
+
+/**
+ * What somebody typed into the relay field, completed to an address a `WebSocket` accepts.
+ *
+ * Three forms in, one out. `ws://192.168.1.77:5959` passes through; `192.168.1.77:5959` gets
+ * the scheme; `192.168.1.77` gets the scheme and `DEFAULT_RELAY_PORT`. The completed value is
+ * **written back into the field** by the caller, so what is added is on screen before anything
+ * is done with it — which is the difference between completing what a person typed and the
+ * page guessing on their behalf, and this file has a long docstring about the second.
+ *
+ * It exists because of the one case the QR and the link cannot serve: two people who each have
+ * a checkout, each running their own copy, one of whom wants to join the other's relay. The
+ * thing they have to get across is an address, and four dotted numbers is the smallest honest
+ * spelling of one. See `docs/MULTIPLAYER.md` §12.5 for why an address packed into a longer
+ * *room code* was considered for that case and rejected.
+ */
+export function normaliseRelay(raw: string): string {
+  const s = raw.trim();
+  if (!s) return '';
+  if (/^wss?:\/\//i.test(s)) return s;
+  if (/:\/\//.test(s)) return s; // some other scheme: leave it alone and let it fail by name
+  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+  return /:\d+$/.test(s) ? `${scheme}://${s}` : `${scheme}://${s}:${DEFAULT_RELAY_PORT}`;
+}
 
 /** The shell every lobby screen is drawn into. Returns the sheet to fill. */
 function mount(host: HTMLElement): HTMLElement {
@@ -484,6 +645,34 @@ export function showLobby(host: HTMLElement): void {
   const declaredPort = readRelayPort();
   const ours = servedByUs(plaque, declaredPort);
   const chosen = resolveRelay(params, plaque, declaredPort, localStorage.getItem(KEY));
+
+  /*
+   * The deployed site gets a page, and not a disabled form.
+   *
+   * This is the one origin whose answer is permanent, and a form on it would be furniture: a
+   * field to type a code into, a Create that cannot succeed and a Join that cannot succeed,
+   * all greyed out under a paragraph explaining that they cannot succeed. Three controls
+   * arguing with one sentence. `secureOriginNotice` is the sentence; there is nothing here for
+   * a control to do, so there are no controls.
+   *
+   * Deliberately *not* keyed on a hostname — see `secureOrigin` for what the predicate can and
+   * cannot see. A self-signed https origin on this LAN gets the identical screen, which is how
+   * `tools/qa-net.mjs`'s `https` arm measures the deployed site's behaviour without deploying
+   * anything, and, in the same arm, proves the reason it gives is true by declaring that origin
+   * public to the browser and reporting what the browser then did with the socket.
+   */
+  if (!ours && secureOrigin()) {
+    sheet.innerHTML = `
+      <h1>Two commanders</h1>
+      <div class="tc-blocked" id="tc-no-relay" role="status">${secureOriginNotice()}</div>
+      <div class="tc-row">
+        <a class="tc-back" id="tc-get-copy" href="${REPO_URL}" target="_blank" rel="noopener"
+           style="margin-top:2px">Get a copy &rsaquo;</a>
+      </div>
+      <a class="tc-back" href="?">&lsaquo; Back to the front door</a>`;
+    (sheet.querySelector('#tc-get-copy') as HTMLElement | null)?.focus();
+    return;
+  }
 
   /*
    * The transport lives in a `<details>`, and the summary is the only part of it on screen.
@@ -615,6 +804,20 @@ export function showLobby(host: HTMLElement): void {
     usable = relay.value.trim() !== '';
     gate();
   });
+  /*
+   * Completed when the field is left, never while it is being typed in.
+   *
+   * `change` and not `input`, because completing on every keystroke would turn `192.` into
+   * `ws://192.:5959` under the cursor and then fight the next character. On `change` the person
+   * has finished, the completion is written back where they can read it, and the address that
+   * gets used is the address on the screen.
+   */
+  relay.addEventListener('change', () => {
+    const done = normaliseRelay(relay.value);
+    if (done !== relay.value.trim()) relay.value = done;
+    usable = done !== '';
+    gate();
+  });
 
   const say = (html: string, bad = false): void => {
     note.innerHTML = html;
@@ -701,21 +904,67 @@ export function showLobby(host: HTMLElement): void {
      * URL bar is describing the host's own convenience and not the other machine's route.
      */
     const from = plaque && isLoopback(location.hostname) ? plaque.gameUrl : location.href;
-    const invite = battleUrl(addr, code, false, from).toString();
+    /*
+     * Short link or long link, and the test is not a preference — it is whether the two would
+     * agree.
+     *
+     * `inviteUrl` carries only the room code, and the guest's relay comes from the document the
+     * link fetches. That is exactly right while the address in this field is the one this
+     * server declares, and **wrong the moment the host has overridden it**: a host who typed
+     * another machine's relay into the disclosure would otherwise send a link whose page
+     * resolves this server's relay instead, and the two would sit in identically-named rooms on
+     * different relays, each waiting for somebody who is not coming. Nothing on either screen
+     * would say so.
+     *
+     * So an overridden address falls back to `battleUrl`, which states the relay in the query
+     * string and cannot be second-guessed by the page at the far end. That is the older, longer
+     * form; it never stopped working and this is the case it exists for.
+     */
+    const declared = serverRelay();
+    const shortLink = declared !== null && declared === addr;
+    const invite = (shortLink ? inviteUrl(code, from) : battleUrl(addr, code, false, from)).toString();
     // Honest about when it cannot work. See `isLoopback`: a link naming this machine, mailed
     // to somebody else, opens *their* machine and finds nothing there. Both halves are judged
-    // on the addresses that are actually going into the link, not on `location` alone.
-    const deadLink = isLoopback(hostOf(from)) ? 'page' : isLoopback(hostOf(addr)) ? 'relay' : '';
+    // on the addresses that are actually going into the link, not on `location` alone. A short
+    // link carries no relay address at all, so only the page half of that test applies to it.
+    const deadLink = isLoopback(hostOf(from)) ? 'page'
+      : !shortLink && isLoopback(hostOf(addr)) ? 'relay' : '';
     /*
      * A link built out of an address that is not in the host's URL bar has to say so. Otherwise
      * the screen shows a code, a link naming a machine the host has never typed, and no account
      * of where it came from — and the first thing anyone would do with that is not trust it.
      */
     const rehomed = !deadLink && plaque && from !== location.href;
+    /*
+     * The square, and why it is the first thing on the screen when there is one.
+     *
+     * The code was the object here and the link was a convenience, and that ordering was right
+     * for as long as the alternative to reading five characters out was reading a URL out. It
+     * is not any more. A camera pointed at this square puts the other commander in this room
+     * having typed nothing at all, which is a shorter path than any number of characters, and
+     * the code stays underneath it for the phone call, the photograph and the second laptop
+     * that has no camera.
+     *
+     * `qrSvg` at level Q, which is the level that survives a hand and a reflection; see
+     * `src/net/qr.ts`. It is inert markup, so it goes in with the rest of the sheet.
+     */
+    const square = deadLink ? '' : qrSvg(qrEncode(invite));
     sheet.innerHTML = `
       <h1>Room open</h1>
-      <p>Read this out to the other commander, or have them type it into their own lobby.</p>
-      <div class="tc-code" id="tc-code">${esc(code)}</div>
+      <p>${deadLink
+    ? 'Read this out to the other commander, or have them type it into their own lobby.'
+    : 'Point the other machine&rsquo;s camera at this, or read the code out. Either one puts '
+      + 'them in this room.'}</p>
+      ${square
+    ? `<div class="tc-scan">
+           <div class="tc-qr" id="tc-qr" role="img"
+                aria-label="Join code for room ${esc(code)}">${square}</div>
+           <div class="tc-scan-said">
+             <div class="tc-code" id="tc-code">${esc(code)}</div>
+             <p class="tc-hint">Both of you are in room <b>${esc(code)}</b>.</p>
+           </div>
+         </div>`
+    : `<div class="tc-code" id="tc-code">${esc(code)}</div>`}
       <div class="tc-row">
         <button type="button" id="tc-copy-code">Copy the code</button>
         ${deadLink ? ''
@@ -735,7 +984,11 @@ export function showLobby(host: HTMLElement): void {
             + `this machine can reach &mdash; so the link is built from <b>${esc(plaque.lan)}</b>, `
             + `which is ${esc(plaque.iface)} on the network you are both on. `
             + `<b>${esc(plaque.mdns)}</b> reaches this machine too, Mac to Mac. ` : ''}`
-            + 'The link carries the relay address and this code: '
+            + (shortLink
+              ? 'The square and the link are the same address, and it is short enough to say '
+                + 'out loud: '
+              : 'You have pointed this lobby at a relay of your own, so the link states that '
+                + 'address rather than letting their page work it out: ')
             + `<code id="tc-invite">${esc(invite)}</code>`}</p>
       <div class="tc-row">
         <button type="button" id="tc-begin">Choose the battle &rarr;</button>
@@ -786,7 +1039,7 @@ export function showLobby(host: HTMLElement): void {
     return true;
   };
 
-  hostBtn.addEventListener('click', () => {
+  const create = (fromLink = false): void => {
     if (noAddress()) return;
     const addr = relay.value.trim();
     const asked = room.value.trim().toUpperCase();
@@ -802,6 +1055,24 @@ export function showLobby(host: HTMLElement): void {
     fetch(`${httpOf(addr)}/new${q}`)
       .then(async (r) => {
         const j = await r.json().catch(() => null) as { room?: string; detail?: string } | null;
+        /*
+         * 409 on a room the *command* opened is the other commander arriving first.
+         *
+         * A real race, and it is the good outcome wearing an error's clothes: `npm run host`
+         * mints the room, prints the square, and the guest may scan it before the host's own
+         * browser has finished loading. Once a socket is in the room the relay refuses to hand
+         * it out again — correctly, for a code somebody typed — and the host would be told
+         * "room X is in use on this relay" about their own room, with no way forward.
+         *
+         * Narrow on purpose: only when the code came from the link `npm run host` wrote, and
+         * only for the code that was asked for. A code the *player* typed still gets the
+         * refusal, because there it means what it says.
+         */
+        if (r.status === 409 && fromLink && asked) {
+          localStorage.setItem(KEY, addr);
+          opened(asked);
+          return;
+        }
         if (!r.ok || !j?.room) throw new Error(j?.detail ?? `the relay answered ${r.status}`);
         localStorage.setItem(KEY, addr);
         opened(j.room);
@@ -817,7 +1088,8 @@ export function showLobby(host: HTMLElement): void {
           say(esc(why), true);
         }
       });
-  });
+  };
+  hostBtn.addEventListener('click', () => create());
 
   joinBtn.addEventListener('click', () => {
     if (noAddress()) return;
@@ -837,4 +1109,21 @@ export function showLobby(host: HTMLElement): void {
   });
 
   room.focus();
+
+  /*
+   * `?create=1` — the host's side of "nothing is typed", and the mirror of the guest's `?room=`.
+   *
+   * `npm run host` asks the relay for a room before it prints anything, because the code has to
+   * exist for the QR in the terminal to encode it. Having minted it, the browser it opens must
+   * land on *that* room and not on an empty form the host is expected to fill in with a code
+   * they can see two inches away in their own terminal — which was the shape of the first
+   * version of this, and it left the terminal's square pointing at a room the screen had
+   * quietly replaced with another one.
+   *
+   * So the tool passes `?mp=1&room=CODE&create=1` and this presses CREATE. It goes through the
+   * ordinary `create()` and not a private path: `/new?room=CODE` claims a code by name and is
+   * the same request the button makes, so a relay that has died, a code already in use and a
+   * page with no relay behind it all produce the same screens they always did.
+   */
+  if (params.get('create') === '1' && validCode(room.value.trim().toUpperCase())) create(true);
 }

@@ -35,9 +35,10 @@ import { ALL_FACTIONS, Faction } from './sim/types';
 import { installSeamCheck } from './core/seams';
 import { decodeReplay, type ReplayRecord, ReplaySystem } from './sim/replay';
 import { NetLink, netParams } from './net/NetLink';
+import { validCode } from './net/protocol';
 import { NetSession } from './net/NetSession';
 import { setPlayerFaction } from './ui/theme';
-import { esc, showLobby, showNetNotice } from './ui/NetLobby';
+import { esc, serverRelay, showLobby, showNetNotice } from './ui/NetLobby';
 import { NetPanel } from './ui/NetPanel';
 import { stateHashes, UNIT_CTL_FIELDS, UNIT_F64_FIELDS } from './sim/stateHash';
 
@@ -115,6 +116,40 @@ if (params.get('mp') === '1') {
    * console failure for a page behaving exactly as intended.
    */
   await new Promise(() => { /* the lobby navigates; nothing below this line ever runs */ });
+}
+/*
+ * `?room=ABCDE`, with no relay address beside it, is an invitation — and it joins.
+ *
+ * This is the whole of "a code and that's it". A guest who scans the square on the host's
+ * screen, or types the line the host reads out, arrives here with five characters and no
+ * transport in the URL at all; the address comes out of the document, because **the only
+ * server that could have served this page is the one that started the relay** and it says so
+ * in `<meta name="tc-relay">`. Nothing is guessed: `serverRelay()` returns `null` on any origin
+ * that has not signed its own work, and `null` falls through to the lobby below.
+ *
+ * *Joins*, rather than hosts, and the asymmetry is deliberate rather than convenient. A URL
+ * carrying a room code and nothing else is not a URL anybody writes for themselves: the lobby
+ * writes the host's own navigation with `?net=…&menu=battle` and `npm run host` writes
+ * `?mp=1&room=…&create=1`. A bare code is a thing that was *sent*, and an invitation is by
+ * definition to the other side. `?net=…&room=…` keeps its old meaning exactly — host unless
+ * `&host=0` — so every link that already exists still means what it meant.
+ *
+ * The fallback is the lobby with the code already in the field, which is the honest answer for
+ * the two origins that cannot resolve a relay: the deployed site, and a `npm run dev` server
+ * that never started one. They get the screen that explains why, rather than a socket to
+ * nowhere.
+ */
+if (!params.get('net') && params.get('room')) {
+  const asked = (params.get('room') ?? '').toUpperCase();
+  const addr = validCode(asked) ? serverRelay() : null;
+  if (addr) {
+    params.set('net', addr);
+    params.set('host', '0');
+  } else {
+    if (loading) loading.hidden = true;
+    showLobby(document.getElementById('menu-root') as HTMLElement);
+    await new Promise(() => { /* as `?mp=1` above: the lobby is the end of this page's life */ });
+  }
 }
 /*
  * The relay, and why it is opened before anything else exists.
