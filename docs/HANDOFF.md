@@ -260,14 +260,20 @@ count problem. The second was not, and no count could have caught it.
 > **Before every wave: `node tools/browsers.mjs machine`.** One screen, changes nothing, and it
 > answers all three questions below at once. Then:
 >
-> | the owner is | dispatch at most | of which expected to run a gate, probe or film |
-> |---|---|---|
-> | `away` | **6** | **4** |
-> | `present` | **3** | **2** |
-> | `playing` | **nothing new — let what is running finish** | 0 |
+> | the owner is | dispatch at most | of which expected to run a gate, probe or film | OS processes |
+> |---|---|---|---|
+> | `away` | **6** | **4** | **36** |
+> | `present` | **3** | **2** | **18** |
+> | `playing` | **nothing new — let what is running finish** | 0 | **9** |
 >
 > **And if the GPU line is over the ceiling for the current state, the machine is already at its
 > limit whatever the slot count says.** Wait. That is the line the old rule had no way to read.
+>
+> The last column is the same ladder in the unit a `ps` count is in, because that is the number
+> that gets asked about and a browser count cannot answer it. One unit of gate work is **six** OS
+> processes, measured: four `chrome-headless-shell`, one Vite, one supervisor guard. The ceiling is
+> `cap × (6 + 3)`, the three being renderer headroom for a legitimately multi-page tool.
+> **`node tools/browsers.mjs procs`** prints it, with every owner, in about a second.
 
 **You no longer have to enforce the browser count, and it is no longer 4.** The filesystem
 semaphore applies the ladder itself; a caller over it queues rather than piling on, and the wait
@@ -307,6 +313,43 @@ enforces, because an agent is bursty and holding a browser is only part of its l
 dispatches twelve cannot read twelve reports.** Nineteen orphaned dev servers sat on this box
 for more than a day before anyone looked, and there are 118 worktrees on it now for the same
 reason.
+
+**Stopping an agent does not stop its children, and this is the one I got wrong.** On 23 Aug an
+agent was told to run `tools/scratch/net-flake-load.mjs --runs=6` and then stopped. The loop had
+been **reparented to init** and went on launching browsers; it survived **two** `pkill` sweeps and
+was found only by walking parents up from a live browser. It was the second orphan of that shape
+here — the `npx vite` wrapper was the first — so it is a pattern, not an incident.
+
+What to do about it, in order:
+
+1. **Stopping an agent is now enough for anything started through the supervisor.** Every job that
+   goes through `spawnOwned`, `launchBrowser` or `startVite` runs inside a guarded process group
+   anchored to the agent's own PID, and the guard takes the whole tree down within about two
+   seconds of that PID going away. Measured: **2,289 ms** in `tools/qa-supervisor.mjs` case 1, on a
+   detached child that was launching browsers, killed with SIGKILL so that nothing polite ran.
+2. **Then check, because the guard is not the only mechanism and should not be the only habit.**
+   `node tools/browsers.mjs procs` names every registered group and its owner, and separates the
+   processes whose owner is *recorded* from those whose owner is only *inferred*. If a stopped
+   agent's work is still there a minute later, it was started outside the supervisor — an
+   unconverted tool, or something run with `TC_BROWSER_BUDGET=off`.
+3. **Then `node tools/browsers.mjs sweep`.** It attributes every candidate before it signals
+   anything, and it **refuses a live sibling's** rather than guessing — which is the fix for the
+   day one agent killed another's dev server on port 5901. `--force` takes what is mine and what
+   nothing alive claims; `--include-others` is the override, and it prints whose each one is first.
+4. **Never `pkill -f chrome-headless-shell`.** It missed twice on 23 Aug, because the thing to kill
+   was a Node loop and not a browser, and because it cannot tell one agent's work from another's.
+   It is also how you kill the owner's own playtest.
+
+**Nothing here needs a daemon and nothing here has one.** The state is on disk under
+`/tmp/tc-browser-budget/owned/`, liveness is re-derived on every read from the boot generation and
+`kill(pid, 0)`, and the sweep is paid for by whoever next wants a browser — `acquireSlot` reaps
+before it admits. So the window on a leak is "until anybody next starts a browser", not "until
+somebody remembers". A machine that slept or crashed comes back clean: every record from a previous
+boot is dropped **without signalling any PID in it**, because after a reboot those numbers belong
+to strangers.
+
+**If you dispatch a wave and then stop it, say so in your report and run step 2.** The failure this
+is all for was not a machine fault; it was an agent being stopped and nobody looking afterwards.
 
 **A fourth limit, new: reclaim between waves.** `node tools/reclaim.mjs` is a preview and
 changes nothing; `--apply` needs a fetch newer than ten minutes and refuses without one. Today
