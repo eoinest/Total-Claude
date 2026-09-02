@@ -3,12 +3,13 @@
  * QA: two clients, one relay, one battle — driven through the real menu with a real mouse.
  *
  * Usage: node tools/qa-net.mjs [--port=5937] [--relay=5989] [--json=path] [--shots=dir]
- *                              [--only=proto,battle,siege,lobby,lan,badcode,norelay,drop,dup,
- *                                      swap,ulp,late,leave,lag,xengine]
+ *                              [--only=proto,battle,siege,lobby,lan,dev,static,badcode,norelay,
+ *                                      drop,dup,swap,ulp,late,leave,lag,xengine]
  *                              [--lan-port=5938] [--lan-relay=5984]
+ *                              [--dev-port=5939] [--static-port=5940]
  *                              [--all] [--seconds=70] [--keep] [--xsize=ultra] [--xticks=1500]
  *
- * Fourteen arms by default. `xengine` — two full-scale battles in two browser engines — is
+ * Sixteen arms by default. `xengine` — two full-scale battles in two browser engines — is
  * opt-in; see `DEFAULT_ARMS`.
  *
  * An unknown flag, or an unknown `--only=` arm, exits 2 rather than quietly running nothing —
@@ -65,6 +66,22 @@
  * the second client nothing but that link. Its last check is the one that matters most: with no
  * LAN server, the link is still withheld and still says why. See the arm.
  *
+ * ## And which server sent the page, because the lobby now answers differently to each
+ *
+ * The relay address used to be a field the player was expected to look at, filled in by a
+ * *guess* — `ws://<whatever host served this page>:5959` — which is right under `npm run host`
+ * and points at nothing under `npm run dev`. Three arms hold the three answers apart, and each
+ * of them asserts which document it was actually given rather than inferring it:
+ *
+ *   - `lan`     served by `npm run host`, relay live: no address on screen, no refusal, and
+ *               `lan-lobby-says-nothing-about-transport` goes red if one comes back.
+ *   - `dev`     `"dev": "vite"`'s own binary, no relay: empty field, behind a disclosure, and a
+ *               refusal naming `npm run host`. Then it types a relay's address into that
+ *               disclosure and opens a room, so the demotion is not a deletion.
+ *   - `static`  a non-loopback origin that has said nothing about itself, which is the deployed
+ *               site's shape. Same refusal, different sentence, and the origin is in the pass
+ *               condition — see the arm on why that is not a formality.
+ *
  * ## Ports
  *
  * 5937 for vite and 5985-5999 for the relays. Never 5173. The relay band is deliberately at
@@ -96,13 +113,15 @@
 import { launchBrowser } from './lib/browser-budget.mjs';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import process from 'node:process';
+import { lanAddress } from './lib/lan-address.mjs';
 import { bootThroughMenu, driveMenu, ensureServer, waitForServer } from './lib/menu-boot.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const ARMS = ['proto', 'battle', 'siege', 'lobby', 'lan', 'badcode', 'norelay', 'drop', 'dup',
-  'swap', 'ulp', 'late', 'leave', 'lag', 'xengine'];
+const ARMS = ['proto', 'battle', 'siege', 'lobby', 'lan', 'dev', 'static', 'badcode', 'norelay',
+  'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 'lag', 'xengine'];
 /**
  * `xengine` is opt-in, and that is a judgement rather than an omission.
  *
@@ -119,7 +138,8 @@ const ARMS = ['proto', 'battle', 'siege', 'lobby', 'lan', 'badcode', 'norelay', 
  */
 const DEFAULT_ARMS = ARMS.filter((a) => a !== 'xengine');
 const FLAGS = ['port', 'relay', 'json', 'shots', 'only', 'seconds', 'keep', 'xsize', 'xticks',
-  'all', 'siege-map', 'siege-scenario', 'siege-seconds', 'lan-port', 'lan-relay'];
+  'all', 'siege-map', 'siege-scenario', 'siege-seconds', 'lan-port', 'lan-relay', 'dev-port',
+  'static-port'];
 
 const args = new Map(process.argv.slice(2).map((a) => {
   const m = a.match(/^--([^=]+)(?:=(.*))?$/);
@@ -189,6 +209,21 @@ const SIEGE_SECONDS = Number(args.get('siege-seconds') ?? 45);
  */
 const LAN_PORT = Number(args.get('lan-port') ?? 5938);
 const LAN_RELAY = Number(args.get('lan-relay') ?? 5984);
+/*
+ * The two arms that run `npm run dev`'s own binary get their own ports, for the same reason the
+ * `lan` arm does and one more.
+ *
+ * `startVite` cannot be used for either of them, because what they measure is *the absence of
+ * `tools/lib/vite-runner.mjs`*: no `/__tc/tree`, no `<meta name="tc-lan">`, and — the whole
+ * point — no `<meta name="tc-relay">`. Reusing the runner would put the tag under test into the
+ * document that is supposed to prove what happens without it. So they spawn `vite` directly and
+ * cannot share a port with a runner-managed server, which would be refused as an unidentified
+ * listener anyway.
+ *
+ * 5940 binds `0.0.0.0` and is reached at the LAN address; see the `static` arm.
+ */
+const DEV_PORT = Number(args.get('dev-port') ?? 5939);
+const STATIC_PORT = Number(args.get('static-port') ?? 5940);
 if (!Number.isFinite(SECONDS) || SECONDS < 20) {
   console.error(`--seconds must be at least 20; got '${args.get('seconds')}'`);
   process.exit(2);
@@ -343,6 +378,74 @@ async function startHostLan(port, relayPort) {
   return { ...said, proc: p, stop, stderr: () => err };
 }
 
+/**
+ * `node_modules/vite/bin/vite.js`, found by walking up from whatever `vite` resolves to.
+ *
+ * Not joined onto `ROOT`: an agent worktree has no `node_modules` of its own and reaches the
+ * main checkout's through node's resolution, so a path built from `ROOT` names a file that does
+ * not exist and the arm dies with `MODULE_NOT_FOUND`. Not `require.resolve('vite/bin/vite.js')`
+ * either — vite's `exports` map does not publish the bin, and that throws too.
+ */
+const VITE_BIN = (() => {
+  let d = path.dirname(createRequire(import.meta.url).resolve('vite'));
+  while (path.basename(d) !== 'vite' && d !== path.dirname(d)) d = path.dirname(d);
+  return path.join(d, 'bin', 'vite.js');
+})();
+
+const vites = [];
+const stopVites = () => {
+  for (const p of vites.splice(0)) {
+    try { process.kill(-p.pid, 'SIGTERM'); } catch {
+      try { p.kill('SIGTERM'); } catch { /* gone */ }
+    }
+  }
+};
+
+/**
+ * `npm run dev`, as itself, for the two arms whose subject is what that command *does not* do.
+ *
+ * Every other server in this file comes from `tools/lib/browser-budget.mjs`'s `startVite`, and
+ * that is right for every other arm. It is wrong for these two: `startVite` runs
+ * `tools/lib/vite-runner.mjs`, which writes `<meta name="tc-relay">` into the document whenever
+ * it was told a relay port and `<meta name="tc-lan">` on a LAN bind. What `dev` and `static`
+ * measure is the lobby's behaviour in a document with **neither tag in it**, which is what a
+ * player gets from `npm run dev` and from the deployed upload, so the runner cannot be the
+ * thing under test and the thing providing the fixture at once.
+ *
+ * `package.json` says `"dev": "vite"`, so this is that binary with a port on it. Spawned as
+ * `node <bin>` rather than through `npm` or `npx` for the reason `vite-runner.mjs` opens with:
+ * the wrapper's PID is not the PID holding the port, and SIGTERM to a wrapper leaves a server
+ * running for a day. `detached: true` puts it in its own group so `kill(-pid)` takes it and
+ * anything it spawned; `stopVites` runs from `cleanup()`, which runs from both the ordinary
+ * exit and `unhandledRejection`.
+ *
+ * Its own `TC_VITE_CACHE_DIR` per port because `vite.config.ts` spends a paragraph on two
+ * servers sharing one optimiser cache through a worktree's `node_modules` symlink, and the
+ * failure that produces is a page that loads perfectly while serving another branch's modules.
+ */
+function startDevVite(port, extra = []) {
+  const p = spawn(process.execPath,
+    [VITE_BIN, '--port', String(port), '--strictPort', ...extra],
+    {
+      cwd: ROOT,
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, TC_NO_HMR: '1', TC_VITE_CACHE_DIR: `/tmp/tc-qanet-dev-${port}` },
+    });
+  vites.push(p);
+  let log = '';
+  p.stdout.on('data', (d) => { log += String(d); });
+  p.stderr.on('data', (d) => { log += String(d); });
+  const stop = () => {
+    const at = vites.indexOf(p);
+    if (at >= 0) vites.splice(at, 1);
+    try { process.kill(-p.pid, 'SIGTERM'); } catch {
+      try { p.kill('SIGTERM'); } catch { /* gone */ }
+    }
+  };
+  return { proc: p, port, stop, log: () => log };
+}
+
 /*
  * Cleanup first, resources second — and that ordering is the whole point.
  *
@@ -357,6 +460,7 @@ let server = null;
 function cleanup() {
   stopRelays();
   stopHosts();
+  stopVites();
   for (const b of browsers.splice(0)) { void b.close().catch(() => { /* already gone */ }); }
   if (server && !KEEP) server.kill('SIGTERM');
 }
@@ -500,6 +604,65 @@ const newPage = async (browser) => {
 };
 const shot = async (page, name) => {
   if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, `${name}.png`) });
+};
+
+/**
+ * What the lobby is showing *about transport*, which is the whole subject of three arms.
+ *
+ * **`checkVisibility()` and hit-testing, not a bounding box.** Measured while writing this:
+ * Chromium gives an `<input>` inside a closed `<details>` a full 550×40 box at a real `y`, so
+ * `getClientRects().length` and Playwright's own `isVisible()` both call it visible. It is not:
+ * `checkVisibility()` returns false, `elementFromPoint` over the middle of that box returns
+ * something else, and `innerText` leaves its label and its hint out. A check written on the
+ * rectangle would have passed for a field sitting open on the screen.
+ *
+ * `text` is `innerText` for the same reason — it is the rendered text, so it is what the player
+ * can actually read, which makes `/wss?:\/\//` over it a real claim about what is on screen.
+ */
+const lobbyFace = (page) => page.evaluate(() => {
+  const sheet = document.querySelector('.tc-sheet');
+  const relay = document.querySelector('#tc-relay');
+  const adv = document.querySelector('#tc-adv');
+  const blocked = document.querySelector('#tc-no-relay');
+  const shown = (el) => !!el && el.checkVisibility();
+  const flat = (el) => (el?.innerText ?? '').replace(/\s+/g, ' ').trim();
+  const reaches = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return false;
+    const t = document.elementFromPoint(Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2));
+    return !!t && (t === el || el.contains(t));
+  };
+  return {
+    origin: location.origin,
+    // The server's own claims about itself, read back so an arm can prove which fixture it got.
+    metaLan: document.querySelector('meta[name="tc-lan"]')?.getAttribute('content') ?? null,
+    metaRelay: document.querySelector('meta[name="tc-relay"]')?.getAttribute('content') ?? null,
+    text: flat(sheet),
+    relayValue: relay ? relay.value : null,
+    relayShown: shown(relay),
+    relayReaches: reaches(relay),
+    advPresent: !!adv,
+    advOpen: !!adv?.open,
+    blockedShown: shown(blocked),
+    blockedText: shown(blocked) ? flat(blocked) : '',
+    createDisabled: document.querySelector('#tc-host')?.disabled ?? null,
+    joinDisabled: document.querySelector('#tc-join')?.disabled ?? null,
+  };
+});
+
+/**
+ * Open the transport disclosure, the way somebody who wanted it would.
+ *
+ * A real click on the summary, and then a wait on `details.open` — `page.fill('#tc-relay')`
+ * needs the field rendered, and Playwright's actionability check for `fill` correctly refuses a
+ * field inside a closed `<details>`. Every arm below that types an address goes through here,
+ * which means the demoted capability is exercised by five checks rather than asserted by one.
+ */
+const openAdvanced = async (page) => {
+  await page.click('#tc-adv-summary');
+  await page.waitForFunction(() => document.querySelector('#tc-adv')?.open === true,
+    null, { timeout: 10000 });
 };
 
 // ---------------------------------------------------------------------------
@@ -1589,6 +1752,22 @@ if (wanted('lobby')) {
   await host.waitForSelector('.tc-lobby', { timeout: 30000 });
 
   /*
+   * The transport panel, opened first, because this arm's relay is one this test started.
+   *
+   * `base` is an ordinary dev server with no relay beside it, so the lobby correctly refuses on
+   * arrival and both buttons are disabled — that refusal is the `dev` arm's subject and is
+   * asserted there. What this arm owns from here on is the *demoted* capability: a host who
+   * has a relay somewhere else opens the disclosure, types its address, and everything below
+   * proceeds exactly as it did when the field was on the front of the panel.
+   *
+   * Filling it before the geometry read is also what keeps that read honest. With the refusal
+   * on screen and the disclosure open the sheet is ~765 px tall in an 800 px viewport, and the
+   * back link would leave the fold — so the check would go red about a layout that is fine.
+   */
+  await openAdvanced(host);
+  await host.fill('#tc-relay', relay.base);
+
+  /*
    * Geometry and hit-testing first, because it is the measurement that named the bug.
    *
    * Not decoration on top of the flow test: a panel that is 135 px wide and cannot be clicked
@@ -1619,7 +1798,8 @@ if (wanted('lobby')) {
   const unreachable = ['room', 'create', 'join', 'relay', 'back'].filter((k) => !geo[k].reaches);
   measured.lobby = { geo };
   record('lobby-is-clickable', unreachable.length === 0 && geo.sheet.w >= 480,
-    'every control in the lobby is where it says it is and a real mouse reaches it',
+    'every control in the lobby is where it says it is and a real mouse reaches it, the relay '
+      + 'field included once its disclosure is open',
     unreachable.length
       ? `${unreachable.join(', ')} — elementFromPoint returns `
         + unreachable.map((k) => `${k}:${geo[k].blockedBy}`).join(', ')
@@ -1644,7 +1824,6 @@ if (wanted('lobby')) {
     'the alphabet exists because codes get read aloud, which is exactly why O is what gets typed');
 
   await host.fill('#tc-room', '');
-  await host.fill('#tc-relay', relay.base);
   await host.type('#tc-room', room, { delay: 20 });
   await shot(host, 'lobby-01-form');
   await host.click('#tc-host');
@@ -1667,6 +1846,7 @@ if (wanted('lobby')) {
   await guest.waitForSelector('.menu.at-home .dest-multiplayer', { timeout: 60000 });
   await guest.click('.menu-home .dest-multiplayer');
   await guest.waitForSelector('.tc-lobby', { timeout: 30000 });
+  await openAdvanced(guest);
   await guest.fill('#tc-relay', relay.base);
   await guest.click('#tc-room');
   await guest.type('#tc-room', room, { delay: 20 });
@@ -1799,7 +1979,33 @@ if (wanted('lan')) {
     (want) => (document.querySelector('#tc-relay')?.value ?? '') === want,
     lan.relayUrl, { timeout: 10000 }
   ).catch(() => { /* asserted below, with the value in the message */ });
-  const relayField = await hostPage.inputValue('#tc-relay');
+  /*
+   * A second and a half for the reachability probe, which is the thing that decides this panel.
+   *
+   * `relayAnswers` in `src/ui/NetLobby.ts` asks the relay's own `/health` before the lobby
+   * believes the address the server named, and it is allowed to take it away again. Reading
+   * the face before that answer lands would measure the optimistic state and call the arm green
+   * whatever the relay was doing, which is exactly the class of check this pass exists to stop
+   * writing.
+   */
+  await sleep(1500);
+  const face = await lobbyFace(hostPage);
+  const relayField = face.relayValue;
+  measured.lan.face = face;
+  await shot(hostPage, 'lan-00-lobby-no-transport');
+  record('lan-lobby-says-nothing-about-transport',
+    !!face.metaRelay && !face.relayShown && !face.relayReaches && !face.blockedShown
+      && face.advPresent && !face.advOpen && face.createDisabled === false
+      && !/wss?:\/\//.test(face.text),
+    'served by `npm run host`, with a relay that answers, the lobby is a room code, a Create '
+      + 'and a Join &mdash; and says nothing about transport at all',
+    `the sheet reads: ${face.text.slice(0, 150)}`
+      + ` [relay field shown=${face.relayShown} reaches=${face.relayReaches}, `
+      + `disclosure present=${face.advPresent} open=${face.advOpen}, `
+      + `refusal shown=${face.blockedShown}, CREATE disabled=${face.createDisabled}]`,
+    'the owner read a RELAY ADDRESS field on this screen and asked what it was for; it fills '
+      + 'itself in correctly here, which is precisely why he should never have seen it');
+
   const roomA = nextRoom();
   await hostPage.click('#tc-room');
   await hostPage.type('#tc-room', roomA, { delay: 20 });
@@ -1916,6 +2122,7 @@ if (wanted('lan')) {
   const plainRelay = await startRelay(5987);
   await plain.goto(`${base}/?mp=1`, { waitUntil: 'domcontentloaded' });
   await plain.waitForSelector('.tc-lobby', { timeout: 30000 });
+  await openAdvanced(plain);
   await plain.fill('#tc-relay', plainRelay.base);
   await plain.click('#tc-room');
   await plain.type('#tc-room', nextRoom(), { delay: 20 });
@@ -1947,6 +2154,195 @@ if (wanted('lan')) {
 }
 
 /*
+ * `npm run dev`, which is the command the owner ran, and the answer the lobby used to give it.
+ *
+ * ## Why this arm runs `vite` itself instead of using `base`
+ *
+ * `base` is a `tools/lib/vite-runner.mjs` server with no relay port, so its document has no
+ * `<meta name="tc-relay">` in it either and the lobby answers it identically. That is a
+ * *stand-in*, and the claim being made here is about a command in `package.json` — so the arm
+ * spawns `"dev": "vite"`'s own binary, with vite's own config, no plugins of ours, and asserts
+ * against the document that produces. If some future pass makes `vite.config.ts` announce a
+ * relay, this goes red and the stand-in never would.
+ *
+ * ## What was wrong, and why it was worse than a bug
+ *
+ * `defaultRelay()` returned `ws://<whatever host served this page>:5959`, so `npm run dev` on
+ * `localhost:5173` filled the field with `ws://localhost:5959` — well-formed, plausible, and
+ * pointing at a process `npm run dev` does not start. Nothing was broken; the form simply
+ * answered a question it could not answer, in a field the player had no reason to think about.
+ * The failure arrived later, at CREATE, phrased as though the player had typed it wrong.
+ *
+ * ## In through the front door
+ *
+ * The root URL and a click on MULTIPLAYER, not `?mp=1`. That is the sequence being reported —
+ * *"if someone opens the dev server and clicks Multiplayer"* — and the arm should walk it.
+ *
+ * The last check is the one that keeps the capability honest: with the disclosure opened and a
+ * real relay's address typed into it, this same page opens a room. Demoted, not deleted.
+ */
+if (wanted('dev')) {
+  console.log('\n=== npm run dev, which starts a Vite and nothing else ===');
+  const dev = startDevVite(DEV_PORT);
+  const devBase = `http://127.0.0.1:${DEV_PORT}`;
+  const up = await waitForServer(`${devBase}/`, 120000);
+  if (!up) {
+    record('dev-arm-can-run', false,
+      'this arm needs `npm run dev`\'s own vite on a port nobody else has',
+      `nothing answered ${devBase}/ in 120 s — ${dev.log().trim().slice(0, 200) || 'it said nothing'}`,
+      'rerun with --dev-port= for a free one; four Playwright timeouts is not four findings');
+    dev.stop();
+  } else {
+    // 5990, not one of the 5985–5989 the `lag`, `lobby` and default arms cycle through: those
+    // are stopped and restarted within a run, and a SIGTERM'd listener that has not yet let the
+    // port go turns an arm about a lobby into an arm about port allocation.
+    const relay = await startRelay(5990);
+    const page = await newPage(chrome);
+    await page.goto(`${devBase}/`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.menu.at-home .dest-multiplayer', { timeout: 120000 });
+    await page.click('.menu-home .dest-multiplayer');
+    await page.waitForSelector('.tc-lobby', { timeout: 30000 });
+    // Longer than any probe could take, so "nothing appeared" means nothing was going to.
+    await sleep(1500);
+    const face = await lobbyFace(page);
+    await shot(page, 'dev-01-lobby');
+    measured.dev = { origin: face.origin, face, errs: page.__errs.slice(0, 4) };
+
+    record('dev-server-offers-no-relay-address',
+      face.metaRelay === null && face.metaLan === null && face.relayValue === ''
+        && !face.relayShown && !face.relayReaches && !/wss?:\/\//.test(face.text)
+        && face.createDisabled === true,
+      'a dev server with no relay beside it puts no address on the screen and none in the field',
+      `${face.origin}: the field holds ${JSON.stringify(face.relayValue)} and is `
+        + `${face.relayShown ? 'ON SCREEN' : 'behind the disclosure'}; the sheet reads: `
+        + face.text.slice(0, 130),
+      'it used to read ws://localhost:5959 here — well-formed, plausible, and nothing behind it');
+
+    record('dev-server-names-the-command-that-works',
+      face.blockedShown && /no relay behind this page/i.test(face.blockedText)
+        && /npm run host/.test(face.blockedText)
+        && /serving the game and nothing else/i.test(face.blockedText),
+      'it says so where the player is looking, and names the one command that fixes it',
+      face.blockedShown ? face.blockedText.slice(0, 230)
+        : 'nothing on the panel says why a battle cannot start from here',
+      'a refusal that does not name the thing that would work is only half honest');
+
+    /*
+     * And the capability, exercised rather than asserted.
+     *
+     * The relay this presses CREATE against is on 5986 and has nothing to do with the server
+     * serving the page, which is the case the field exists for: `npm run host -- --relay-port=`,
+     * or a relay on a third machine. If demoting it into a `<details>` had broken it, this is
+     * the check that says so.
+     */
+    await openAdvanced(page);
+    await page.fill('#tc-relay', relay.base);
+    const enabled = await page.evaluate(() => !document.querySelector('#tc-host')?.disabled);
+    const devRoom = nextRoom();
+    await page.click('#tc-room');
+    await page.type('#tc-room', devRoom, { delay: 20 });
+    await shot(page, 'dev-02-advanced-open');
+    await page.click('#tc-host');
+    const opened = await page.waitForSelector('#tc-code', { timeout: 20000 })
+      .then(() => true).catch(() => false);
+    const shownCode = opened ? ((await page.textContent('#tc-code')) ?? '').trim() : '';
+    const rs = await relayStatus(relay);
+    await shot(page, 'dev-03-room-open');
+    measured.dev.advanced = { enabled, room: devRoom, shown: shownCode };
+    record('dev-server-still-lets-you-point-at-a-relay',
+      enabled && shownCode === devRoom && !!rs?.rooms?.some((r) => r.code === devRoom),
+      'and the address field survives, one disclosure click away, still able to reach a relay '
+        + 'this page\'s server knows nothing about',
+      enabled
+        ? `typing ${relay.base} into the disclosure re-armed CREATE; the room is ${shownCode
+          || '(none)'} and the relay holds ${(rs?.rooms ?? []).map((r) => r.code).join(', ') || 'nothing'}`
+        : 'an address in the disclosure left CREATE disabled — the capability is gone, not demoted',
+      'npm run host -- --relay-port= is a real case, and hiding a control is not deleting it');
+
+    record('dev-server-lobby-console', page.__errs.length === 0,
+      'and the page raised no console error at all &mdash; nothing was probed, because nothing '
+        + 'named an address to probe',
+      page.__errs.slice(0, 3).join(' ; ') || 'clean',
+      'a probe fired on a page with no relay would write ERR_CONNECTION_REFUSED on every visit');
+
+    await page.close();
+    relay.stop();
+    dev.stop();
+  }
+}
+
+/*
+ * An origin that has told the page nothing about itself — which is the deployed site's shape.
+ *
+ * `tools/deploy-vercel.mjs` uploads a static tree. There is no `vite-runner` behind it, so
+ * neither meta tag exists; there is no relay and there cannot be one; and the origin is not
+ * this machine's loopback, which is the fact that separates it from the `dev` arm and changes
+ * the sentence the lobby has to say. `npm run dev -- --host`, reached at the LAN address, is
+ * that document from the page's point of view: no tags, no relay, not loopback. The one thing
+ * it is not is HTTPS, and nothing in this path branches on the scheme — `docs/MULTIPLAYER.md`
+ * §10.2 measured what HTTPS does to a `ws://` socket, and that is a different refusal on a
+ * different screen.
+ *
+ * **It is asserted to be non-loopback, in the pass condition and not just in the log.** An
+ * earlier version of this gate had all 54 of its checks talking to `127.0.0.1` while claiming
+ * to measure a LAN product. A check whose subject is an origin has to prove which origin it
+ * got.
+ */
+if (wanted('static')) {
+  console.log('\n=== an origin with no server of ours behind it ===');
+  const pick = lanAddress({});
+  const st = pick ? startDevVite(STATIC_PORT, ['--host']) : null;
+  const staticBase = pick ? `http://${pick.ip}:${STATIC_PORT}` : '';
+  const up = pick ? await waitForServer(`${staticBase}/`, 120000) : false;
+  if (!up) {
+    record('static-arm-can-run', false,
+      'this arm needs a server on a non-loopback address of this machine',
+      pick
+        ? `nothing answered ${staticBase}/ in 120 s — ${st.log().trim().slice(0, 200) || 'it said nothing'}`
+        : 'no private IPv4 interface on this machine, so there is no non-loopback origin to use',
+      'measuring this over loopback would be the exact mistake this arm exists to rule out');
+    st?.stop();
+  } else {
+    const page = await newPage(chromeGuest);
+    await page.goto(`${staticBase}/?mp=1`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.tc-lobby', { timeout: 60000 });
+    await sleep(1500);
+    const face = await lobbyFace(page);
+    await shot(page, 'static-01-lobby');
+    const offMachine = face.origin === staticBase && !/\/\/(localhost|127\.|\[?::1)/.test(face.origin);
+    measured.static = { origin: face.origin, offMachine, face, errs: page.__errs.slice(0, 4) };
+
+    record('static-origin-offers-no-relay-address',
+      offMachine && face.metaRelay === null && face.metaLan === null
+        && face.relayValue === '' && !face.relayShown && !face.relayReaches
+        && !/wss?:\/\//.test(face.text) && face.createDisabled === true,
+      'an origin that has said nothing about itself gets no address, no field on screen, and '
+        + 'no button that would fail',
+      `${face.origin} (asserted off-loopback: ${offMachine}), no tc-lan and no tc-relay in the `
+        + `document; the field holds ${JSON.stringify(face.relayValue)}`,
+      'the deployed site got this half right already — empty and honest — while still asking '
+        + 'the player to fill a form field in');
+
+    record('static-origin-keeps-the-sentence-that-was-right',
+      face.blockedShown && /static upload with no server in it/.test(face.blockedText)
+        && /npm run host/.test(face.blockedText)
+        && !/stop this server/i.test(face.blockedText),
+      'and it still says what this page *is*, which is what explains why no typing will help',
+      face.blockedShown ? face.blockedText.slice(0, 230)
+        : 'nothing on the panel says why a battle cannot start from here',
+      'telling somebody on a static host to stop their server names a process they do not have');
+
+    record('static-origin-lobby-console', page.__errs.length === 0,
+      'and nothing was probed, so the deployed site logs no network error on a lobby visit',
+      page.__errs.slice(0, 3).join(' ; ') || 'clean',
+      'the meta tag exists instead of a fetch for exactly this reason; the probe inherits it');
+
+    await page.close();
+    st.stop();
+  }
+}
+
+/*
  * A code nobody opened. The relay knew; before this, nobody told the player.
  *
  * `roomFor` created on demand, so a mistyped code conjured a second empty room and the
@@ -1960,6 +2356,7 @@ if (wanted('badcode')) {
   const page = await newPage(chromeGuest);
   await page.goto(`${base}/?mp=1`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tc-lobby', { timeout: 30000 });
+  await openAdvanced(page);
   await page.fill('#tc-relay', relay.base);
   await page.click('#tc-room');
   await page.type('#tc-room', 'ZZZZZ', { delay: 20 });
@@ -2027,6 +2424,7 @@ if (wanted('norelay')) {
     const form = await newPage(chrome);
     await form.goto(`${base}/?mp=1`, { waitUntil: 'domcontentloaded' });
     await form.waitForSelector('.tc-lobby', { timeout: 30000 });
+    await openAdvanced(form);
     await form.fill('#tc-relay', DEAD);
     await form.click('#tc-host');
     await form.waitForSelector('#tc-note.tc-bad', { timeout: 20000 }).catch(() => { /* asserted */ });
