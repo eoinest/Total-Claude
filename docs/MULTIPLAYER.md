@@ -2839,3 +2839,291 @@ And the probe is one request with a three-second timeout, and `usable` only ever
 On a network where the relay is reachable but very slow, the panel would refuse after three
 seconds and not un-refuse. Typing into the disclosure re-arms it, which is the escape, but it is a
 refusal that is not true yet.
+
+## 12. A code, a square, and nothing typed — 2 September 2026, `e/net/scan-to-join`
+
+The owner:
+
+> *"multiplayer should be usable from just the browser to play on LAN. you should literally have
+> like a code and that's it to play on LAN and one person hosts. idk the underlying mechanics.
+> get that working please."*
+
+§10 and §11 had built everything except the last step. `npm run host` served both halves on the
+LAN and printed a URL; the lobby showed a code, a Create and a Join. What nobody had closed is
+that **a code is not enough on its own, because a browser needs a page before a code can mean
+anything**, and the only machine on the network with a page to give is the host. So the guest had
+to be handed an address, and an address read off somebody else's screen is four dotted numbers, a
+colon, a port, a slash and five characters.
+
+This pass makes the guest's path require zero typing and the host's path require no terminal
+knowledge, and it does it with a QR code, a room the command opens for itself, and a URL short
+enough to say out loud.
+
+### 12.1 What each side does now, end to end
+
+**Host.** `npm run host`. That is the whole of it. The command binds the LAN address, starts the
+relay, **asks the relay for a room**, prints the code, the join URL and a scannable square, and
+opens the host's own browser on that room's *Room open* screen. The host picks a battle.
+
+```
+  Room QXWYZ is open. Point the other machine's camera at this, or read
+  out the line under it. Either one puts them in the room; nothing is typed.
+
+      █▀▀▀▀▀█  █▄▄  █▄▀▄▄ █▄▄ ▀ █▀▀▀▀▀█
+      █ ███ █ ▄  █  ▀▄▀ █▀▄ █   █ ███ █
+      … 21 rows of half blocks, 41 columns …
+
+      http://192.168.1.77:5962/?room=QXWYZ
+
+  The code on its own is QXWYZ, for a phone call.
+  Your own browser is opening on this room now.
+```
+
+**Guest.** Point a camera at the square, or type the line. Either way the page loads from the
+host's machine and joins the room without a form, a Join button or a relay address. If the guest
+is at a second laptop with no camera, the line is 36 characters and the last five of them are the
+code.
+
+Nothing in that flow is a new transport. `?room=ABCDE` with no `?net=` beside it resolves the
+relay out of `<meta name="tc-relay">` — which only a server that started a relay writes — and
+joins. §11.2 built that tag for the lobby's benefit; this pass discovered it was the answer to
+the invite problem as well.
+
+### 12.2 The QR is written, not installed, and it is proved by somebody else's decoder
+
+`src/net/qr.ts` is a complete ISO/IEC 18004 encoder in one file: GF(256), Reed–Solomon, the block
+table for versions 1–10 at all four levels, eight mask candidates scored by the four penalty
+rules, and two renderers — an SVG for the lobby and half-block glyphs for the terminal. It has no
+dependency, `package.json` still has exactly one, and both the browser and `tools/host-lan.mjs`
+import the same file (Node strips the types at load, as `tools/relay.mjs` already does for
+`protocol.ts`). There is one encoder, so the square in the terminal and the square on the screen
+cannot drift.
+
+**Level Q, not L**, because the symbol is going to be photographed off a glossy screen at an
+angle. Q recovers about 25% of the codewords against L's 7%, for one version step on the payloads
+here: the join URL is 36 bytes, version 3 at L and version 4 at Q, 29 modules against 33.
+
+The interesting part is how it is tested. Every check in the `qr` arm renders, turns the rendering
+into an image, and hands the image to **Vision** through `tools/lib/qr-decode.swift` — Apple's
+barcode decoder, the one an iPhone camera runs. Nothing reads our own encoder back with our own
+code, which would only prove that it agrees with itself.
+
+| Check | What it renders | What it proves |
+|---|---|---|
+| `qr-every-version` | all 40 (version, level) pairs, each filled to capacity | the block table, byte for byte — a wrong digit moves a block boundary and the symbol scans perfectly and decodes to rubbish |
+| `qr-decodes` | the four URLs this product builds | the product's own payloads, not "a QR of some text" |
+| `qr-terminal-decodes` | the half-block output, re-imaged two pixel rows to a character row | that the terminal square is a symbol and not a picture of one |
+| `qr-survives-a-thumb` | a quarter of the width blanked out of one corner, at the shipped default **and at L** | that it is error correction being measured and not the decoder's patience |
+| `qr-quiet-zone` | the terminal's own width and the SVG's `viewBox` | the four-module quiet zone — the one property a decode test cannot see, because Vision reads a clean symbol with none |
+
+And in the `lan` arm, the one that matters most: **the square on the host's screen is
+screenshotted, decoded by Vision, and the string that comes out is the only thing the second
+client is given.** If it encoded a stale room, a wrong port, or a URL that opens the setup sheet
+as a second host, that is where it shows.
+
+### 12.3 The command opens the room, and the browser it opens lands on that room
+
+The QR has to encode a code, and until this pass there was no code at the moment the terminal
+printed: the lobby asked `/new` when somebody pressed CREATE. So `tools/host-lan.mjs` now asks
+first. Having the code turns three intentions into printable facts — the code, the join URL, and
+the square.
+
+The host's browser is then opened on `?mp=1&room=…&create=1`, which claims *that* room by name.
+The alternative — opening an empty lobby — would let the host mint a **second** room with one
+press, and the square in the terminal and in whatever the guest already scanned would name a room
+nobody is in. It looks like it works, which is the worst kind of failure. `lan-create-from-the-link`
+is the check, and removing the one line that reads `create=1` turns it red.
+
+A relay that will not mint a room is not fatal: everything degrades to what the command printed
+before, with the reason said out loud.
+
+### 12.4 The invite link got shorter, and that is a correctness change as well as a nicety
+
+It used to be `?net=ws%3A%2F%2F192.168.0.238%3A5959&room=ABCDE&host=0` — 78 characters of
+percent-encoding. It is now `?room=ABCDE`.
+
+The relay address was necessary while the page a guest loaded might have come from anywhere. It
+has not been since `<meta name="tc-relay">` existed: the only server that can serve this link is
+the one that started the relay, and it states the address in the document the link fetches.
+Carrying it twice means the two can disagree, and the copy in the URL is the one that goes stale —
+a host who restarts with `--relay-port=` invalidates every link already sent, and the failure
+lands on the guest.
+
+What the short form buys, in order:
+
+- **It fits a small QR.** 36 bytes is version 4 at level Q, 41 columns and 21 rows of half blocks
+  with the quiet zone on it. The long form is version 7, 53 columns. On a terminal that is the
+  difference between a square that scans across a desk and one that needs a phone held against the
+  screen.
+- **It can be read out.** *"192.168.1.77, colon, 5958, slash, question mark, room equals ABCDE"* is
+  a sentence.
+- **It survives the host restarting the relay on another port.**
+
+One case still needs the long form and gets it automatically: a host who has typed *their own*
+relay address into the disclosure. Their page's declared relay and the address in the field
+disagree, so a short link would send the guest to a room of the same name on a different relay —
+two people waiting for each other, with nothing on either screen to say why. `shortLink` is
+`declared !== null && declared === addr`, and when it is false the link is the old one, stating
+the relay explicitly. `lan-invite-carries-the-address-and-the-code` compares the link on the screen
+with the line the terminal printed, character for character.
+
+### 12.5 The address packed into the code: considered, priced, and refused
+
+The brief asked for an extended room code carrying a LAN address — a subnet selector, two octets,
+a port offset and a room nonce — so that a guest with *any* http-served copy of the app on the
+network could type one code and reach a different host. It is not built, and this is the reasoning
+rather than an omission.
+
+**It packs, and the size is not the problem.** With `CODE_ALPHABET` at 32 characters, five bits a
+character: 2 bits of subnet selector + 16 bits for `192.168.x.y` + 25 bits of room nonce is 43
+bits, nine characters; `10.a.b.c` needs 51, eleven characters; a non-default relay port adds two
+or three more. So the artefact would be a 9–14 character code where there is now a 5.
+
+**The reason it is refused is that it is strictly less capable than the thing it would replace.**
+A code cannot conjure a page. To type any code at all the guest must already have the app open,
+which means some machine on the network already served it to them — and in the overwhelming
+majority of cases that machine is the host, in which case the origin already names the host and
+the plain five-character code is sufficient. The set of guests a long code helps is *"has a
+checkout of this project, is running their own copy, and wants to join somebody else's room"*,
+which is strictly smaller than *"has a browser"*. The URL — `http://192.168.1.77:5958/?room=ABCDE`
+— serves the larger set, needs no page first, types into an address bar every browser has, and
+introduces no second format to explain.
+
+**And a longer code is worse at the one job a code has.** The alphabet exists because codes get
+read aloud and photographed. Eleven characters is a threefold increase in the error surface, and
+the failure modes are not symmetric with the current ones: a mistyped 5-character code fails fast
+against a known relay with *"nobody has opened one"*, while a mistyped address-bearing code
+resolves to **a different IP address on the network** and hangs until a timeout, or reaches some
+other device entirely. That is a strictly worse error for a strictly narrower audience.
+
+**What was built instead, for the same case, at a tenth of the cost.** The relay field in the
+disclosure now accepts a bare `192.168.1.77:5959`, or a bare `192.168.1.77` completed to
+`DEFAULT_RELAY_PORT`, and writes the completed address back into the field where it can be read
+before anything is done with it. Two people who each have a checkout now exchange four dotted
+numbers — which is what they would have had to say aloud anyway to encode them into a longer code.
+`dev-server-completes-a-bare-address` is the check; deleting the one listener turns it red.
+
+The judgement could go the other way if the product ever ships a *hosted* relay, because then a
+code really could carry everything and a page could come from anywhere. It does not, and §12.6 is
+why it cannot come from the deployed site.
+
+### 12.6 The deployed site, and a correction to §10.2's mechanism
+
+`total-claude.vercel.app` is public, served over https, and multiplayer runs between two machines
+on one private network. Its multiplayer screen can never start a battle. What it said until this
+pass was `npm run host` — a shell command, printed at a stranger with no checkout, under a form
+field they could type into for ever. A button that dead-ends.
+
+It now leads to four sentences and a link to the repository, and **there is no form on the screen
+at all**: no code field, no Create, no Join, no relay address. A disabled control arguing with a
+paragraph that explains why it is disabled is furniture. The door itself stays open — the front
+door's plaque now reads *"one battle on two machines on one network"*, which is the shape of the
+thing at the door rather than a paragraph behind it.
+
+Writing the arm to prove it corrected the record. §10.2 attributes the refusal to https and a
+`SecurityError` from the `WebSocket` constructor. The first fixture built here had a real
+certificate on a real https origin on this LAN — and **it opened the socket**. Measured on
+Chromium 151:
+
+| Page origin | `ws://192.168.1.77` | `ws://127.0.0.1` | `ws://1.1.1.1` |
+|---|---|---|---|
+| `https://192.168.1.77:5946` (private) | opened | opened | `threw SecurityError` |
+| the same, declared **public** | `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS` | same | `threw SecurityError` |
+| `http://192.168.1.77:5947` | opened | opened | timeout |
+
+The rule is about **address spaces**, not schemes: a document is refused a connection that reaches
+from a more public space into a more private one, and mixed content blocks the rest. The deployed
+site is refused because it is public and the relay is private — which is the *first* of §10.2's
+two transcripts, `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`, and not the second. The conclusion
+of §10.2 is unchanged; its mechanism was wrong, and the fixture that would have been built on the
+old understanding passes for the wrong reason and would keep passing if the premise were false.
+
+`tools/qa-net.mjs` reproduces it with Chromium's own `--ip-address-space-overrides`, which is what
+the web-platform tests for Local Network Access use: it names one host and one port — the arm's
+TLS front end, which nothing else touches — and declares that endpoint public. The plain-http twin
+on the next port is *not* covered by the override, and it opens the same socket to the same relay,
+which is the control that separates "the browser refused" from "nothing was listening".
+
+The screen's own sentence was rewritten to match: it says *"came to you from the internet"* rather
+than *"over a secure connection"*, because the first draft said the second and the arm written to
+prove it caught the lobby claiming something impossible was impossible for the wrong reason.
+
+`secureOrigin()` cannot see an address space — no page can ask about its own — so it keys on
+https + non-loopback + no server of ours, which over-refuses in exactly one hypothetical: somebody
+serving this build over TLS on their own LAN. Nothing here does that, and such a page would have
+no relay behind it either. The alternative to over-refusing in that case is offering a form on the
+deployed site, which is the thing being removed.
+
+### 12.7 The gate: 82 checks, twelve of them new, fifteen injections
+
+Twelve new checks across four arms, and every one of them was made to go red on purpose:
+
+| Injection | File | Turns red |
+|---|---|---|
+| one digit changed in the v5-Q block row | `qr.ts` | `qr-every-version`, `qr-decodes` |
+| data placement skips the timing column adjustment | `qr.ts` | `qr-every-version` |
+| `▀` and `▄` swapped in the terminal renderer | `qr.ts` | `qr-terminal-decodes` |
+| default level Q → L | `qr.ts` | `qr-survives-a-thumb` |
+| `QUIET` 4 → 0 | `qr.ts` | `qr-quiet-zone` |
+| the `create=1` line deleted | `NetLobby.ts` | `lan-create-from-the-link`, and two behind it |
+| `shortLink` forced false | `NetLobby.ts` | `lan-invite-carries-…`, `lan-the-square-decodes-…` |
+| the `?room=` auto-join disabled | `main.ts` | `lan-the-link-is-the-whole-invitation` |
+| the secure-origin branch disabled | `NetLobby.ts` | `https-lobby-refuses-honestly` |
+| `--ip-address-space-overrides` removed | `qa-net.mjs` | `https-blocks-a-lan-socket` |
+| a `console.error` on the refusal screen | `NetLobby.ts` | `https-console` |
+| the on-screen square shrunk to 44 px | `NetLobby.ts` | `lan-the-square-decodes-…`, `lan-the-link-is-…` |
+| the 409 recovery replaced by `if (false)` | `NetLobby.ts` | `lan-guest-first-does-not-lock-the-host` |
+| the relay field's `change` listener renamed | `NetLobby.ts` | `dev-server-completes-a-bare-address` |
+
+**Three of those found something rather than confirming something**, which is the whole reason
+for running them:
+
+- **The 409 race was found by writing the injection list, not by writing the feature.** Asking
+  *"what would make `lan-create-from-the-link` go red"* surfaced a case the feature had: `npm run
+  host` mints the room and prints the square before the host's own browser has finished loading,
+  so a guest with a camera can be in the room first — and `/new` then refuses that code with 409,
+  telling the host their own room is in use, with no way forward. The lobby now treats a 409 on a
+  code that arrived in a `create=1` link as the other commander having got there first and goes
+  straight to the open-room screen; a code the *player* typed still gets the refusal, because
+  there it means what it says. Recovering costs exactly one console line — Chromium narrates any
+  4xx `fetch` whatever the caller does with it, the same behaviour §11.2 met with `/__tc/lan` —
+  and that line is charged to the race check by name rather than silently to `lan-console`.
+- **`qr-survives-a-thumb` did not go red** when the shipped level was changed from Q to L, because
+  the check asked for `{ ecc: 'Q' }` instead of taking the default the way a caller does. It now
+  encodes with no level given and reads the level back into its own sentence. A check that names a
+  shipped default has to obtain it like a caller.
+- **Removing the white `<rect>` from `qrSvg` did not go red**, because `.tc-qr` carries
+  `background:#fff` and the div's white is what the screenshot sees. The redundancy is kept — the
+  SVG has to stand on its own if it is ever used anywhere but inside that div — but the honest
+  statement is that the on-screen check is protected by the CSS, and the injection that exercises
+  the rendering path is the 44-pixel one.
+
+### 12.8 What is still not done, and what still requires the host to send something
+
+**The host must still get the square or the line to the guest.** Nothing here is discovery: there
+is no mDNS browse, no broadcast, no "rooms on this network" list. The two people are in the same
+room, or on the phone, and one of them shows the other a screen. That is the product, and this
+pass makes that moment cost nothing rather than removing it.
+
+**A phone that scans the square gets the game on a phone.** The QR is genuinely the shortest path
+for a tablet or a phone as the second commander; for a second *laptop*, which is the likelier
+case, the thing that does the work is the 36-character URL, and somebody still has to read it out
+or send it. Both are provided and the screen offers both.
+
+**The terminal square is proved as an image, not as a photograph.** `halfBlocksToPixels`
+reconstructs what the terminal paints — two pixel rows a character row, foreground over
+background — and Vision reads that. It cannot speak for one particular terminal's font, cell
+aspect ratio or colour handling. The colours are stated in 24-bit escapes rather than inherited,
+which removes the theme from the question, but a terminal that renders `▀` with a gap under it
+would break the symbol and nothing here would know.
+
+**`--ip-address-space-overrides` is a Chromium switch and a future release may drop it.** If it
+does, `https-blocks-a-lan-socket` goes red rather than silently green — the secure page would open
+the socket and the check requires it not to. That is the right direction to fail in.
+
+**The room minted by `npm run host` is minted even under `--json`,** which is how the gate reads
+it. An empty room costs a `Map` entry and is reaped after ten minutes.
+
+**One arm of the pre-existing gate is red and is not this branch's.** `siege-same-battle` reports
+the two clients settling at different ticks (1359 against 1369) with every checkpoint agreed; it
+failed identically on the branch base before any of this was written.
