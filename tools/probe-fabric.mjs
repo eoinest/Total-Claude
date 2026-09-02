@@ -1966,16 +1966,39 @@ try {
      * different rectangle from the one every area test in this file already measures.
      */
     {
+      /*
+       * Asserted on the TRUE convention, with `MIRROR` forced to 1, so that
+       * `--inject=obb-mirror` breaks the gates rather than this assertion. An injection has to
+       * make a check go red; a run that dies before grading proves nothing and cannot be told
+       * apart from a crash.
+       */
+      const t = (o, dx, dz) => ({
+        u: dx * Math.cos(o.rot) + dz * Math.sin(o.rot),
+        v: -dx * Math.sin(o.rot) + dz * Math.cos(o.rot),
+      });
+      const w2 = (o, u, v) => ({
+        x: o.x + u * Math.cos(o.rot) - v * Math.sin(o.rot),
+        z: o.z + u * Math.sin(o.rot) + v * Math.cos(o.rot),
+      });
       const o = { x: 137, z: -84, rot: 0.7853981633974483, hw: 30, hd: 12 };
-      const l = toLocal(o, 41, -17);
-      const w = toWorld(o, l.u, l.v);
+      const l = t(o, 41, -17);
+      const w = w2(o, l.u, l.v);
       if (Math.abs(w.x - (o.x + 41)) > 1e-9 || Math.abs(w.z - (o.z - 17)) > 1e-9) {
         throw new Error('probe-fabric: toLocal/toWorld are not inverses');
       }
       const c = obPoly(o)[2];
-      const q = toWorld(o, o.hw, o.hd);
+      const q = w2(o, o.hw, o.hd);
       if (Math.abs(c.x - q.x) > 1e-9 || Math.abs(c.z - q.z) > 1e-9) {
         throw new Error('probe-fabric: toWorld and obPoly describe different rectangles');
+      }
+      // And the shipped pair must equal the asserted pair when nothing is injected.
+      if (!injected.has('obb-mirror')) {
+        const a = toLocal(o, 41, -17);
+        const b = toWorld(o, a.u, a.v);
+        if (Math.abs(a.u - l.u) > 1e-9 || Math.abs(a.v - l.v) > 1e-9
+          || Math.abs(b.x - w.x) > 1e-9 || Math.abs(b.z - w.z) > 1e-9) {
+          throw new Error('probe-fabric: the shipped local frame is not the asserted one');
+        }
       }
     }
 
@@ -2680,8 +2703,13 @@ try {
               // A label may name a PART of a structure — `<id>#mound` is the platform, drawn by
               // the same call and measured apart. Validate the structure, not the part, or the
               // first row that grows a part silently drops its whole mesh back to guessing.
-              const h = String(r.label).indexOf('#');
-              if (!frames.has(h < 0 ? r.label : String(r.label).slice(0, h))) ok = false;
+              // `null` is a CLOSE — a boundary with no owner, which `Batch.setProvenance(null)`
+              // writes so that geometry built after a band does not inherit the last name. A
+              // vertex in a closed range falls through to nearest-centre like any other.
+              if (r.label !== null) {
+                const h = String(r.label).indexOf('#');
+                if (!frames.has(h < 0 ? r.label : String(r.label).slice(0, h))) ok = false;
+              }
               prev = r.from;
             }
             if (ok) runs = runsRaw;
@@ -2705,7 +2733,7 @@ try {
             let isMound = false;
             if (!c && runs) {
               const lab = labelOf(k / 3);
-              if (lab) {
+              if (lab !== null && lab !== undefined) {
                 /**
                  * `id#mound` is the artificial platform a row stands on, labelled apart by
                  * `monuments.ts:buildLandmark`. It is landform, not the building, and every

@@ -204,10 +204,18 @@ for (let i = 0; i < visited.length; i++) {
    * so that one stray vertex cannot set a dimension. That is right for a stray. It is not
    * right for a *plate*: the Iseum's substructure is a 200 x 50 m floor slab carrying about
    * two dozen vertices, and the temple standing on it carries several thousand, so the
-   * percentile discards the slab entirely and G13a reads the Iseum at 59.6 m of its
+   * percentile discards the slab entirely and G13a read the Iseum at 59.6 m of its
    * published 200. Both numbers are true and they mean different things — `pctLong` is the
    * ARCHITECTURE the eye reads, `drawnLong` is every square metre of stone the ground
    * carries — so both are printed and the gap between them is the column to look at.
+   *
+   * **`probe-fabric` no longer takes this percentile, and the `G12-shaped` / `G13a-shaped`
+   * lines below are therefore the OLD gate rather than the current one.** The gate weights
+   * each vertex by the area of the triangles it belongs to, which keeps the stray-vertex
+   * protection this percentile was for and stops it throwing away a plate; on the Iseum that
+   * is the difference between 59.6 m and 95.4 m against a published 200. This file keeps the
+   * count percentile deliberately, because the two readings side by side are what named the
+   * fault, and a reader comparing this output with a gate run needs to know which is which.
    */
   const pct = (arr, t) => arr[Math.min(arr.length - 1, Math.max(0, Math.floor(t * (arr.length - 1))))];
   const pu = pct(us, 0.995) - pct(us, 0.005);

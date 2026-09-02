@@ -463,16 +463,29 @@ export class Batch {
     for (const [key, st] of this.streams) this.markProvenance(key, st);
   }
   private provLabel: string | null = null;
-  private readonly prov = new Map<CityMatKey, { label: string; from: number }[]>();
+  private readonly prov = new Map<CityMatKey, { label: string | null; from: number }[]>();
   private markProvenance(key: CityMatKey, st: GeoStream): void {
-    if (this.provLabel === null) return;
-    const runs = this.prov.get(key) ?? [];
+    const runs = this.prov.get(key);
+    // Nothing labelled in this stream yet and nothing being labelled now: a `setProvenance(null)`
+    // before any label at all is a no-op rather than an empty run.
+    if (runs === undefined && this.provLabel === null) return;
+    const list = runs ?? [];
     const at = st.vertexCount;
-    // A label opened at the same vertex as the previous one emitted nothing; replace it rather
-    // than leaving an empty run, so the ranges stay a partition with no zero-width members.
-    if (runs.length && runs[runs.length - 1].from === at) runs[runs.length - 1].label = this.provLabel;
-    else runs.push({ label: this.provLabel, from: at });
-    this.prov.set(key, runs);
+    /*
+     * **A CLOSE has to be recorded, not skipped, or the next builder inherits the last one's
+     * name.** The first draft returned early on a null label, so `setProvenance(null)` at the
+     * end of a monument band left every vertex emitted afterwards inside the last monument's
+     * range. Nothing in the gate could have seen it — `probe-fabric` reads only `monuments-*`
+     * meshes and the aqueducts are their own family — which is exactly the kind of silence this
+     * project keeps paying for. A null label is a boundary with no owner, and a reader must get
+     * `null` back for it rather than the previous name.
+     *
+     * A label opened at the same vertex as the previous one emitted nothing, so replace it
+     * rather than leave a zero-width run: the ranges stay a partition.
+     */
+    if (list.length && list[list.length - 1].from === at) list[list.length - 1].label = this.provLabel;
+    else list.push({ label: this.provLabel, from: at });
+    this.prov.set(key, list);
   }
 
   setTransform(m: THREE.Matrix4 | null): void {
@@ -502,7 +515,13 @@ export class Batch {
       // Provenance travels with the mesh, or not at all: a builder that never called
       // `setProvenance` leaves `userData.provenance` undefined and every reader falls back.
       const runs = this.prov.get(key);
-      if (runs && runs.length) mesh.userData.provenance = runs.map((r) => ({ ...r }));
+      if (runs && runs.length) {
+        // A trailing close that reaches the end of the buffer names nothing and no reader needs
+        // it; anything else, including an interior close, is carried.
+        const n = g.attributes.position.count;
+        const keep = runs.filter((r, i) => r.label !== null || i + 1 < runs.length || r.from < n);
+        if (keep.length) mesh.userData.provenance = keep.map((r) => ({ ...r }));
+      }
       mesh.castShadow = castShadow && !NO_SHADOW.has(key);
       mesh.receiveShadow = receiveShadow;
       mesh.matrixAutoUpdate = false;
