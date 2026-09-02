@@ -187,12 +187,15 @@ const REAL_STREET = 12;
  * Magnus in the valley, the Baths of Titus and Trajan on the Oppian terrace 38 real metres above
  * and away. That is not one continuous masonry front and no threshold makes it one.
  *
- * **Deliberately not repaired in this pass.** Narrowing a complex makes its former members owe
- * each other a 7 m projected street, which re-opens the allocation the rest of this branch just
- * settled, and a change that moves the authored floor needs its own before and after rather than
- * being smuggled in beside four others. Recorded as owed, with the instrument in place, so the
- * next pass argues with a number. `MAP-METHOD.md` rule 18: the new class must be able to fail,
- * and this one does.
+ * **Repaired, and the instrument is what made the repair cheap.** This was recorded as owed for
+ * two phases: narrowing a complex makes its former members owe each other a 7 m projected street,
+ * which re-opens the `draw` allocation. `tools/scratch/mon-joins.mjs` reads that bill in a second
+ * — it enumerates every pair the survey joins in real metres, every pair a declaration claims,
+ * and both sets of connected components in both frames — and the bill turned out to be **four
+ * pairs, 3.8 to 4.7 world metres each**, paid by four `draw` values. See
+ * `survey.ts:RomeMonument.complex` for the six real joints and the arithmetic. `MAP-METHOD.md`
+ * rule 18: the new class must be able to fail, and this one did, on three of five, until the
+ * declaration was made to match the ground.
  */
 export function assertComplexJoined(): {
   ok: boolean;
@@ -1590,9 +1593,9 @@ export function assertRomeFrame(): RomeFrame {
 
   // ---- 6c. is a declared complex actually one piece of fabric? ----------
   // Measured on the published plans in real metres, so it grades the declaration rather than the
-  // allocation and cannot be satisfied by shrinking anything. See `assertComplexJoined`. It fails
-  // today on three of five, deliberately unrepaired in this pass, because narrowing a complex
-  // re-opens the footprint allocation and that needs its own before and after.
+  // allocation and cannot be satisfied by shrinking anything. See `assertComplexJoined`. It failed
+  // on three of five for two phases; the five declarations are now the connected components of
+  // the six real joints and nothing else, so it passes for the only reason it can.
   const cj = assertComplexJoined();
   add(
     'a declared complex is one piece of fabric in real metres',
@@ -1602,8 +1605,8 @@ export function assertRomeFrame(): RomeFrame {
     cj.complexes
       .map((c) => `${c.id} ${c.pieces} piece(s)${c.detached.length ? ` (detached: ${c.detached.join(', ')})` : ''}`)
       .join('; ')
-      + ' — owed to phase 4: narrowing a complex re-opens the draw allocation, so it is measured'
-      + ' here and repaired there'
+      + ' — the declared sets are the connected components of the six pairs the survey joins in'
+      + ' real metres; tools/scratch/mon-joins.mjs prints both directions'
   );
 
   // ---- 6b. the relation the survey asserts on the OTHER axis of the row --
