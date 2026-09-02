@@ -543,6 +543,15 @@ const INJECTIONS = {
       + 'than a convention nobody depends on. `tools/scratch/mon-extents.mjs` had exactly '
       + 'this fault against LANDMARKS and reported eleven G14 failures that were not there.',
   },
+  'complex-drop': {
+    hits: 'G15',
+    what: 'takes the first structure out of its declared complex, so every pair it is joined to '
+      + 'loses the licence G15 grants. `provenance-blind` proves G15 depends on knowing whose '
+      + 'stone it is; this proves G15 can still go RED on the city as it stands, which is the '
+      + 'harder half — every trespass Rome has left is licensed, and a check whose only failure '
+      + 'mode is a broken instrument is not a check. Also moves G8 and G8d, which is the '
+      + "adjudication's point restated: a complex is load-bearing in three places at once.",
+  },
   'complex-invent': {
     hits: 'G8c, G8d',
     what: 'declares the closest pair of monuments in DIFFERENT complexes to be one complex. '
@@ -2357,6 +2366,34 @@ try {
         }
       } else {
         injectNotes.push('complex-invent found no cross-complex pair to join');
+      }
+    }
+    /**
+     * `complex-drop` — the other direction, and G15 needed it.
+     *
+     * `provenance-blind` proves that G15 depends on knowing whose stone it is. It does not
+     * prove that G15 can go red on THIS city with the provenance intact, because every
+     * trespass Rome has left is licensed by a complex — and a check whose only failure mode is
+     * a broken instrument is a check that cannot fail. So this takes the licence away from the
+     * pair that is using it: the trespassing pair whose stone runs DEEPEST into its container,
+     * chosen from the data rather than typed, so it cannot go stale when the survey moves.
+     */
+    if (injected.has('complex-drop')) {
+      const withComplex = structList.filter((s2) => s2.complex);
+      const victim = withComplex.sort((x, y) => String(x.id).localeCompare(String(y.id)))[0] ?? null;
+      if (victim) {
+        const was = victim.complex;
+        victim.complex = null;
+        injectNotes.push(`dropped ${victim.id} out of complex "${was}", so anything it abuts or `
+          + 'contains loses its licence');
+        structPairs = [];
+        for (let i = 0; i < structList.length; i++) {
+          for (let j = i + 1; j < structList.length; j++) {
+            structPairs.push(relate(structList[i], structList[j]));
+          }
+        }
+      } else {
+        injectNotes.push('complex-drop found no declared complex to break');
       }
     }
 
