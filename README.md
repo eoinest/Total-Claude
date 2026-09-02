@@ -123,8 +123,8 @@ to fill in and no Join to press. Say Allow if macOS asks about incoming connecti
 machines must be on the same network; a guest network with client isolation will not work, and
 nothing here can work round that.
 
-`--no-open` keeps your browser shut, `--no-qr` prints the URL without the square, and
-`--relay-port=` moves the relay.
+`npm run host -- --no-open` keeps your browser shut, `--no-qr` prints the URL without the
+square, and `--relay-port=` moves the relay.
 
 **The deployed site cannot host this and never will.** A page served from the internet is not
 allowed to open a connection into a private network — the socket is refused before a packet
