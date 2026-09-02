@@ -9,9 +9,17 @@
  * question in that state is "what is running", and answering it took three greps and a wrong
  * kill — an agent shot a dev server on port 5901 that belonged to a different agent.
  *
- * This is the one command that answers it. It is deliberately read-only by default: `status`
- * kills nothing, `reap` only removes lock records whose holder is provably gone, and `sweep`
- * refuses to kill anything at all unless you pass `--force`.
+ * This is the one command that answers it, and it is deliberately close to read-only. `reap` only
+ * removes lock records whose holder is provably gone, and `sweep` refuses to kill anything at all
+ * unless you pass `--force`.
+ *
+ * **`status`, `procs` and `machine` are not quite read-only, and the exception is deliberate.**
+ * They call `reapStale()`, which drops records whose holder is dead and — since the process
+ * registry landed — takes down the process groups those dead records name. That is the design: the
+ * sweep is paid for by whoever next looks, rather than by a daemon that can itself die, so the
+ * window on a leak is "until somebody runs this" and not "until somebody remembers to clean up".
+ * Nothing with a live owner is ever touched by it, and a record from before the last boot is
+ * dropped **without signalling any PID in it**.
  *
  * ## Commands
  *
@@ -648,7 +656,8 @@ if (cmd === 'reap') {
       + `pid ${g.rec?.pid ?? '?'}${g.rec?.port ? ` port ${g.rec.port}` : ''}`);
   }
   console.log(`\n${gone.length} released. Reasons: reboot = held from before the last boot, `
-    + 'no-pid = the process is gone, silent = no heartbeat for 90 s.');
+    + 'no-pid = the process is gone, no-agent = the agent that owned it was stopped while the '
+    + 'harness lived on, silent = no heartbeat for 90 s.');
   process.exit(0);
 }
 

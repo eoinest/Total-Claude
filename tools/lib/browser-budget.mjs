@@ -83,6 +83,7 @@
  * | `TC_BUDGET_DIR` | `/tmp/tc-browser-budget` | where the locks live |
  * | `TC_BROWSER_WAIT_MS` | `1800000` (30 min) | how long to queue before failing |
  * | `TC_BROWSER_STALE_MS` | `90000` | no heartbeat for this long and the slot is reaped |
+ * | `TC_ANCHOR_WATCH_MS` | `2000` | how often a run checks that its agent is still alive |
  * | `TC_WORK_BUDGET` | `on` | `off` disables admission and QoS but keeps the count cap |
  * | `TC_OWNER` | `auto` | `away` \| `present` \| `playing` — beats detection |
  * | `TC_QOS` | `on` | `off` keeps running browsers at foreground priority |
@@ -200,11 +201,21 @@ const readRecord = (file) => {
  *                 backstop for a holder that is technically alive and permanently wedged, and
  *                 it is the only one with a false-positive risk, so its margin is nine
  *                 heartbeats rather than two.
+ *   - `no-agent` — the **agent** that owns this run is gone, while the holder itself is still
+ *                 alive. This is the 23 Aug shape and it is the one the other three miss: the
+ *                 harness was a child of a shell that had already exited, so it was reparented
+ *                 to init, went on heartbeating, and looked perfectly healthy to a reaper. A
+ *                 tool started by an agent belongs to that agent; when the agent is stopped the
+ *                 work is unowned, whatever the harness thinks.
+ *
+ * `no-agent` only ever fires when `agentPid` was recorded, which is to say inside an agent. A
+ * human at a terminal has none and nothing here will decide his work is unowned.
  */
 export const isStale = (rec, now = Date.now()) => {
   if (!rec) return 'unreadable';
   if (rec.bootId && rec.bootId !== bootId()) return 'reboot';
   if (!pidAlive(rec.pid)) return 'no-pid';
+  if (rec.agentPid && !pidAlive(rec.agentPid)) return 'no-agent';
   if (now - (rec._mtimeMs ?? 0) > STALE_MS) return 'silent';
   return null;
 };
@@ -570,6 +581,47 @@ const makeHandle = ({ file, rec, cap, quiet }) => {
    */
   const throttle = makeThrottle({ label: rec.label });
 
+  /*
+   * The agent anchor, watched from inside the run.
+   *
+   * `spawnOwned` gives a *spawned* job a guard that kills its tree when the agent dies. A tool an
+   * agent runs directly — `node tools/probe-x.mjs` — has no guard: it is a child of the agent's
+   * shell, and on 23 Aug that shell had exited long before, so the harness was reparented to init
+   * and outlived everything. It heartbeated the whole time and no reaper had grounds to touch it.
+   *
+   * So the harness watches the agent itself, which is two lines and one `kill(pid, 0)` every two
+   * seconds. It is the same idea as `vite-runner.mjs` polling its parent, aimed one level higher:
+   * the parent of a harness comes and goes many times inside one agent's life and its death means
+   * nothing, while the agent's death means the work is unowned.
+   *
+   * **The browser is killed by group before this process exits.** It is in a process group of its
+   * own — Playwright launches it detached — so nothing else here would reach it, and `release()`
+   * is about to delete the only record of its PID. Kill it first, then let the cleanups run.
+   */
+  const ANCHOR_MS = Number(process.env.TC_ANCHOR_WATCH_MS || 2000);
+  let anchorWatch = null;
+  if (rec.agentPid) {
+    anchorWatch = setInterval(() => {
+      if (released || pidAlive(rec.agentPid)) return;
+      clearInterval(anchorWatch);
+      process.stderr.write(
+        `browser budget: the agent that owns ${rec.label} (pid ${rec.agentPid}) is gone. Ending\n`
+        + 'browser budget: this run rather than leaving a browser on the machine — the 23 Aug bug\n'
+        + 'browser budget: was a harness that outlived its agent and went on launching browsers.\n'
+      );
+      const bp = rec.browserPid;
+      if (Number.isFinite(bp) && bp > 1) {
+        try { process.kill(-bp, 'SIGKILL'); } catch {
+          try { process.kill(bp, 'SIGKILL'); } catch { /* already gone */ }
+        }
+      }
+      // `exit` runs every registered cleanup: the slot is released, QoS restored, Vite's group
+      // killed. 143 is what a SIGTERM would have produced, which is what this is standing in for.
+      process.exit(143);
+    }, ANCHOR_MS);
+    anchorWatch.unref();
+  }
+
   const beat = setInterval(() => {
     try { const t = Date.now() / 1000; utimesSync(file, t, t); } catch { /* reaped */ }
     if (!workBudgetEnabled()) return;
@@ -589,6 +641,7 @@ const makeHandle = ({ file, rec, cap, quiet }) => {
     if (released) return;
     released = true;
     clearInterval(beat);
+    if (anchorWatch) clearInterval(anchorWatch);
     try { throttle.restore(); } catch { /* the process is probably already gone */ }
     cleanups.delete(release);
     /*

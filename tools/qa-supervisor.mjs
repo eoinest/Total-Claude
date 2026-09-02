@@ -13,7 +13,7 @@
  * child that launches browsers, its parent killed, and the child and its browsers dead.** Every
  * other assertion here is worth less than that one.
  *
- * ## The eight things it proves, and the failure each is for
+ * ## The nine things it proves, and the failure each is for
  *
  * | # | case | must |
  * |---|---|---|
@@ -25,6 +25,7 @@
  * | 6 | an entry from a previous boot | dropped, and **nothing signalled** |
  * | 7 | the ceiling with no room | **refuses with a reason**, bounded, does not hang |
  * | 8 | the guard **and its owner** SIGKILLed | leaks nothing, wedges nothing |
+ * | 9 | a harness the agent ran **directly**, agent killed | harness **and browser** die |
  *
  * Case 2 is the control and it is the reason to trust case 1. A test that shows the fixed path
  * working, without showing the unfixed path failing, cannot distinguish "the fix works" from
@@ -55,7 +56,7 @@
  * ## Usage
  *
  *     node tools/qa-supervisor.mjs
- *     node tools/qa-supervisor.mjs --quick     # skip the two browser arms (1, 3); 6 cases
+ *     node tools/qa-supervisor.mjs --quick     # skip the three browser arms (1, 3, 9)
  *     node tools/qa-supervisor.mjs --keep      # leave the sandbox for inspection
  */
 
@@ -536,9 +537,73 @@ console.log('\n8. THE SUPERVISOR DIES — SIGKILL the guard AND its owner; leak 
     + `killed ${r.kill?.killed?.length ?? 0})`).join('; ') || 'nothing'}`);
 }
 
+/* ═══════════════ 9. a harness the agent ran directly ═══════════════ */
+
+console.log('\n9. A HARNESS THE AGENT RAN DIRECTLY — no guard, only the agent anchor');
+if (QUICK) {
+  console.log('   (skipped by --quick; it needs a real browser)');
+} else {
+  /*
+   * The case the process registry cannot reach, and it is the 23 Aug shape more exactly than case 1
+   * is. `spawnOwned` gives a *spawned* job a guard. A tool the agent runs directly —
+   * `node tools/probe-x.mjs` — has no guard at all: it is a child of the agent's shell, and on
+   * 23 Aug that shell had exited hours before, so the harness was reparented to init and outlived
+   * everything. It went on heartbeating its slot the whole time, so every liveness test the
+   * semaphore had said the holder was healthy, and it was.
+   *
+   * A stand-in agent is used rather than the real one for the obvious reason. `TC_AGENT_PID` is
+   * the documented override and it is what a human at a terminal would set; here it points at a
+   * `/bin/sleep` this test can kill. **Only the agent is killed** — the harness's own parent is
+   * this process, and it stays alive and untouched throughout, which is what makes this different
+   * from case 1 and is the whole point.
+   */
+  const bbs = await import('./lib/browser-budget.mjs');
+  const stand = spawn('/bin/sleep', ['600'], { detached: true, stdio: 'ignore' });
+  stand.unref();
+  noteLitter(stand.pid);
+  await sleep(400);
+
+  const before = new Set(browserPids());
+  const harness = spawn(process.execPath,
+    [path.join(ROOT, 'tools/fixtures/browser-loop.mjs'), '--runs=6', '--port=5951'],
+    { cwd: ROOT, detached: true, stdio: ['ignore', 'ignore', 'ignore'],
+      env: { ...process.env,
+        TC_BUDGET_DIR: SANDBOX,
+        TC_AGENT_ID: 'aaaaaaaa-0000-0000-0000-000000000000',
+        TC_AGENT_PID: String(stand.pid) } });
+  harness.unref();
+  noteLitter(harness.pid);
+
+  const opened = await waitFor('the harness to open a browser',
+    () => browserPids().some((p) => !before.has(p)), 180_000);
+  const fresh = browserPids().filter((p) => !before.has(p));
+  for (const p of fresh) noteLitter(p);
+  check('the harness took a slot and opened a browser', opened.ok && fresh.length > 0,
+    `opened=${opened.ok} after ${opened.ms} ms, browsers=${fresh.join(', ') || 'none'}`);
+  console.log(`        stand-in agent ${stand.pid}, harness ${harness.pid} (its parent, this test, `
+    + `stays alive), browser(s) ${fresh.join(', ')}`);
+  const held = bbs.listSlots().filter((s) => !s.stale);
+  check('  …and the slot records which agent owns it', held.some((s) => s.rec?.agentPid === stand.pid),
+    `slots: ${held.map((s) => `${s.rec?.label}@${s.rec?.agentPid}`).join(', ') || 'none'}`);
+
+  process.kill(stand.pid, 'SIGKILL');
+  console.log(`        SIGKILL the agent (${stand.pid}) and nothing else`);
+  const gone = await waitFor('the harness and its browser to go',
+    () => !alive(harness.pid) && fresh.every((p) => !alive(p)), 30_000);
+  check('the harness ended itself when its agent died', !alive(harness.pid),
+    'it is still running with nothing owning it, which is the 23 Aug bug exactly');
+  check('  …and the browser it had open died with it', fresh.every((p) => !alive(p)),
+    `still alive: ${fresh.filter((p) => alive(p)).join(', ')}`);
+  console.log(`        gone ${gone.ms} ms after the agent was killed (the anchor polls every `
+    + `${process.env.TC_ANCHOR_WATCH_MS || 2000} ms)`);
+  check('  …and the slot it held was released rather than left to time out',
+    bbs.listSlots().filter((s) => !s.stale).length === 0,
+    `${bbs.listSlots().filter((s) => !s.stale).length} live slot(s) remain`);
+}
+
 /* ═══════════════ nothing left behind ═══════════════ */
 
-console.log('\n9. THIS TEST ITSELF — it must not leave a detached anything behind');
+console.log('\n10. THIS TEST ITSELF — it must not leave a detached anything behind');
 {
   const stillMine = [...litter].filter((p) => alive(p));
   check('every process this test started is gone', stillMine.length === 0,
@@ -550,7 +615,7 @@ console.log('\n9. THIS TEST ITSELF — it must not leave a detached anything beh
 /* ─────────────────────────────── the verdict ─────────────────────────────── */
 
 console.log(`\n${failures.length ? 'FAIL' : 'PASS'} — ${pass}/${pass + failures.length} assertions`
-  + `${QUICK ? '  (--quick: the two browser arms were skipped)' : ''}`);
+  + `${QUICK ? '  (--quick: the three browser arms were skipped)' : ''}`);
 if (failures.length) {
   for (const f of failures) console.log(`  ${f}`);
   console.log('\nDo not run agents unattended until this passes. Every failure above is a case');
@@ -564,4 +629,8 @@ if (failures.length) {
   console.log('entry from a previous boot is dropped without signalling anyone. The ceiling refuses');
   console.log('with a reason in bounded time. And killing the supervisor leaks nothing, because the');
   console.log('supervisor was never the mechanism — the state on disk is.');
+  console.log('');
+  console.log('A harness the agent ran directly, with no guard anywhere near it, ends itself and');
+  console.log('takes its browser with it when the agent is stopped — which is the 23 Aug shape');
+  console.log('more exactly than any of the others, because on that day the harness was healthy.');
 }
