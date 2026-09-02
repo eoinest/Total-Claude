@@ -120,8 +120,8 @@ import { lanAddress } from './lib/lan-address.mjs';
 import { bootThroughMenu, driveMenu, ensureServer, waitForServer } from './lib/menu-boot.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const ARMS = ['proto', 'battle', 'siege', 'lobby', 'lan', 'dev', 'static', 'ghost', 'badcode',
-  'norelay', 'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 'lag', 'xengine'];
+const ARMS = ['proto', 'qr', 'battle', 'siege', 'lobby', 'lan', 'https', 'dev', 'static', 'ghost',
+  'badcode', 'norelay', 'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 'lag', 'xengine'];
 /**
  * `xengine` is opt-in, and that is a judgement rather than an omission.
  *
@@ -139,7 +139,7 @@ const ARMS = ['proto', 'battle', 'siege', 'lobby', 'lan', 'dev', 'static', 'ghos
 const DEFAULT_ARMS = ARMS.filter((a) => a !== 'xengine');
 const FLAGS = ['port', 'relay', 'json', 'shots', 'only', 'seconds', 'keep', 'xsize', 'xticks',
   'all', 'siege-map', 'siege-scenario', 'siege-seconds', 'lan-port', 'lan-relay', 'dev-port',
-  'static-port', 'ghost-port', 'ghost-relay'];
+  'static-port', 'ghost-port', 'ghost-relay', 'https-port', 'https-relay'];
 
 const args = new Map(process.argv.slice(2).map((a) => {
   const m = a.match(/^--([^=]+)(?:=(.*))?$/);
@@ -235,6 +235,16 @@ const STATIC_PORT = Number(args.get('static-port') ?? 5940);
  */
 const GHOST_PORT = Number(args.get('ghost-port') ?? 5945);
 const GHOST_RELAY = Number(args.get('ghost-relay') ?? 5991);
+/*
+ * The `https` arm's pair, and the reason it cannot borrow anything.
+ *
+ * It puts a TLS front end on 5946 in front of a `vite-runner` on 5947, both bound to the LAN
+ * address, and points the page at a *real* relay on 5983 at that same address. Everything about
+ * the arm depends on the page's origin being `https://192.168.1.77:5946` and the relay's being
+ * a plain private address, so neither half can be a loopback listener somebody else started.
+ */
+const HTTPS_PORT = Number(args.get('https-port') ?? 5946);
+const HTTPS_RELAY = Number(args.get('https-relay') ?? 5983);
 if (!Number.isFinite(SECONDS) || SECONDS < 20) {
   console.error(`--seconds must be at least 20; got '${args.get('seconds')}'`);
   process.exit(2);
@@ -527,8 +537,50 @@ if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
  * here are gone and cannot drift from the rest of the repository. Without `--use-angle=metal`
  * Chromium rasterises this scene in SwiftShader — minutes per boot, silently.
  */
+/**
+ * One extra Chromium flag, for one host and port, and it is the whole of the `https` arm.
+ *
+ * ## What was measured, and why the arm could not work without it
+ *
+ * The deployed site's refusal is **not** a mixed-content refusal, and this pass found that out
+ * the hard way by building the fixture and watching it pass when it should not have. Measured
+ * here on Chromium 151, from an https page whose own origin is a private address:
+ *
+ *     ws://192.168.1.77:5968   opened
+ *     ws://127.0.0.1:5968      opened
+ *     ws://1.1.1.1:81          threw SecurityError  (Mixed Content)
+ *
+ * So an https page **can** open a plain socket to a private address, as long as the page itself
+ * came from one. The rule Chromium applies is about *address spaces*: a document is refused a
+ * connection that reaches from a more public space into a more private one, and mixed content
+ * blocks the rest. `total-claude.vercel.app` is public and the relay is private, which is the
+ * one combination that is refused — `tools/host-lan.mjs`'s docstring records the same error
+ * from the live site, `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`.
+ *
+ * A fixture on this LAN is private by construction and therefore cannot reproduce it. That is
+ * not a detail: without this flag the arm's socket check passes for the wrong reason and would
+ * go on passing if the product's whole premise were wrong.
+ *
+ * `--ip-address-space-overrides` is Chromium's own switch for exactly this, and it is what the
+ * web-platform tests for Local Network Access use. It names **one host and one port** — the
+ * `https` arm's TLS front end, which no other arm touches — and declares that endpoint public.
+ * With it, the same three targets come back:
+ *
+ *     ws://192.168.1.77:5968   ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS
+ *     ws://127.0.0.1:5968      ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS
+ *     ws://1.1.1.1:81          threw SecurityError
+ *
+ * Empty when this machine has no LAN address, in which case the arm refuses to run at all
+ * rather than measure loopback.
+ */
+const PUBLIC_ORIGIN_OVERRIDE = (() => {
+  const ip = lanAddress()?.ip;
+  return ip ? [`--ip-address-space-overrides=${ip}:${HTTPS_PORT}=public`] : [];
+})();
+
 const chrome = await launchBrowser({
-  label: 'qa-net/host', engine: 'chromium', args: ['--hide-scrollbars'], port: PORT, root: ROOT,
+  label: 'qa-net/host', engine: 'chromium',
+  args: ['--hide-scrollbars', ...PUBLIC_ORIGIN_OVERRIDE], port: PORT, root: ROOT,
 });
 browsers.push(chrome);
 const chromeGuest = await launchBrowser({
@@ -605,8 +657,13 @@ const INSTALL = () => {
   window.__selection = () => ctx.tryGet('hud')?.controller.model.selection.slice() ?? [];
 };
 
-const newPage = async (browser) => {
-  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+/**
+ * `opts` exists for one arm and one flag. `https` serves the app behind a certificate this run
+ * generated four seconds earlier, which no browser has any reason to trust — and trusting it is
+ * beside the point, because what that arm measures is the *scheme*, not the certificate.
+ */
+const newPage = async (browser, opts = {}) => {
+  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1, ...opts });
   const errs = [];
   page.on('pageerror', (e) => errs.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error') errs.push(`console.error: ${m.text()}`); });
@@ -1068,6 +1125,208 @@ function logDiff(a, b) {
 
 const relayStatus = async (relay) =>
   fetch(`${relay.http}/status`).then((r) => r.json()).catch(() => null);
+
+// ---------------------------------------------------------------------------
+// Arm: the square, read back by a decoder that is not ours
+// ---------------------------------------------------------------------------
+
+/*
+ * The QR, measured at the far end rather than at the near one.
+ *
+ * `src/net/qr.ts` produces a matrix, and it would be easy — and worthless — to assert things
+ * about the matrix. What a guest points a camera at is a *rendering*, and the two renderings
+ * this product ships are unlike each other: an SVG on a laptop screen and half-block glyphs in
+ * a terminal. So every check below renders, turns the rendering into an image, and hands the
+ * image to **Vision**, which is Apple's barcode decoder and the one an iPhone camera runs.
+ * Nothing here reads our own encoder back with our own code; that would prove only that it
+ * agrees with itself, and this repository has shipped that check before.
+ *
+ * Two of the five carry a control, which is the cheapest way to keep a check honest.
+ * `qr-survives-a-thumb` blanks the same corner of the same payload at level Q and at level L
+ * and requires the second to *fail*, so it is measuring error correction rather than the
+ * decoder's patience — and it goes red if somebody quietly drops the level to save four
+ * modules. `qr-every-version` fills all forty (version, level) pairs to capacity, which is what
+ * stands in for auditing the block table by eye: a wrong digit in it moves a block boundary and
+ * the symbol comes back as something other than what went in.
+ *
+ * No browser and no server: the arm is a few milliseconds of encoding, some `sharp` calls and
+ * one `swift` process. It runs first, so a broken encoder is known before anything expensive
+ * starts.
+ */
+if (wanted('qr')) {
+  console.log('\n=== the square, decoded by Vision rather than by us ===');
+  const { capacityBytes, qrEncode, qrHalfBlocks, qrSvg, QUIET } = await import('../src/net/qr.ts');
+  const { decodeQr, halfBlocksToPixels, halfBlocksToPng, qrPng } = await import('./lib/qr-image.mjs');
+  /*
+   * Two directories, because they hold two different kinds of thing. `work` takes the forty
+   * grid symbols, which are an intermediate nobody looks at; `dir` takes the handful a person
+   * would actually open — the product's own payloads, the terminal rendering and the two
+   * damaged ones — and is `--shots=` when a run asked for shots.
+   */
+  const work = '/tmp/tc-qa-net-qr';
+  const dir = SHOT_DIR ?? work;
+  await mkdir(work, { recursive: true });
+  await mkdir(dir, { recursive: true });
+  measured.qr = {};
+
+  /*
+   * Every row of the block table, exercised at capacity and read back.
+   *
+   * Forty symbols, each filled to the exact byte count its (version, level) pair holds, each
+   * carrying a payload that names the pair — so a file-to-payload mix-up in this loop shows up
+   * as a mismatch rather than as a pass. Vision reads all forty or this is red with the pairs
+   * that failed named.
+   */
+  const grid = [];
+  for (let v = 1; v <= 10; v++) {
+    for (const ecc of ['L', 'M', 'Q', 'H']) {
+      const head = `v${v}${ecc}:`;
+      const want = capacityBytes(v, ecc);
+      const text = (head + 'X'.repeat(Math.max(0, want - head.length))).slice(0, want);
+      const q = qrEncode(text, { ecc, minVersion: v });
+      const f = path.join(work, `qr-grid-v${String(v).padStart(2, '0')}${ecc}.png`);
+      await writeFile(f, await qrPng(q));
+      grid.push({ f, text, ecc, v, version: q.version, bytes: want });
+    }
+  }
+  let read = await decodeQr(grid.map((g) => g.f));
+  const gridBad = grid.filter((g) => g.version !== g.v || (read.get(g.f) ?? [])[0] !== g.text);
+  measured.qr.grid = grid.map((g) => ({ v: g.v, ecc: g.ecc, bytes: g.bytes, ok: !gridBad.includes(g) }));
+  record('qr-every-version', gridBad.length === 0,
+    'all forty version-and-level pairs encode a full payload and come back byte for byte '
+      + 'through a decoder that is not ours',
+    gridBad.length
+      ? gridBad.slice(0, 4).map((g) => `v${g.v}${g.ecc} (${g.bytes}B): `
+        + `got ${JSON.stringify(((read.get(g.f) ?? [])[0] ?? '').slice(0, 20))}`).join('; ')
+      : `versions 1–10 × L/M/Q/H, ${grid[0].bytes}…${grid[grid.length - 1].bytes} bytes each, `
+        + 'all exact',
+    'this is the audit of the error-correction block table: one wrong digit in it moves a '
+      + 'block boundary and the symbol decodes to rubbish while still scanning perfectly');
+
+  /*
+   * The four payload shapes this product actually builds, at the level it actually ships.
+   *
+   * Not "a QR of some text". The short join URL is what the terminal and the lobby print, the
+   * long one is what an overridden relay falls back to, the `.local` form is what `npm run host`
+   * offers Mac to Mac, and the `create=1` form is the one the host's own browser is opened on.
+   */
+  const payloads = [
+    ['join', 'http://192.168.1.77:5958/?room=ABCDE'],
+    ['override', 'http://192.168.1.77:5958/?net=ws%3A%2F%2F10.0.0.9%3A5959&room=ABCDE&host=0'],
+    ['mdns', 'http://ernests-air.local:5958/?room=ABCDE'],
+    ['create', 'http://192.168.1.77:5958/?mp=1&room=ABCDE&create=1'],
+  ];
+  const shots = [];
+  for (const [name, text] of payloads) {
+    const q = qrEncode(text);
+    const f = path.join(dir, `qr-${name}.png`);
+    await writeFile(f, await qrPng(q));
+    shots.push({ f, text, name, version: q.version });
+  }
+  read = await decodeQr(shots.map((s) => s.f));
+  const wrong = shots.filter((s) => (read.get(s.f) ?? [])[0] !== s.text);
+  measured.qr.payloads = shots.map((s) => ({ name: s.name, version: s.version, got: (read.get(s.f) ?? [])[0] ?? null }));
+  record('qr-decodes', wrong.length === 0,
+    'every URL this product puts in a square is read back, byte for byte',
+    wrong.length
+      ? wrong.map((s) => `${s.name}: got ${JSON.stringify((read.get(s.f) ?? [])[0] ?? null)}`).join('; ')
+      : `${shots.map((s) => `${s.name} v${s.version}`).join(', ')} — all four exact`,
+    'Vision is what an iPhone camera runs, so this is the device the product is aimed at '
+      + 'saying yes, rather than our own encoder agreeing with itself');
+
+  /*
+   * And the terminal, which is the rendering nobody would think to check.
+   *
+   * `qrHalfBlocks` carries two module rows per character with 24-bit colour escapes, and the
+   * glyph-to-module mapping is easy to get subtly wrong — an off-by-one in the row pairing
+   * produces output that still looks exactly like a QR. `halfBlocksToPixels` reconstructs the
+   * image the terminal paints and the same decoder reads it.
+   */
+  const termFiles = [];
+  for (const [name, text] of payloads.slice(0, 2)) {
+    const f = path.join(dir, `qr-term-${name}.png`);
+    await writeFile(f, await halfBlocksToPng(qrHalfBlocks(qrEncode(text)), { scale: 6 }));
+    termFiles.push({ f, text, name });
+  }
+  read = await decodeQr(termFiles.map((s) => s.f));
+  const termWrong = termFiles.filter((s) => (read.get(s.f) ?? [])[0] !== s.text);
+  record('qr-terminal-decodes', termWrong.length === 0,
+    'the half-block rendering `npm run host` prints is a scannable symbol and not a picture of one',
+    termWrong.length
+      ? termWrong.map((s) => `${s.name}: got ${JSON.stringify((read.get(s.f) ?? [])[0] ?? null)}`).join('; ')
+      : `${termFiles.length} terminal renderings re-imaged two pixel rows to a character row, both exact`,
+    'one module is half a character cell, so a wrong row pairing still looks like a QR');
+
+  /*
+   * A thumb over the corner, and the control that makes it mean something.
+   */
+  const occlude = (q, frac) => {
+    const n = Math.round(q.size * frac);
+    const mods = Uint8Array.from(q.modules);
+    for (let y = q.size - n - 1; y < q.size - 1; y++) {
+      for (let x = q.size - n - 1; x < q.size - 1; x++) mods[y * q.size + x] = 0;
+    }
+    return { ...q,
+      modules: mods,
+      dark: (x, y) => x >= 0 && y >= 0 && x < q.size && y < q.size && mods[y * q.size + x] === 1 };
+  };
+  /*
+   * The first side is encoded with **no level given**, so it is the level the product actually
+   * ships, and the check reads that level back into its own sentence.
+   *
+   * Written the other way round first — `qrEncode(url, { ecc: 'Q' })` — and the injection that
+   * changes the default from Q to L was then run and the check stayed green, because it was
+   * asking for Q rather than measuring what a caller gets. A check that names the shipped
+   * default has to obtain it the way a caller does.
+   */
+  const thumb = [];
+  for (const opt of [{}, { ecc: 'L' }]) {
+    const q = qrEncode(payloads[0][1], opt);
+    const f = path.join(dir, `qr-thumb-${q.ecc}${opt.ecc ? '' : '-default'}.png`);
+    await writeFile(f, await qrPng(occlude(q, 0.25)));
+    thumb.push({ f, ecc: q.ecc });
+  }
+  read = await decodeQr(thumb.map((s) => s.f));
+  const gotQ = (read.get(thumb[0].f) ?? [])[0] ?? null;
+  const gotL = (read.get(thumb[1].f) ?? [])[0] ?? null;
+  measured.qr.thumb = { shipped: thumb[0].ecc, withDefault: gotQ, withL: gotL };
+  record('qr-survives-a-thumb',
+    thumb[0].ecc === 'Q' && gotQ === payloads[0][1] && gotL !== payloads[0][1],
+    'a quarter of the symbol\'s width blanked out of the bottom corner still reads at the '
+      + 'level this ships at, and does not at the level below it',
+    `the shipped default is level ${thumb[0].ecc}, and read ${JSON.stringify(gotQ)}; `
+      + `level L read ${JSON.stringify(gotL)}`,
+    'the control is the point: without the L arm this would pass against a decoder that was '
+      + 'merely patient — and without taking the default it would pass after the level was '
+      + 'quietly lowered, which is exactly what the injection for it showed');
+
+  /*
+   * The quiet zone, measured off the rendering rather than off the constant.
+   *
+   * Four clear modules a side is what the specification requires and what a scanner uses to
+   * find the symbol at all. It is asserted on the *output* — the terminal text's own width and
+   * the SVG's `viewBox` — because a renderer that dropped it would still produce a decodable
+   * synthetic image (measured: Vision reads a clean symbol with no quiet zone at all) and would
+   * then fail on a screen with anything printed beside it. This is the one property a decode
+   * test is structurally unable to see.
+   */
+  const qq = qrEncode(payloads[0][1]);
+  const term = halfBlocksToPixels(qrHalfBlocks(qq), { scale: 1 });
+  const svg = qrSvg(qq);
+  const wantSide = qq.size + QUIET * 2;
+  const svgBox = /viewBox="0 0 (\d+) (\d+)"/.exec(svg);
+  const termOk = term.width === wantSide && term.height >= wantSide;
+  const svgOk = !!svgBox && Number(svgBox[1]) === wantSide && Number(svgBox[2]) === wantSide;
+  const cols = qq.size + QUIET * 2;
+  measured.qr.quiet = { symbol: qq.size, want: wantSide, term: [term.width, term.height], svg: svgBox?.slice(1) ?? null };
+  record('qr-quiet-zone', termOk && svgOk && QUIET === 4,
+    'both renderings carry the four-module quiet zone the specification requires, measured '
+      + 'off the rendering and not off the constant',
+    `symbol ${qq.size}, terminal ${term.width}x${term.height}, `
+      + `svg viewBox ${svgBox ? `${svgBox[1]}x${svgBox[2]}` : 'missing'}, want ${wantSide}`,
+    `and it fits a terminal: v${qq.version}, ${cols} columns by ${Math.ceil(cols / 2)} rows of `
+      + 'half blocks, against the 80x24 a default window gives you');
+}
 
 // ---------------------------------------------------------------------------
 // Arm: the protocol, headless, with two synthetic clients
@@ -2041,41 +2300,149 @@ if (wanted('lan')) {
    * The invite is read off the screen and handed to the second client verbatim. Nothing in this
    * half of the arm builds a URL — that is the claim.
    */
-  const roomB = nextRoom();
-  await hostPage.goto(`${lanBase}/?mp=1`, { waitUntil: 'domcontentloaded' });
-  await hostPage.waitForSelector('.tc-lobby', { timeout: 30000 });
+  const roomB = lan.room;
   /*
-   * The relay field again, and on this origin it is a *different* wrong answer.
+   * The guest scanned first, which is a real race and used to lock the host out of their own room.
    *
-   * `defaultRelay()` guesses `ws://<whatever host served this page>:5959`, so on the LAN origin
-   * it produces `ws://192.168.0.238:5959` — plausible, not loopback, and pointing at nothing
-   * when the host chose another relay port. The first version of the plaque handler only
-   * overruled loopback and this arm went red here, which is the reason `relayWasGuessed` exists.
+   * `npm run host` mints the room and prints the square before the host's browser has finished
+   * loading, so a guest with a camera can be in the room first. The relay then refuses `/new`
+   * for that code with 409 *"room X is in use on this relay"* — correct for a code somebody
+   * typed, and a dead end for the host, who is being told about their own room. Reproduced here
+   * with a socket rather than a second browser: what matters is that the room is occupied, not
+   * what occupies it.
+   *
+   * **On its own page, and the reason is a finding rather than tidiness.** Chromium writes
+   * *"Failed to load resource: the server responded with a status of 409"* for any `fetch` that
+   * comes back 4xx, whatever the caller does with the answer — the same behaviour that made the
+   * lobby read `<meta name="tc-lan">` instead of asking for `/__tc/lan` (§11.2). So recovering
+   * from this race costs exactly one console line, and it is charged here, to this check, where
+   * it is named — rather than silently to `lan-console`, whose subject is the ordinary flow and
+   * which went red the first time this ran on `hostPage`. What must not appear is a
+   * `pageerror`, and that is in the pass condition.
    */
-  await hostPage.waitForFunction(
-    (want) => (document.querySelector('#tc-relay')?.value ?? '') === want,
-    lan.relayUrl, { timeout: 10000 }
-  ).catch(() => { /* the CREATE below reports it */ });
-  await hostPage.click('#tc-room');
-  await hostPage.type('#tc-room', roomB, { delay: 20 });
-  await hostPage.click('#tc-host');
-  await hostPage.waitForSelector('#tc-code', { timeout: 20000 });
+  const raceRoom = await fetch(`http://${lan.lan}:${lan.relayPort}/new`,
+    { signal: AbortSignal.timeout(4000) })
+    .then((r) => (r.ok ? r.json() : null)).then((j) => j?.room ?? null).catch(() => null);
+  const racePage = await newPage(chrome);
+  let raceShown = null;
+  let raceSock = null;
+  if (raceRoom) {
+    raceSock = await new Promise((ok) => {
+      const ws = new WebSocket(`ws://${lan.lan}:${lan.relayPort}/room/${raceRoom}?want=join&v=1`);
+      ws.onopen = () => ok(ws);
+      ws.onerror = () => ok(null);
+      setTimeout(() => ok(null), 5000);
+    });
+    if (raceSock) {
+      await sleep(300);
+      await racePage.goto(`${lanBase}/?mp=1&room=${raceRoom}&create=1`, { waitUntil: 'domcontentloaded' });
+      raceShown = await racePage.waitForSelector('#tc-code', { timeout: 20000 })
+        .then(async () => ((await racePage.textContent('#tc-code')) ?? '').trim())
+        .catch(() => null);
+      raceSock.close();
+    }
+  }
+  const raceSaid = raceShown === null
+    ? ((await racePage.textContent('#tc-note').catch(() => '')) ?? '').replace(/\s+/g, ' ').trim()
+    : '';
+  const raceThrew = racePage.__errs.filter((e) => e.startsWith('pageerror'));
+  const raceNoise = racePage.__errs.filter((e) => !/409/.test(e));
+  await shot(racePage, 'lan-07-guest-scanned-first');
+  await racePage.close();
+  measured.lan.race = { room: raceRoom, shown: raceShown, said: raceSaid, errs: racePage.__errs };
+  record('lan-guest-first-does-not-lock-the-host',
+    !!raceRoom && !!raceSock && raceShown === raceRoom
+      && raceThrew.length === 0 && raceNoise.length === 0,
+    'a guest who scans the square before the host\'s browser has loaded does not lock the host '
+      + 'out of their own room',
+    raceRoom
+      ? `${raceRoom} was occupied by a joining socket, then opened at ?create=1; the sheet reads `
+        + `${raceShown ?? `nothing — it says "${raceSaid.slice(0, 120)}"`}`
+        + `; the page logged ${racePage.__errs.length} console line(s), `
+        + `${raceNoise.length} of them not the 409, and threw ${raceThrew.length}`
+      : 'the relay would not mint a room to race for',
+    '/new answers 409 for an occupied code, which is right for a code somebody typed and is '
+      + 'the good outcome wearing an error\'s clothes for a code the command minted');
+
+  /*
+   * `?mp=1&room=…&create=1`, which is the URL the command opens the host's own browser on.
+   *
+   * Not typed here and not built here: it comes out of `host-lan --json`, which is the same
+   * string the command hands the OS opener. The claim is that the host does nothing at all —
+   * the room the terminal printed is already open on the screen when the page settles.
+   */
+  await hostPage.goto(lan.hostUrl, { waitUntil: 'domcontentloaded' });
+  await hostPage.waitForSelector('#tc-code', { timeout: 30000 }).catch(() => { /* read below */ });
+  const openedCode = ((await hostPage.textContent('#tc-code').catch(() => '')) ?? '').trim();
+  const rsHost = await relayStatus({ http: `http://${lan.lan}:${lan.relayPort}` });
+  measured.lan.autoCreate = { url: lan.hostUrl, room: roomB, shown: openedCode };
+  record('lan-create-from-the-link',
+    !!roomB && openedCode === roomB && !!rsHost?.rooms?.some((r) => r.code === roomB),
+    'the command opened the room itself, and the browser it opens lands on that room with '
+      + 'nothing pressed',
+    roomB
+      ? `host-lan minted ${roomB} and opened ${lan.hostUrl}; the sheet reads `
+        + `${openedCode || '(nothing)'}, and the relay holds `
+        + `${(rsHost?.rooms ?? []).map((r) => r.code).join(', ') || 'no rooms'}`
+      : 'host-lan did not mint a room at all, so the code it printed and the code on screen '
+        + 'cannot be the same one',
+    'a browser landing on an empty form would let the host open a *second* room with one '
+      + 'press, and the square in the terminal would then name a room nobody is in');
+
   const invite = ((await hostPage.textContent('#tc-invite').catch(() => '')) ?? '').trim();
   const hasButton = await hostPage.evaluate(() => !!document.querySelector('#tc-copy-link'));
   await shot(hostPage, 'lan-02-room-open');
   measured.lan.invite = invite;
   record('lan-invite-carries-the-address-and-the-code',
-    hasButton && invite.startsWith(`http://${lan.lan}:${lan.gamePort}/`)
-      && invite.includes(`room=${roomB}`) && invite.includes(encodeURIComponent(lan.relayUrl)),
-    'the link on the open-room screen names the LAN page, the LAN relay and this room',
-    invite || 'there is no link on the screen and no button to copy one',
-    'built from location.href, which is exactly right once the page is served on a LAN address');
+    hasButton && invite === lan.joinUrl
+      && invite.startsWith(`http://${lan.lan}:${lan.gamePort}/`) && invite.includes(`room=${roomB}`),
+    'the link on the open-room screen is the LAN page and this room, and it is character for '
+      + 'character the line the terminal printed',
+    invite ? `screen: ${invite}\n        → terminal: ${lan.joinUrl}`
+      : 'there is no link on the screen and no button to copy one',
+    'it used to carry the relay address as well, percent-encoded, which is 78 characters and '
+      + 'goes stale the moment the host restarts on another relay port — the address is in '
+      + 'the document the link fetches, stated by the server');
+
+  /*
+   * The square on the host's screen, photographed and read by a decoder that is not ours.
+   *
+   * This is the check the whole pass turns on. Everything else about the QR is measured
+   * headlessly in the `qr` arm — the encoder, the terminal rendering, the error correction —
+   * and none of it says anything about the symbol that is actually on the lobby's panel, at
+   * the size the panel gives it, in the colours the panel paints. A screenshot of that one
+   * element is what a camera would see; Vision reads it; the string it yields is what the
+   * second client is then given, and nothing between here and the battle is written by this
+   * test.
+   */
+  const { decodeQr } = await import('./lib/qr-image.mjs');
+  const qrDir = SHOT_DIR ?? '/tmp/tc-qa-net-qr';
+  await mkdir(qrDir, { recursive: true });
+  const qrShot = path.join(qrDir, 'lan-06-screen-qr.png');
+  const qrBox = await hostPage.$('#tc-qr');
+  if (qrBox) await qrBox.screenshot({ path: qrShot, scale: 'device' });
+  const scanned = qrBox ? ((await decodeQr([qrShot])).get(qrShot) ?? [])[0] ?? null : null;
+  measured.lan.scanned = scanned;
+  record('lan-the-square-decodes-to-that-room',
+    scanned !== null && scanned === lan.joinUrl,
+    'the square drawn on the host\'s screen, screenshotted and decoded, is the join URL for '
+      + 'this room',
+    qrBox
+      ? `${qrShot} → ${JSON.stringify(scanned)}; the terminal printed ${JSON.stringify(lan.joinUrl)}`
+      : 'there is no square on the open-room screen at all',
+    'a rendered QR that does not decode is the exact shape of check this repository has '
+      + 'shipped before — so this reads it back rather than asserting that an <svg> appeared');
 
   await hostPage.click('#tc-begin');
   await driveMenu(hostPage, { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' });
 
   const guestPage = await newPage(chromeGuest);
-  await guestPage.goto(invite, { waitUntil: 'domcontentloaded' });
+  /*
+   * And the guest is given **the string that came out of the decoder**, not the one this test
+   * knows. If the square encoded a different room, or a stale relay port, or a URL that opens
+   * the setup sheet as a second host, this is where it shows.
+   */
+  await guestPage.goto(scanned ?? invite, { waitUntil: 'domcontentloaded' });
   /*
    * Bounded, and the failure is read off the page rather than thrown.
    *
@@ -2110,15 +2477,17 @@ if (wanted('lan')) {
   await shot(hostPage, 'lan-05-host-in-battle');
   measured.lan.met = { room: roomB, host: lh, guest: lg, guestReady, showing };
   record('lan-the-link-is-the-whole-invitation',
-    lh?.room === roomB && lg?.room === roomB && lh.slot === 0 && lg.slot === 1
+    !!scanned && lh?.room === roomB && lg?.room === roomB && lh.slot === 0 && lg.slot === 1
       && lh.myFaction !== lg.myFaction,
-    'a second client given nothing but that link ends up on the other side of the same battle',
+    'a second client given nothing but the string that came out of the square ends up on the '
+      + 'other side of the same battle',
     guestReady
-      ? `${invite.slice(0, 78)}… → room ${lg?.room}, slot ${lg?.slot}, commanding ${lg?.myFaction} `
-        + `against slot ${lh?.slot}'s ${lh?.myFaction}`
+      ? `${(scanned ?? invite).slice(0, 78)} → room ${lg?.room}, slot ${lg?.slot}, commanding `
+        + `${lg?.myFaction} against slot ${lh?.slot}'s ${lh?.myFaction}`
       : `the link opened and no battle started in 150 s — the second client is showing "${showing}", `
         + 'which is what an invite that omits the challenger\'s side of it produces',
-    'no code typed, no relay address entered, no URL written by this test');
+    'nothing typed, no Join pressed, no relay address entered, and no URL written by this '
+      + 'test: `?room=` alone resolves the relay out of the document and joins');
 
   /*
    * The honesty check, and the reason it is in this arm rather than the lobby one.
@@ -2162,6 +2531,222 @@ if (wanted('lan')) {
   plainRelay.stop();
   }
   lan.stop();
+}
+
+/*
+ * The deployed site, reproduced on this LAN, because the thing that makes it what it is is the
+ * scheme and not the hostname.
+ *
+ * ## What this arm is for
+ *
+ * `total-claude.vercel.app` is public and served over https, and multiplayer on this branch is
+ * two machines on one private network. A secure page may not open an insecure connection to a
+ * private address: the `WebSocket` constructor throws before a packet exists, and there is no
+ * flag on the visitor's side that changes it. So the deployed site's multiplayer screen can
+ * *never* start a battle, and what it said until this pass was `npm run host` — a shell command,
+ * printed at a stranger with no checkout, under a form field they could type into for ever.
+ *
+ * A dead-end button, in other words, and the two ways to fix one are to remove it or to make it
+ * lead somewhere true. This asserts the second: the entry is still on the front door, and what
+ * it leads to is four sentences and a link to a copy, with **no form at all** — no code field,
+ * no Create, no Join, no relay address. A disabled control arguing with a paragraph that
+ * explains why it is disabled is furniture.
+ *
+ * ## How a public origin is obtained without deploying anything
+ *
+ * A self-signed certificate for this machine's LAN address, a 30-line TLS front end in front of
+ * the run's own dev server, `ignoreHTTPSErrors` on the page — and one Chromium switch, which is
+ * the part that took a second attempt and is documented at length above
+ * `PUBLIC_ORIGIN_OVERRIDE`.
+ *
+ * The first version of this arm had the certificate and not the switch, and it **passed the
+ * screen check and failed the socket check by opening the socket**. That is the finding, and it
+ * is worth more than the arm: the deployed site's refusal is not about https, it is about the
+ * address space the browser believes the document came from. A page on this LAN is private
+ * whatever its scheme, so it may reach a private relay; the deployed site is public, so it may
+ * not. `--ip-address-space-overrides` declares the TLS front end public and the fixture becomes
+ * faithful.
+ *
+ * ## The control, which is the half that makes it evidence
+ *
+ * The same proxy also serves the same bytes over plain http on the next port, at the same LAN
+ * address, in front of the same dev server, pointed at the same live relay — and **is not**
+ * covered by the override. The plain page opens the socket; the declared-public page is refused
+ * by name. Without that half, "refused" would be indistinguishable from a firewall, a wrong
+ * port or a relay that never started.
+ */
+if (wanted('https')) {
+  console.log('\n=== the deployed site: an https origin, and a relay it may never reach ===');
+  const { createServer: createHttp } = await import('node:http');
+  const { createServer: createHttps } = await import('node:https');
+  const { execFile } = await import('node:child_process');
+  const { readFile } = await import('node:fs/promises');
+
+  const lanIp = lanAddress()?.ip ?? null;
+  secure: {
+  if (!lanIp) {
+    record('https-arm-can-run', false,
+      'this arm needs a LAN address to be an origin that is not loopback',
+      'no non-loopback IPv4 interface — a loopback https origin is a trustworthy one and the '
+        + 'rule under test does not apply to it',
+      'the same reason tools/host-lan.mjs refuses to print a URL on a machine with no LAN');
+    break secure;
+  }
+  const certDir = '/tmp/tc-qa-net-https';
+  await mkdir(certDir, { recursive: true });
+  const made = await new Promise((ok) => {
+    execFile('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+      '-keyout', path.join(certDir, 'key.pem'), '-out', path.join(certDir, 'cert.pem'),
+      '-days', '2', '-subj', `/CN=${lanIp}`, '-addext', `subjectAltName=IP:${lanIp}`],
+    (err) => ok(!err));
+  });
+  if (!made) {
+    record('https-arm-can-run', false,
+      'this arm needs openssl to mint a certificate for this machine\'s LAN address',
+      'openssl did not produce a key and a certificate',
+      'without a real https origin there is nothing here to measure');
+    break secure;
+  }
+  const key = await readFile(path.join(certDir, 'key.pem'));
+  const cert = await readFile(path.join(certDir, 'cert.pem'));
+
+  /*
+   * The front end. It forwards to the run's own dev server, which is a `vite-runner` bound to
+   * loopback with no relay beside it — so the document it produces has **neither** meta tag in
+   * it, which is exactly the shape of the deployed upload. Using it rather than starting a
+   * third vite also keeps the arm to one server of its own.
+   */
+  const { request: httpRequest } = await import('node:http');
+  const forward = (req, res) => {
+    const proxied = new URL(req.url, base);
+    const r = httpRequest({
+      host: '127.0.0.1', port: PORT, path: proxied.pathname + proxied.search, method: req.method,
+      headers: { ...req.headers, host: `127.0.0.1:${PORT}` },
+    }, (ur) => {
+      res.writeHead(ur.statusCode ?? 502, ur.headers);
+      ur.pipe(res);
+    });
+    r.on('error', (e) => { res.writeHead(502); res.end(String(e.message)); });
+    req.pipe(r);
+  };
+  const tls = createHttps({ key, cert }, forward);
+  const plainTwin = createHttp(forward);
+  const listen = (s, port) => new Promise((ok, no) => {
+    s.once('error', no);
+    s.listen(port, '0.0.0.0', () => ok(true));
+  });
+  const PLAIN_PORT = HTTPS_PORT + 1;
+  const bound = await listen(tls, HTTPS_PORT).then(() => listen(plainTwin, PLAIN_PORT))
+    .then(() => true).catch((e) => String(e?.message ?? e));
+  if (bound !== true) {
+    record('https-arm-can-run', false,
+      `this arm needs ${HTTPS_PORT} and ${PLAIN_PORT} on ${lanIp}`,
+      `could not bind: ${bound}`,
+      'somebody else has the port; pass --https-port= rather than measuring their server');
+    break secure;
+  }
+  const shutTls = () => { try { tls.close(); } catch { /* down */ } try { plainTwin.close(); } catch { /* down */ } };
+  const secureBase = `https://${lanIp}:${HTTPS_PORT}`;
+  const plainBase = `http://${lanIp}:${PLAIN_PORT}`;
+  /*
+   * A relay that is genuinely listening at the LAN address, because "the browser refused" and
+   * "nothing was there" are different findings and only one of them is this arm's.
+   */
+  const liveRelay = await startRelay(HTTPS_RELAY, ['--host=0.0.0.0', '--quiet']);
+  const wsTarget = `ws://${lanIp}:${HTTPS_RELAY}/room/HTTPS?want=host&v=1`;
+
+  const page = await newPage(chrome, { ignoreHTTPSErrors: true });
+  /*
+   * In through the front door, which is the half of this the coordinator asked about: the entry
+   * has to still exist, and it has to lead somewhere true.
+   */
+  await page.goto(`${secureBase}/`, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.menu.at-home .dest-multiplayer', { timeout: 60000 });
+  await page.click('.menu-home .dest-multiplayer');
+  await page.waitForSelector('.tc-lobby', { timeout: 30000 });
+  await sleep(400);
+  const face = await lobbyFace(page);
+  const sheet = await page.evaluate(() => ({
+    hasRoom: !!document.querySelector('#tc-room'),
+    hasCreate: !!document.querySelector('#tc-host'),
+    hasJoin: !!document.querySelector('#tc-join'),
+    hasRelay: !!document.querySelector('#tc-relay'),
+    hasAdv: !!document.querySelector('#tc-adv'),
+    copy: (document.querySelector('#tc-get-copy')?.getAttribute('href') ?? ''),
+  }));
+  await shot(page, 'https-01-deployed-lobby');
+  measured.https = { origin: face.origin, sheet, text: face.text.slice(0, 400) };
+  const noForm = !sheet.hasRoom && !sheet.hasCreate && !sheet.hasJoin && !sheet.hasRelay
+    && !sheet.hasAdv;
+  const saysWhy = /own network/i.test(face.text) && /from the internet/i.test(face.text)
+    && /private network/i.test(face.text);
+  record('https-lobby-refuses-honestly',
+    face.origin === secureBase && noForm && saysWhy && !/wss?:\/\//.test(face.text)
+      && !/npm run/.test(face.text) && sheet.copy.startsWith('https://github.com/'),
+    'on an https origin the multiplayer entry leads to four sentences and a link to a copy, '
+      + 'with no form on the screen at all',
+    `origin ${face.origin}; controls present: `
+      + `${Object.entries(sheet).filter(([, v]) => v === true).map(([k]) => k).join(', ') || 'none'}; `
+      + `link ${sheet.copy || '(none)'}; sheet reads: ${face.text.slice(0, 170)}`,
+    'it used to print a shell command at a stranger with no checkout, under a field they '
+      + 'could type into for ever — a button that dead-ends is the thing being removed');
+
+  /*
+   * And the reason it gives, measured. Two pages, one relay, one character of difference.
+   */
+  const probe = async (from) => {
+    const p = await newPage(chrome, { ignoreHTTPSErrors: true });
+    const seen = [];
+    p.on('console', (m) => { if (m.type() === 'error') seen.push(m.text()); });
+    await p.goto(`${from}/`, { waitUntil: 'domcontentloaded' });
+    const said = await p.evaluate(async (url) => {
+      try {
+        const ws = new WebSocket(url);
+        return await new Promise((res) => {
+          const done = (how) => { try { ws.close(); } catch { /* already */ } res(how); };
+          ws.onopen = () => done('opened');
+          ws.onerror = () => done('error');
+          ws.onclose = (e) => done(`closed ${e.code}`);
+          setTimeout(() => done('timeout'), 5000);
+        });
+      } catch (e) {
+        return `threw ${e.name}: ${e.message}`;
+      }
+    }, wsTarget);
+    await p.close();
+    return { said, why: seen.join(' | ').slice(0, 300) };
+  };
+  const fromSecure = await probe(secureBase);
+  const fromPlain = await probe(plainBase);
+  measured.https.socket = { target: wsTarget, fromSecure, fromPlain };
+  /*
+   * Named, not merely failed. `error` is what a blocked socket and an unplugged cable both
+   * look like from `onerror`, so the pass condition reads the browser's own sentence: this has
+   * to be refused *by the address-space check or by mixed content*, and not by nothing being
+   * there. The plain-http half proves something is there.
+   */
+  const blocked = /LOCAL_NETWORK_ACCESS|Mixed Content/i.test(fromSecure.why);
+  record('https-blocks-a-lan-socket',
+    fromSecure.said !== 'opened' && blocked && fromPlain.said === 'opened',
+    'the same relay, at the same address, refused to a page the browser believes came from '
+      + 'the internet and opened to one from this network',
+    `${wsTarget}\n        → from ${secureBase} (declared public): ${fromSecure.said}`
+      + `${fromSecure.why ? ` — ${fromSecure.why.slice(0, 150)}` : ''}`
+      + `\n        → from ${plainBase}: ${fromPlain.said}`,
+    'this is the evidence behind the sentence on the screen, and it took two attempts to '
+      + 'measure: without --ip-address-space-overrides the secure page opens the socket, '
+      + 'because the rule is about address spaces and a fixture on this LAN is private');
+
+  record('https-console', page.__errs.length === 0,
+    'and the refusal screen itself raised no console error',
+    page.__errs.slice(0, 3).join(' ; ') || 'clean',
+    'the socket probe is on its own page on purpose: a blocked mixed-content request is '
+      + 'logged by Chromium and would otherwise be charged to a screen that did nothing');
+
+  await page.close();
+  liveRelay.stop();
+  shutTls();
+  }
 }
 
 /*
@@ -2247,7 +2832,24 @@ if (wanted('dev')) {
      * the check that says so.
      */
     await openAdvanced(page);
-    await page.fill('#tc-relay', relay.base);
+    /*
+     * Typed the way a person would say it out loud: four dotted numbers and a port, no scheme.
+     *
+     * This is the whole of what this branch built in place of packing a LAN address into a
+     * longer room code — see `docs/MULTIPLAYER.md` §12.5 for why that was considered and
+     * refused. The completion is written back into the field on `change`, so the address that
+     * gets used is the address on the screen and nothing was guessed behind the player's back.
+     */
+    const bare = relay.base.replace(/^ws:\/\//, '');
+    await page.fill('#tc-relay', bare);
+    await page.evaluate(() => document.querySelector('#tc-relay')?.blur());
+    const completed = await page.inputValue('#tc-relay');
+    record('dev-server-completes-a-bare-address', completed === relay.base,
+      'an address typed without a scheme is completed to one, in the field, where it can be read',
+      `typed "${bare}", the field now holds "${completed}"`,
+      'the cross-origin case is two people who each have a checkout, and the thing they have '
+        + 'to get across is an address — four dotted numbers is the smallest honest spelling '
+        + 'of one, and this is what makes it typeable');
     const enabled = await page.evaluate(() => !document.querySelector('#tc-host')?.disabled);
     const devRoom = nextRoom();
     await page.click('#tc-room');
@@ -2299,9 +2901,12 @@ if (wanted('dev')) {
  * this machine's loopback, which is the fact that separates it from the `dev` arm and changes
  * the sentence the lobby has to say. `npm run dev -- --host`, reached at the LAN address, is
  * that document from the page's point of view: no tags, no relay, not loopback. The one thing
- * it is not is HTTPS, and nothing in this path branches on the scheme — `docs/MULTIPLAYER.md`
- * §10.2 measured what HTTPS does to a `ws://` socket, and that is a different refusal on a
- * different screen.
+ * it is not is HTTPS, and since this pass **the lobby does branch on the scheme** — an https
+ * origin with no server of ours behind it gets no form at all, because on that origin the
+ * refusal is permanent. That case is the `https` arm's, and it is a different screen with a
+ * different sentence. This arm holds the plain-http half of the pair, which is what
+ * `npm run dev -- --host` and any other unadorned upload produce: a form, disabled, with a
+ * refusal that names a command the reader can actually run.
  *
  * **It is asserted to be non-loopback, in the pass condition and not just in the log.** An
  * earlier version of this gate had all 54 of its checks talking to `127.0.0.1` while claiming
