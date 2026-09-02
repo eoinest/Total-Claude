@@ -110,7 +110,7 @@
  * this file's relays are never killed.
  */
 
-import { launchBrowser } from './lib/browser-budget.mjs';
+import { launchBrowser, startVite } from './lib/browser-budget.mjs';
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -120,8 +120,8 @@ import { lanAddress } from './lib/lan-address.mjs';
 import { bootThroughMenu, driveMenu, ensureServer, waitForServer } from './lib/menu-boot.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const ARMS = ['proto', 'battle', 'siege', 'lobby', 'lan', 'dev', 'static', 'badcode', 'norelay',
-  'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 'lag', 'xengine'];
+const ARMS = ['proto', 'battle', 'siege', 'lobby', 'lan', 'dev', 'static', 'ghost', 'badcode',
+  'norelay', 'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 'lag', 'xengine'];
 /**
  * `xengine` is opt-in, and that is a judgement rather than an omission.
  *
@@ -139,7 +139,7 @@ const ARMS = ['proto', 'battle', 'siege', 'lobby', 'lan', 'dev', 'static', 'badc
 const DEFAULT_ARMS = ARMS.filter((a) => a !== 'xengine');
 const FLAGS = ['port', 'relay', 'json', 'shots', 'only', 'seconds', 'keep', 'xsize', 'xticks',
   'all', 'siege-map', 'siege-scenario', 'siege-seconds', 'lan-port', 'lan-relay', 'dev-port',
-  'static-port'];
+  'static-port', 'ghost-port', 'ghost-relay'];
 
 const args = new Map(process.argv.slice(2).map((a) => {
   const m = a.match(/^--([^=]+)(?:=(.*))?$/);
@@ -224,6 +224,12 @@ const LAN_RELAY = Number(args.get('lan-relay') ?? 5984);
  */
 const DEV_PORT = Number(args.get('dev-port') ?? 5939);
 const STATIC_PORT = Number(args.get('static-port') ?? 5940);
+/*
+ * The `ghost` arm's pair: a real `vite-runner` on 5941 told to advertise a relay on 5991, and
+ * **nothing started on 5991**. The gap between those two numbers is the arm.
+ */
+const GHOST_PORT = Number(args.get('ghost-port') ?? 5941);
+const GHOST_RELAY = Number(args.get('ghost-relay') ?? 5991);
 if (!Number.isFinite(SECONDS) || SECONDS < 20) {
   console.error(`--seconds must be at least 20; got '${args.get('seconds')}'`);
   process.exit(2);
@@ -2348,6 +2354,84 @@ if (wanted('static')) {
 
     await page.close();
     st.stop();
+  }
+}
+
+/*
+ * A server that says it started a relay, and did not. The arm that measures the probe itself.
+ *
+ * ## Why this exists, and what was wrong without it
+ *
+ * `dev` and `static` prove the lobby is honest when *nothing* names an address, and `lan`
+ * proves it is quiet when a named address answers. **None of them can tell whether the probe
+ * runs at all.** `relayAnswers()` could be replaced by `async () => true` and all three would
+ * stay green: the first two never call it, and in the third the relay is alive. So the one
+ * sentence this pass rests on — *a stated fact is still checked* — was the only claim in it
+ * with no check behind it.
+ *
+ * ## Why it is a real case and not a contrivance
+ *
+ * `tools/host-lan.mjs` spawns the game server and the relay as **two processes**. The meta tag
+ * is written by the first of them, at the moment it serves the document, and it knows nothing
+ * about whether the second is still alive — a relay that crashed, or that lost its port to
+ * something else, leaves exactly this document behind. `startVite` with `relayPort` and nothing
+ * listening on that port reproduces it in one line, and `vite-runner`'s `relayPlaque()` writes
+ * the tag on a loopback bind, so no LAN address is needed to get there.
+ *
+ * The port is asserted empty first. A relay somebody else happens to be running on 5991 would
+ * turn this into an arm that quietly measures nothing and reports green.
+ */
+if (wanted('ghost')) {
+  console.log('\n=== a server that says it started a relay, and did not ===');
+  const held = await fetch(`http://127.0.0.1:${GHOST_RELAY}/health`,
+    { signal: AbortSignal.timeout(2000) }).then(() => true).catch(() => false);
+  if (held) {
+    record('ghost-arm-can-run', false,
+      `this arm needs port ${GHOST_RELAY} to have nothing on it, which is the whole fixture`,
+      `something answered http://127.0.0.1:${GHOST_RELAY}/health`,
+      'a relay that is actually there would make every check below pass for the wrong reason');
+  } else {
+    const ghost = await startVite({
+      port: GHOST_PORT,
+      root: ROOT,
+      cacheDir: path.join(ROOT, '.vite-cache', `qa-net-ghost-${GHOST_PORT}`),
+      label: 'qa-net/ghost',
+      relayPort: GHOST_RELAY,
+    });
+    const page = await newPage(chrome);
+    await page.goto(`${ghost.base}/?mp=1`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.tc-lobby', { timeout: 60000 });
+    // Longer than the probe's own 3 s timeout, so a slow answer is not read as no answer.
+    await sleep(4000);
+    const face = await lobbyFace(page);
+    await shot(page, 'ghost-01-lobby');
+    const want = `ws://127.0.0.1:${GHOST_RELAY}`;
+    measured.ghost = { declared: face.metaRelay, want, face, errs: page.__errs.slice(0, 4) };
+
+    record('ghost-relay-is-probed-and-not-believed',
+      face.metaRelay === String(GHOST_RELAY) && face.relayValue === want
+        && face.blockedShown && face.blockedText.includes(want)
+        && /said it had started a relay there/.test(face.blockedText)
+        && face.createDisabled === true && face.joinDisabled === true,
+      'a relay the server advertised and did not start is caught before the player presses '
+        + 'anything, and named as the server\'s claim rather than the player\'s mistake',
+      `the document says tc-relay=${face.metaRelay}, the field holds ${JSON.stringify(face.relayValue)}, `
+        + `CREATE disabled=${face.createDisabled}; the panel says: ${face.blockedText.slice(0, 190)
+          || '(nothing — the lobby believed the tag)'}`,
+      'without this arm relayAnswers() could return true unconditionally and dev, static and '
+        + 'lan would all still be green');
+
+    const thrown = page.__errs.filter((e) => e.startsWith('pageerror'));
+    record('ghost-relay-no-pageerror', thrown.length === 0,
+      'and finding that out costs a network line in the browser\'s own log, not an exception',
+      thrown.slice(0, 2).join(' ; ')
+        || `clean (${page.__errs.length} network console line(s) — a refused connection, which `
+          + 'is what the probe just discovered and nothing here can suppress)',
+      'the meta tag replaced a fetch to avoid exactly this noise; the probe is allowed it '
+        + 'because it only fires when an address has already been named');
+
+    await page.close();
+    await ghost.close();
   }
 }
 

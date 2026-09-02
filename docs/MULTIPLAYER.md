@@ -2703,7 +2703,7 @@ say what it says", and only somebody who has opened the panel has asked.
 
 `tools/qa-net.mjs` was at 60/60 and could not see any of this. Every arm ran against one dev
 server, so the lobby's answer to `npm run dev` had never been measured — which is the case the
-owner hit. It is now **68 checks over 16 arms**.
+owner hit. It is now **70 checks over 17 arms**.
 
 `lan` gains `lan-lobby-says-nothing-about-transport`, the positive claim, and it waits 1.5 s for
 the probe first so that it measures the settled panel rather than the optimistic one.
@@ -2718,7 +2718,23 @@ origin is in the pass condition and not merely in the log**: §9.11 records that
 of this gate had all 54 of its checks talking to `127.0.0.1` while claiming to measure a LAN
 product, and a check whose subject is an origin has to prove which one it got.
 
-Made to fail on purpose, five ways. Which checks survive each injection is the part worth reading:
+#### `ghost`, which exists because the other three are blind to the thing this pass rests on
+
+Writing the injections found the hole. `dev` and `static` never call `relayAnswers()` — nothing
+names an address on either — and in `lan` the relay is alive, so **`relayAnswers` could have been
+replaced by `async () => true` and all three would have stayed green.** The sentence §11.3 is
+built on, *a stated fact is still checked*, was the one claim in this pass with no check behind
+it.
+
+`ghost` is a real `vite-runner` told to advertise a relay on 5991 with **nothing started on
+5991**, which is what `npm run host` leaves behind when the relay half dies: the tag is written by
+the game server, at the moment it serves the document, and it knows nothing about the other
+process. The port is asserted empty first, because a relay somebody else happened to be running
+there would make every check pass for the wrong reason. It asserts the address is named as *the
+server's claim* — *"This server said it had started a relay there"* — rather than as the player's
+mistake, and that both buttons are off before anything is pressed.
+
+Made to fail on purpose, six ways. Which checks survive each injection is the part worth reading:
 
 | Injected | Red | Green, and why that is right |
 |---|---|---|
@@ -2727,6 +2743,7 @@ Made to fail on purpose, five ways. Which checks survive each injection is the p
 | `servedByUs` forced `true` | `static-origin-keeps-the-sentence-that-was-right` only | the deployed shape now gets *"stop this server"*, which names a process the reader does not have. Nothing about the address or the console changes, and both stay green |
 | the `input` listener on the relay field stops re-arming the buttons | `dev-server-still-lets-you-point-at-a-relay` only | the demotion is intact and so is the refusal; what broke is the way back out of it — *"an address in the disclosure left CREATE disabled — the capability is gone, not demoted"* |
 | the disclosure opens itself whenever the server named a relay | `lan-lobby-says-nothing-about-transport` only | *"relay field shown=true reaches=true"*. All six other `lan` checks stay green, correctly: the invite, the LAN address and the withholding do not depend on where the field sits |
+| `relayAnswers` returns `true` without asking anything | `ghost-relay-is-probed-and-not-believed` only | *"CREATE disabled=false; the panel says: (nothing — the lobby believed the tag)"*. All four `dev` checks and all three `static` checks stay green **and that is the finding**: they are structurally unable to see this, which is why `ghost` had to be written |
 
 The fourth of those was found rather than designed. `page.click` on a `disabled` button waits
 thirty seconds for actionability and then **throws**, which reaches `qa-net`'s
@@ -2766,7 +2783,13 @@ somebody will eventually fix.
 A relay that dies **after** the lobby has probed it is caught by CREATE and not by the panel:
 there is no re-probe and no polling, on the grounds that a lobby which reports the transport's
 health continuously is a lobby that is about transport again. `noRelay()` names the address that
-did not answer and leaves the player on the form, which is where §9.12 put them.
+did not answer and leaves the player on the form, which is where §9.12 put them. A relay that was
+already dead when the page loaded is the `ghost` arm's case and *is* caught.
+
+The disclosure opens itself in exactly one situation — a `?net=` address that failed its probe,
+which is `netFailed` sending somebody back here to correct it. Every other refusal leaves it
+closed, because the repair is a command and not a keystroke. The judgement is arguable and it is
+one line: `if (chosen.source === 'url') adv.open = true`.
 
 And the probe is one request with a three-second timeout, and `usable` only ever moves downwards.
 On a network where the relay is reachable but very slow, the panel would refuse after three

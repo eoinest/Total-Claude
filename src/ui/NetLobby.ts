@@ -397,7 +397,11 @@ const noRelayHere = (ours: boolean): string =>
     ? `This server is serving the game and nothing else. ${RUN_HOST_HERE}`
     : `This page cannot be one, because it is a static upload with no server in it. ${RUN_HOST_THERE}`);
 
-/** An address that was named by something and is not answering. Who named it matters. */
+/**
+ * An address that was named by something and is not answering. **Who named it matters**, because
+ * it decides whose problem it is: the server's own relay died, this browser is remembering a
+ * dead one, or the link somebody sent points at nothing.
+ */
 const relayWentQuiet = (addr: string, source: RelaySource, ours: boolean): string =>
   `<b>No answer from ${esc(addr)}.</b> `
   + (source === 'server'
@@ -406,8 +410,9 @@ const relayWentQuiet = (addr: string, source: RelaySource, ours: boolean): strin
     : source === 'remembered'
       ? 'That is the relay this browser used last time, and nothing is listening on it now. '
       : 'That address arrived with the link that opened this page, and nothing is listening on '
-        + 'it. ')
-  + (ours ? RUN_HOST_HERE : RUN_HOST_THERE);
+        + 'it. Tell whoever sent it. ')
+  + (ours ? RUN_HOST_HERE : RUN_HOST_THERE)
+  + ' Or put a working address under <b>Relay on another machine or port</b>.';
 
 /**
  * The URL that boots a relayed battle. One builder, so the invite and the host agree.
@@ -583,6 +588,19 @@ export function showLobby(host: HTMLElement): void {
       blocked.innerHTML = relayWentQuiet(chosen.value, chosen.source, ours);
       usable = false;
       gate();
+      /*
+       * One source opens the panel by itself, and only one.
+       *
+       * `?net=` arriving at the *lobby* is almost always `main.ts`'s `netFailed` sending a
+       * player back here to correct an address that just failed — they have been returned to
+       * this screen for the express purpose of editing that field, and leaving it behind a
+       * disclosure they have never opened is a dead end. Every other source is one where the
+       * repair is a command rather than a keystroke: a server whose own relay died wants
+       * `npm run host` restarted, and a stale remembered address wants a relay started, not a
+       * different address typed. Opening the panel for those would be offering an empty form as
+       * the fix, which is the habit this whole change is breaking.
+       */
+      if (chosen.source === 'url') adv.open = true;
     });
   }
 
