@@ -79,8 +79,8 @@ import {
   BUDGET_DIR, budgetCap, budgetEnabled, capSource, listSlots, listWaiters, paths, reapStale,
 } from './lib/browser-budget.mjs';
 import {
-  attribute, cwdByPid, groupIndex, identity, isSibling, listOwned, procCeiling, procCensus,
-  psTable, shortOwner, PROCS_PER_UNIT,
+  attribute, cwdByPid, groupIndex, identity, isAgentCommand, isSibling, listOwned, procCeiling,
+  procCensus, psTable, shortOwner, PROCS_PER_UNIT,
 } from './lib/process-registry.mjs';
 import {
   OWNER_FLAG, POLICY, observe, ownerState, policyFor, procPolicy, qosEnabled, workBudgetEnabled,
@@ -707,7 +707,10 @@ if (cmd === 'sweep') {
    */
   const agentDirs = new Map();
   for (const r of own.table) {
-    if (!/\bclaude\b/.test(r.command)) continue;
+    // `isAgentCommand` tests argv[0], not the whole line. `\bclaude\b` matches inside
+    // `~/.claude/shell-snapshots/…`, so every shell sourcing a snapshot counted as an agent — and
+    // one of those stands in *my* worktree, which would have made my own servers a sibling's.
+    if (!isAgentCommand(r.command)) continue;
     const dir = own.ctx.cwds.get(r.pid);
     if (dir) agentDirs.set(path.resolve(dir), r.pid);
   }
@@ -715,16 +718,42 @@ if (cmd === 'sweep') {
   const registered = new Set();
   for (const g of own.census.groups) for (const m of g.members) registered.add(m.pid);
 
-  const verdictOf = (att) => {
-    if (att.how === 'registry' || att.how === 'slot' || att.how === 'parent-chain') {
-      const other = isSibling(att, own.me);
-      return other === true ? 'sibling' : 'mine';
+  /*
+   * **"I cannot tell" is not "mine".** That was the whole of the 5901 mistake, so an attribution
+   * that cannot be resolved to *this* agent counts as somebody else's and is refused. The cost of
+   * being wrong that way is a sweep that leaves something behind and says so; the cost of being
+   * wrong the other way is killing a sibling's running work.
+   */
+  const isMine = (att) => {
+    /*
+     * **The worktree decides when both are known.** Several agents run as subagents of one `claude`
+     * CLI, so they share `CLAUDE_PID` and the session id: a `qa-net` run in a sibling's worktree
+     * walked up to *this* agent's `claude` and, on the first version of this function, came back
+     * "mine". `--force` would then have killed it, which is the 5901 incident with better logging.
+     */
+    if (att.worktree && own.me.worktree) {
+      return path.resolve(att.worktree) === path.resolve(own.me.worktree);
     }
+    if (own.me.agentPid && att.agentPid) return att.agentPid === own.me.agentPid;
+    if (own.me.agent && att.agent) return att.agent === own.me.agent;
+    return false;
+  };
+
+  const verdictOf = (att) => {
+    // Recorded, and the parent chain — whose `claude` came out of the same `ps` snapshot and is
+    // therefore alive by construction. Somebody owns these; the only question is who.
+    if (att.how === 'registry' || att.how === 'slot' || att.how === 'parent-chain') {
+      return isMine(att) ? 'mine' : 'sibling';
+    }
+    /*
+     * Inferred from where it is standing, which is the weakest evidence and the one that needs the
+     * extra fact: **is a live agent standing there too?** A stopped agent's leftover server sits in
+     * the same directory as a running agent's, and only one of them is somebody's.
+     */
     if (att.how === 'cwd' && att.worktree) {
       const holder = agentDirs.get(path.resolve(att.worktree));
-      if (holder && holder !== own.me.agentPid) return 'sibling';
-      if (holder) return 'mine';
-      return 'unowned';
+      if (!holder) return 'unowned';
+      return holder === own.me.agentPid ? 'mine' : 'sibling';
     }
     return 'unowned';
   };

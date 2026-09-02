@@ -60,6 +60,7 @@ still saying 3,074 predates that commit).
 | seams | `node tools/probe-seams.mjs` | PASS, both maps |
 | replay | `node tools/qa-replay.mjs` | **27/27** |
 | **multiplayer** | `node tools/qa-net.mjs` (starts its own relays and server) | **38/38** |
+| **supervisor** | `node tools/qa-supervisor.mjs` (kills real trees, on purpose) | **56/56** |
 | determinism | the three arms below, **spelled exactly** | 7 checkpoints each |
 
 > **`lint` is three checks now, not two — changed 22 Aug 2026.** `check-determinism` and
@@ -68,6 +69,23 @@ still saying 3,074 predates that commit).
 > `tools/lib/browser-budget.mjs`. It carries an allowlist of the 91 files in `tools/` (254
 > including `scratch/`) that predate the budget; that list may shrink and must not grow. If you
 > were told "lint 2/2", this is why it says 3/3. See `docs/tech/BROWSER-BUDGET.md`.
+>
+> **The third check grew a third rule on 1 Sep 2026: `detached: true`.** It caught a new
+> `chromium.launch()` and had nothing to say about `spawn('node', [script], { detached: true })`,
+> which is the line the 23 Aug orphan went through. That rule is **not** on the ratcheted
+> allowlist and never joins it — the six legitimate uses are named in `DETACHED_OK` inside the
+> check, with a reason each. `spawnOwned()` is the one-line fix and it is printed on failure.
+> lint is still 3/3: three checks, one of which now has three rules.
+
+> **`qa-supervisor` proves the process supervisor kills before it proves it permits.** Ten cases,
+> **56 assertions**, and it runs the destructive path for real: a detached child launching browsers
+> with its parent SIGKILLed; the *same* fixture spawned the old way, which must still leak, or the
+> first case proves nothing; a harness the agent ran directly, with only the agent killed; a
+> sibling's process refused by name; a recycled group id refused; an entry from a previous boot
+> dropped without signalling anyone; the ceiling refusing, queueing and then granting; and the
+> guard *and* its owner both SIGKILLed with a reaper in an unrelated process left to finish the
+> job. It opens browsers, so it is inside the cap like everything else — but it takes a few
+> minutes and it is not an every-commit check. Run it after anything in `tools/lib/`.
 
 Determinism is pinned in `tools/determinism-baseline.json` at **t+0/30/90/150/200/250/400**, three
 hashes each: the float32 pool, `uf64` (exact float64 unit state) and `uctl` (discrete state).
@@ -322,21 +340,32 @@ here — the `npx vite` wrapper was the first — so it is a pattern, not an inc
 
 What to do about it, in order:
 
-1. **Stopping an agent is now enough for anything started through the supervisor.** Every job that
-   goes through `spawnOwned`, `launchBrowser` or `startVite` runs inside a guarded process group
-   anchored to the agent's own PID, and the guard takes the whole tree down within about two
-   seconds of that PID going away. Measured: **2,289 ms** in `tools/qa-supervisor.mjs` case 1, on a
-   detached child that was launching browsers, killed with SIGKILL so that nothing polite ran.
-2. **Then check, because the guard is not the only mechanism and should not be the only habit.**
-   `node tools/browsers.mjs procs` names every registered group and its owner, and separates the
-   processes whose owner is *recorded* from those whose owner is only *inferred*. If a stopped
-   agent's work is still there a minute later, it was started outside the supervisor — an
-   unconverted tool, or something run with `TC_BROWSER_BUDGET=off`.
+1. **Stopping an agent is now enough**, in both of the two shapes agent work comes in, and both
+   are anchored to the agent's own PID rather than to a shell that comes and goes.
+   - A job **spawned** through `spawnOwned` — which is what `startVite` now uses — runs inside a
+     guarded process group, and the guard takes the whole tree down when the agent goes. Measured
+     at **2,289 ms** in `tools/qa-supervisor.mjs` case 1, on a detached child that was launching
+     browsers, SIGKILLed so that nothing polite ran.
+   - A tool the agent **runs directly**, `node tools/probe-x.mjs`, has no guard at all — and this
+     is the 23 Aug shape exactly, because that harness was *healthy*: alive, heartbeating, holding
+     a valid slot, owned by nobody. `launchBrowser` now watches the agent from inside the run and
+     ends it, browser and all, when the agent goes. Measured at **1,603 ms**, case 9.
+2. **Then check, because no mechanism should be the only habit.** `node tools/browsers.mjs procs`
+   names every registered group and its owner, and separates the processes whose owner is
+   *recorded* from those whose owner is only *inferred*. If a stopped agent's work is still there a
+   minute later, it took no slot and had no guard — something run with `TC_BROWSER_BUDGET=off`, or
+   a tool that starts a process some other way.
 3. **Then `node tools/browsers.mjs sweep`.** It attributes every candidate before it signals
    anything, and it **refuses a live sibling's** rather than guessing — which is the fix for the
    day one agent killed another's dev server on port 5901. `--force` takes what is mine and what
    nothing alive claims; `--include-others` is the override, and it prints whose each one is first.
-4. **Never `pkill -f chrome-headless-shell`.** It missed twice on 23 Aug, because the thing to kill
+4. **Ownership is by *worktree*, not by session id, and this is worth knowing before you read a
+   sweep's output.** Several agents run as subagents of one `claude` CLI, so they share `CLAUDE_PID`
+   and `CLAUDE_CODE_SESSION_ID` — measured: a sibling's `qa-net` in another worktree walked up to
+   *this* agent's `claude`. A differing worktree is therefore treated as decisive on its own. The
+   side effect: one agent deliberately working in two trees will see its own work in the other tree
+   listed as a sibling's, and needs `--include-others` to sweep it.
+5. **Never `pkill -f chrome-headless-shell`.** It missed twice on 23 Aug, because the thing to kill
    was a Node loop and not a browser, and because it cannot tell one agent's work from another's.
    It is also how you kill the owner's own playtest.
 

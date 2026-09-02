@@ -341,9 +341,23 @@ A sweep may refuse to kill either kind, and only kills on the strength of the fi
 unowned — and `--include-others` is the override a human recovering a wedged machine needs, which
 prints whose each one is before it acts.
 
+**The worktree is the part of the record that identifies an agent, and that was measured.** Several
+agents run as subagents of **one `claude` CLI process**, so they share `CLAUDE_PID` *and*
+`CLAUDE_CODE_SESSION_ID`. Pointing the new `sweep` at a real sibling's dev server proved it: a
+`qa-net` run in worktree `agent-aaa44128937a2cb8f` walked up its parent chain to **ppid 23238, this
+agent's own `claude`**, and came back "mine". `--force` would have killed it — the 5901 incident
+again, with a better audit trail. So a differing worktree is decisive on its own, and agreement is
+only "mine" when nothing disagrees. One agent deliberately working in two trees therefore sees its
+own work in the other tree as somebody else's and needs `--include-others`; that is the right
+direction to be wrong in.
+
+What `CLAUDE_PID` *is* good for is the anchor: while it lives, some agent may still want this work.
+The per-command case is covered separately, by anchoring a spawned job on **the process that
+spawned it** — which for a tool the agent ran directly is the tool itself.
+
 ### Proof, hardest case first
 
-`node tools/qa-supervisor.mjs` — **47 assertions, 10 cases**, and it runs the destructive path for
+`node tools/qa-supervisor.mjs` — **56 assertions, 10 cases**, and it runs the destructive path for
 real. Measured on this tree:
 
 ```
@@ -353,12 +367,17 @@ real. Measured on this tree:
      5 processes and 1 browser outlived a SIGKILLed parent, exactly as on 23 Aug
 3. the loop SIGKILLed instead, so Playwright's own handler never runs
      the browsers it orphaned were swept anyway, 401 ms later
-4. a sibling's process
+4. a sibling's process, and `browsers.mjs sweep` itself
      named from the registry - branch and port, not just a pid - and refused
      killTree refused a recycled group: "nothing in it looks like vite-runner.mjs"
+     and end to end: a server standing in a worktree with a live agent in it is
+     listed as "belong to a LIVE sibling"; kill the agent, change nothing else,
+     and the same process in the same directory becomes sweepable
 5. a stale entry, owner killed, tree still up      reaped, tree killed
 6. an entry from a previous boot                   dropped, and NOTHING signalled
-7. the ceiling with no room                        refused with a reason in 6.5 s, not hung
+7. the ceiling with no room
+     refused with a reason in 7.6 s rather than hanging, and a caller that waits
+     is in the queue and is granted the moment the ceiling allows it
 8. the guard AND its owner SIGKILLed                a reaper in another process finished it
 9. a harness the agent ran DIRECTLY, agent killed
      harness ended itself and its browser died, 1,603 ms after the agent went;

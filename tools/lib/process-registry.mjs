@@ -150,10 +150,18 @@ const ps = (fmt) => {
  *
  * `CLAUDE_CODE_SESSION_ID` is the agent's session, and `CLAUDE_PID` is the `claude` process
  * itself — verified on this machine: pid 10301 is
- * `claude --resume 98934e6c-19e5-47b6-8f42-ee01238370be`. **`CLAUDE_PID` is the anchor that
- * matters**, because it is the one whose death means "this agent was stopped", which is the
- * exact event that leaked on 23 Aug. The immediate parent is a shell that comes and goes many
- * times inside one agent's life and its death means nothing.
+ * `claude --resume 98934e6c-19e5-47b6-8f42-ee01238370be`.
+ *
+ * **Neither of them identifies an *agent*, and that was measured rather than assumed.** Several
+ * agents run as subagents of one `claude` CLI, in different worktrees, sharing both values: a
+ * `qa-net` run in worktree `agent-aaa44128937a2cb8f` walked up to ppid 23238, which is *this*
+ * agent's `claude`. So the **worktree** is the part of this record that distinguishes one agent's
+ * work from another's, and `isSibling` treats a differing worktree as decisive on its own.
+ *
+ * What `CLAUDE_PID` *is* good for is the anchor: while it lives, some agent may still want this
+ * work; when it dies, nobody does. The per-command case is covered separately, by anchoring a
+ * spawned job on the process that spawned it — which for a directly-run tool is the tool itself.
+ * The immediate parent shell comes and goes many times inside one agent's life.
  *
  * Both are overridable — `TC_AGENT_ID`, `TC_AGENT_PID` — because a human at a terminal has
  * neither, and a record that says `agent: null` is still better than no record: it says "a
@@ -843,6 +851,22 @@ export const cwdByPid = () => {
   return out;
 };
 
+/**
+ * Is this command line an **agent process** — the `claude` CLI itself?
+ *
+ * The test is on **argv[0]**, and that is a bug fix rather than a nicety. `\bclaude\b` matches
+ * inside `/Users/…/.claude/shell-snapshots/…`, because a dot and a slash are both word boundaries,
+ * so every shell that sources a snapshot from that directory looked like an agent. Two things read
+ * this — `attribute()`'s parent walk and `browsers.mjs sweep`'s "is a live agent standing in this
+ * worktree" — and both were wrong in the same way, in opposite directions: the walk attributed a
+ * browser to a shell, and the sweep would have decided that a shell standing in *my* worktree was
+ * a sibling occupying it, so my own servers were somebody else's.
+ */
+export const isAgentCommand = (command) => {
+  const first = String(command ?? '').trim().split(/\s+/)[0] ?? '';
+  return path.basename(first.replace(/:$/, '')) === 'claude';
+};
+
 /** ppid for every process, for walking a parent chain the way it had to be walked by hand. */
 const parentMap = () => {
   const parents = new Map(); const cmds = new Map();
@@ -921,12 +945,19 @@ export const attribute = (pid, ctx = {}) => {
   let cur = pid;
   for (let i = 0; i < 24 && cur && cur > 1; i++) {
     const cmd = cmds.get(cur) ?? '';
-    const exe = path.basename((cmd.trim().split(/\s+/)[0] ?? '').replace(/:$/, ''));
-    if (exe === 'claude') {
+    if (isAgentCommand(cmd)) {
       const m = cmd.match(/--resume\s+([0-9a-f-]{8,})/);
+      const dir = cwds.get(pid) ?? null;
+      /*
+       * The worktree is in the detail because it is the part that decides. One `claude` runs
+       * several agents, so "descends from claude 98934e6c" is true of a sibling's work as well as
+       * of ours, and the directory is what tells them apart. A refusal that does not name the
+       * deciding fact cannot be checked by the person reading it.
+       */
       return { how: 'parent-chain', recorded: false, agent: m?.[1] ?? null, agentPid: cur,
-        worktree: cwds.get(pid) ?? null, label: null, port: null,
-        detail: `descends from ${cmd.slice(0, 60)} (pid ${cur}), ${i} hop(s) up` };
+        worktree: dir, label: null, port: null,
+        detail: `descends from ${cmd.slice(0, 48)} (pid ${cur}), ${i} hop(s) up`
+          + (dir ? `, standing in ${path.basename(dir)}` : ', with no readable cwd') };
     }
     cur = parents.get(cur) ?? 0;
   }
@@ -947,14 +978,34 @@ export const attribute = (pid, ctx = {}) => {
  *
  * `null` means "cannot tell", which a sweep must treat as *not* a licence. The 5901 incident was
  * an agent treating "I cannot tell" as "mine".
+ *
+ * ## Why the worktree can outvote the agent id, measured 1 Sep 2026
+ *
+ * The first version short-circuited on the agent id: same session, same agent, not a sibling. That
+ * is **false on this machine**, and it was found by pointing `browsers.mjs sweep` at a real
+ * sibling's dev server and watching it come back "mine".
+ *
+ * `node tools/qa-net.mjs` running in worktree `agent-aaa44128937a2cb8f` had ppid → `/bin/zsh -c` →
+ * **ppid 23238, which is *this* agent's `claude`**. Several agents run as subagents of one `claude`
+ * CLI process, so they share `CLAUDE_PID` *and* `CLAUDE_CODE_SESSION_ID`, and neither identifies an
+ * agent. An identity that cannot tell two agents apart is not an identity, and treating it as one
+ * puts a sweep straight back into the 5901 mistake with a better audit trail.
+ *
+ * So: **different agent id, or a different worktree, is enough to be a sibling.** Agreement is only
+ * "mine" when nothing disagrees. The cost is that one agent deliberately working across two
+ * worktrees sees its own work in the other tree as somebody else's and has to pass
+ * `--include-others` to sweep it. That is the right direction to be wrong in.
  */
 export const isSibling = (att, me = identity()) => {
   if (!att) return null;
-  if (att.agent && me.agent) return att.agent !== me.agent;
-  if (att.agentPid && me.agentPid) return att.agentPid !== me.agentPid;
-  if (att.worktree && me.worktree) {
-    return path.resolve(att.worktree) !== path.resolve(me.worktree) ? true : false;
-  }
+  const byAgent = (att.agent && me.agent) ? att.agent !== me.agent
+    : (att.agentPid && me.agentPid) ? att.agentPid !== me.agentPid
+      : null;
+  const byTree = (att.worktree && me.worktree)
+    ? path.resolve(att.worktree) !== path.resolve(me.worktree)
+    : null;
+  if (byAgent === true || byTree === true) return true;
+  if (byAgent === false || byTree === false) return false;
   return null;
 };
 

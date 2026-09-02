@@ -20,10 +20,10 @@
  * | 1 | detached child launching browsers, parent SIGKILLed | child **and browsers** die |
  * | 2 | the same, unsupervised — the 23 Aug spawn, exactly | **still leak**, or 1 proves nothing |
  * | 3 | the child SIGKILLed, not the parent | the guard sweeps the browsers it left |
- * | 4 | a sibling's process | a sweep **refuses** it |
+ * | 4 | a sibling's process, and `sweep` itself | **refused** and named; sweepable once the sibling is gone |
  * | 5 | a registry entry whose owner was killed | reaped, and its tree killed |
  * | 6 | an entry from a previous boot | dropped, and **nothing signalled** |
- * | 7 | the ceiling with no room | **refuses with a reason**, bounded, does not hang |
+ * | 7 | the ceiling with no room | **refuses with a reason**, queues, does not hang |
  * | 8 | the guard **and its owner** SIGKILLed | leaks nothing, wedges nothing |
  * | 9 | a harness the agent ran **directly**, agent killed | harness **and browser** die |
  *
@@ -61,7 +61,9 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -94,6 +96,24 @@ const check = (name, ok, detail) => {
 
 /** Every `chrome-headless-shell` browser process on the machine, by PID. */
 const browserPids = () => reg.procCensus().browsers.map((b) => b.pid);
+
+/**
+ * The browsers **this fixture** started, found by descent rather than by a before/after diff of
+ * the whole machine.
+ *
+ * The first version diffed `browserPids()` across the spawn, which is correct on a quiet machine
+ * and wrong on a busy one: a sibling agent starting `qa-net` in the same window has its browsers
+ * attributed to our fixture, asserted about, and — because everything this file touches goes on
+ * the litter list — **SIGKILLed by our own cleanup.** That happened, and it is precisely the
+ * mistake the file exists to test for, committed by the test. Descent is the fix and it is the
+ * same fix as everywhere else here: `treeMembers` seeds on the group and walks `ppid`, so it finds
+ * a Playwright browser sitting in a process group of its own and nobody else's.
+ */
+const browsersUnder = (rootPid) => {
+  if (!Number.isFinite(rootPid) || rootPid <= 1) return [];
+  const tree = new Set(reg.treeMembers(rootPid).map((m) => m.pid));
+  return browserPids().filter((p) => tree.has(p));
+};
 
 /**
  * Wait for a condition, and **return how long it took**, because "it eventually died" and "it died
@@ -143,7 +163,6 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { cleanup(); proc
  */
 const startOrphanParent = async ({ owned, port }) => {
   const report = `${SANDBOX}/report-${owned ? 'owned' : 'unowned'}.json`;
-  const before = new Set(browserPids());
   const parent = spawn(process.execPath,
     [path.join(ROOT, 'tools/fixtures/orphan-parent.mjs'), `--report=${report}`,
       `--port=${port}`, '--runs=6', `--owned=${owned ? 1 : 0}`],
@@ -152,11 +171,16 @@ const startOrphanParent = async ({ owned, port }) => {
   parent.unref();
   noteLitter(parent.pid);
 
+  /*
+   * Five minutes, not three. The fixture goes through `launchBrowser` like everything else, so on a
+   * machine where another agent holds the cap it queues — which is the budget working, not a fault,
+   * and a timeout short enough to trip over it turns a busy afternoon into a red gate.
+   */
   const got = await waitFor('a browser to open',
-    () => existsSync(report) && browserPids().some((p) => !before.has(p)), 180_000);
+    () => existsSync(report) && browsersUnder(parent.pid).length > 0, 300_000);
   const rec = existsSync(report) ? JSON.parse(readFileSync(report, 'utf8')) : null;
   if (rec?.pgid) noteLitter(rec.pgid);
-  const fresh = browserPids().filter((p) => !before.has(p));
+  const fresh = browsersUnder(parent.pid);
   for (const p of fresh) noteLitter(p);
   return { parentPid: parent.pid, report: rec, browsers: fresh, opened: got.ok, openedMs: got.ms };
 };
@@ -331,6 +355,105 @@ console.log("\n4. A SIBLING'S PROCESS — a sweep must refuse it");
 
   try { rmSync(entry, { force: true }); } catch { /* gone */ }
   try { process.kill(sleeper.pid, 'SIGKILL'); } catch { /* gone */ }
+
+  /*
+   * ── and now the same refusal end to end, through the command a human actually types ──
+   *
+   * The assertions above test the library. This tests `node tools/browsers.mjs sweep`, which is
+   * what somebody recovering a wedged machine at midnight will run, and which is the command that
+   * killed a sibling's dev server on port 5901 by asking only "does a live slot claim this port".
+   *
+   * The fixture is a dev server that is genuinely not ours: a `vite-runner.mjs` standing in a
+   * worktree we do not own, **reparented to init** so that no parent chain leads back to this
+   * agent, with a process whose argv[0] is `claude` standing in that same directory. That last
+   * process is the fact the old code had no way to read, and the whole distinction turns on it —
+   * a stopped agent's leftover server sits in exactly the same directory as a running agent's.
+   *
+   * `sweep` is run **without** `--force`. It must be: this test runs on a machine with other
+   * agents on it, and a `--force` from inside a sandboxed budget directory would see their servers
+   * as unclaimed. A test for a sweep that swept the machine while proving itself safe would have
+   * failed at its job in the most embarrassing way available.
+   */
+  const fakeTree = path.join(SANDBOX, 'agent-deadbeef');
+  mkdirSync(fakeTree, { recursive: true });
+  /*
+   * A **symlink** to `/bin/sleep`, not a copy of it. The first version copied the binary and
+   * `chmod`ed it, and every one died on exec: a copy of a system binary on Apple Silicon does not
+   * carry a valid code signature, so the fake agent was never alive, the fixture server was
+   * therefore correctly called unowned, and the test failed while the code was right. A symlink
+   * execs the signed original and `ps` still shows the argv[0] we passed — `…/claude 300` — which
+   * is what `isAgentCommand` reads.
+   */
+  const fakeClaude = path.join(SANDBOX, 'claude');
+  try { rmSync(fakeClaude, { force: true }); } catch { /* not there */ }
+  symlinkSync('/bin/sleep', fakeClaude);
+  const agentProc = spawn(fakeClaude, ['300'], { cwd: fakeTree, detached: true, stdio: 'ignore' });
+  agentProc.unref();
+  noteLitter(agentProc.pid);
+  await sleep(700);
+  check('the stand-in agent process is alive and looks like an agent',
+    alive(agentProc.pid) && reg.isAgentCommand(`${fakeClaude} 300`),
+    `pid ${agentProc.pid} alive=${alive(agentProc.pid)}`);
+
+  const viteScript = path.join(SANDBOX, 'vite-runner.mjs');
+  const vitePidFile = path.join(SANDBOX, 'fake-vite.pid');
+  writeFileSync(viteScript,
+    "import { writeFileSync as w } from 'node:fs';\n"
+    + 'w(process.argv[2], String(process.pid));\n'
+    + 'setInterval(() => {}, 1000);\n');
+  /*
+   * Backgrounded from a shell that then exits, so the server is reparented to init. Without that
+   * it is a child of this test, this test is a child of the agent running it, and `attribute()`
+   * finds a `claude` ancestor and correctly calls it mine — which would make the fixture wrong
+   * rather than the code.
+   */
+  const launcher = spawn('/bin/sh',
+    ['-c', `"${process.execPath}" "${viteScript}" "${vitePidFile}" --port=5901 >/dev/null 2>&1 &`],
+    { cwd: fakeTree, detached: true, stdio: 'ignore' });
+  launcher.unref();
+  const born = await waitFor('the fixture server to start', () => existsSync(vitePidFile), 15_000);
+  const fakeVitePid = born.ok ? Number(readFileSync(vitePidFile, 'utf8').trim()) : 0;
+  noteLitter(fakeVitePid);
+  check("a dev server standing in somebody else's worktree is running", fakeVitePid > 1 && alive(fakeVitePid),
+    `pid ${fakeVitePid}, born after ${born.ms} ms`);
+
+  const sweepOut = (extra = []) => {
+    try {
+      return execFileSync(process.execPath,
+        [path.join(ROOT, 'tools/browsers.mjs'), 'sweep', ...extra],
+        { cwd: ROOT, encoding: 'utf8', timeout: 120_000,
+          env: { ...process.env, TC_BUDGET_DIR: SANDBOX } });
+    } catch (e) { return String(e?.stdout ?? '') + String(e?.stderr ?? ''); }
+  };
+
+  const withAgent = sweepOut();
+  const inSiblingSection = withAgent.split('that are mine')[0];
+  check('`browsers.mjs sweep` puts it under "belong to a LIVE sibling"',
+    /belong to a LIVE sibling/.test(withAgent) && inSiblingSection.includes(`pid ${fakeVitePid} port 5901`),
+    `sweep said: ${withAgent.split('\n').filter((l) => /sibling|5901/.test(l)).join(' | ') || '(nothing about it)'}`);
+  check('  …and says it would spare it rather than kill it',
+    /sparing \d+ that a live sibling owns/.test(withAgent) && alive(fakeVitePid),
+    withAgent.split('\n').find((l) => /--force. would kill/.test(l)) ?? '(no such line)');
+  console.log(`        ${withAgent.split('\n').find((l) => /--force. would kill/.test(l))?.trim() ?? '?'}`);
+
+  /*
+   * Now remove the agent and change nothing else. The *same process*, in the *same directory*, must
+   * move from "somebody's" to "nobody's" — which is the distinction the old rule could not draw,
+   * and the reason a stopped agent's leftovers can still be cleaned up without touching a running
+   * agent's identical-looking server.
+   */
+  try { process.kill(agentProc.pid, 'SIGKILL'); } catch { /* already gone */ }
+  await sleep(600);
+  const withoutAgent = sweepOut();
+  check('with no live agent in that worktree the same server becomes sweepable',
+    /that nothing alive claims/.test(withoutAgent)
+      && withoutAgent.split('that nothing alive claims')[1]?.includes(`pid ${fakeVitePid}`),
+    `sweep said: ${withoutAgent.split('\n').filter((l) => /claims|5901/.test(l)).join(' | ') || '(nothing)'}`);
+  check('  …and it is still not killed without --force', alive(fakeVitePid),
+    'a sweep with no --force killed something');
+  console.log(`        ${withoutAgent.split('\n').find((l) => /--force. would kill/.test(l))?.trim() ?? '?'}`);
+
+  try { process.kill(fakeVitePid, 'SIGKILL'); } catch { /* gone */ }
 }
 
 /* ═══════════════ 5. a stale entry from a killed owner ═══════════════ */
@@ -455,7 +578,30 @@ console.log('\n7. THE CEILING — refuses with a reason, in bounded time, rather
   console.log(`        gave up after ${waited} ms with: `
     + `${String(err?.message).split('\n').find((l) => /Refused|process/i.test(l))?.trim() ?? '(no such line)'}`);
 
+  /*
+   * And the other half of "blocks and queues rather than hanging": a caller the ceiling refuses has
+   * to be **in the queue**, visible to `browsers.mjs`, and has to be granted the moment the ceiling
+   * allows it, with nobody re-running anything. A limiter that fails fast is not a limiter, it is
+   * an error; one that waits silently is worse than either.
+   */
+  const pending = bb.acquireSlot({ label: 'qa-supervisor-queue', root: ROOT, waitMs: 60_000, quiet: true })
+    .catch((e) => ({ slot: -2, error: e, release: () => {} }));
+  await sleep(2500);
+  const queued = bb.listWaiters().filter((w) => !w.stale);
+  check('a caller the ceiling refuses waits in the queue rather than failing',
+    queued.some((w) => w.rec?.label === 'qa-supervisor-queue'),
+    `queue: ${queued.map((w) => w.rec?.label).join(', ') || 'empty'}`);
+  console.log(`        ${queued.length} in the queue while the ceiling is 1 and nothing is running`);
+
   delete process.env.TC_MAX_PROCS;
+  const granted = await pending;
+  check('  …and is granted as soon as the ceiling allows, without anybody re-running it',
+    granted.slot >= 0, `slot=${granted.slot}${granted.error ? `, threw: ${String(granted.error?.message).split('\n')[0]}` : ''}`);
+  granted.release();
+  check('  …and the queue is empty once it has been served',
+    bb.listWaiters().filter((w) => !w.stale).length === 0,
+    `${bb.listWaiters().filter((w) => !w.stale).length} still waiting`);
+
   const allowed = reg.admitProcesses({ browserCap: 4 });
   check('with the override removed the derived ceiling admits again', allowed.ok === true,
     `ok=${allowed.ok}, reason=${allowed.reason}`);
@@ -563,7 +709,6 @@ if (QUICK) {
   noteLitter(stand.pid);
   await sleep(400);
 
-  const before = new Set(browserPids());
   const harness = spawn(process.execPath,
     [path.join(ROOT, 'tools/fixtures/browser-loop.mjs'), '--runs=6', '--port=5951'],
     { cwd: ROOT, detached: true, stdio: ['ignore', 'ignore', 'ignore'],
@@ -575,8 +720,8 @@ if (QUICK) {
   noteLitter(harness.pid);
 
   const opened = await waitFor('the harness to open a browser',
-    () => browserPids().some((p) => !before.has(p)), 180_000);
-  const fresh = browserPids().filter((p) => !before.has(p));
+    () => browsersUnder(harness.pid).length > 0, 300_000);
+  const fresh = browsersUnder(harness.pid);
   for (const p of fresh) noteLitter(p);
   check('the harness took a slot and opened a browser', opened.ok && fresh.length > 0,
     `opened=${opened.ok} after ${opened.ms} ms, browsers=${fresh.join(', ') || 'none'}`);

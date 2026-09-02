@@ -423,6 +423,27 @@ export async function acquireSlot({
 
   try {
     for (;;) {
+      /*
+       * The agent anchor, checked **while queueing** and not only while running.
+       *
+       * The in-run watch in `makeHandle` only exists once a slot has been taken. A harness that is
+       * still in the queue when its agent is stopped has no watch at all, and on a busy machine
+       * that queue is minutes long — so the one state in which the old bug is easiest to reproduce
+       * was the one state nothing covered. Measured: `qa-supervisor` case 9 sat in the queue for
+       * the whole 180 s of its own timeout while its agent was already dead.
+       *
+       * The ticket is dropped on the way out through the `finally` below, so the queue does not
+       * keep a place for somebody who has gone.
+       */
+      if (who.agentPid && !pidAlive(who.agentPid)) {
+        process.stderr.write(
+          `browser budget: the agent that asked for ${label} (pid ${who.agentPid}) is gone while\n`
+          + 'browser budget: this run was still waiting for a slot. Giving up rather than starting\n'
+          + 'browser budget: a browser nobody owns.\n'
+        );
+        try { unlinkSync(ticketFile); } catch { /* already reaped */ }
+        process.exit(143);
+      }
       reapStale();
       const slots = listSlots();
       const live = slots.filter((s) => !s.stale);
