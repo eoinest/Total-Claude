@@ -88,35 +88,35 @@
         "units": 32
       },
       "150": {
-        "hash": "1e2aa7c0",
+        "hash": "9db78abd",
         "count": 3072,
         "alive": 2585,
-        "uf64": "caad93e0",
-        "uctl": "132e7c87",
+        "uf64": "f5d80abe",
+        "uctl": "fcdd78a1",
         "units": 32
       },
       "200": {
-        "hash": "b9ed662c",
+        "hash": "1fc97268",
         "count": 3072,
-        "alive": 2548,
-        "uf64": "cef43d31",
-        "uctl": "bd3364cd",
+        "alive": 2539,
+        "uf64": "74efb961",
+        "uctl": "1594546a",
         "units": 32
       },
       "250": {
-        "hash": "c2cce304",
+        "hash": "4269410a",
         "count": 3072,
-        "alive": 2492,
-        "uf64": "7f4b2915",
-        "uctl": "b755ddba",
+        "alive": 2485,
+        "uf64": "7e06fa55",
+        "uctl": "0d62b0ff",
         "units": 32
       },
       "400": {
-        "hash": "d5a1b9f4",
+        "hash": "1aeefe90",
         "count": 3072,
-        "alive": 2357,
-        "uf64": "ee749fd2",
-        "uctl": "989d54cb",
+        "alive": 2280,
+        "uf64": "05939851",
+        "uctl": "f3ae599d",
         "units": 32
       }
     }
