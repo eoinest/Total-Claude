@@ -63,6 +63,16 @@ type Ground = (x: number, z: number) => number;
  * evergreens and the bronze Augustus above them). Shared between the geometry and
  * the planting planner so the cypresses land on the terraces, not on the ground.
  */
+/**
+ * The substructure plinth's wall thickness, and the wet bays' pier thickness.
+ *
+ * Named because `buildSubstructure` has to inset its own ring by half of the larger one to
+ * keep the drawn face on the monument's collision box — see the note there. They were two
+ * literals in two `quadPrism` calls, which is how the overhang stayed invisible.
+ */
+const PLINTH_T = 0.9;
+const PIER_T = 1.15;
+
 const MAUS_R = 43.5;
 const MAUS_DRUMS = [
   { r: MAUS_R, h: 13.0 },
@@ -238,8 +248,18 @@ export function buildLandmarks(heightAt: Ground, seed: string): LandmarkOutput {
       build: (batch, detail) => {
         for (const m of members) {
           batch.setUvOrigin(m.x, 0, m.z);
+          /*
+           * The band merges these monuments into one mesh per material for the draw budget,
+           * which is right and which destroys the only thing that said whose stone is whose.
+           * `setProvenance` writes the boundary the merge removes — see `Batch.setProvenance`
+           * for the 1.0 % of Rome's monument vertices that `probe-fabric` G15 was crediting
+           * to the wrong building without it. A declaration of WHO, never of whether.
+           */
+          batch.setProvenance(m.id);
           buildLandmark(batch, detail, m, heightAt, rng.fork(m.id));
         }
+        // Closed, so nothing built after this band inherits the last monument's name.
+        batch.setProvenance(null);
       },
     });
   }
@@ -401,7 +421,21 @@ function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, h
      * it, while the collision box is only ever the temple.
      */
     const k = (m.moundRadius ?? m.clear) / m.clear;
+    /*
+     * **The platform is labelled apart from the building standing on it, and that is the whole
+     * of `probe-fabric` G13a's Capitoline row.**
+     *
+     * The paragraph above says the residual is a fact about the survey; it is, and until the
+     * scene could say which vertices were hill and which were temple, every gate that measures
+     * a monument's drawn plan had to take the two together. G13a then read the Temple of
+     * Jupiter at 90.8 m against Platner & Ashby's 62.25 m podium — 1.46 of published, over the
+     * ceiling — for a temple drawn at exactly its own box. `Batch.setProvenance` costs nothing
+     * and lets a reader ask the two questions separately: is the temple its published size, and
+     * is the platform the size the survey says.
+     */
+    batch.setProvenance(`${m.id}#mound`);
     buildMound(batch, detail, m.hw * k, m.hd * k, m.mound, g, heightAt, m.x, m.z, m.rot, built, m.planScale, m.heightScale);
+    batch.setProvenance(m.id);
     podium = g + m.mound;
   }
 
@@ -499,13 +533,29 @@ function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, h
     case 'trajan-column':
       buildTrajansColumn(batch, detail, podium);
       break;
+    /**
+     * The two theatres, with their cavea radius taken FROM THE PLACEMENT rather than typed.
+     *
+     * The literals were `55.5` and `75` — a 111 m and a 150 m cavea — against reserved
+     * footprints of 115 and 140 m. The Theatre of Pompey therefore drew a semicircle 150 m
+     * across inside a box 140 m across, and the arcade and attic bays stand
+     * `THEATRE_FACADE_PROJ` beyond `radius` on top of that, so its stone reached 78.6 m from
+     * its own centre against a published half-width of 70. Same fault as `baths-trajan`,
+     * `baths-caracalla`, `castra-praetoria`, `imperial-fora` and `porticus-pompei` before it,
+     * and the same repair: a literal here is a number free to part company with the survey
+     * row, so derive it and the two cannot drift again.
+     *
+     * `min(hw, hd)` because a semicircular cavea is 2R across and R deep plus its scaena, so
+     * the diameter binds on whichever half-extent is smaller — on both of Rome's theatres
+     * that is the `hw` axis.
+     */
     case 'theatre-marcellus':
-      // 111 m across, 32.6 m tall, 41 arcade bays per storey, seated ~15,000.
-      buildTheatre(batch, detail, podium, 55.5, 32.6, 41, 2);
+      // 32.6 m tall, 41 arcade bays per storey, seated ~15,000.
+      buildTheatre(batch, detail, podium, caveaRadius(m), 32.6, 41, 2, m.hd / PRECINCT);
       break;
     case 'theatre-pompey':
-      // Rome's first stone theatre: cavea about 150 m across.
-      buildTheatre(batch, detail, podium, 75, 33, 48, 3);
+      // Rome's first stone theatre, and the largest in the city.
+      buildTheatre(batch, detail, podium, caveaRadius(m), 33, 48, 3, m.hd / PRECINCT);
       break;
     case 'stadium-domitian':
       // 275 × 106 m; the plan survives as the Piazza Navona.
@@ -634,6 +684,26 @@ function buildLandmark(batch: Batch, detail: number, world: LandmarkPlacement, h
 }
 
 const SCALE_V = new THREE.Vector3();
+
+/**
+ * How far the arcaded façade and the attic bays stand outside a theatre's `radius`.
+ *
+ * It is the `depth: 3.6` the arcade and the attic boxes are drawn with, named once so that
+ * `caveaRadius` can subtract it. A theatre's published width is the outside of its façade,
+ * not the line the seating is set out from.
+ */
+const THEATRE_FACADE_PROJ = 3.6;
+
+/**
+ * The cavea radius that puts a theatre's drawn façade on its own collision box.
+ *
+ * `m` is already in the monument's own frame (`localExtents`), so `hw`/`hd` here are the
+ * reserved footprint; dividing `PRECINCT` back out gives the box `buildLandmarks` publishes,
+ * which is what `probe-fabric` G14 measures against.
+ */
+function caveaRadius(m: LandmarkPlacement): number {
+  return Math.max(8, Math.min(m.hw, m.hd) / PRECINCT - THEATRE_FACADE_PROJ);
+}
 
 /**
  * A monument's footprint in its own, uncompressed frame.
@@ -766,13 +836,35 @@ function buildSubstructure(
   const waterY = m.overWater === undefined ? -Infinity : WATER_LEVEL / hk;
   if (m.overWater !== undefined) buildRipaPiles(batch, detail, m, sample, hw, hd, podium, waterY);
 
-  // Walk the four sides as segments so the face can be toned per bay and, at close range,
-  // carry the blind arcading a real substructure has.
+  /**
+   * Walk the four sides as segments so the face can be toned per bay and, at close range,
+   * carry the blind arcading a real substructure has.
+   *
+   * **The ring is inset by half the thickest prism drawn on it, and that is worth a
+   * paragraph because it was `probe-fabric` G14 on twenty rows at once.**
+   *
+   * `quadPrism` centres its wall on the line it is given — `const t = thickness * 0.5` and
+   * the outer face sits at `-t` along the normal — so a plinth built on the ring `[±hw, ±hd]`
+   * puts **half its thickness outside the monument's own collision box**, on every side, on
+   * every monument that has a substructure. Measured with `tools/scratch/mon-extents.mjs`:
+   * a uniform **+0.45 m** overhang on twenty of the thirty rows, and +0.575 where the wet
+   * bays' 1.15 m piers are drawn instead. `buildLandmarks` publishes `hw / PRECINCT` as the
+   * box and its comment says in as many words that the box IS the building; the outer face
+   * of the substructure is the building's outer face, so that is where it belongs.
+   *
+   * Inset by the *thickest* of the two prisms, not each by its own, so the dry plinth and the
+   * wet piers stand on one line and a bay does not step in and out where the water begins.
+   * The dry face therefore lands `(PIER_T - PLINTH_T) / 2` = 0.125 m inside the box, which is
+   * a tenth of a course and is the right direction to be wrong in.
+   */
+  const inset = PIER_T * 0.5;
+  const rw = Math.max(0, hw - inset);
+  const rd = Math.max(0, hd - inset);
   const corners: [number, number][] = [
-    [-hw, -hd],
-    [hw, -hd],
-    [hw, hd],
-    [-hw, hd],
+    [-rw, -rd],
+    [rw, -rd],
+    [rw, rd],
+    [-rw, rd],
   ];
   const col = new THREE.Color();
   for (let c = 0; c < 4; c++) {
@@ -803,11 +895,11 @@ function buildSubstructure(
           const t1 = (p + 0.83) / piers;
           quadPrism(st, ax + (bx - ax) * t0, az + (bz - az) * t0,
             ax + (bx - ax) * t1, az + (bz - az) * t1,
-            -dz, dx, 1.15, g0 - 0.9, podium, col, PAL.travertineDirty, { top: false });
+            -dz, dx, PIER_T, g0 - 0.9, podium, col, PAL.travertineDirty, { top: false });
         }
         continue;
       }
-      quadPrism(st, ax, az, bx, bz, -dz, dx, 0.9, g0, podium, col, PAL.travertineDirty, {
+      quadPrism(st, ax, az, bx, bz, -dz, dx, PLINTH_T, g0, podium, col, PAL.travertineDirty, {
         top: false,
         ends: false,
       });
@@ -1973,8 +2065,19 @@ function buildTrajansColumn(batch: Batch, detail: number, g: number): void {
 // Theatres and the Stadium
 // ---------------------------------------------------------------------------
 
-/** Roman theatre: semicircular cavea, arcaded exterior, scaenae frons behind. */
-function buildTheatre(batch: Batch, detail: number, g: number, radius: number, height: number, bays: number, storeys: number): void {
+/**
+ * Roman theatre: semicircular cavea, arcaded exterior, scaenae frons, and the scaena building
+ * behind it.
+ *
+ * `backZ` is the theatre's own rear face in its local frame — the far side of the published
+ * footprint. Without it this builder drew a cavea and a screen and stopped: for the Theatre of
+ * Marcellus that is 115 x 77 m inside a published 130 x 115, so the drawn ASPECT came out 1.48
+ * against a published 1.13 and `probe-fabric` G12 — a scale-free check that no plan compression
+ * can flatter — had nothing to hold on to. The depth was previously made up by a quadriporticus
+ * this builder had no business drawing (see the note where it used to be), which is the worst
+ * way for a number to be right.
+ */
+function buildTheatre(batch: Batch, detail: number, g: number, radius: number, height: number, bays: number, storeys: number, backZ: number): void {
   const stone = batch.s('stone');
   const concrete = batch.s('stone');
   const brick = batch.s('brick');
@@ -2087,26 +2190,63 @@ function buildTheatre(batch: Batch, detail: number, g: number, radius: number, h
   // Tiled roof over the stage, sloping back over the scene building.
   box(roofSt, -sfHalf - 1, sfTop, sfZ - 1, sfHalf + 1, sfTop + 1.1, sfZ + 9, PAL.roofTile, { topGain: 1.12 });
 
-  // Porticus behind the stage, the *quadriporticus* every big theatre had.
-  if (detail >= 1) {
-    const pz = sfZ + 11;
-    const pd = radius * 0.9;
-    for (const side of [-1, 1]) {
-      const n = 12;
-      for (let i = 0; i < n; i++) {
-        column(stone, side * radius * 0.8, g + 1.2, pz + (pd * i) / (n - 1), 0.48, 8.5, 'ionic', PAL.marble, detail - 1);
+  /**
+   * The *postscaenium*: the scaena building behind the frons, out to the published rear face.
+   *
+   * This is the half of a Roman theatre that a plan of one is mostly made of and that this
+   * builder did not have — the dressing rooms, the corridors and the buttressed back wall that
+   * closed the building against the street. It carries the difference between the frons and
+   * `backZ`, so the drawn footprint fills the published rectangle instead of ending at the
+   * screen. Brick with a tiled roof, deliberately plain: the articulation is all on the frons,
+   * facing the audience, and the back of a scaena is a wall.
+   *
+   * Guarded rather than assumed: a row whose published depth barely clears the frons gets
+   * nothing, and cannot get a block of negative depth.
+   */
+  const scaenaFront = sfZ + 4.6 + 2.6;
+  if (backZ > scaenaFront + 5) {
+    const psHalf = radius * 0.92;
+    const psH = height * 0.68;
+    box(brick, -psHalf, g, scaenaFront, psHalf, g + psH, backZ, PAL.brick, {
+      topGain: 1.05,
+      groundShade: 0.15,
+    });
+    // The buttress piers that took the thrust of the frons, and the one thing that stops a
+    // 50 m wall reading as a slab from the air.
+    if (detail >= 1) {
+      const n = Math.max(4, Math.round((psHalf * 2) / 11));
+      for (let i = 0; i <= n; i++) {
+        const px = lerp(-psHalf, psHalf, i / n);
+        box(brick, px - 1.1, g, backZ - 2.2, px + 1.1, g + psH * 0.92, backZ, PAL.brickPale, { topGain: 1.08 });
       }
-      box(stone, side * radius * 0.8 - 1.2, g + 9.7, pz, side * radius * 0.8 + 1.2, g + 11.2, pz + pd, PAL.marble, { topGain: 1.12 });
     }
-    for (let i = 0; i < 14; i++) {
-      column(stone, lerp(-radius * 0.8, radius * 0.8, i / 13), g + 1.2, pz + pd, 0.48, 8.5, 'ionic', PAL.marble, detail - 1);
-    }
-    // The garden court inside the quadriporticus.
-    const road = batch.s('road');
-    road.pushTranslate(0, 0, pz + pd * 0.5);
-    pavedField(road, radius * 0.74, pd * 0.44, g + 1.3, 7, PAL.dust, Math.round(radius) * 13, 0.18);
-    road.pop();
+    box(roofSt, -psHalf - 0.8, g + psH, scaenaFront, psHalf + 0.8, g + psH + 1.2, backZ, PAL.roofTile, { topGain: 1.1 });
   }
+
+  /**
+   * **There is deliberately no porticus post scaenam here, and there was one.**
+   *
+   * This builder used to draw the *quadriporticus* behind the stage unconditionally: a
+   * colonnade at `sfZ + 11` running back `radius * 0.9`, with a planted court inside it.
+   * Both of Rome's theatres are the wrong place for it, and for the same reason — **the
+   * survey already carries the porticus as its own row.**
+   *
+   *  - The Theatre of Pompey's porticus post scaenam is `porticus-pompei`, 180 x 135 m,
+   *    drawn by `buildPrecinct`. `ROME-FABRIC.md` §8.2 split that row off the theatre on
+   *    purpose: *"Now the theatre proper, with `porticus-pompei` as its other half."* So the
+   *    map was drawing the Porticus Pompei **twice**, once as a monument and once inside the
+   *    theatre's own footprint, and the second copy reached 94.1 m from the theatre's centre
+   *    against a published half-depth of 80 — `probe-fabric` G14, and the largest single
+   *    overhang on the map after the Capitoline mound.
+   *  - The Theatre of Marcellus never had one. It stood hemmed in between the Forum
+   *    Holitorium and the Porticus Octaviae, which is `porticus-octaviae`, also its own row.
+   *
+   * A builder that draws its neighbour is worse than one that draws too much: the stone is
+   * correct architecture standing in a place the plan has already allocated to the thing it
+   * is a copy of. Deleted rather than parameterised, because no row in this survey wants it —
+   * and the note stays so it is not helpfully restored. If a third theatre ever needs one, it
+   * belongs in the survey as a row with a published dimension, like the other two.
+   */
 }
 
 /** Domitian's stadium: a U-plan arcaded track for Greek athletics. */
@@ -2117,13 +2257,30 @@ function buildStadium(batch: Batch, detail: number, g: number, L: number, W: num
   const facadeH = 22;
   const tiers = detail >= 1 ? 18 : 8;
 
-  const bankLen = (L - 60) / 2;
+  /**
+   * **The U is not symmetric about its own centre, and it used to be drawn as if it were.**
+   *
+   * A stadium is a straight run closed at one end by a semicircular *sphendone*. The straight
+   * arcade was drawn symmetric about `x = 0` with half-length `(L - 60) / 2`, and then the
+   * sphendone was pushed to `-bankLen` and given its own outer radius on top — so the drawn
+   * envelope ran from `-(bankLen + sphR)` to `+bankLen`, which for the Stadium of Domitian is
+   * **-157.5 to +107.5 against a published half-length of 137.5**. Twenty metres of cavea
+   * outside the footprint at one end, twenty metres of unused ground at the other, and the
+   * whole 265 m mass sitting 25 m north of the rectangle the sim collides with.
+   *
+   * So the sphendone's radius comes out of the straight run rather than being added to it,
+   * and the whole plan is shifted by half of it, which puts the envelope on the box: the
+   * closed end lands on `-L/2` and the open end on `+L/2` exactly.
+   */
+  const sphR = W / 2 - 3;
+  const bankLen = (L - sphR) / 2;
+  stone.pushTranslate(sphR / 2, 0, 0);
   concrete.pushTranslate(0, 0, 0);
   pavedField(concrete, bankLen, W / 2 - seatDepth, g + 0.08, 12, PAL.dust, 0x71c3, 0.18);
   concrete.pop();
   for (const s of [-1, 1] as const) {
     const bays = detail >= 1 ? 34 : 14;
-    const bw = (L - 60) / bays;
+    const bw = (bankLen * 2) / bays;
     stone.push(new THREE.Matrix4().makeRotationY(s > 0 ? Math.PI : 0).setPosition(0, g, (s * W) / 2));
     arcade(stone, bays, bw, facadeH * 0.55, PAL.travertine, {
       depth: 3.2,
@@ -2134,13 +2291,13 @@ function buildStadium(batch: Batch, detail: number, g: number, L: number, W: num
     });
     // Second storey: a colonnaded gallery, which is how the Severan plan's fragment of
     // the stadium shows it, rather than a blank attic.
-    box(stone, -(L - 60) / 2, facadeH * 0.55, 0, (L - 60) / 2, facadeH * 0.66, 3.2, PAL.travertineDirty, { topGain: 1.1 });
+    box(stone, -bankLen, facadeH * 0.55, 0, bankLen, facadeH * 0.66, 3.2, PAL.travertineDirty, { topGain: 1.1 });
     if (detail >= 1) {
       for (let i = 0; i <= bays; i++) {
-        column(stone, -(L - 60) / 2 + bw * i, facadeH * 0.66, 1.4, 0.4, facadeH * 0.28, 'ionic', PAL.travertine, detail - 1);
+        column(stone, -bankLen + bw * i, facadeH * 0.66, 1.4, 0.4, facadeH * 0.28, 'ionic', PAL.travertine, detail - 1);
       }
     }
-    box(stone, -(L - 60) / 2, facadeH * 0.94, -0.3, (L - 60) / 2, facadeH, 3.5, PAL.travertine, { topGain: 1.14 });
+    box(stone, -bankLen, facadeH * 0.94, -0.3, bankLen, facadeH, 3.5, PAL.travertine, { topGain: 1.14 });
     stone.pop();
 
     // Straight-side seating. A stadium's long sides are straight; they need steps, not
@@ -2164,8 +2321,8 @@ function buildStadium(batch: Batch, detail: number, g: number, L: number, W: num
     concrete,
     W / 2 - seatDepth,
     W / 2 - seatDepth,
-    W / 2 - 3,
-    W / 2 - 3,
+    sphR,
+    sphR,
     g + 2,
     g + facadeH - 4,
     Math.PI / 2,
@@ -2182,6 +2339,7 @@ function buildStadium(batch: Batch, detail: number, g: number, L: number, W: num
     }
   );
   concrete.pop();
+  stone.pop();
   void tiers;
 }
 
@@ -2368,7 +2526,27 @@ function buildForum(batch: Batch, detail: number, g: number, rng: Rng): void {
  * on top inside a thin 8.5 m fence, standing on unpaved terrain. From a strategic camera that
  * is a farmyard with three sheds in it, and it was the single ugliest object in the city.
  */
-function buildBaths(batch: Batch, detail: number, g: number, W: number, D: number, rng: Rng): void {
+function buildBaths(batch: Batch, detail: number, g: number, wOuter: number, dOuter: number, rng: Rng): void {
+  /**
+   * **`wOuter` / `dOuter` are the OUTER envelope, and the precinct wall has to stand inside
+   * them by whatever projects past it.**
+   *
+   * Two things do. The exedrae on the short ends are semicircles of radius `dOuter * 0.16`
+   * centred 2 m inside the wall, so they bulge `radius - 2` beyond it; and the entrance
+   * pavilion on the long side stands 3 m proud. Drawn on a wall line at the published
+   * dimension, that put every bath block in Rome outside its own collision box — measured
+   * with `tools/scratch/mon-extents.mjs`, **+25.2 m per end on the Baths of Trajan**, +17.2
+   * on Nero's, +14.8 on Titus's, +14.0 on Agrippa's, and +3.2 on the short axis of all four.
+   * That is `probe-fabric` G14 on four rows, and it is thousands of square metres of thermae
+   * standing on ground the insula generator was told it could build on.
+   *
+   * The exedra radius stays proportioned to the PUBLISHED short dimension, so the arithmetic
+   * closes exactly: reach = `W/2 - 2 + exR` = `(wOuter - 2(exR - 2))/2 - 2 + exR` = `wOuter/2`.
+   */
+  const exR = dOuter * 0.16;
+  const ENTRANCE_PROJ = 3;
+  const W = Math.max(20, wOuter - 2 * Math.max(0, exR - 2));
+  const D = Math.max(20, dOuter - 2 * ENTRANCE_PROJ);
   const brick = batch.s('brick');
   const concrete = batch.s('concrete');
   const stone = batch.s('stone');
@@ -2403,16 +2581,16 @@ function buildBaths(batch: Batch, detail: number, g: number, W: number, D: numbe
       }
     }
     // Semicircular exedrae on the short ends — lecture halls and nymphaea.
-    cylinder(brick, (s * W) / 2 - s * 2, g, 0, D * 0.16, D * 0.16, wallH + 3, detail >= 1 ? 16 : 8, PAL.brickPale, {
+    cylinder(brick, (s * W) / 2 - s * 2, g, 0, exR, exR, wallH + 3, detail >= 1 ? 16 : 8, PAL.brickPale, {
       arcFrom: s < 0 ? -Math.PI / 2 : Math.PI / 2,
       arcTo: s < 0 ? Math.PI / 2 : Math.PI * 1.5,
       shadeLow: 0.14,
     });
-    dome(concrete, (s * W) / 2 - s * 2, g + wallH + 3, 0, D * 0.16, detail >= 1 ? 16 : 8, 4, PAL.concrete, { heightScale: 0.5 });
+    dome(concrete, (s * W) / 2 - s * 2, g + wallH + 3, 0, exR, detail >= 1 ? 16 : 8, 4, PAL.concrete, { heightScale: 0.5 });
   }
   // Monumental entrance on the long side facing the city.
-  box(brick, -W * 0.09, g, -D / 2 - 3, W * 0.09, g + wallH + 6, -D / 2 + t, PAL.brickPale, { topGain: 1.1 });
-  brick.pushTranslate(0, 0, -D / 2 - 3);
+  box(brick, -W * 0.09, g, -D / 2 - ENTRANCE_PROJ, W * 0.09, g + wallH + 6, -D / 2 + t, PAL.brickPale, { topGain: 1.1 });
+  brick.pushTranslate(0, 0, -D / 2 - ENTRANCE_PROJ);
   archPanel(brick, W * 0.18, wallH + 6, PAL.travertine, {
     depth: 3 + t,
     spring: (wallH + 6) * 0.44,

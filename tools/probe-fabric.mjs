@@ -494,6 +494,55 @@ const INJECTIONS = {
       + 'property destroys the ability to measure it, so the instrument has to be shown to '
       + 'still work. Scoped to `monErodedPolys`, so it moves G5 and nothing else.',
   },
+  'stone-count-weighted': {
+    hits: 'G12, G13a',
+    what: "restores the COUNT-weighted percentile this file shipped with, in place of the "
+      + 'area-weighted one. A percentile over a vertex count measures where the tessellation '
+      + 'is, not where the stone is: the Iseum Campense stands on a 200 x 50 m slab carrying '
+      + 'about two dozen vertices and a temple carrying several thousand, so the count '
+      + 'percentile discards the slab and reads a 200 m building as 59.6 m and its aspect as '
+      + '2.46 against a published 4.0. Proves the weighting is load-bearing for both fidelity '
+      + 'gates, and it is how the fault was found.',
+  },
+  'frame-cap-invent': {
+    hits: 'G13a',
+    what: "agrees a frame cap for a row the plan does not cap, so G13a's two cap sets stop "
+      + 'being equal. Proves the licence is gated on MEMBERSHIP in both directions and not on '
+      + 'the word "capped" appearing somewhere — the other direction, a survey that caps a row '
+      + 'nobody agreed to, is the one a future `drawMax` would trip. The licence also forgives '
+      + 'only the frame: a capped row drawn UNDER its own cap still fails the band.',
+  },
+  'provenance-blind': {
+    hits: 'G15',
+    what: 'ignores `mesh.userData.provenance` and falls back to the nearest-centre-by-reach '
+      + 'attribution this file had to use before the scene carried the answer. That rule hands '
+      + "a small monument's own stone to a large neighbour — 1.0 % of Rome's 597,320 monument "
+      + 'vertices, measured with tools/scratch/mon-trespass.mjs — and it is enough to make G15 '
+      + 'report four trespasses that do not exist, including 12 m of the Stadium of Domitian '
+      + 'inside the Baths of Nero on a stadium whose stone never leaves its own box by more '
+      + 'than 0.23 m. Proves the provenance is load-bearing and that G15 is measuring stone '
+      + 'rather than proximity.',
+  },
+  'mound-invent': {
+    hits: 'G14',
+    what: "adds a row to G14's MOUND_AGREED that the plan does not declare a mound for, so the "
+      + 'agreed set no longer equals the declared set. Proves the platform licence is gated on '
+      + 'MEMBERSHIP in both directions rather than being a sentence in a comment — the other '
+      + 'direction, a plan that mounds a row nobody agreed to, is the one a future survey edit '
+      + 'would trip. MAP-METHOD rule 37.',
+  },
+  'obb-mirror': {
+    hits: 'G12, G13a, G14',
+    what: 'reads every OBSTACLE box in the PLAN convention — `CitySystem:occRot` is '
+      + '`(r) => -r`, so the two are one negation apart and applying the wrong one mirrors '
+      + 'each box about its own centre. Axis-aligned monuments are unaffected, which is why '
+      + 'Carthage barely moves under it and is the control; a rotated one is then measured '
+      + 'against a rectangle that is not there and reads larger and squarer than it is, '
+      + 'tending to its own circumradius — the Colosseum as a 130 m circle against a '
+      + '100.7 x 83.1 box. Proves the frame is a live input to three fidelity gates rather '
+      + 'than a convention nobody depends on. `tools/scratch/mon-extents.mjs` had exactly '
+      + 'this fault against LANDMARKS and reported eleven G14 failures that were not there.',
+  },
   'complex-invent': {
     hits: 'G8c, G8d',
     what: 'declares the closest pair of monuments in DIFFERENT complexes to be one complex. '
@@ -1342,6 +1391,88 @@ const NO_SOLID_AGREED = {
 };
 
 /**
+ * **A monument that stands on an artificial hill, by name — G14's second list.**
+ *
+ * G14 asks whether the stone a builder draws fits the box the game collides with, and for one
+ * row on Rome the honest answer is *no, and it should not*. The Temple of Jupiter Optimus
+ * Maximus publishes a 62.25 x 53.5 m podium — Platner & Ashby's, and the right box for the
+ * building — and it stands on the Area Capitolina, an artificial platform the survey gives a
+ * 96 m circumradius. `monuments.ts:buildLandmark` draws that platform, and its own docstring
+ * has said in as many words for two phases that *"the residual over G14's 1.15 is a fact about
+ * the survey and not about this builder"*. G14 read the hill as the temple and failed the row.
+ *
+ * `MAP-METHOD.md` rule 37's three parts, on a landform instead of on water. (1) The plan
+ * **declares**, by name and with a radius: `LandmarkPlacement.mound` / `moundRadius`, which
+ * `survey.ts` carries with a citation, and `monuments.ts:buildLandmark` labels the platform's
+ * own vertices `<id>#mound` so the two can be told apart at all. (2) This list **agrees**, by
+ * name, and the two sets are compared **both ways** — a mound the plan draws that nobody
+ * agreed to fails, and an agreement for a row that declares no mound fails. (3) The licence
+ * has an **envelope with a physical meaning**, and it is an obligation rather than a
+ * relaxation: the platform is graded too, against `moundRadius / clear` — the same `k` the
+ * geometry builder uses — so declaring a mound buys exactly the platform the survey publishes
+ * and not one metre more, and the building standing on it is still held to its own box. A row
+ * cannot widen its own licence by editing itself: `moundRadius` is the thing being graded, and
+ * it is in the survey with a source. A row that declares a mound and draws none fails.
+ */
+/**
+ * **A monument the FRAME cannot carry at its published size, by name — G13a's second list.**
+ *
+ * G13a is an absolute band: a gated monument's drawn long dimension over the literature's, in
+ * `[0.45, 1.25]`. It is the right check and on one row it asks for something the ground cannot
+ * give. The Castra Praetoria is 440 x 380 m; `layout.ts:maxDrawAt` computes the largest
+ * authored footprint that still stands ON the heightfield at that position and bearing, and
+ * `survey.ts` records the answer as `drawMax: 0.326` with its arithmetic. A camp drawn any
+ * bigger has its corner over the edge of the world.
+ *
+ * `MAP-METHOD.md`'s rule about `probe-eye` E1d gives the shape of the answer, and the order
+ * matters: **an exclusion that arrives before the check that justifies it is exemption-shopping;
+ * one that arrives after it is a measurement.** So the licence here is not "skip this row". It
+ * is: the plan publishes the cap; this list agrees to it by name, both ways; and the row is
+ * still gated — it must be drawn at **the cap**, so a monument capped at 0.326 and authored at
+ * 0.30 fails exactly as it did before. The licence forgives the frame and forgives nothing else.
+ */
+const FRAME_CAPPED_AGREED = {
+  'campus-martius': [
+    {
+      id: 'castra-praetoria',
+      why: 'the +Z edge of the heightfield. layout.ts:maxDrawAt measures the true oriented '
+        + 'reach — the camp is 440 x 380 turned 115 degrees, so its world +Z half-extent is '
+        + 'larger than its local half-depth — and survey.ts records the cap as drawMax 0.326 '
+        + 'with the arithmetic beside it. survey.ts ALSO models 400 x 377 rather than the '
+        + 'published 440 x 380, and says why: at true size the camp is 167,000 m2, a tenth of '
+        + "the whole buildable city. That second reduction is a design choice and is NOT "
+        + 'licensed here — it is why this row reads 0.298 rather than 0.326, and the reader '
+        + 'is told both numbers.',
+    },
+    {
+      id: 'theatre-marcellus',
+      why: 'the Tiber. The theatre stands on the Ripa and its own over-water licence has an '
+        + 'envelope limb of "no deeper than its substructure is drawn" — 4 m of piles. Measured '
+        + 'on this gate at three scales: draw 0.407 puts the podium 1.32 m under over 434.8 m2 '
+        + 'and is GRANTED; 0.44 puts it 4.09 m under and 0.46 puts it 4.28 m under, and both are '
+        + 'REFUSED. The depth is not linear in draw — the corner crosses the bank into the '
+        + 'channel — so the boundary is below 0.44 and not above 0.45 as a two-point estimate '
+        + 'said. survey.ts records drawMax 0.407, the largest scale this gate has granted, with '
+        + '2.7 m of the 4 m envelope in hand, and the row is drawn at it.',
+    },
+  ],
+  carthage: [],
+};
+
+const MOUND_AGREED = {
+  'campus-martius': [
+    {
+      id: 'temple-jupiter',
+      why: 'the Area Capitolina. The temple podium is 62.25 x 53.5 m (Platner & Ashby 1929 '
+        + 's.v. Iuppiter Optimus Maximus Capitolinus) and the platform it stands on is not the '
+        + 'temple. survey.ts gives the mound 20 m of height and a 96 m circumradius; the '
+        + 'Capitoline summit really is more than twice the temple on it.',
+    },
+  ],
+  carthage: [],
+};
+
+/**
  * **The declarations this gate will accept, by name — the third list, and the newest.**
  *
  * `WATER_EXPECTED` above answers *"this obstacle box IS water"* — the Cothon is a harbour, not
@@ -1522,7 +1653,7 @@ try {
   );
   await page.waitForFunction(() => window.__game && window.__game.ready === true, null, { timeout: 300000 });
 
-  const out = await page.evaluate(async ({ MAPID, PUB, TH, OFF_FRAME, WATER_OK, NO_SOLID, OVER_WATER_OK, INJ, DRY_ROW }) => {
+  const out = await page.evaluate(async ({ MAPID, PUB, TH, OFF_FRAME, WATER_OK, NO_SOLID, OVER_WATER_OK, MOUND_OK, CAP_OK, INJ, DRY_ROW }) => {
     // =====================================================================
     // FAULT INJECTION. See `INJECTIONS` above the browser boundary for what each one proves.
     // Every one of these perturbs the PROBE's reference data or the PROBE's thresholds. None
@@ -1578,6 +1709,7 @@ try {
     // Geometry, written here rather than imported. See the header: reusing
     // `obbOverlap` would restate the answer of the code under test.
     // =====================================================================
+
     const signedArea = (p) => {
       let a = 0;
       for (let i = 0; i < p.length; i++) {
@@ -1782,6 +1914,71 @@ try {
         { x: o.x - ux + vx, z: o.z - uz + vz },
       ];
     };
+    /**
+     * **A box's own frame, in one place, with the sign of the yaw stated — because there are
+     * two conventions in this repository one negation apart and four files have now got them
+     * confused.**
+     *
+     * `src/city/layout.ts:axisU` is the PLAN convention: `makeRotationY(r)` sends local +X to
+     * `(cos r, -sin r)`, so a plan box's long axis points along **-rot** and the world -> local
+     * map is `u = dx*cos r - dz*sin r`. `MAP-METHOD.md` rule 24 earned that sentence and
+     * `assertions.ts:boxOf` warns about the same sign.
+     *
+     * **Everything below is in the OBSTACLE convention, which is the other one, and that is
+     * correct here rather than an oversight.** `CitySystem:occRot` is literally
+     * `(planRot) => -planRot`, and `getObstacles()` publishes `rot: occRot(f.rot)`. Every box
+     * this section measures — `mons`, `bldgs`, `walls`, and the frames derived from them —
+     * comes from `getObstacles()`, so its yaw is already negated and `u = dx*cos + dz*sin` is
+     * the right map for it. Substituting `r -> -r` into the plan form gives exactly that, so
+     * *"the obstacle convention applied to an obstacle box"* and *"the plan convention applied
+     * to a plan box"* are the same rectangle, which is the point of `obPoly` and `planPoly`
+     * being kept distinct twenty lines apart.
+     *
+     * **This paragraph is here because the author of it changed these four expressions to the
+     * plan form and had to change them back.** `tools/scratch/mon-extents.mjs` reads
+     * `LANDMARKS`, whose `rot` is a PLAN rotation, and applied the obstacle map to it: that
+     * mirrors each box about its own centre, and a `W x D` rectangle read at `2*theta` off its
+     * own axis has an axis-aligned extent of `W|cos 2t| + D|sin 2t|`, so every rotated monument
+     * measured larger and squarer than it is, tending to its own circumradius. It read the
+     * Colosseum's drawn stone as 130.6 x 128.6 against a 100.7 x 83.1 box — a circle of radius
+     * 65.4, which is `hypot(50.4, 41.6)` and not a building — and reported eleven G14 failures
+     * that were not there. **The offline instrument was wrong and the gate was right**, which
+     * is the outcome rule 29 warns about in the other direction: the fast tool and the slow one
+     * can disagree, and the fast one is the one people run.
+     */
+    const MIRROR = injected.has('obb-mirror') ? -1 : 1;
+    /** World delta -> an OBSTACLE box's own (u along the long axis, v across it). */
+    const toLocal = (o, dx, dz) => ({
+      u: dx * Math.cos(o.rot) + MIRROR * dz * Math.sin(o.rot),
+      v: -MIRROR * dx * Math.sin(o.rot) + dz * Math.cos(o.rot),
+    });
+    /** An OBSTACLE box's own (u, v) -> a world point. The inverse of `toLocal`, tested as one. */
+    const toWorld = (o, u, v) => ({
+      x: o.x + u * Math.cos(o.rot) - MIRROR * v * Math.sin(o.rot),
+      z: o.z + MIRROR * u * Math.sin(o.rot) + v * Math.cos(o.rot),
+    });
+    /**
+     * Two assertions rather than one, and both were worth writing.
+     *
+     * `toWorld(toLocal(p)) === p` catches a typo in either expression. The second catches the
+     * fault that actually happened: `toWorld` must agree with `obPoly`, the corner helper this
+     * file has always used for an obstacle box, so the new pair cannot quietly describe a
+     * different rectangle from the one every area test in this file already measures.
+     */
+    {
+      const o = { x: 137, z: -84, rot: 0.7853981633974483, hw: 30, hd: 12 };
+      const l = toLocal(o, 41, -17);
+      const w = toWorld(o, l.u, l.v);
+      if (Math.abs(w.x - (o.x + 41)) > 1e-9 || Math.abs(w.z - (o.z - 17)) > 1e-9) {
+        throw new Error('probe-fabric: toLocal/toWorld are not inverses');
+      }
+      const c = obPoly(o)[2];
+      const q = toWorld(o, o.hw, o.hd);
+      if (Math.abs(c.x - q.x) > 1e-9 || Math.abs(c.z - q.z) > 1e-9) {
+        throw new Error('probe-fabric: toWorld and obPoly describe different rectangles');
+      }
+    }
+
     /** A street segment as a rectangle, straight off its endpoints. No yaw convention at all. */
     const segPoly = (a, b, half) => {
       const dx = b.x - a.x;
@@ -1954,6 +2151,11 @@ try {
         owners = L.LANDMARKS.map((l) => ({
           id: l.id, name: l.name, x: l.x, z: l.z, reach: Math.hypot(l.hw, l.hd), soft: !!l.soft,
           complex: l.complex ?? null, onRiver: !!l.onRiver, farBank: !!l.farBank,
+          // The artificial platform a row stands on, if it declares one. G14's second list
+          // reads this; `k` is the geometry builder's own `moundRadius / clear`.
+          moundM: l.mound ?? null,
+          moundK: l.mound === undefined || l.moundRadius === undefined
+            ? null : l.moundRadius / l.clear,
         }));
         /*
          * **Rome's regions are polygons now, and this reads them as polygons.**
@@ -1988,6 +2190,9 @@ try {
         owners = L.MONUMENTS.map((m) => ({
           id: m.id, name: m.name, x: m.x, z: m.z, reach: Math.hypot(m.hw + m.clear, m.hd + m.clear),
           soft: false, complex: m.complex ?? null, onRiver: false, farBank: false,
+          // Carthage declares no mounds, so its agreed list is EMPTY rather than granted and
+          // the both-ways comparison below still runs, on two empty sets.
+          moundM: null, moundK: null,
         }));
         regions = L.QUARTERS.map((q) => ({ id: q.id, x: q.x, z: q.z, hw: q.hw, hd: q.hd, rot: q.rot }));
         declaredOffFrame = [];
@@ -1998,7 +2203,7 @@ try {
     } catch (e) {
       importNotes.push(`plan import failed: ${e && e.message ? e.message : String(e)}`);
     }
-    if (!owners) owners = landmarkRefs.map((l) => ({ id: l.id, name: l.name, x: l.x, z: l.z, reach: 60, soft: false, complex: null, onRiver: false, farBank: false }));
+    if (!owners) owners = landmarkRefs.map((l) => ({ id: l.id, name: l.name, x: l.x, z: l.z, reach: 60, soft: false, complex: null, onRiver: false, farBank: false, moundM: null, moundK: null }));
     /** The owner whose own footprint a point is most plausibly inside. */
     const ownerAt = (x, z) => {
       let best = null;
@@ -2334,7 +2539,14 @@ try {
       if (!frames.has(o.id)) frames.set(o.id, { id: o.id, name: o.name, x: o.x, z: o.z, rot: 0, area: 0, soft: o.soft });
     }
     const monAcc = new Map();
-    const geomStats = { monumentVerts: 0, monumentAttributed: 0, streetVerts: 0, wallVerts: 0, groups: [] };
+    /** The `id#mound` vertices, kept apart: landform a row stands on, not the row. */
+    const moundAcc = new Map();
+    const provenanceRefused = new Set();
+    const geomStats = {
+      monumentVerts: 0, monumentAttributed: 0, streetVerts: 0, wallVerts: 0, groups: [],
+      // How much of the monument geometry named its own builder rather than being guessed at.
+      provenanceUsed: 0, namedExactly: 0, moundVerts: 0, provenanceRefusedGroups: [],
+    };
     // Drawn carriageway / drawn wall standing inside a monument footprint.
     const roadInMon = new Map();
     const wallInMon = new Map();
@@ -2382,6 +2594,46 @@ try {
         const pos = n.geometry && n.geometry.attributes && n.geometry.attributes.position;
         if (!pos) return;
         const arr = pos.array;
+        /**
+         * **How much stone each vertex speaks for, and why a rank order of vertices could not
+         * answer that.**
+         *
+         * `drawn` takes the 0.5/99.5 percentile of a monument's vertices rather than their
+         * min and max, so that one vertex that slipped past the attribution radius cannot set
+         * a dimension. That is right about a stray and wrong about a *plate*, because a
+         * percentile over a vertex COUNT measures where the tessellation is, not where the
+         * stone is. The Iseum Campense's substructure is a 200 x 50 m floor slab carrying
+         * about two dozen vertices and the temple standing on it carries several thousand, so
+         * the percentile threw the slab away entirely and this file read a 200 m building as
+         * **59.6 m** — G13a's worst row on Rome — and its aspect as 2.46 against a published
+         * 4.0, which is G12's only Rome failure. Both of those were the estimator.
+         *
+         * So the percentile is weighted by **triangle area**, which is what "how much stone"
+         * means. A stray vertex belongs to a sliver and carries nothing; a slab carries ten
+         * thousand square metres on eight corners. Full 3D area rather than the plan
+         * projection, because a vertical wall projects to a line and a building made of walls
+         * would otherwise weigh nothing at all.
+         *
+         * Both windings and both index states, because a baked `Batch` is not indexed and a
+         * merged `BufferGeometry` from elsewhere in the scene may be.
+         */
+        const vertW = (() => {
+          const w = new Float64Array(pos.count);
+          const idx = n.geometry.index ? n.geometry.index.array : null;
+          const addTri = (a, b, c) => {
+            const ax = arr[a * 3], ay = arr[a * 3 + 1], az = arr[a * 3 + 2];
+            const bx = arr[b * 3] - ax, by = arr[b * 3 + 1] - ay, bz = arr[b * 3 + 2] - az;
+            const cx = arr[c * 3] - ax, cy = arr[c * 3 + 1] - ay, cz = arr[c * 3 + 2] - az;
+            const nx = by * cz - bz * cy;
+            const ny = bz * cx - bx * cz;
+            const nz = bx * cy - by * cx;
+            const A = Math.sqrt(nx * nx + ny * ny + nz * nz) / 6; // area / 3, per vertex
+            w[a] += A; w[b] += A; w[c] += A;
+          };
+          if (idx) for (let i = 0; i + 2 < idx.length; i += 3) addTri(idx[i], idx[i + 1], idx[i + 2]);
+          else for (let i = 0; i + 2 < pos.count; i += 3) addTri(i, i + 1, i + 2);
+          return w;
+        })();
         // A monument's stone is not always filed under `monuments-`: Carthage draws its
         // harbours and its citadel in their own families and they are monuments to a man
         // walking into them.
@@ -2399,12 +2651,88 @@ try {
           // beyond that is left unclaimed rather than folded into somebody's dimensions.
           const suffix = gname.replace(/^(monuments|harbour|byrsa)-/, '').replace(/-lod0$/, '');
           const direct = frames.get(suffix) ?? null;
+          /**
+           * **Provenance, when the scene carries it, and it is checked before it is believed.**
+           *
+           * `Batch.setProvenance` records which builder emitted which vertex range, because
+           * nearest-centre attribution hands a small monument's stone to a large neighbour and
+           * that is 1.0 % of Rome's monument vertices — enough to make G15 report four
+           * trespasses that are not there. A declaration is not evidence (rule 37), so two
+           * things are asserted about it here before a single vertex is attributed by it:
+           *
+           *   - the runs are **ascending and inside the buffer**, so they partition it; and
+           *   - every named label is a structure this file already knows about, so a stale or
+           *     invented name cannot silently claim stone.
+           *
+           * Either failing drops the whole mesh back to nearest-centre and says so in
+           * `geomStats.provenance`, which is printed. A check that goes quiet is worse than one
+           * that fails — rule 13 — so "used" and "refused" never print the same.
+           */
+          const runsRaw = injected.has('provenance-blind')
+            ? null
+            : ((n.userData && n.userData.provenance) || null);
+          let runs = null;
+          if (Array.isArray(runsRaw) && runsRaw.length) {
+            let ok = true;
+            let prev = -1;
+            for (const r of runsRaw) {
+              if (!(typeof r.from === 'number') || r.from <= prev || r.from > pos.count) ok = false;
+              // A label may name a PART of a structure — `<id>#mound` is the platform, drawn by
+              // the same call and measured apart. Validate the structure, not the part, or the
+              // first row that grows a part silently drops its whole mesh back to guessing.
+              const h = String(r.label).indexOf('#');
+              if (!frames.has(h < 0 ? r.label : String(r.label).slice(0, h))) ok = false;
+              prev = r.from;
+            }
+            if (ok) runs = runsRaw;
+            else provenanceRefused.add(gname);
+          }
+          /** Which run a vertex index falls in. Runs are ascending, so a linear cursor does. */
+          let runAt = 0;
+          const labelOf = (vi) => {
+            if (!runs) return null;
+            while (runAt + 1 < runs.length && runs[runAt + 1].from <= vi) runAt++;
+            while (runAt > 0 && runs[runAt].from > vi) runAt--;
+            return runs[runAt].label;
+          };
           for (let k = 0; k + 2 < arr.length; k += 3) {
             const x = arr[k];
             const y = arr[k + 1];
             const z = arr[k + 2];
             geomStats.monumentVerts++;
             let c = direct;
+            if (c) geomStats.namedExactly++;
+            let isMound = false;
+            if (!c && runs) {
+              const lab = labelOf(k / 3);
+              if (lab) {
+                /**
+                 * `id#mound` is the artificial platform a row stands on, labelled apart by
+                 * `monuments.ts:buildLandmark`. It is landform, not the building, and every
+                 * gate that measures a monument's drawn PLAN has to know the difference: the
+                 * Temple of Jupiter is 62.25 m of podium on 146 m of Area Capitolina, and
+                 * taking them together read the temple at 1.46 of published and failed G13a
+                 * on a row drawn at exactly its own box.
+                 */
+                const hash = lab.indexOf('#');
+                const base = hash < 0 ? lab : lab.slice(0, hash);
+                isMound = hash >= 0 && lab.slice(hash + 1) === 'mound';
+                c = frames.get(base) ?? null;
+                if (c) { geomStats.provenanceUsed++; geomStats.namedExactly++; }
+              }
+            }
+            if (isMound && c) {
+              let mv = moundAcc.get(c.id);
+              if (!mv) moundAcc.set(c.id, (mv = { u0: Infinity, u1: -Infinity, v0: Infinity, v1: -Infinity, n: 0 }));
+              const md = toLocal(c, x - c.x, z - c.z);
+              if (md.u < mv.u0) mv.u0 = md.u;
+              if (md.u > mv.u1) mv.u1 = md.u;
+              if (md.v < mv.v0) mv.v0 = md.v;
+              if (md.v > mv.v1) mv.v1 = md.v;
+              mv.n++;
+              geomStats.moundVerts++;
+              continue;
+            }
             if (!c) {
               const a = ownerAt(x, z);
               // 1.6x the claimant's own reach. A vertex beyond that is left unclaimed rather
@@ -2413,13 +2741,13 @@ try {
               c = frames.get(a.owner.id) ?? { id: a.owner.id, name: a.owner.name, x: a.owner.x, z: a.owner.z, rot: 0, soft: a.owner.soft };
             }
             let e = monAcc.get(c.id);
-            if (!e) monAcc.set(c.id, (e = { u: [], v: [], yMax: -Infinity, n: 0 }));
-            const cs = Math.cos(c.rot);
-            const sn = Math.sin(c.rot);
+            if (!e) monAcc.set(c.id, (e = { u: [], v: [], w: [], yMax: -Infinity, n: 0 }));
             const dx = x - c.x;
             const dz = z - c.z;
-            e.u.push(dx * cs + dz * sn);
-            e.v.push(-dx * sn + dz * cs);
+            const uv = toLocal(c, dx, dz);
+            e.u.push(uv.u);
+            e.v.push(uv.v);
+            e.w.push(vertW[k / 3]);
             if (y > e.yMax) e.yMax = y;
             e.n++;
             geomStats.monumentAttributed++;
@@ -2497,15 +2825,53 @@ try {
       });
     }
 
+    /**
+     * The 0.5/99.5 percentile of a monument's stone, **weighted by triangle area** — see
+     * `vertW` above for the whole argument. Unweighted, this discarded the Iseum's own podium
+     * and read a 200 m building as 59.6.
+     */
+    const areaPct = (vals, wts, t) => {
+      const n = vals.length;
+      if (!n) return 0;
+      const ord = new Int32Array(n);
+      for (let i = 0; i < n; i++) ord[i] = i;
+      const arr = Array.from(ord).sort((a, b) => vals[a] - vals[b]);
+      let total = 0;
+      for (let i = 0; i < n; i++) total += wts[i];
+      // Every triangle degenerate is possible in principle (a whole monument drawn as lines);
+      // fall back to the unweighted rank rather than dividing by zero, and say so.
+      if (!(total > 0)) return vals[arr[Math.min(n - 1, Math.max(0, Math.floor(t * (n - 1))))]];
+      const want = INJ.includes('stone-count-weighted') ? -1 : t * total;
+      if (want < 0) {
+        // `stone-count-weighted`: the rank order this file shipped with, restored.
+        return vals[arr[Math.min(n - 1, Math.max(0, Math.floor(t * (n - 1))))]];
+      }
+      let acc = 0;
+      for (let i = 0; i < n; i++) {
+        acc += wts[arr[i]];
+        if (acc >= want) return vals[arr[i]];
+      }
+      return vals[arr[n - 1]];
+    };
     const drawn = new Map();
     for (const [id, e] of monAcc) {
-      e.u.sort((a, b) => a - b);
-      e.v.sort((a, b) => a - b);
-      // 0.5/99.5 percentile rather than min/max, so one stray vertex that slipped past the
-      // attribution radius cannot set a dimension.
+      let wSum = 0;
+      for (let i = 0; i < e.w.length; i++) wSum += e.w[i];
+      // Spread would blow the stack at a hundred thousand vertices.
+      let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+      for (let i = 0; i < e.u.length; i++) {
+        if (e.u[i] < u0) u0 = e.u[i];
+        if (e.u[i] > u1) u1 = e.u[i];
+        if (e.v[i] < v0) v0 = e.v[i];
+        if (e.v[i] > v1) v1 = e.v[i];
+      }
       drawn.set(id, {
-        u: pct(e.u, 0.995) - pct(e.u, 0.005),
-        v: pct(e.v, 0.995) - pct(e.v, 0.005),
+        u: areaPct(e.u, e.w, 0.995) - areaPct(e.u, e.w, 0.005),
+        v: areaPct(e.v, e.w, 0.995) - areaPct(e.v, e.w, 0.005),
+        // Both readings, because the gap between them is a finding rather than noise: it is
+        // the stone a count-weighted percentile throws away.
+        uAll: r2(u1 - u0), vAll: r2(v1 - v0),
+        stoneM2: r2(wSum * 3),
         yMax: e.yMax, n: e.n,
       });
     }
@@ -2580,13 +2946,10 @@ try {
       if (!f) continue;
       let acc = aggregate.get(e.id);
       if (!acc) aggregate.set(e.id, (acc = { u0: Infinity, u1: -Infinity, v0: Infinity, v1: -Infinity, boxes: 0, x: f.x, z: f.z, rot: f.rot }));
-      const cs = Math.cos(f.rot);
-      const sn = Math.sin(f.rot);
       for (const q of e.poly) {
         const dx = q.x - f.x;
         const dz = q.z - f.z;
-        const u = dx * cs + dz * sn;
-        const v = -dx * sn + dz * cs;
+        const { u, v } = toLocal(f, dx, dz);
         if (u < acc.u0) acc.u0 = u;
         if (u > acc.u1) acc.u1 = u;
         if (v < acc.v0) acc.v0 = v;
@@ -3011,8 +3374,6 @@ try {
        * solid is measured coarsely and never partially.
        */
       const scanFoot = (o) => {
-        const cs = Math.cos(o.rot);
-        const sn = Math.sin(o.rot);
         const nu = Math.min(TH.WATER_SAMPLE_CAP, Math.max(1, Math.round((2 * o.hw) / TH.WATER_SAMPLE_M)));
         const nv = Math.min(TH.WATER_SAMPLE_CAP, Math.max(1, Math.round((2 * o.hd) / TH.WATER_SAMPLE_M)));
         const cell = ((2 * o.hw) / nu) * ((2 * o.hd) / nv);
@@ -3024,8 +3385,7 @@ try {
           const u = -o.hw + (iu + 0.5) * ((2 * o.hw) / nu);
           for (let iv = 0; iv < nv; iv++) {
             const v = -o.hd + (iv + 0.5) * ((2 * o.hd) / nv);
-            const px = o.x + u * cs - v * sn;
-            const pz = o.z + u * sn + v * cs;
+            const { x: px, z: pz } = toWorld(o, u, v);
             const h = terrain.heightAt(px, pz);
             if (h <= level) wetCells++;
             if (h < worst) { worst = h; wx = px; wz = pz; }
@@ -3137,26 +3497,14 @@ try {
        * rather than typed, so a solid flush with its declaration is not refused by where the
        * cells happened to fall and the two numbers cannot drift apart.
        */
-      const cornersOf = (o) => {
-        const c = Math.cos(o.rot);
-        const sn = Math.sin(o.rot);
-        const ux = c * o.hw;
-        const uz = sn * o.hw;
-        const vx = -sn * o.hd;
-        const vz = c * o.hd;
-        return [
-          { x: o.x - ux - vx, z: o.z - uz - vz }, { x: o.x + ux - vx, z: o.z + uz - vz },
-          { x: o.x + ux + vx, z: o.z + uz + vz }, { x: o.x - ux + vx, z: o.z - uz + vz },
-        ];
-      };
+      const cornersOf = (o) => [
+        toWorld(o, -o.hw, -o.hd), toWorld(o, o.hw, -o.hd),
+        toWorld(o, o.hw, o.hd), toWorld(o, -o.hw, o.hd),
+      ];
       const declPad = TH.WATER_SAMPLE_M * 0.5;
       const inDecl = (d, x, z) => {
-        const c = Math.cos(d.rot);
-        const sn = Math.sin(d.rot);
-        const dx = x - d.x;
-        const dz = z - d.z;
-        return Math.abs(dx * c + dz * sn) <= d.hw + declPad
-          && Math.abs(-dx * sn + dz * c) <= d.hd + declPad;
+        const { u, v } = toLocal(d, x - d.x, z - d.z);
+        return Math.abs(u) <= d.hw + declPad && Math.abs(v) <= d.hd + declPad;
       };
       const containedBy = (d, r) =>
         r.box !== undefined && cornersOf(r.box).every((q) => inDecl(d, q.x, q.z));
@@ -3976,11 +4324,23 @@ try {
       // The collision box against the drawn stone, per monument, over every monument with
       // geometry — not only the sourced ones, because this test needs no published figure.
       const mismatch = [];
+      const mounded = [];
+      const ownerById = new Map(owners.map((o) => [o.id, o]));
+      const agreedMound = new Map((MOUND_OK ?? []).map((m) => [m.id, m]));
       for (const [id, agg] of aggregate) {
         const d = drawn.get(id);
         if (!d) continue;
         const f = frames.get(id);
         if (f && f.soft) continue; // landscape has no collision box by design
+        const o = ownerById.get(id) ?? null;
+        /**
+         * The mound licence, and it is a ruler rather than a skip: a declared platform moves
+         * the comparison box out to `moundRadius / clear` and stops there. See `MOUND_AGREED`.
+         * A declaration nobody agreed to, or an agreement for a row that declares nothing,
+         * leaves `k` at 1 and is reported as a fault below, so neither list can go quiet.
+         */
+        const declares = !!(o && o.moundK !== null);
+        const agrees = agreedMound.has(id);
         const boxLong = Math.max(agg.u1 - agg.u0, agg.v1 - agg.v0);
         const boxShort = Math.min(agg.u1 - agg.u0, agg.v1 - agg.v0);
         const dLong = Math.max(d.u, d.v);
@@ -3988,15 +4348,55 @@ try {
         const rl = dLong / boxLong;
         const rs = dShort / boxShort;
         if (Math.max(rl, rs) > 1 + TH.BOX_VS_STONE_TOL) {
-          mismatch.push({ name: f ? f.name : id, drawnOverBoxLong: r3(rl), drawnOverBoxShort: r3(rs), overhangM: r2(Math.max(dLong - boxLong, dShort - boxShort) / 2) });
+          mismatch.push({ name: f ? f.name : id,
+            drawnOverBoxLong: r3(rl), drawnOverBoxShort: r3(rs), overhangM: r2(Math.max(dLong - boxLong, dShort - boxShort) / 2) });
+        }
+        /**
+         * The platform, graded separately and just as hard. Declaring a mound does not shed an
+         * obligation, it takes one on: the landform may run out to `moundRadius / clear` — the
+         * same `k` the geometry builder uses — and no further, so the survey's own published
+         * radius is what is being tested. A row that declares a mound and draws none, or draws
+         * one nobody agreed to, is a fault below.
+         */
+        if (declares && agrees) {
+          const mv = moundAcc.get(id) ?? null;
+          const k = o.moundK;
+          const ml = mv ? Math.max(mv.u1 - mv.u0, mv.v1 - mv.v0) : 0;
+          const ms = mv ? Math.min(mv.u1 - mv.u0, mv.v1 - mv.v0) : 0;
+          const orl = ml / (boxLong * k);
+          const ors = ms / (boxShort * k);
+          mounded.push({ id, name: f ? f.name : id, k: r3(k), moundM: o.moundM, verts: mv ? mv.n : 0,
+            moundOverDeclaredLong: r3(orl), moundOverDeclaredShort: r3(ors) });
+          if (!mv || Math.max(orl, ors) > 1 + TH.BOX_VS_STONE_TOL) {
+            mismatch.push({ name: `${f ? f.name : id} (platform)`, licensedMound: true,
+              drawnOverBoxLong: r3(orl), drawnOverBoxShort: r3(ors),
+              overhangM: r2(Math.max(ml - boxLong * k, ms - boxShort * k) / 2) });
+          }
         }
       }
       mismatch.sort((a, b) => b.overhangM - a.overhangM);
       boxStoneMismatch = mismatch;
+      // The two directions, compared. A declaration nobody agreed to and an agreement nobody
+      // declared are both faults, and both are named — MAP-METHOD rule 37.
+      const declaredMound = [...aggregate.keys()]
+        .filter((id) => { const o = ownerById.get(id); return !!(o && o.moundK !== null); }).sort();
+      const agreedList = [...agreedMound.keys()].sort();
+      const moundNotAgreed = declaredMound.filter((id) => !agreedMound.has(id));
+      const agreedNotDeclared = agreedList.filter((id) => !declaredMound.includes(id));
       gate('G14', 'the stone the player sees fits the footprint the game collides with',
-        mismatch.length === 0,
-        `${mismatch.length} of ${aggregate.size} monuments draw stone beyond their own collision box; worst overhang ${mismatch.length ? mismatch[0].overhangM : 0} m per side (${mismatch.length ? mismatch[0].name : '-'})`,
-        `drawn/box <= ${1 + TH.BOX_VS_STONE_TOL}`);
+        mismatch.length === 0 && moundNotAgreed.length === 0 && agreedNotDeclared.length === 0,
+        `${mismatch.length} of ${aggregate.size} monuments draw stone beyond their own collision box; worst overhang ${mismatch.length ? mismatch[0].overhangM : 0} m per side (${mismatch.length ? mismatch[0].name : '-'})`
+        + ` | ATTRIBUTION: ${geomStats.namedExactly} of ${geomStats.monumentVerts} monument vertices named their own builder`
+        + ` (${r2((geomStats.namedExactly / Math.max(1, geomStats.monumentVerts)) * 100)} %) — by chunk name or by`
+        + ` Batch.setProvenance range; the rest by nearest centre. ${geomStats.moundVerts} were a declared platform`
+        + (provenanceRefused.size ? `; PROVENANCE REFUSED on [${[...provenanceRefused].join(', ')}]` : '')
+        + ` | MOUND, declared by the plan and agreed here — ${mounded.length} row(s) whose platform is graded APART from the building standing on it`
+        + (mounded.length
+          ? `: ${mounded.map((m) => `${m.id} k=${m.k} (${m.moundM} m high, ${m.verts} verts), platform/declared ${m.moundOverDeclaredLong} long ${m.moundOverDeclaredShort} short`).join('; ')}`
+          : ' — this map declares none, so the licence is EMPTY rather than granted')
+        + (moundNotAgreed.length ? `; DECLARED BUT NOT AGREED: [${moundNotAgreed.join(', ')}]` : '')
+        + (agreedNotDeclared.length ? `; AGREED BUT NOT DECLARED: [${agreedNotDeclared.join(', ')}]` : ''),
+        `drawn/box <= ${1 + TH.BOX_VS_STONE_TOL}, and the mound sets are equal in both directions`);
     }
     /**
      * G15 — a monument's drawn stone inside another monument's footprint.
@@ -4067,6 +4467,8 @@ try {
       gate('G15', "no monument's drawn stone stands inside another monument's footprint, unless one complex licenses it",
         faults.length === 0,
         `${faults.length} faulting pairs, ${n} sampled vertices, of ${rows.length} trespassing pairs`
+        + ` | ATTRIBUTION: ${geomStats.namedExactly} of ${geomStats.monumentVerts} monument vertices named their own builder`
+        + (provenanceRefused.size ? `; REFUSED on [${[...provenanceRefused].join(', ')}]` : '')
         + (faults.length
           ? `; faults: ${faults.slice(0, 5).map((e) => `${e.stoneId} into ${e.intoId} (${e.why})`).join('; ')}`
           : '')
@@ -4092,16 +4494,49 @@ try {
           'no gated monument on this map has both a published figure and drawn geometry',
           `drawn/published in [${TH.SCALE_FLOOR}, ${1 + TH.SCALE_CEIL_TOL}]`);
       } else {
+        /**
+         * The frame-cap limb. See `FRAME_CAPPED_AGREED`: the plan publishes `drawMax`, this
+         * file agrees by name, the two sets are compared both ways, and a licensed row is
+         * still gated on being drawn AT its cap rather than merely under the floor.
+         */
+        const capOf = new Map((CAP_OK ?? []).map((c) => [c.id, c]));
+        const planById = new Map((planLandmarks ?? []).map((l) => [l.id, l]));
+        const declaredCap = [...planById.values()]
+          .filter((l) => l.drawMax !== undefined && l.drawMax !== null && !l.soft)
+          .map((l) => l.id).sort();
+        const capNotAgreed = declaredCap.filter((id) => !capOf.has(id));
+        const agreedNotCapped = [...capOf.keys()].filter((id) => !declaredCap.includes(id)).sort();
+        const licensed = [];
+        const stillBad = [];
+        for (const f of band.belowFloor) {
+          const l = planById.get(f.id) ?? null;
+          const cap = l && l.drawMax !== undefined && l.drawMax !== null ? l.drawMax : null;
+          // Drawn at the cap, to a tenth of a per cent — an author who left a metre on the
+          // table is not being stopped by the frame.
+          const atCap = cap !== null && l.planScale >= cap - 1e-3;
+          if (capOf.has(f.id) && atCap) licensed.push({ ...f, cap, planScale: l.planScale });
+          else stillBad.push({ ...f, cap, planScale: l ? l.planScale : null });
+        }
+        const bad2 = [...stillBad, ...band.aboveCeiling];
         gate('G13a', "every gated monument's drawn plan is inside an absolute band against the literature",
-          bad.length === 0,
-          `${bad.length} of ${band.n} gated rows outside the band`
-          + `; below the ${TH.SCALE_FLOOR} floor: ${band.belowFloor.length}`
-          + ` [${band.belowFloor.map((f) => `${f.id} ${f.ratio} (${f.drawnLong} of ${f.publishedLong} m)`).join('; ')}]`
+          bad2.length === 0 && capNotAgreed.length === 0 && agreedNotCapped.length === 0,
+          `${bad2.length} of ${band.n} gated rows outside the band and not licensed by the frame`
+          + `; below the ${TH.SCALE_FLOOR} floor: ${stillBad.length}`
+          + ` [${stillBad.map((f) => `${f.id} ${f.ratio} (${f.drawnLong} of ${f.publishedLong} m)`
+            + (f.cap === null ? '' : `, capped at ${f.cap} and drawn at ${f.planScale} — UNDER ITS OWN CAP`)).join('; ')}]`
           + `; above ${1 + TH.SCALE_CEIL_TOL}: ${band.aboveCeiling.length}`
           + ` [${band.aboveCeiling.map((f) => `${f.id} ${f.ratio}`).join('; ')}]`
+          + ` | FRAME CAP, published by the plan and agreed here — ${licensed.length} row(s) the`
+          + ` heightfield cannot carry at the published size, drawn AT their cap`
+          + (licensed.length
+            ? `: ${licensed.map((f) => `${f.id} ${f.ratio} of published, drawMax ${f.cap}, drawn ${f.planScale}`).join('; ')}`
+            : ' — this map publishes no cap, so the licence is EMPTY rather than granted')
+          + (capNotAgreed.length ? `; CAPPED BUT NOT AGREED: [${capNotAgreed.join(', ')}]` : '')
+          + (agreedNotCapped.length ? `; AGREED BUT NOT CAPPED: [${agreedNotCapped.join(', ')}]` : '')
           + ` | cohort n=${cohort.n}, median ${cohort.medianDrawnOverPublished},`
           + ` range ${cohort.minDrawnOverPublished}..${cohort.maxDrawnOverPublished} (${cohort.spreadX}x spread) — reported, not gated`,
-          `drawn/published in [${TH.SCALE_FLOOR}, ${1 + TH.SCALE_CEIL_TOL}] against PUBLISHED, per row`);
+          `drawn/published in [${TH.SCALE_FLOOR}, ${1 + TH.SCALE_CEIL_TOL}] against PUBLISHED, per row,`
+          + ' unless the frame caps the row AND it is drawn at that cap; cap sets equal both ways');
       }
     }
     {
@@ -4476,7 +4911,11 @@ try {
         inComplexPairs: structPairs.filter((r) => r.sameComplex).length,
       },
       water,
-      geometryRead: { ...geomStats, monumentsWithGeometry: drawn.size },
+      geometryRead: {
+        ...geomStats,
+        provenanceRefusedGroups: [...provenanceRefused],
+        monumentsWithGeometry: drawn.size,
+      },
       fabric, partition, fill: fillAndAbandon, grain, resolver, selfReport, importNotes,
       faults: chosen.map((f) => ({ cls: f.cls, label: f.label, m2: r2(f.m2), depthM: r2(f.depth), at: { x: r2(f.cx), z: r2(f.cz) }, spanM: r2(f.span), yaw: f.pairYaw })),
     };
@@ -4485,6 +4924,21 @@ try {
     OFF_FRAME: OFF_FRAME_AGREED[MAP] ?? [], WATER_OK: WATER_EXPECTED[MAP] ?? [],
     NO_SOLID: NO_SOLID_AGREED[MAP] ?? [],
     OVER_WATER_OK: OVER_WATER_AGREED[MAP] ?? [],
+    /**
+     * G14's mound licence. `mound-invent` adds a row the plan declares no mound for, which
+     * must fail the both-ways membership test — the injection is applied HERE rather than in
+     * the browser so that the list the gate reads is the list this file publishes.
+     */
+    /**
+     * G13a's frame-cap licence. `frame-cap-invent` agrees to a cap for a row the plan does not
+     * cap, which must fail the both-ways membership test.
+     */
+    CAP_OK: INJECT.includes('frame-cap-invent')
+      ? [...(FRAME_CAPPED_AGREED[MAP] ?? []), { id: MAP === 'carthage' ? 'byrsa' : 'colosseum', why: 'INJECTED' }]
+      : (FRAME_CAPPED_AGREED[MAP] ?? []),
+    MOUND_OK: INJECT.includes('mound-invent')
+      ? [...(MOUND_AGREED[MAP] ?? []), { id: MAP === 'carthage' ? 'byrsa' : 'colosseum', why: 'INJECTED' }]
+      : (MOUND_AGREED[MAP] ?? []),
     INJ: INJECT,
     /**
      * A dry structure that publishes collision solids, per map, for `water-stale-licence`.

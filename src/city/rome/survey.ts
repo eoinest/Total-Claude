@@ -389,9 +389,16 @@ export const ROME: readonly RomeMonument[] = [
     id: 'mausoleum-augustus',
     name: 'Mausoleum of Augustus',
     e: -481, n: 1500, len: 87, wid: 87, bearing: 0,
+    draw: 0.52, // 87 m real -> 45 m drawn — see the size-order note in the cite
     where: 'campus-martius',
     cite: '41.9060 N 12.4765 E. Circular tumulus 87 m across, c. 42 m tall; Strabo V.3.8 for the ' +
-      'planted terraces and the bronze Augustus. Platner-Ashby s.v. Mausoleum Augusti.',
+      'planted terraces and the bronze Augustus. Platner-Ashby s.v. Mausoleum Augusti. ' +
+      'DRAW 0.575, and the reason is the SIZE ORDER rather than a neighbour: this row had no ' +
+      '`draw` at all, so it stood at its full 87 m in a cohort drawn at 0.44 to 0.62, and it ' +
+      'was therefore modelled LARGER than the Theatre of Marcellus (129.8 m published) and the ' +
+      'Porticus Octaviae (132 m). `probe-fabric` G13b counted both, and rightly: a viewer with ' +
+      'no ruler for absolute size has an excellent one for which of two buildings is bigger. ' +
+      'A row with no authored departure is not a neutral choice in a cohort that has one.',
   },
   {
     id: 'ara-pacis',
@@ -413,7 +420,7 @@ export const ROME: readonly RomeMonument[] = [
     id: 'stadium-domitian',
     name: 'Stadium of Domitian',
     e: -762, n: 745, len: 275, wid: 106, bearing: 177,
-    draw: 0.768, // 275 x 106 m real -> 211 x 81 m drawn
+    draw: 0.465, // 275 x 106 m real -> 128 x 49 m drawn
     where: 'campus-martius',
     cite: '41.8992 N 12.4731 E; the plan survives as Piazza Navona. 276 × 106 m, arena ' +
       '193 × 54, c. 30,000 *loca*. Axis 356.6°/176.6°, sphendone at the **north** — hence ' +
@@ -574,6 +581,31 @@ export const ROME: readonly RomeMonument[] = [
     name: 'Theatre of Marcellus',
     e: -252, n: -91, len: 130, wid: 115, bearing: 204, axis: 'z',
     draw: 0.407, // 130 x 115 m real -> 53 x 47 m drawn
+    /**
+     * **Capped by the RIVER, and measured against the substructure this row already declares.**
+     *
+     * `probe-fabric` G13a wants every gated monument drawn at 0.45 of its published dimension
+     * or better, and this row cannot reach it. It stands on the Ripa and its own `overWater`
+     * declaration is licensed by G22 inside an envelope with three limbs, one of which is
+     * *no deeper than its substructure is drawn* — 4 m of piles. Measured on the gate, same
+     * terrain, three runs:
+     *
+     *     draw 0.407   1.32 m under, 434.8 m2 wet   GRANTED
+     *     draw 0.44    4.09 m under, 582.9 m2 wet   REFUSED
+     *     draw 0.46    4.28 m under, 665.1 m2 wet   REFUSED
+     *
+     * **The depth is not linear in `draw`, and the middle row is why this number is 0.407 and
+     * not 0.44.** A first estimate interpolated 1.32 to 4.28 and put the boundary above 0.45;
+     * the measurement put it below 0.44, because the corner that goes under does not wade in
+     * gradually — it crosses the bank into the channel, where the bed drops away. 0.407 is the
+     * largest scale this gate has actually granted, with 2.7 m of the 4 m envelope in hand.
+     * The true boundary is somewhere in (0.407, 0.44) and this row takes the measured side of
+     * it, because a licence that passes by 17 cm is a coin flip on the next terrain edit.
+     *
+     * The row is drawn AT its cap. `probe-fabric`'s `FRAME_CAPPED_AGREED` names it and grades
+     * it on that, so the licence forgives the river and forgives nothing else.
+     */
+    drawMax: 0.407,
     overWater: 'on the Ripa with its stage flank toward the Tiber (Platner), carried on piles '
       + 'over the foreshore — a modelling decision, because no plan scale takes this footprint '
       + 'out of the channel and moving it 20 world metres north is 57 real metres off a plate '
@@ -619,7 +651,7 @@ export const ROME: readonly RomeMonument[] = [
     id: 'temple-jupiter',
     name: 'Temple of Jupiter Optimus Maximus',
     e: 0, n: 0, len: 63, wid: 53, bearing: 333, axis: 'z',
-    draw: 0.621, // 63 x 53 m real -> 39 x 33 m drawn
+    draw: 0.55, // 63 x 53 m real -> 35 x 29 m drawn
     where: 'capitoline', complex: 'capitolium', mound: 20, moundRadius: 96,
     cite: 'The datum of this table: the Capitolium, on the **south** summit under Palazzo ' +
       'Caffarelli, 41.8925 N 12.4823 E, 48 m a.s.l. (The north summit is the Arx, with ' +
@@ -723,7 +755,7 @@ export const ROME: readonly RomeMonument[] = [
     id: 'colosseum',
     name: 'Flavian Amphitheatre',
     e: 839, n: -249, len: 189, wid: 156, bearing: 115,
-    draw: 0.533, // 189 x 156 m real -> 101 x 83 m drawn
+    draw: 0.475, // 189 x 156 m real -> 90 x 74 m drawn
     where: 'colosseum-valley',
     cite: '41.8902 N 12.4922 E. 189 × 156 m at the ground, 48 m to the attic, 80 bays per ' +
       'storey, arena 86 × 54 m. Stands in the valley of the drained Stagnum Neronis, which ' +

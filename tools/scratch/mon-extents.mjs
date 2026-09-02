@@ -141,6 +141,27 @@ for (let i = 0; i < visited.length; i++) {
   if (ONLY.length && !ONLY.includes(l.id)) continue;
   const from = monMarks[i].at;
   const to = i + 1 < monMarks.length ? monMarks[i + 1].at : endAt;
+  /**
+   * **The handedness is `src/city/layout.ts:axisU`'s, and the first version of this file had
+   * it wrong.** `makeRotationY(r)` sends local +X to `(cos r, -sin r)`, so world -> local is
+   * `u = dx*cos - dz*sin`, `v = dx*sin + dz*cos`. Writing `u = dx*cos + dz*sin` mirrors the
+   * box about its own centre and measures real vertices against a rectangle that is not
+   * there: a `W x D` box read at `2*theta` off its own axis has an extent of
+   * `W|cos 2t| + D|sin 2t|`, so every rotated monument came out larger and squarer than it
+   * is. It read the Colosseum at 130.6 x 128.6 world metres against a 100.7 x 83.1 box — a
+   * circle of radius 65.4, which is `hypot(50.4, 41.6)` and not a building. `probe-fabric`
+   * `MAP-METHOD.md` rule 24.
+   *
+   * **`probe-fabric` does NOT have this fault and looked as though it did.** It measures the
+   * boxes `CitySystem.getObstacles()` publishes, and `CitySystem:occRot` is literally
+   * `(planRot) => -planRot`, so its yaw is already negated and `u = dx*cos + dz*sin` is the
+   * right map *for those boxes*. The two conventions are one negation apart and describe the
+   * same rectangle; `probe-fabric`'s own `obPoly` and `planPoly` are the pair, kept twenty
+   * lines apart with a comment saying they must stay distinct. This file read a PLAN rotation
+   * with the OBSTACLE map, which is the only way to get it wrong, and it reported eleven G14
+   * failures and three G13a failures that were not there. The gate was right and the fast
+   * instrument was wrong — rule 29's warning, running the other way.
+   */
   const cs = Math.cos(l.rot);
   const sn = Math.sin(l.rot);
   const us = [];
@@ -158,8 +179,8 @@ for (let i = 0; i < visited.length; i++) {
       const z = pos[vi * 3 + 2];
       const dx = x - l.x;
       const dz = z - l.z;
-      us.push(dx * cs + dz * sn);
-      vs.push(-dx * sn + dz * cs);
+      us.push(dx * cs - dz * sn);
+      vs.push(dx * sn + dz * cs);
       if (y > yMax) yMax = y;
       if (y < yMin) yMin = y;
       n++;
