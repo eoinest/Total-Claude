@@ -2773,7 +2773,51 @@ judgements of §10.4 are untouched too — `lan-invite-survives-a-loopback-url-b
 `lan-invite-carries-the-address-and-the-code` and `lan-no-lan-server-still-withholds-the-link` are
 green through every injection above, including the two that put the address back on the screen.
 
-### 11.8 What is still not done
+### 11.8 The gate as run, including the two reds that are not this branch's
+
+`tsc` clean, `lint` 3/3, `qa-deploy` 33/33, `qa-replay` 27/27, `probe-seams` PASS on both maps,
+`qa-freeze` 32/32, and all three determinism arms **deterministic and unchanged across 7
+checkpoints** at 8,632 / 3,072 / 3,440 — the proof that this pass is UI and wiring.
+
+`qa-net` was **run in three segments and not in one**, and the reason is on the record because it
+affects how much the result is worth. The machine carried six other agents for the whole of this
+work at load averages between 33 and **237**, and two full-suite attempts died part-way through:
+the first with *"Target page, context or browser has been closed"* — a renderer killed under
+memory pressure — and the second at *"work budget: owner is playing — qa-net/host moved to the
+background band"*, where a 60 s menu wait on efficiency cores is not enough. The segments:
+
+| Segment | Result |
+|---|---|
+| `lobby,lan,dev,static,ghost,badcode,norelay` — every arm that loads the lobby | **28/28** in one invocation |
+| `drop,dup,swap,ulp,late,leave,lag` — every injected fault | **18/18** in one invocation |
+| `proto,battle,siege` | 22/24, then 23/24 |
+
+**Two reds, and they are §9.12's `settleTogether` flake.** `same-battle` and `siege-same-battle`
+report *"they stopped at different ticks"* — 2103/2112, then 2109/2114, then 1368/1374 — while
+`checkpoints-agreed` and `siege-checkpoints-agreed` stay green each time, which is the tell §10.5
+already names: **every checkpoint the two clients exchanged agreed, and no hash was ever compared
+because the comparison requires equal ticks and never got that far.** At load 44, `same-battle`
+came back green with all five layers bit-identical at tick 2103.
+
+That is an argument. Here is the measurement. **A control run at the branch base `c20aa4b`, in a
+throwaway worktree, with none of this branch's code in it, goes red on the same two checks on this
+machine**: `same-battle` 2118/2124 and `siege-same-battle` 993/1893 — the second of those a
+900-tick gap, worse than anything this branch produced. `checkpoints-agreed` green in both.
+
+Neither arm can reach this change in any case: `bootMatch` writes `?net=…&room=…` itself and no
+arm below `lobby` has ever loaded `?mp=1`, which is §9.11's whole subject. The remedy §10.5 names
+— scaling `settleTogether`'s release-and-restop cap with the headcount, since the siege clients
+are 3,180 men against 2,337 and drain more slowly — is still the obvious next move and still
+belongs to whoever next has cause to touch that helper. It was not taken here, because a pass
+about a lobby is not the pass that should be adjusting the instrument the whole gate rests on.
+
+One further red worth recording because it went away: `qa-freeze`'s `net-drop-halts` reported
+*"+3 ticks over 6 s"* on its first run and **+0 on its second**, with the other three `net-drop`
+checks green both times. It asserts an exact zero on how far a client advances after the relay is
+SIGKILLed, and under load a client that is behind on its turn buffer still has turns to execute
+when the socket dies. The second full run was 32/32.
+
+### 11.9 What is still not done
 
 The room-code hint under a disabled CREATE still reads *"Leave it empty and Create will pick one
 for you"*, which is a sentence about a button that cannot be pressed. The notice above it
