@@ -2588,3 +2588,254 @@ machine's business. And `npm run host` serves the dev server rather than a produ
 is the same source through the same transforms, so the simulation is the same simulation, but a
 production-parity two-machine run wants `npm run build` and a static server, which nothing here
 provides.
+
+## 11. The relay address stops being the player's problem — 1 September 2026, `e/ui/relay-invisible`
+
+The owner opened the lobby, read it, and asked:
+
+> *"i am a bit confused about the relay address? we should be able to run things on lan directly
+> from browser."*
+
+He can, and he could before this pass: §10 built `npm run host`, the field he is asking about
+fills itself in correctly under that command, and nobody has ever had to type into it. **That is
+the complaint, not a defence against it.** A relay address is a transport detail, and it was the
+second heading on a screen otherwise about two people and a code.
+
+### 11.1 The field was not broken, which is why it took a question to find
+
+`defaultRelay()` returned `ws://<whatever host served this page>:5959` — right for the case it
+was written for and, from inside the page, indistinguishable from the case it was wrong for:
+
+| Served by | Old field | Truth |
+|---|---|---|
+| `npm run host` | `ws://192.168.1.77:5959`, or the plaque's after §10.4 | correct, and never needed reading |
+| `npm run dev` | `ws://localhost:5959` | **nothing has ever listened there.** `npm run dev` is `vite`, one process |
+| the deployed site | empty, with a sentence saying why | correct — and still a form field the player was asked to fill |
+
+The middle row is the one the owner most plausibly hit, and it is the worst of the three: a
+well-formed, plausible, correct-looking address with no process behind it, in a field the player
+had no reason to think about. Nothing failed until CREATE, and the failure then arrived phrased
+as though the address had been typed wrong. **A guess that looks like an answer is worse than an
+empty field**, and it was reached by the page trying to answer a question it could not answer.
+
+### 11.2 Two documents that were identical, and now are not
+
+`tools/lib/vite-runner.mjs` already writes `<meta name="tc-lan">` on a LAN bind — a plaque, added
+in §10.4, and a meta tag rather than a `fetch` because a 404 `fetch` makes Chromium log a console
+error on every other origin (§9.11's `lobby-console` went red on exactly that). This pass adds
+its smaller companion:
+
+    <meta name="tc-relay" content="5959">
+
+Written on **any** bind that started a relay, and absent otherwise. Three things follow from the
+shape of it:
+
+  - `npm run host -- --loopback` now gets the same treatment as the LAN case. The plaque could
+    never give it that, because the plaque's whole meaning is "this server is also on an address
+    the other machine can reach", and `--loopback` is the case where it is not.
+  - The content is a **port**, not a URL, and the host part is `location.hostname`. The same
+    `npm run host` serves the document at `127.0.0.1:5958` and at `192.168.1.77:5958`, and each
+    tab composes the relay address that works for it. One absolute URL in the tag would have to
+    pick a tab and be wrong in the other.
+  - `npm run dev` has neither tag, and **the absence is the product**. It is the difference
+    `defaultRelay()` could not see.
+
+`src/ui/NetLobby.ts` now ranks four sources and there is no fifth:
+
+  1. `?net=` in the URL — an explicit decision, usually an invite link.
+  2. What the server said — `plaque.relayUrl` first, because it names the LAN address and that is
+     the one that has to survive being pasted into an invite; else the port from `tc-relay`.
+  3. `localStorage` — this browser's own earlier decision. **Below** the server on purpose: a
+     remembered `ws://localhost:5959` must not shadow the relay this very command just started.
+  4. Nothing, which is a real answer and not a failure to find one.
+
+`relayWasGuessed`, which §10.4 needed so the plaque could overrule a guess, has no successor.
+There is nothing left for the plaque to overrule.
+
+### 11.3 A stated fact is still checked
+
+`npm run host` spawns the game server and the relay as **two processes**, and the tag is written
+by the first of them. Believing it would reintroduce this pass's own bug one level up: a lobby
+that looks ready and is not. So `relayAnswers()` asks the relay's own `/health` once on mount —
+one round trip, about a millisecond on a LAN, `access-control-allow-origin: *` already there, and
+`/health` rather than `/new` because a probe must not mint a room.
+
+It fires **only when something has already named an address**, and that rule is what keeps
+§9.11's console arms honest. A page with no relay makes no request at all, so the deployed site
+and `npm run dev` write nothing to the console — measured, and `dev-server-lobby-console` and
+`static-origin-lobby-console` are the two checks that hold it. When the probe *does* fail it costs
+one `ERR_CONNECTION_REFUSED` line, which is accepted here and was not for `/__tc/lan`: this is
+the one situation in which the player needs to be told nothing is there.
+
+### 11.4 What the panel shows now, in the three cases, played
+
+`tools/scratch/play3.mjs` drives all four with real clicks; frames in
+`screenshots/relay-invisible/`.
+
+  - **`npm run host`** (`host-01-lobby.png`) — a room code, CREATE A ROOM, JOIN THAT ROOM, and a
+    closed disclosure reading RELAY ON ANOTHER MACHINE OR PORT. No address on the screen, and no
+    `ws://` anywhere in the rendered text. Two browsers, a code read off one and typed into the
+    other, and a deployment phase with slot 0 commanding Rome and slot 1 the Juthungi
+    (`host-05`, `host-06`). Nothing was typed but five characters.
+  - **`npm run dev`** (`dev-01-lobby.png`) — the room-code form is there and inert, and above it:
+    *"There is no relay behind this page, so a battle cannot start from it… This server is serving
+    the game and nothing else. Stop this server and run `npm run host` instead."* The field is
+    empty and behind the disclosure. CREATE and JOIN are disabled, because the fix is a command
+    and not a form.
+  - **A non-loopback origin that has said nothing about itself** (`remote-01-lobby.png`) — the
+    deployed site's shape. The same refusal with the sentence §10.7 already had and this pass
+    keeps: *"This page cannot be one, because it is a static upload with no server in it."*
+    Followed by `npm run host` **on either of your two machines**, which is the decision §10.7
+    item 2 left open and deliberately declined to make in a transport pass. It is made here: the
+    people who reach that screen at all are people trying to play two-player, and it is the only
+    route that works.
+  - **`total-claude.vercel.app`** (`live-01-lobby.png`) — r10, the build before this one, with
+    RELAY ADDRESS as a heading and an empty field under it. That frame is the owner's question,
+    photographed.
+
+The field is not deleted. `host-02-lobby-advanced-open.png` is one click into the disclosure: the
+address, and a sentence saying where it came from — *"This machine is serving the game and a relay
+on 192.168.1.77 (en0)… Anything you type here wins."* That sentence used to sit under a field
+everybody could see, which was the right sentence in the wrong place: it answers "why does this
+say what it says", and only somebody who has opened the panel has asked.
+
+### 11.5 The gate: three arms for three servers, and five injections
+
+`tools/qa-net.mjs` was at 60/60 and could not see any of this. Every arm ran against one dev
+server, so the lobby's answer to `npm run dev` had never been measured — which is the case the
+owner hit. It is now **70 checks over 17 arms**.
+
+`lan` gains `lan-lobby-says-nothing-about-transport`, the positive claim, and it waits 1.5 s for
+the probe first so that it measures the settled panel rather than the optimistic one.
+
+`dev` runs **`"dev": "vite"`'s own binary**, not a `vite-runner` stand-in, and the reason is that
+what it measures is the *absence* of `<meta name="tc-relay">`: the runner is the thing that writes
+that tag, so it cannot be the fixture and the subject at once. In through the front door and a
+click on MULTIPLAYER, because that is the sequence being reported.
+
+`static` is a non-loopback origin with neither tag, reached at this machine's LAN address. **Its
+origin is in the pass condition and not merely in the log**: §9.11 records that an earlier version
+of this gate had all 54 of its checks talking to `127.0.0.1` while claiming to measure a LAN
+product, and a check whose subject is an origin has to prove which one it got.
+
+#### `ghost`, which exists because the other three are blind to the thing this pass rests on
+
+Writing the injections found the hole. `dev` and `static` never call `relayAnswers()` — nothing
+names an address on either — and in `lan` the relay is alive, so **`relayAnswers` could have been
+replaced by `async () => true` and all three would have stayed green.** The sentence §11.3 is
+built on, *a stated fact is still checked*, was the one claim in this pass with no check behind
+it.
+
+`ghost` is a real `vite-runner` told to advertise a relay on 5991 with **nothing started on
+5991**, which is what `npm run host` leaves behind when the relay half dies: the tag is written by
+the game server, at the moment it serves the document, and it knows nothing about the other
+process. The port is asserted empty first, because a relay somebody else happened to be running
+there would make every check pass for the wrong reason. It asserts the address is named as *the
+server's claim* — *"This server said it had started a relay there"* — rather than as the player's
+mistake, and that both buttons are off before anything is pressed.
+
+Made to fail on purpose, six ways. Which checks survive each injection is the part worth reading:
+
+| Injected | Red | Green, and why that is right |
+|---|---|---|
+| `resolveRelay` falls through to `ws://<this host>:5959` — the old guess, restored | `dev-server-offers-no-relay-address`, `dev-server-names-the-command-that-works`, `dev-server-lobby-console`, and all three `static` checks | `dev-server-still-lets-you-point-at-a-relay` **stays green**: the field still reaches a relay, which is the capability that was never the problem. The console red is the guess's own price, spelled `console.error: Failed to load resource: net::ERR_CONNECTION_REFUSED`. The naming red is the interesting one — the panel *does* refuse, but with *"No answer from ws://127.0.0.1:5959"*, an address the page invented and is now blaming |
+| `RUN_HOST_HERE` stops naming the command | `dev-server-names-the-command-that-works` only | the field is still empty and still behind its disclosure, so the other three are untouched. A refusal that does not name the thing that works is a different fault from a refusal that does not appear |
+| `servedByUs` forced `true` | `static-origin-keeps-the-sentence-that-was-right` only | the deployed shape now gets *"stop this server"*, which names a process the reader does not have. Nothing about the address or the console changes, and both stay green |
+| the `input` listener on the relay field stops re-arming the buttons | `dev-server-still-lets-you-point-at-a-relay` only | the demotion is intact and so is the refusal; what broke is the way back out of it — *"an address in the disclosure left CREATE disabled — the capability is gone, not demoted"* |
+| the disclosure opens itself whenever the server named a relay | `lan-lobby-says-nothing-about-transport` only | *"relay field shown=true reaches=true"*. All six other `lan` checks stay green, correctly: the invite, the LAN address and the withholding do not depend on where the field sits |
+| `relayAnswers` returns `true` without asking anything | `ghost-relay-is-probed-and-not-believed` only | *"CREATE disabled=false; the panel says: (nothing — the lobby believed the tag)"*. All four `dev` checks and all three `static` checks stay green **and that is the finding**: they are structurally unable to see this, which is why `ghost` had to be written |
+
+The fourth of those was found rather than designed. `page.click` on a `disabled` button waits
+thirty seconds for actionability and then **throws**, which reaches `qa-net`'s
+`unhandledRejection` handler and ends the run — so the first attempt at that injection killed the
+gate with a Playwright stack and no verdict for any of the four `dev` checks. The arm now reads
+the state and says what it was. §9.12's rule again: a Playwright timeout is not a finding.
+
+### 11.6 Two measurements worth keeping
+
+**`getClientRects()` is not visibility, and neither is Playwright's `isVisible()`.** Chromium
+gives an `<input>` inside a *closed* `<details>` a full 550 × 40 box at a real `y`, and both of
+those report it visible. `checkVisibility()` returns false, `elementFromPoint` over the middle of
+that box returns something else, and `innerText` leaves its label and hint out. `lobbyFace` in
+`qa-net` uses the latter three. A check written on the rectangle would have passed for a field
+sitting open on the screen, which is the entire thing being measured.
+
+**An agent worktree has no `node_modules`.** It reaches the main checkout's through node's
+resolution, so `path.join(ROOT, 'node_modules', 'vite', …)` names a file that does not exist, and
+`require.resolve('vite/bin/vite.js')` throws because vite's `exports` map does not publish the
+bin. Both arms walk up from `require.resolve('vite')` instead.
+
+### 11.7 What did not move
+
+No pinned determinism hash. This is UI and transport wiring: `src/net/` is untouched, the relay is
+untouched, and all three baseline arms are unchanged at 8,632 / 3,072 / 3,440. The invite-link
+judgements of §10.4 are untouched too — `lan-invite-survives-a-loopback-url-bar`,
+`lan-invite-carries-the-address-and-the-code` and `lan-no-lan-server-still-withholds-the-link` are
+green through every injection above, including the two that put the address back on the screen.
+
+### 11.8 The gate as run, including the two reds that are not this branch's
+
+`tsc` clean, `lint` 3/3, `qa-deploy` 33/33, `qa-replay` 27/27, `probe-seams` PASS on both maps,
+`qa-freeze` 32/32, and all three determinism arms **deterministic and unchanged across 7
+checkpoints** at 8,632 / 3,072 / 3,440 — the proof that this pass is UI and wiring.
+
+`qa-net` was **run in three segments and not in one**, and the reason is on the record because it
+affects how much the result is worth. The machine carried six other agents for the whole of this
+work at load averages between 33 and **237**, and two full-suite attempts died part-way through:
+the first with *"Target page, context or browser has been closed"* — a renderer killed under
+memory pressure — and the second at *"work budget: owner is playing — qa-net/host moved to the
+background band"*, where a 60 s menu wait on efficiency cores is not enough. The segments:
+
+| Segment | Result |
+|---|---|
+| `lobby,lan,dev,static,ghost,badcode,norelay` — every arm that loads the lobby | **28/28** in one invocation |
+| `drop,dup,swap,ulp,late,leave,lag` — every injected fault | **18/18** in one invocation |
+| `proto,battle,siege` | 22/24, then 23/24 |
+
+**Two reds, and they are §9.12's `settleTogether` flake.** `same-battle` and `siege-same-battle`
+report *"they stopped at different ticks"* — 2103/2112, then 2109/2114, then 1368/1374 — while
+`checkpoints-agreed` and `siege-checkpoints-agreed` stay green each time, which is the tell §10.5
+already names: **every checkpoint the two clients exchanged agreed, and no hash was ever compared
+because the comparison requires equal ticks and never got that far.** At load 44, `same-battle`
+came back green with all five layers bit-identical at tick 2103.
+
+That is an argument. Here is the measurement. **A control run at the branch base `c20aa4b`, in a
+throwaway worktree, with none of this branch's code in it, goes red on the same two checks on this
+machine**: `same-battle` 2118/2124 and `siege-same-battle` 993/1893 — the second of those a
+900-tick gap, worse than anything this branch produced. `checkpoints-agreed` green in both.
+
+Neither arm can reach this change in any case: `bootMatch` writes `?net=…&room=…` itself and no
+arm below `lobby` has ever loaded `?mp=1`, which is §9.11's whole subject. The remedy §10.5 names
+— scaling `settleTogether`'s release-and-restop cap with the headcount, since the siege clients
+are 3,180 men against 2,337 and drain more slowly — is still the obvious next move and still
+belongs to whoever next has cause to touch that helper. It was not taken here, because a pass
+about a lobby is not the pass that should be adjusting the instrument the whole gate rests on.
+
+One further red worth recording because it went away: `qa-freeze`'s `net-drop-halts` reported
+*"+3 ticks over 6 s"* on its first run and **+0 on its second**, with the other three `net-drop`
+checks green both times. It asserts an exact zero on how far a client advances after the relay is
+SIGKILLed, and under load a client that is behind on its turn buffer still has turns to execute
+when the socket dies. The second full run was 32/32.
+
+### 11.9 What is still not done
+
+The room-code hint under a disabled CREATE still reads *"Leave it empty and Create will pick one
+for you"*, which is a sentence about a button that cannot be pressed. The notice above it
+dominates and the buttons are visibly greyed, so it is a nit rather than a fault — but it is a nit
+somebody will eventually fix.
+
+A relay that dies **after** the lobby has probed it is caught by CREATE and not by the panel:
+there is no re-probe and no polling, on the grounds that a lobby which reports the transport's
+health continuously is a lobby that is about transport again. `noRelay()` names the address that
+did not answer and leaves the player on the form, which is where §9.12 put them. A relay that was
+already dead when the page loaded is the `ghost` arm's case and *is* caught.
+
+The disclosure opens itself in exactly one situation — a `?net=` address that failed its probe,
+which is `netFailed` sending somebody back here to correct it. Every other refusal leaves it
+closed, because the repair is a command and not a keystroke. The judgement is arguable and it is
+one line: `if (chosen.source === 'url') adv.open = true`.
+
+And the probe is one request with a three-second timeout, and `usable` only ever moves downwards.
+On a network where the relay is reachable but very slow, the panel would refuse after three
+seconds and not un-refuse. Typing into the disclosure re-arms it, which is the escape, but it is a
+refusal that is not true yet.

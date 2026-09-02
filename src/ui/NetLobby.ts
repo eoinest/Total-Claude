@@ -36,13 +36,42 @@
  * needed a stylesheet edit would be a merge conflict on somebody else's afternoon. The overlay
  * is self-contained and borrows the menu's palette by eye.
  *
- * ## The relay address is a field and not a constant
+ * ## The relay address is not a question to ask a player
  *
- * `tools/deploy-vercel.mjs` uploads a static tree with no build step, so there is nowhere to
- * bake a production relay URL in (`docs/MULTIPLAYER.md` §4.3). It defaults to
- * `ws://<this host>:5959`, which is what `node tools/relay.mjs` serves, and is remembered in
- * `localStorage` so nobody types it twice. On the deployed site that default is a guess that
- * nothing answers, and the form says so rather than failing at it.
+ * It used to be the second field on this panel, under its own heading, filled in for you. The
+ * owner read it and asked *"i am a bit confused about the relay address? we should be able to
+ * run things on lan directly from browser."* — and he was right to, because the field was never
+ * broken and that is exactly the problem with it. Under `npm run host` it fills itself in
+ * correctly and nobody ever has to touch it, so what it contributes is a transport detail at
+ * the player's eye level in a screen that is otherwise about two people and a code.
+ *
+ * Worse than useless in one case and misleading in another:
+ *
+ *   - Under **`npm run dev`** it auto-filled `ws://localhost:5959` — a plausible, well-formed,
+ *     correct-looking address with **no process behind it**, because `npm run dev` starts a
+ *     Vite and nothing else. A guess that looks like an answer is worse than an empty field.
+ *   - On the **deployed site** it was correctly empty with a sentence saying why. Right, and
+ *     still presented as a form field the player was expected to fill in.
+ *
+ * So the address is now a **fact the server states**, never a guess, and the panel shows it to
+ * nobody who does not go looking:
+ *
+ *   1. `?net=` in the URL — somebody's explicit decision, usually an invite link.
+ *   2. `<meta name="tc-lan">` / `<meta name="tc-relay">`, written by `tools/lib/vite-runner.mjs`
+ *      when — and only when — a relay was started beside this server. See `readRelayPort`.
+ *   3. `localStorage`, which is this browser's own earlier decision.
+ *   4. Nothing. **There is no fourth source and there is no guess.**
+ *
+ * And a stated fact is still checked: `relayAnswers` asks the relay's own `/health` before the
+ * lobby believes any of the four, because `npm run host` spawns two processes and either can
+ * die on its own. A tag that says a relay was asked for is not a relay.
+ *
+ * With an address that answers, the panel is a room code, a Create and a Join, and says nothing
+ * about transport at all. With no address it says so where the player is looking, names
+ * `npm run host`, and does **not** offer an empty field as though filling it were the fix. The
+ * field itself survives, one disclosure click away, because pointing at a relay on another
+ * machine or another port is a real thing this design cares about — `npm run host --
+ * --relay-port=` exists — and demoting a capability is not the same as deleting it.
  *
  * ## The invite link, and the one thing the page cannot work out for itself
  *
@@ -112,8 +141,18 @@ const CSS = `
 .tc-lobby .tc-note:empty{margin-top:0}
 .tc-lobby .tc-note b{color:#e9c877}
 .tc-lobby .tc-note.tc-bad{color:#e2564b}
-.tc-lobby .tc-relaybox{margin-top:26px;padding-top:18px;border-top:1px solid #3a2e1e}
-.tc-lobby .tc-relaybox label{margin-top:0}
+.tc-lobby .tc-blocked{margin:2px 0 20px;padding:14px 16px;border:1px solid #7d5236;
+  border-radius:3px;background:#20140d;color:#e6cdaf;font-size:13.5px;line-height:1.6}
+.tc-lobby .tc-blocked b{color:#f0bd85}
+.tc-lobby .tc-blocked[hidden]{display:none}
+.tc-lobby details.tc-adv{margin-top:26px;padding-top:16px;border-top:1px solid #3a2e1e}
+.tc-lobby details.tc-adv > summary{cursor:pointer;list-style:none;font-size:11.5px;
+  letter-spacing:.14em;text-transform:uppercase;color:#8e7f63}
+.tc-lobby details.tc-adv > summary::-webkit-details-marker{display:none}
+.tc-lobby details.tc-adv > summary::before{content:'\\25B8\\00a0'}
+.tc-lobby details.tc-adv[open] > summary::before{content:'\\25BE\\00a0'}
+.tc-lobby details.tc-adv > summary:hover{color:#e9c877}
+.tc-lobby details.tc-adv label{margin-top:14px}
 .tc-lobby .tc-code{margin:4px 0 10px;padding:18px 10px;border:1px solid #6b5735;
   border-radius:3px;background:#0e0b08;color:#f4e7c6;text-align:center;
   font:600 40px/1.1 ui-monospace,monospace;letter-spacing:.34em;text-indent:.34em;
@@ -121,9 +160,9 @@ const CSS = `
 .tc-lobby .tc-back{margin-top:20px;display:inline-block;color:#8e7d5f;font-size:12.5px;
   text-decoration:none;letter-spacing:.1em;text-transform:uppercase}
 .tc-lobby .tc-back:hover{color:#e9c877}
-.tc-lobby a:focus-visible,.tc-lobby button:focus-visible,
-.tc-lobby a:focus,.tc-lobby button:focus{outline:2px solid #c9a24a;outline-offset:3px;
-  border-radius:2px}
+.tc-lobby a:focus-visible,.tc-lobby button:focus-visible,.tc-lobby summary:focus-visible,
+.tc-lobby a:focus,.tc-lobby button:focus,.tc-lobby summary:focus{outline:2px solid #c9a24a;
+  outline-offset:3px;border-radius:2px}
 `;
 
 const httpOf = (ws: string): string => ws.replace(/^ws/, 'http');
@@ -220,41 +259,160 @@ const LAN_REPAIR = 'To play across two machines on the same network, stop this s
   + 'the other machine can reach, and prints the URL to hand over.';
 
 /**
- * Whether the address in the field is a *guess* rather than a decision.
+ * `<meta name="tc-relay">` — the port of the relay this page's server started beside itself.
  *
- * `defaultRelay()` below has three sources and only one of them is somebody's choice. A
- * remembered value is a choice; `ws://<this host>:5959` is a guess, and that guess is wrong the
- * moment the host ran `npm run host -- --relay-port=` with anything but the default. Set by
- * `defaultRelay()` and read once, by the plaque handler in `showLobby`, which is the only thing
- * entitled to overrule a guess.
+ * The companion to `readLanPlaque`, and the smaller of the two facts: the plaque says *what
+ * address the other machine uses* and only exists on a LAN bind, while this says *a relay was
+ * started here* and is written on any bind that started one. `npm run host -- --loopback` has
+ * no plaque and does have this.
+ *
+ * A port and not a URL, because the host part is `location.hostname` and that is right in two
+ * browser tabs at once: the same `npm run host` serves this document at `127.0.0.1:5958` and at
+ * `192.168.0.238:5958`, and each of them composes the relay address that works for it. A single
+ * absolute URL in the tag would have to pick one and be wrong in the other tab.
+ *
+ * Absent under `npm run dev`, on the deployed site, and on any origin that is not one of ours —
+ * and **that absence is the product**. It is the difference `defaultRelay()` could not see when
+ * it guessed `ws://<this host>:5959` into the field and handed a `npm run dev` player an
+ * address with nothing behind it.
+ *
+ * Exported and takes its `Document` for the same reason `readLanPlaque` does.
  */
-let relayWasGuessed = false;
+export function readRelayPort(doc: Document = document): number | null {
+  const raw = doc.querySelector('meta[name="tc-relay"]')?.getAttribute('content');
+  if (!raw) return null;
+  const n = Number(raw.trim());
+  return Number.isInteger(n) && n > 0 && n < 65536 ? n : null;
+}
 
 /**
- * Default relay address: whatever host served the page, on the relay's own port — **unless
- * that guess is one this page can prove wrong**, in which case the field is left empty.
+ * Where an address came from, which decides what to say when it does not answer.
  *
- * `ws://<this host>:5959` is exactly right for the case it was written for, which is somebody
- * running `npm run dev` and `node tools/relay.mjs` side by side, and for a dev server reached
- * over a LAN address by the machine next door.
- *
- * It is a lie on the deployed site. `tools/deploy-vercel.mjs` uploads a static tree with no
- * server in it (§4.3), so `wss://<vercel-host>:5959` names a port nothing has ever listened on,
- * and pre-filling it means the first thing the form does is hand the player a wrong answer and
- * then fail at it. An HTTPS origin that is not loopback is that case: the static host is the
- * only thing there, and a browser on an HTTPS page cannot open a plain `ws://` socket anyway —
- * which was an assumption when this was written and is now measured, twice over, in
- * `docs/MULTIPLAYER.md` §10.2. Empty, with the hint underneath asking for an address, is the
- * truthful state.
+ * `'server'` and `'none'` are the two that matter. Everything the player sees on a fresh visit
+ * is one of them, and they are the two the old code could not tell apart.
  */
-const defaultRelay = (): string => {
-  const stored = localStorage.getItem(KEY);
-  if (stored) return stored;
-  relayWasGuessed = true;
-  if (location.protocol === 'https:' && !isLoopback(location.hostname)) return '';
-  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${scheme}://${location.hostname || '127.0.0.1'}:5959`;
+export type RelaySource = 'url' | 'server' | 'remembered' | 'none';
+
+export interface RelayChoice {
+  value: string;
+  source: RelaySource;
+}
+
+/**
+ * The relay address, from the highest-ranked source that has one. **Never a guess.**
+ *
+ * Four sources, in this order, and the ordering is the whole design:
+ *
+ *   1. **`?net=`** — an explicit decision, and usually somebody else's: it is what an invite
+ *      link carries and what `netFailed`'s way back to the lobby carries. Nothing outranks a
+ *      link the player just followed.
+ *   2. **The server**, through the plaque or `<meta name="tc-relay">`. `plaque.relayUrl` is
+ *      preferred over composing one from the port because the plaque names the *LAN* address,
+ *      which is the one that has to survive being pasted into an invite — a host reading this
+ *      page at `localhost` can reach their own relay either way, and the machine next door
+ *      cannot.
+ *   3. **`localStorage`** — this browser's own earlier decision, so nobody types an address
+ *      twice. It ranks *below* the server on purpose: a remembered `ws://localhost:5959` from
+ *      some previous session must not shadow the relay this very command just started.
+ *   4. **Nothing**, and this is a real answer rather than a failure to find one.
+ *
+ * `relayWasGuessed`, which the previous pass needed to decide when the plaque was allowed to
+ * overrule the field, has no successor here: there is no longer anything for the plaque to
+ * overrule, because the guess it existed to catch does not get made.
+ */
+export function resolveRelay(
+  params: URLSearchParams,
+  plaque: LanPlaque | null,
+  port: number | null,
+  stored: string | null
+): RelayChoice {
+  const fromUrl = (params.get('net') ?? '').trim();
+  if (fromUrl) return { value: fromUrl, source: 'url' };
+  if (plaque?.relayUrl) return { value: plaque.relayUrl, source: 'server' };
+  if (port !== null) {
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    return { value: `${scheme}://${location.hostname || '127.0.0.1'}:${port}`, source: 'server' };
+  }
+  const remembered = (stored ?? '').trim();
+  if (remembered) return { value: remembered, source: 'remembered' };
+  return { value: '', source: 'none' };
+}
+
+/**
+ * Is a relay actually listening there? Asked of the relay's own `/health`, once, on mount.
+ *
+ * **A stated fact is still checked.** `npm run host` spawns the game server and the relay as
+ * two processes; the tag that says a relay was started is written by the first of them and
+ * knows nothing about whether the second is still alive. Believing the tag would reintroduce
+ * the failure this whole change is about, one level up: a lobby that looks ready and is not.
+ *
+ * `/health` and not `/new`, because a probe must not mint a room. `tools/relay.mjs` answers it
+ * with `relay ok rooms=…` and `access-control-allow-origin: *`, so this is one round trip and
+ * about a millisecond on a LAN.
+ *
+ * It costs the browser's network log one line when it fails, and that is accepted here where it
+ * was not for `/__tc/lan`: this fires only when *something already named an address*, which is
+ * exactly the situation in which the player needs to be told nothing is there. A page with no
+ * address makes no request at all, which is why the deployed site and `npm run dev` stay silent
+ * and `qa-net`'s `lobby-console` and `lan-console` arms stay green.
+ */
+const relayAnswers = async (ws: string, ms = 3000): Promise<boolean> => {
+  try {
+    const r = await fetch(`${httpOf(ws)}/health`, { signal: AbortSignal.timeout(ms) });
+    return r.ok && (await r.text()).startsWith('relay ok');
+  } catch {
+    return false;
+  }
 };
+
+/**
+ * Whether the thing that served this page is one of ours, which changes the repair sentence.
+ *
+ * A loopback origin is by definition this machine, and either meta tag is `vite-runner.mjs`
+ * signing its own work. Neither — an origin somewhere else that has told us nothing about
+ * itself — is the deployed site's shape, and the honest thing to say there is that this page
+ * cannot be a relay because it is a static upload with no server in it.
+ */
+const servedByUs = (plaque: LanPlaque | null, port: number | null): boolean =>
+  !!plaque || port !== null || isLoopback(location.hostname);
+
+/** The command, and where to run it. Two endings because the two situations differ. */
+const RUN_HOST_HERE = 'Stop this server and run <code>npm run host</code> instead: one command '
+  + 'serves the game <i>and</i> a relay together, on an address the other machine can reach, '
+  + 'and prints the URL to hand over.';
+const RUN_HOST_THERE = 'Run <code>npm run host</code> on either of your two machines, from a '
+  + 'checkout of this project, and open the URL it prints on both of them.';
+
+/**
+ * Why no match can start from here — said where the player is looking, not in a field label.
+ *
+ * The second branch keeps the sentence the deployed site already had, because it is the right
+ * one: naming what this page *is* explains why no amount of typing into it will help.
+ */
+const noRelayHere = (ours: boolean): string =>
+  '<b>There is no relay behind this page, so a battle cannot start from it.</b> Every order '
+  + 'goes through a relay &mdash; that is what makes the two simulations one battle rather than '
+  + 'two &mdash; and a relay is a separate process. '
+  + (ours
+    ? `This server is serving the game and nothing else. ${RUN_HOST_HERE}`
+    : `This page cannot be one, because it is a static upload with no server in it. ${RUN_HOST_THERE}`);
+
+/**
+ * An address that was named by something and is not answering. **Who named it matters**, because
+ * it decides whose problem it is: the server's own relay died, this browser is remembering a
+ * dead one, or the link somebody sent points at nothing.
+ */
+const relayWentQuiet = (addr: string, source: RelaySource, ours: boolean): string =>
+  `<b>No answer from ${esc(addr)}.</b> `
+  + (source === 'server'
+    ? 'This server said it had started a relay there, and nothing is listening on it now &mdash; '
+      + 'so the relay stopped, or never came up. '
+    : source === 'remembered'
+      ? 'That is the relay this browser used last time, and nothing is listening on it now. '
+      : 'That address arrived with the link that opened this page, and nothing is listening on '
+        + 'it. Tell whoever sent it. ')
+  + (ours ? RUN_HOST_HERE : RUN_HOST_THERE)
+  + ' Or put a working address under <b>Relay on another machine or port</b>.';
 
 /**
  * The URL that boots a relayed battle. One builder, so the invite and the host agree.
@@ -322,12 +480,25 @@ export function showNetNotice(host: HTMLElement, o: {
 export function showLobby(host: HTMLElement): void {
   const sheet = mount(host);
   const params = new URLSearchParams(location.search);
+  const plaque = readLanPlaque();
+  const declaredPort = readRelayPort();
+  const ours = servedByUs(plaque, declaredPort);
+  const chosen = resolveRelay(params, plaque, declaredPort, localStorage.getItem(KEY));
 
+  /*
+   * The transport lives in a `<details>`, and the summary is the only part of it on screen.
+   *
+   * Not `hidden`, and not a second screen: a closed disclosure is one click and no navigation,
+   * it keeps the field in the accessibility tree and in the DOM, and a host who genuinely needs
+   * to point at another machine's relay finds it exactly where "advanced" always is. What it
+   * stops being is the second thing a player reads on a screen about two people and a code.
+   */
   sheet.innerHTML = `
     <h1>Two commanders</h1>
     <p>One battle, both armies, on two machines. One of you opens a room and reads the code
        out; the other types it in. The host chooses the ground and the orders of battle; the
        challenger takes the other side.</p>
+    <div class="tc-blocked" id="tc-no-relay" role="status" hidden></div>
     <label for="tc-room">Room code</label>
     <input id="tc-room" spellcheck="false" autocomplete="off" autocapitalize="characters"
       inputmode="latin" maxlength="${CODE_LEN}" placeholder="${'—'.repeat(CODE_LEN)}"
@@ -338,15 +509,17 @@ export function showLobby(host: HTMLElement): void {
       <button type="button" id="tc-join">Join that room</button>
     </div>
     <div class="tc-note" id="tc-note"></div>
-    <div class="tc-relaybox">
+    <details class="tc-adv" id="tc-adv">
+      <summary id="tc-adv-summary">Relay on another machine or port</summary>
       <label for="tc-relay">Relay address</label>
-      <input id="tc-relay" spellcheck="false" autocomplete="off">
+      <input id="tc-relay" spellcheck="false" autocomplete="off"
+        aria-describedby="tc-relay-hint" placeholder="ws://host:port">
       <p class="tc-hint" id="tc-relay-hint">Every order goes through a relay, which is what
-         makes the two simulations one battle rather than two. For two machines on one
-         network, <code>npm run host</code> starts the game and a relay together on an address
-         you can both reach. <code>node tools/relay.mjs</code> starts a relay on its own, and
-         you can paste the address of one somebody else is running.</p>
-    </div>
+         makes the two simulations one battle rather than two. <code>npm run host</code> starts
+         one beside the game and fills this in for you, so you should not normally need it.
+         <code>node tools/relay.mjs</code> starts a relay on its own &mdash; on another port,
+         or on a third machine you can both reach &mdash; and its address goes here.</p>
+    </details>
     <a class="tc-back" href="?">&lsaquo; Back to the front door</a>`;
 
   const relay = sheet.querySelector('#tc-relay') as HTMLInputElement;
@@ -355,42 +528,93 @@ export function showLobby(host: HTMLElement): void {
   const note = sheet.querySelector('#tc-note') as HTMLElement;
   const hostBtn = sheet.querySelector('#tc-host') as HTMLButtonElement;
   const joinBtn = sheet.querySelector('#tc-join') as HTMLButtonElement;
+  const blocked = sheet.querySelector('#tc-no-relay') as HTMLElement;
+  const relayHint = sheet.querySelector('#tc-relay-hint') as HTMLElement;
+  const adv = sheet.querySelector('#tc-adv') as HTMLDetailsElement;
 
-  relayWasGuessed = false;
-  relay.value = params.get('net') ?? defaultRelay();
+  relay.value = chosen.value;
   room.value = (params.get('room') ?? '').toUpperCase();
 
   /*
-   * If this server is also on a LAN address, prefer the LAN relay over the loopback guess.
+   * Where the address came from, said inside the disclosure and nowhere else.
    *
-   * `defaultRelay()` returns `ws://127.0.0.1:5959` on a loopback origin and that address is
-   * *correct for this browser* — the host's own machine can reach its own relay either way,
-   * measured. It is only wrong as the thing that goes into an invite, and the invite carries
-   * whatever is in this field. So the field is moved to the address that works for both of
-   * them.
-   *
-   * Three guards, and each one is a case where the field must be left alone: an explicit
-   * `?net=` in the URL, anything the host has typed, and a remembered value that is neither a
-   * guess nor loopback — which is somebody's earlier decision about a real remote relay.
-   *
-   * `relayWasGuessed` is the guard that took a red arm to find. On the LAN origin the guess is
-   * `ws://192.168.0.238:5959`, which is not loopback and looks entirely plausible; with
-   * `--relay-port=5984` there is nothing on it, and a rule that only replaced loopback left the
-   * form pointed at a port nobody had opened. A guess is a guess whatever host it names.
+   * The previous pass wrote this sentence into a hint under a field everybody could see, which
+   * was the right sentence in the wrong place: it is an answer to "why does this say what it
+   * says", and only somebody who has opened the panel has asked.
    */
-  const plaque = readLanPlaque();
-  const fromUrl = params.has('net');
-  if (plaque?.relayUrl && !fromUrl
-    && (relayWasGuessed || isLoopback(hostOf(relay.value.trim())))
-    && relay.value.trim() !== plaque.relayUrl) {
-    relay.value = plaque.relayUrl;
-    const rh = sheet.querySelector('#tc-relay-hint');
-    if (rh) {
-      rh.innerHTML = `This machine is serving the game and a relay on <b>${esc(plaque.lan)}</b> `
-        + `(${esc(plaque.iface)}), which is the address the other commander can reach. The `
-        + 'field has been set to it. Anything you type here wins.';
-    }
+  if (chosen.source === 'server' && plaque?.relayUrl) {
+    relayHint.innerHTML = `This machine is serving the game and a relay on <b>${esc(plaque.lan)}</b> `
+      + `(${esc(plaque.iface)}), which is the address the other commander can reach, and that is `
+      + 'what this field has been set to. Anything you type here wins.';
+  } else if (chosen.source === 'server') {
+    relayHint.innerHTML = 'The server that sent you this page started a relay beside itself on '
+      + `port <b>${declaredPort}</b>, and that is what this field has been set to. Anything you `
+      + 'type here wins.';
+  } else if (chosen.source === 'remembered') {
+    relayHint.innerHTML = 'This is the relay address this browser used last time. Nothing on '
+      + 'this page chose it &mdash; clear the field to forget it.';
   }
+
+  /*
+   * One gate for both buttons, and one place that decides whether this lobby can do anything.
+   *
+   * `usable` starts optimistic when an address exists, because the probe below is a round trip
+   * and a panel that greys itself out for 3 ms and then comes back is worse than one that never
+   * did. It only ever moves *downwards* from a fact: `relayAnswers` came back empty, or the
+   * player emptied the field themselves.
+   */
+  let usable = chosen.value !== '';
+  blocked.innerHTML = noRelayHere(ours);
+  const gate = (): void => {
+    hostBtn.disabled = !usable;
+    joinBtn.disabled = !usable || !validCode(room.value);
+    blocked.hidden = usable;
+  };
+
+  /*
+   * The probe, and the two reasons it does not run on every visit.
+   *
+   * It runs when something named an address and not otherwise, so a page with no relay behind
+   * it makes no request at all — no console line on the deployed site, none under
+   * `npm run dev`, and `qa-net`'s two console arms stay green for the reason they were written.
+   *
+   * The guard on `relay.value` is for the host who opened the disclosure and typed their own
+   * address inside the three seconds: the answer to a question about the old address must not
+   * land on the new one.
+   */
+  if (chosen.value) {
+    void relayAnswers(chosen.value).then((alive) => {
+      if (alive || relay.value.trim() !== chosen.value) return;
+      blocked.innerHTML = relayWentQuiet(chosen.value, chosen.source, ours);
+      usable = false;
+      gate();
+      /*
+       * One source opens the panel by itself, and only one.
+       *
+       * `?net=` arriving at the *lobby* is almost always `main.ts`'s `netFailed` sending a
+       * player back here to correct an address that just failed — they have been returned to
+       * this screen for the express purpose of editing that field, and leaving it behind a
+       * disclosure they have never opened is a dead end. Every other source is one where the
+       * repair is a command rather than a keystroke: a server whose own relay died wants
+       * `npm run host` restarted, and a stale remembered address wants a relay started, not a
+       * different address typed. Opening the panel for those would be offering an empty form as
+       * the fix, which is the habit this whole change is breaking.
+       */
+      if (chosen.source === 'url') adv.open = true;
+    });
+  }
+
+  /*
+   * An address typed into the disclosure is a decision, and it re-arms the form immediately.
+   *
+   * Not probed: CREATE is one keystroke away and already reports an unreachable relay by name,
+   * with the address in the sentence, from `/new`'s own failure. A second probe here would say
+   * the same thing twice and write a console line per keystroke.
+   */
+  relay.addEventListener('input', () => {
+    usable = relay.value.trim() !== '';
+    gate();
+  });
 
   const say = (html: string, bad = false): void => {
     note.innerHTML = html;
@@ -413,7 +637,7 @@ export function showLobby(host: HTMLElement): void {
     for (const c of raw) if (!CODE_ALPHABET.includes(c)) refused.add(c);
     if (!kept) refused.clear();
     if (kept !== room.value) room.value = kept;
-    joinBtn.disabled = !validCode(kept);
+    gate();
     const left = CODE_LEN - kept.length;
     const progress = kept.length === 0
       ? `${CODE_LEN} characters. Leave it empty and Create will pick one for you.`
@@ -450,16 +674,15 @@ export function showLobby(host: HTMLElement): void {
 
   /** What to say when the relay does not answer — and it depends on where the page came from. */
   const noRelay = (addr: string, why: string): void => {
-    const local = isLoopback(location.hostname);
     say(`No answer from <b>${esc(addr)}</b> &mdash; ${esc(why)}. `
-      + (local
+      + (ours
         ? 'Start one with <code>node tools/relay.mjs</code> and press Create again &mdash; or '
           + 'stop this server and run <code>npm run host</code>, which starts both halves on an '
           + 'address the other machine can reach as well.'
         : 'This site does not host a relay and cannot: it is a static upload with no server '
           + 'in it. A relay is a separate process &mdash; <code>node tools/relay.mjs</code> on '
           + 'a machine you can both reach, or the Cloudflare Worker in <code>net/worker.ts</code> '
-          + '&mdash; and its address goes in the field below.'), true);
+          + '&mdash; and its address goes under <b>Relay on another machine or port</b>.'), true);
   };
 
   /**
@@ -505,8 +728,9 @@ export function showLobby(host: HTMLElement): void {
           + `${LAN_REPAIR}`
         : deadLink === 'relay'
           ? `There is no invite link, because the relay is at <b>${esc(hostOf(addr))}</b>, which `
-            + 'names this machine and not theirs. Put an address you can both reach in the relay '
-            + `field, or send the code and let them set their own. ${LAN_REPAIR}`
+            + 'names this machine and not theirs. Send the code and let them set their own, or '
+            + 'go back and put an address you can both reach under <b>Relay on another machine '
+            + `or port</b>. ${LAN_REPAIR}`
           : `${rehomed ? 'This page is open at <b>' + esc(location.hostname) + '</b>, which only '
             + `this machine can reach &mdash; so the link is built from <b>${esc(plaque.lan)}</b>, `
             + `which is ${esc(plaque.iface)} on the network you are both on. `
@@ -544,11 +768,20 @@ export function showLobby(host: HTMLElement): void {
     begin.focus();
   };
 
+  /**
+   * A last guard on a path the gate has already closed.
+   *
+   * With no address both buttons are `disabled`, so this is not reachable by a mouse. It is
+   * kept because "not reachable" is a property of two other functions agreeing, and the cost of
+   * being wrong about that is a `fetch` to `http:///new` — so instead the refusal that is
+   * already on screen gets the focus, and the panel that would fix it is opened *because the
+   * player asked for it by pressing the button*, which is not the same as offering it unasked.
+   */
   const noAddress = (): boolean => {
     if (relay.value.trim()) return false;
-    say('There is no relay address in the field below. A relay is a separate process &mdash; '
-      + '<code>node tools/relay.mjs</code> on a machine you can both reach &mdash; and this '
-      + 'page cannot be one, because it is a static upload with no server in it.', true);
+    blocked.hidden = false;
+    blocked.scrollIntoView({ block: 'nearest' });
+    adv.open = true;
     relay.focus();
     return true;
   };
