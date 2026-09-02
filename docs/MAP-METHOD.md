@@ -2899,6 +2899,27 @@ literature task, and it is the same one as the seventeen monuments with no publi
 3. **When a merge destroys information a check needs, put the information back rather than
    improving the guess.** Three better proximity rules were considered before `setProvenance`, and
    every one of them traded a false positive for a false negative.
+4. **An assertion that guards a convention will kill the injection that breaks that convention,
+   and a run which dies before grading proves nothing.** `--inject=obb-mirror` flips the local
+   frame; the assertion that `toWorld` agrees with `obPoly` threw on the first line and the run
+   ended with no verdict at all — which reads exactly like a crash. The repair is to assert on
+   the TRUE convention with the injection forced off, plus a third limb that the shipped pair
+   equals the asserted pair whenever nothing is injected. **An injection has to make a check go
+   red; if it can make the instrument go dark instead, it is not a proof.**
+
+#### The proofs, on one run
+
+```
+--inject=obb-mirror,stone-count-weighted,provenance-blind,mound-invent,frame-cap-invent
+  expected red: [G12, G13a, G14, G15]
+  actually red: [G4, G12, G13a, G13b, G14, G15, G21, G22, G23, G24]
+  — every injected check went red
+```
+
+Each of the five breaks one input to the gate and never `src/`: the sign of a yaw, the weight in
+a percentile, the provenance the scene carries, and the two membership lists. G13b and G22 going
+red beside them is the mirror injection reaching further than its own `hits` claims, which is
+worth knowing and is why the banner prints both lists.
 
 <!-- Append new entries above this line. -->
 
