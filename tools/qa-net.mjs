@@ -2242,8 +2242,17 @@ if (wanted('dev')) {
     await page.click('#tc-room');
     await page.type('#tc-room', devRoom, { delay: 20 });
     await shot(page, 'dev-02-advanced-open');
-    await page.click('#tc-host');
-    const opened = await page.waitForSelector('#tc-code', { timeout: 20000 })
+    /*
+     * The press is conditional, and that is a reporting decision rather than a softer test.
+     *
+     * `page.click` on a `disabled` button waits thirty seconds for actionability and then
+     * throws, which reaches this file's `unhandledRejection` handler and kills the run — so a
+     * regression in the one line that re-arms the form would end the whole gate with a
+     * Playwright stack and no verdict. Measured, while writing the injection that removes that
+     * line. Reading the state and saying what it was keeps the sentence.
+     */
+    if (enabled) await page.click('#tc-host');
+    const opened = enabled && await page.waitForSelector('#tc-code', { timeout: 20000 })
       .then(() => true).catch(() => false);
     const shownCode = opened ? ((await page.textContent('#tc-code')) ?? '').trim() : '';
     const rs = await relayStatus(relay);
