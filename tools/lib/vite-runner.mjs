@@ -62,6 +62,14 @@
  * Bound to loopback the tag is **absent**, not empty, so the honest refusal is still the
  * default and is still what the gate measures.
  *
+ * ## And `<meta name="tc-relay">`, which is a smaller fact and holds on every bind
+ *
+ * The plaque is about the machine next door. `relayPlaque()` is about this document: *a relay
+ * was started beside this server, on this port.* It is written on a loopback bind too, so
+ * `npm run host -- --loopback` gets the same answer as the LAN case — which the plaque alone
+ * could never give it — and it is **absent** under `npm run dev`. That absence is the point:
+ * those two documents were previously identical, and the lobby guessed between them.
+ *
  * ## Usage
  *
  *     node tools/lib/vite-runner.mjs --port=5901 --root=/path/to/worktree \
@@ -171,8 +179,8 @@ const treeIdentity = () => ({
  *
  * `relayUrl` is only stated when a relay port was given. A page that gets `relayPort: null`
  * must not go on to invent `ws://<lan>:5959` — it would be guessing at a process nobody
- * started, which is the exact shape of the wrong answer `defaultRelay()` used to give on the
- * deployed site.
+ * started, which is the exact shape of the wrong answer the lobby's `defaultRelay()` used to
+ * give on the deployed site, and which `relayPlaque()` below now removes the last excuse for.
  */
 const lanPlaque = () => {
   if (!LAN_BIND) return null;
@@ -189,6 +197,33 @@ const lanPlaque = () => {
     relayUrl: RELAY_PORT ? `ws://${pick.ip}:${RELAY_PORT}` : null,
   };
 };
+
+/**
+ * `<meta name="tc-relay">` — the relay this server was started beside, stated not guessed.
+ *
+ * The plaque above answers "what address does the *other* machine use", and it can only exist
+ * on a LAN bind. This answers something smaller and more basic, and it holds on every bind:
+ * **a relay was started with this server, on this port.**
+ *
+ * It exists because the lobby used to answer that question by guessing
+ * `ws://<whatever host served this page>:5959` and putting the answer in a form field at the
+ * player's eye level. The guess is right under `npm run host` and points at nothing under
+ * `npm run dev` — and from inside the page the two documents were identical, so what the second
+ * player got was a correct-looking address with no process behind it. Worse than an empty one.
+ * The server knows which of the two it is while it is writing the document, so it says.
+ *
+ * Deliberately just the port, as a string. The host part is `location.hostname`: whatever name
+ * the browser used to reach *this* server reaches the relay beside it too, so a page served at
+ * `192.168.0.238:5958` composes `ws://192.168.0.238:5959` and one served at `127.0.0.1:5958`
+ * composes loopback, and both are true at the same time. Putting a single absolute URL here
+ * would have to pick one of them and be wrong in the other browser tab.
+ *
+ * **A page must still check.** This says a relay was *asked for*, not that one is listening:
+ * `tools/host-lan.mjs` spawns the two halves as separate processes and either can die on its
+ * own. `src/ui/NetLobby.ts` probes the relay's `/health` before it believes this, and says so
+ * by name when the probe comes back empty.
+ */
+const relayPlaque = () => (RELAY_PORT ? String(RELAY_PORT) : null);
 
 try {
   server = await createServer({
@@ -226,18 +261,27 @@ try {
         });
       },
       /*
-       * The same plaque, in the document, for the page that must not make a request to get it.
-       * `order: 'pre'` so it is in the head before any module runs; `src/ui/NetLobby.ts` reads
-       * it synchronously on mount and never waits on anything.
+       * The same facts, in the document, for the page that must not make a request to get them.
+       * `order: 'pre'` so they are in the head before any module runs; `src/ui/NetLobby.ts`
+       * reads both synchronously on mount and never waits on either.
+       *
+       * Two tags rather than one object, because they are true at different times: `tc-lan`
+       * only on a LAN bind, `tc-relay` on any bind that started a relay. A page that got one
+       * merged tag would have to ask which half of it was populated, which is the question the
+       * absence of a tag already answers.
        */
       transformIndexHtml: {
         order: 'pre',
         handler(html) {
-          const plaque = lanPlaque();
-          if (!plaque) return html;
-          const content = JSON.stringify(plaque)
+          const attr = (v) => String(v)
             .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-          return html.replace(/<head(\s[^>]*)?>/i, (m) => `${m}\n    <meta name="tc-lan" content="${content}">`);
+          const tags = [];
+          const plaque = lanPlaque();
+          if (plaque) tags.push(`<meta name="tc-lan" content="${attr(JSON.stringify(plaque))}">`);
+          const relay = relayPlaque();
+          if (relay) tags.push(`<meta name="tc-relay" content="${attr(relay)}">`);
+          if (!tags.length) return html;
+          return html.replace(/<head(\s[^>]*)?>/i, (m) => `${m}\n    ${tags.join('\n    ')}`);
         },
       },
     }],
