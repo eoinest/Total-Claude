@@ -332,16 +332,33 @@ const NO_SHADOW: ReadonlySet<CityMatKey> = new Set<CityMatKey>(['metal', 'road',
 export class Batch {
   private streams = new Map<CityMatKey, GeoStream>();
 
-  constructor(
-    private readonly mats: CityMaterials,
-    private readonly collapseTo?: CityMatKey,
-    /** Fold the trim materials into their structural neighbours. */
-    private readonly mergeTrim = false
-  ) {}
+  private readonly mats: CityMaterials;
+  private readonly collapseTo?: CityMatKey;
+  /** Fold the trim materials into their structural neighbours. */
+  private readonly mergeTrim: boolean;
+
+  /**
+   * Written out longhand rather than as TypeScript parameter properties, and the reason is
+   * `MAP-METHOD.md` rule 29 rather than style. Node's `--experimental-strip-types` refuses
+   * a parameter property outright — it is the one TypeScript construct that *emits* code —
+   * so these three lines were the whole reason no offline tool could import `build.ts`, and
+   * therefore the reason nothing outside a four-minute browser boot could measure what a
+   * monument builder actually draws. `tools/scratch/mon-extents.mjs` does it in a second.
+   * Same fields, same access, same initialisation order; `tsc` is what says so.
+   */
+  constructor(mats: CityMaterials, collapseTo?: CityMatKey, mergeTrim = false) {
+    this.mats = mats;
+    this.collapseTo = collapseTo;
+    this.mergeTrim = mergeTrim;
+  }
 
   s(key: CityMatKey): GeoStream {
     const k = this.collapseTo ?? (this.mergeTrim ? (TRIM_MERGE[key] ?? key) : key);
     let st = this.streams.get(k);
+    if (st === undefined && this.provLabel !== null) {
+      // A stream created after a label opened starts inside it, from vertex 0.
+      this.prov.set(k, [{ label: this.provLabel, from: 0 }]);
+    }
     if (!st) {
       st = new GeoStream();
       st.uvScale = 1 / this.mats.worldSize(k);
@@ -414,6 +431,63 @@ export class Batch {
   }
   private readonly uvOrigin = new THREE.Vector3();
 
+  /**
+   * **Who emitted the vertices that follow — provenance, not a grade.**
+   *
+   * `probe-fabric` G15 asks whether one monument's drawn stone stands inside another
+   * monument's footprint, and on Rome it could not answer. Carthage gives every monument its
+   * own chunk, so the probe attributes by mesh name; Rome merges its monuments into three
+   * depth bands for the draw budget, so the baked scene has no call boundaries left and the
+   * probe has to attribute each vertex to **the nearest centre normalised by reach**. That
+   * rule hands a small monument's own stone to a large neighbour whenever they are close:
+   * measured with `tools/scratch/mon-trespass.mjs`, **5,821 of Rome's 597,320 monument
+   * vertices — 1.0 % — would be credited to a monument that did not emit them**, and it was
+   * enough to make G15 report four trespasses that do not exist, including 12 m of the
+   * Stadium of Domitian inside the Baths of Nero when the stadium's stone never leaves its
+   * own box by more than 0.23 m.
+   *
+   * So the scene carries the answer. `MAP-METHOD.md` rule 37 draws the line this sits on: a
+   * thing under test may **declare** and may not **grade**. A vertex range is a fact about
+   * which builder ran, not a claim that the result is right — and it is checkable from
+   * outside, because the ranges must partition the buffer exactly and each range's own
+   * vertices must lie near the landmark it names. `probe-fabric` asserts both before using it
+   * and falls back to nearest-centre with a printed note if either fails.
+   *
+   * Streams are created lazily inside a builder, so the label is remembered and a stream born
+   * after it opens with that label — the same reason `setUvOrigin` remembers `uvOrigin`, and
+   * the same bug if it did not: the first object in a chunk would carry no label and every
+   * one after it would carry its predecessor's.
+   */
+  setProvenance(label: string | null): void {
+    this.provLabel = label;
+    for (const [key, st] of this.streams) this.markProvenance(key, st);
+  }
+  private provLabel: string | null = null;
+  private readonly prov = new Map<CityMatKey, { label: string | null; from: number }[]>();
+  private markProvenance(key: CityMatKey, st: GeoStream): void {
+    const runs = this.prov.get(key);
+    // Nothing labelled in this stream yet and nothing being labelled now: a `setProvenance(null)`
+    // before any label at all is a no-op rather than an empty run.
+    if (runs === undefined && this.provLabel === null) return;
+    const list = runs ?? [];
+    const at = st.vertexCount;
+    /*
+     * **A CLOSE has to be recorded, not skipped, or the next builder inherits the last one's
+     * name.** The first draft returned early on a null label, so `setProvenance(null)` at the
+     * end of a monument band left every vertex emitted afterwards inside the last monument's
+     * range. Nothing in the gate could have seen it — `probe-fabric` reads only `monuments-*`
+     * meshes and the aqueducts are their own family — which is exactly the kind of silence this
+     * project keeps paying for. A null label is a boundary with no owner, and a reader must get
+     * `null` back for it rather than the previous name.
+     *
+     * A label opened at the same vertex as the previous one emitted nothing, so replace it
+     * rather than leave a zero-width run: the ranges stay a partition.
+     */
+    if (list.length && list[list.length - 1].from === at) list[list.length - 1].label = this.provLabel;
+    else list.push({ label: this.provLabel, from: at });
+    this.prov.set(key, list);
+  }
+
   setTransform(m: THREE.Matrix4 | null): void {
     for (const st of this.streams.values()) st.setTransform(m);
   }
@@ -438,6 +512,16 @@ export class Batch {
       if (!g) continue;
       const mesh = new THREE.Mesh(g, this.mats.get(key));
       mesh.name = `${namePrefix}-${key}`;
+      // Provenance travels with the mesh, or not at all: a builder that never called
+      // `setProvenance` leaves `userData.provenance` undefined and every reader falls back.
+      const runs = this.prov.get(key);
+      if (runs && runs.length) {
+        // A trailing close that reaches the end of the buffer names nothing and no reader needs
+        // it; anything else, including an interior close, is carried.
+        const n = g.attributes.position.count;
+        const keep = runs.filter((r, i) => r.label !== null || i + 1 < runs.length || r.from < n);
+        if (keep.length) mesh.userData.provenance = keep.map((r) => ({ ...r }));
+      }
       mesh.castShadow = castShadow && !NO_SHADOW.has(key);
       mesh.receiveShadow = receiveShadow;
       mesh.matrixAutoUpdate = false;

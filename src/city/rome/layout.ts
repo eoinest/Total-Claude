@@ -88,6 +88,19 @@ export interface LandmarkPlacement {
   /** Artificial hill / podium height above sampled terrain, if any. */
   mound?: number;
   moundRadius?: number;
+  /**
+   * **The largest `draw` this row is ALLOWED, where something outside the conflict solve caps
+   * it — and it is published because a check has to be able to tell the two apart.**
+   *
+   * `survey.ts:RomeMonument.drawMax` is the field and its docstring is the argument; only
+   * `castra-praetoria` carries one today. It matters outside the layout because
+   * `probe-fabric` G13a grades a monument's drawn plan against the literature and cannot
+   * otherwise distinguish *"the author drew it too small"* from *"no footprint this size fits
+   * on the ground here"*. `MAP-METHOD.md`'s rule about `probe-eye` E1d is the form: the
+   * exclusion has to arrive AFTER a check that justifies it, so the cap is published, the gate
+   * checks the row is drawn at the cap, and only then is the band failure licensed.
+   */
+  drawMax?: number;
   /** Which hill or valley of Rome this stands on. */
   where: Terrain;
   /**
@@ -375,6 +388,7 @@ function place(m: RomeMonument): LandmarkPlacement {
     hw,
     hd,
     planScale,
+    drawMax: m.drawMax,
     heightScale: drawHeightOf(m),
     clear: Math.sqrt(hw * hw + hd * hd),
     mound: m.mound,

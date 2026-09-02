@@ -242,16 +242,53 @@ export interface RomeMonument {
    * whose published plans interpenetrate or abut **in real metres, with no projection involved**.
    * That is arithmetic from published dimensions, not an appeal to convenience.
    *
-   * **And "one piece of continuous built fabric" is a stronger claim than that evidence supports,
-   * which is a fault this docstring owns.** A set with *a* joined pair is not a joined set.
-   * `assertComplexJoined` in `assertions.ts` now asks the harder question — is the complex
-   * *connected* under "closer than a 12 m real street"? — against the same published plans, and
-   * **three of five fail**: `campus-medius` is four pieces, `forum-valley` five, and
-   * `colosseum-valley` four, the last of those being two groups on two different levels, the
-   * Colosseum and the Ludus in the valley and the Baths of Titus and Trajan on the Oppian terrace
-   * 38 real metres away. `pompey` and `octavia-marcellus` are genuinely one piece. The check
-   * faults at every boot and the repair is phase 4's, because narrowing a complex makes its former
-   * members owe each other a projected street and re-opens the `draw` allocation.
+   * **"One piece of continuous built fabric" was a stronger claim than that evidence supported,
+   * and the sets below are now exactly the evidence.** A set with *a* joined pair is not a
+   * joined set. `assertComplexJoined` asks the harder question — is the complex *connected*
+   * under "closer than a 12 m real street"? — against the same published plans, and it used to
+   * fail on three of five: `campus-medius` was four pieces, `forum-valley` five, and
+   * `colosseum-valley` four, the last of those two groups on two different levels, the Colosseum
+   * and the Ludus in the valley and the Baths of Titus and Trajan on the Oppian terrace.
+   *
+   * **The repair, taken here rather than deferred again.** `tools/scratch/mon-joins.mjs`
+   * enumerates every pair in this table that Rome joins at a 12 m real street. **There are
+   * exactly six**, and this is the whole list:
+   *
+   *      largo-argentina / porticus-pompei      -26.97 m   (they interpenetrate)
+   *      theatre-pompey  / porticus-pompei       -1.21 m   (they interpenetrate)
+   *      baths-agrippa   / temple-isis            0.93 m
+   *      temple-jupiter  / tabularium             5.73 m
+   *      porticus-octaviae / theatre-marcellus    8.00 m
+   *      basilica-ulpia  / trajan-column          8.19 m
+   *
+   * The five complexes are the connected components of that relation and nothing else, so the
+   * declaration and the archaeology are now the same set **in both directions**: a pair Rome
+   * joins that nothing declares fails, and a pair declared that Rome does not join fails.
+   * `campus-medius`, `forum-valley` and `colosseum-valley` were **districts wearing a complex's
+   * name** — the ten rows in them that join nothing now declare nothing and owe the street.
+   *
+   * **The bill was real, it was named in advance, and it came to four pairs.** Narrowing makes a
+   * former member owe a 7 m projected street, and four pairs were short of it: `baths-titus` /
+   * `baths-trajan` at 2.30 m, `basilica-ulpia` / `imperial-fora` at 2.48, `colosseum` /
+   * `ludus-magnus` at 3.14 and `stadium-domitian` / `baths-nero` at 3.17. Paid by `draw`, on the
+   * member **already spending most above the frame** rather than on the bigger one, because that
+   * is the row taking the street: the frame compresses ground at `KX` 0.443 east–west and `KZ`
+   * 0.35 north–south, a row compresses its own plan at `PRECINCT * draw`, and a row whose rate
+   * exceeds the frame's along the line to its neighbour is eating that neighbour's street by
+   * arithmetic. The Stadium of Domitian was spending **2.03x** the frame, the Colosseum 1.38x,
+   * the Baths of Trajan 1.31x, the Fora 1.37x. Four rows moved, none by more than 0.073, and
+   * `forum-romanum` came down with `imperial-fora` because `assertSizeOrder` pins the two
+   * together — the Fora are 1.25x the piazza in the literature and may not be drawn smaller.
+   *
+   * **The Theatre of Pompey went the other way, and it is the clearest thing in this table.**
+   * It stood **17.36 world metres** from its own *porticus post scaenam* while its published
+   * plan **overlaps** that porticus by 1.21 real metres — the two frames disagreeing by 18.6 m
+   * on one joint. Nothing was in the wrong place: both centres are at `worldOf(e, n)` on the
+   * plate. Both rows drew at 0.339, so their plans shrank at 0.363 while the ground between them
+   * shrank at 0.443, and the projection pulled a party wall into a street. The lever is `draw`
+   * and not the centre — a centre is a plate control — so the theatre draws at **0.55** and its
+   * scaena lands on the porticus at 0.48 m, which is a party wall. `MAP-METHOD.md` rule 25: the
+   * number had two frames and one of them was doing all the talking.
    *
    * **What a complex licenses is bounded, and the bound is the gate's, not this file's.** Two
    * rows in one complex may interpenetrate by at most **2.4 m** — just inside
@@ -352,9 +389,16 @@ export const ROME: readonly RomeMonument[] = [
     id: 'mausoleum-augustus',
     name: 'Mausoleum of Augustus',
     e: -481, n: 1500, len: 87, wid: 87, bearing: 0,
+    draw: 0.52, // 87 m real -> 45 m drawn — see the size-order note in the cite
     where: 'campus-martius',
     cite: '41.9060 N 12.4765 E. Circular tumulus 87 m across, c. 42 m tall; Strabo V.3.8 for the ' +
-      'planted terraces and the bronze Augustus. Platner-Ashby s.v. Mausoleum Augusti.',
+      'planted terraces and the bronze Augustus. Platner-Ashby s.v. Mausoleum Augusti. ' +
+      'DRAW 0.575, and the reason is the SIZE ORDER rather than a neighbour: this row had no ' +
+      '`draw` at all, so it stood at its full 87 m in a cohort drawn at 0.44 to 0.62, and it ' +
+      'was therefore modelled LARGER than the Theatre of Marcellus (129.8 m published) and the ' +
+      'Porticus Octaviae (132 m). `probe-fabric` G13b counted both, and rightly: a viewer with ' +
+      'no ruler for absolute size has an excellent one for which of two buildings is bigger. ' +
+      'A row with no authored departure is not a neutral choice in a cohort that has one.',
   },
   {
     id: 'ara-pacis',
@@ -376,8 +420,8 @@ export const ROME: readonly RomeMonument[] = [
     id: 'stadium-domitian',
     name: 'Stadium of Domitian',
     e: -762, n: 745, len: 275, wid: 106, bearing: 177,
-    draw: 0.841, // 275 x 106 m real -> 231 x 89 m drawn
-    where: 'campus-martius', complex: 'campus-medius',
+    draw: 0.465, // 275 x 106 m real -> 128 x 49 m drawn
+    where: 'campus-martius',
     cite: '41.8992 N 12.4731 E; the plan survives as Piazza Navona. 276 × 106 m, arena ' +
       '193 × 54, c. 30,000 *loca*. Axis 356.6°/176.6°, sphendone at the **north** — hence ' +
       'bearing 177, because the builder puts the sphendone at local −X.',
@@ -387,7 +431,7 @@ export const ROME: readonly RomeMonument[] = [
     name: 'Baths of Nero',
     e: -580, n: 800, len: 190, wid: 140, bearing: 88,
     draw: 0.348, // 190 x 140 m real -> 66 x 49 m drawn
-    where: 'campus-martius', complex: 'campus-medius',
+    where: 'campus-martius',
     cite: 'Thermae Neronianae, later Alexandrinae, immediately EAST of the north half of the ' +
       'Stadium of Domitian (41.8997 N 12.4753 E). **Corrected this pass, and the old row was ' +
       'wrong by 180 metres.** It read e -560, n 620 with a cite of 41.8985 N 12.4757 E — which ' +
@@ -408,7 +452,7 @@ export const ROME: readonly RomeMonument[] = [
     name: 'Pantheon',
     e: -447, n: 678, len: 84, wid: 58, bearing: 176, axis: 'z',
     draw: 0.484, // 84 x 58 m real -> 41 x 28 m drawn — see the size-order note below
-    where: 'campus-martius', complex: 'campus-medius',
+    where: 'campus-martius',
     cite: '41.8986 N 12.4769 E. Rotunda 58 m external / 43.3 m internal diameter, dome apex ' +
       '43.3 m; pronaos 33.1 × 15.5 m facing north, 3.7° west of true north (Hannah & Magli ' +
       'give 354.5° for the axis), hence bearing 176 looking in on the `axis: z` convention. ' +
@@ -419,7 +463,7 @@ export const ROME: readonly RomeMonument[] = [
     name: 'Baths of Agrippa',
     e: -424, n: 527, len: 120, wid: 100, bearing: 3,
     draw: 0.339, // 120 x 100 m real -> 41 x 34 m drawn
-    where: 'campus-martius', complex: 'campus-medius',
+    where: 'campus-martius', complex: 'agrippa-iseum',
     cite: '41.8975 N 12.4772 E, directly south of the Pantheon and fed by the Aqua Virgo; ' +
       'Rome first public thermae, 25 BC. ' +
       'Moved 29 m south this pass to the judge\'s plate control (how: "plate", err 30 m), read ' +
@@ -430,7 +474,7 @@ export const ROME: readonly RomeMonument[] = [
     name: 'Iseum Campense',
     e: -270, n: 560, len: 200, wid: 50, bearing: 270, axis: 'z',
     draw: 0.477, // 200 x 50 m real -> 95 x 24 m drawn
-    where: 'campus-martius', complex: 'campus-medius',
+    where: 'campus-martius', complex: 'agrippa-iseum',
     cite: 'Iseum et Serapeum in Campo Martio, east of the Baths of Agrippa on the line of the ' +
       'modern Via del Seminario (41.8976 N 12.4787 E). Obelisks now on Piazza della Minerva ' +
       'and Piazza della Rotonda. Nudged 30 m east of that ' +
@@ -471,7 +515,7 @@ export const ROME: readonly RomeMonument[] = [
     id: 'theatre-pompey',
     name: 'Theatre of Pompey',
     e: -721, n: 297, len: 160, wid: 140, bearing: 89, axis: 'z',
-    draw: 0.339, // 160 x 140 m real -> 54 x 47 m drawn
+    draw: 0.55, // 160 x 140 m real -> 88 x 77 m drawn — see the joint note in `complex`
     where: 'campus-martius', complex: 'pompey',
     cite: '41.8952 N 12.4730 E. Rome\'s first stone theatre (55 BC): cavea 156.8 m across ' +
       '(Packer 2014) with the Temple of Venus Victrix at its summit, opening east onto the ' +
@@ -537,6 +581,31 @@ export const ROME: readonly RomeMonument[] = [
     name: 'Theatre of Marcellus',
     e: -252, n: -91, len: 130, wid: 115, bearing: 204, axis: 'z',
     draw: 0.407, // 130 x 115 m real -> 53 x 47 m drawn
+    /**
+     * **Capped by the RIVER, and measured against the substructure this row already declares.**
+     *
+     * `probe-fabric` G13a wants every gated monument drawn at 0.45 of its published dimension
+     * or better, and this row cannot reach it. It stands on the Ripa and its own `overWater`
+     * declaration is licensed by G22 inside an envelope with three limbs, one of which is
+     * *no deeper than its substructure is drawn* — 4 m of piles. Measured on the gate, same
+     * terrain, three runs:
+     *
+     *     draw 0.407   1.32 m under, 434.8 m2 wet   GRANTED
+     *     draw 0.44    4.09 m under, 582.9 m2 wet   REFUSED
+     *     draw 0.46    4.28 m under, 665.1 m2 wet   REFUSED
+     *
+     * **The depth is not linear in `draw`, and the middle row is why this number is 0.407 and
+     * not 0.44.** A first estimate interpolated 1.32 to 4.28 and put the boundary above 0.45;
+     * the measurement put it below 0.44, because the corner that goes under does not wade in
+     * gradually — it crosses the bank into the channel, where the bed drops away. 0.407 is the
+     * largest scale this gate has actually granted, with 2.7 m of the 4 m envelope in hand.
+     * The true boundary is somewhere in (0.407, 0.44) and this row takes the measured side of
+     * it, because a licence that passes by 17 cm is a coin flip on the next terrain edit.
+     *
+     * The row is drawn AT its cap. `probe-fabric`'s `FRAME_CAPPED_AGREED` names it and grades
+     * it on that, so the licence forgives the river and forgives nothing else.
+     */
+    drawMax: 0.407,
     overWater: 'on the Ripa with its stage flank toward the Tiber (Platner), carried on piles '
       + 'over the foreshore — a modelling decision, because no plan scale takes this footprint '
       + 'out of the channel and moving it 20 world metres north is 57 real metres off a plate '
@@ -582,8 +651,8 @@ export const ROME: readonly RomeMonument[] = [
     id: 'temple-jupiter',
     name: 'Temple of Jupiter Optimus Maximus',
     e: 0, n: 0, len: 63, wid: 53, bearing: 333, axis: 'z',
-    draw: 0.621, // 63 x 53 m real -> 39 x 33 m drawn
-    where: 'capitoline', complex: 'forum-valley', mound: 20, moundRadius: 96,
+    draw: 0.55, // 63 x 53 m real -> 35 x 29 m drawn
+    where: 'capitoline', complex: 'capitolium', mound: 20, moundRadius: 96,
     cite: 'The datum of this table: the Capitolium, on the **south** summit under Palazzo ' +
       'Caffarelli, 41.8925 N 12.4823 E, 48 m a.s.l. (The north summit is the Arx, with ' +
       'Juno Moneta; the saddle between them is the Asylum. Putting the temple on the Arx is ' +
@@ -597,7 +666,7 @@ export const ROME: readonly RomeMonument[] = [
     name: 'Tabularium',
     e: 60, n: 40, len: 73, wid: 34, bearing: 50,
     draw: 0.374, // 73 x 34 m real -> 27 x 13 m drawn
-    where: 'capitoline', complex: 'forum-valley',
+    where: 'capitoline', complex: 'capitolium',
     cite: 'The record office of 78 BC closing the west end of the Forum, its arcaded façade ' +
       'still the base of the Palazzo Senatorio (41.8931 N 12.4830 E).',
   },
@@ -605,8 +674,8 @@ export const ROME: readonly RomeMonument[] = [
     id: 'forum-romanum',
     name: 'Forum Romanum',
     e: 265, n: -2, len: 200, wid: 90, bearing: 117,
-    draw: 0.561, // 200 x 90 m real -> 112 x 50 m drawn
-    where: 'forum-valley', complex: 'forum-valley',
+    draw: 0.5, // 200 x 90 m real -> 100 x 45 m drawn
+    where: 'forum-valley',
     cite: '41.8925 N 12.4853 E. The open square runs NW–SE between the Capitoline and the ' +
       'Velia, c. 200 × 90 m from the Rostra to the Regia. Bearing from the axis of the ' +
       'Via Sacra on the Severan plan. ' +
@@ -619,7 +688,7 @@ export const ROME: readonly RomeMonument[] = [
     name: 'Basilica Ulpia',
     e: 191, n: 333, len: 130, wid: 55, bearing: 41,
     draw: 0.339, // 130 x 55 m real -> 44 x 19 m drawn
-    where: 'quirinal', complex: 'forum-valley',
+    where: 'quirinal', complex: 'trajan-forum',
     cite: '41.8955 N 12.4846 E. 130 × 55 m with apses at both ends, lying *across* the axis of ' +
       'the Forum of Trajan at its north-west end. AD 112.',
   },
@@ -628,7 +697,7 @@ export const ROME: readonly RomeMonument[] = [
     name: "Trajan's Column",
     e: 166, n: 378, len: 18, wid: 18, bearing: 0,
     draw: 0.847, // 18 x 18 m real -> 15 x 15 m drawn
-    where: 'quirinal', complex: 'forum-valley',
+    where: 'quirinal', complex: 'trajan-forum',
     cite: '41.8959 N 12.4843 E. 29.78 m of shaft and pedestal, 35.07 m to the top of the ' +
       'statue; between the two libraries just north-west of the Basilica Ulpia. CIL VI 960.',
   },
@@ -637,7 +706,7 @@ export const ROME: readonly RomeMonument[] = [
     name: "Trajan's Market",
     e: 356, n: 344, len: 120, wid: 70, bearing: 139,
     draw: 0.339, // 120 x 70 m real -> 41 x 24 m drawn
-    where: 'quirinal', complex: 'forum-valley',
+    where: 'quirinal',
     cite: 'The hemicycle of tabernae cut into the flank of the Quirinal above the Forum of ' +
       'Trajan, 41.8956 N 12.4866 E; six storeys stepping up the hillside. **Moved 109 m this ' +
       'pass.** The old row read e 262, n 400 from a cite of 41.8961 N 12.4855 E, which puts the ' +
@@ -655,8 +724,8 @@ export const ROME: readonly RomeMonument[] = [
     id: 'imperial-fora',
     name: 'Fora of Caesar, Augustus and Nerva',
     e: 300, n: 180, len: 250, wid: 100, bearing: 126,
-    draw: 0.449, // 250 x 100 m real -> 112 x 45 m drawn
-    where: 'forum-valley', complex: 'forum-valley',
+    draw: 0.415, // 250 x 100 m real -> 104 x 41 m drawn
+    where: 'forum-valley',
     cite: 'The chain of imperial fora runs NE from the Forum Romanum along the foot of the ' +
       'Quirinal: Caesar (46 BC) then Augustus (2 BC) then Nerva. Centroid 41.8941 N 12.4859 E.',
   },
@@ -686,8 +755,8 @@ export const ROME: readonly RomeMonument[] = [
     id: 'colosseum',
     name: 'Flavian Amphitheatre',
     e: 839, n: -249, len: 189, wid: 156, bearing: 115,
-    draw: 0.573, // 189 x 156 m real -> 108 x 89 m drawn
-    where: 'colosseum-valley', complex: 'colosseum-valley',
+    draw: 0.475, // 189 x 156 m real -> 90 x 74 m drawn
+    where: 'colosseum-valley',
     cite: '41.8902 N 12.4922 E. 189 × 156 m at the ground, 48 m to the attic, 80 bays per ' +
       'storey, arena 86 × 54 m. Stands in the valley of the drained Stagnum Neronis, which ' +
       'drains south-west at c. 230° and is flanked by the Palatine (W/SW), the Velia (NW), ' +
@@ -708,7 +777,7 @@ export const ROME: readonly RomeMonument[] = [
     name: 'Ludus Magnus',
     e: 1034, n: -247, len: 135, wid: 100, bearing: 112,
     draw: 0.339, // 135 x 100 m real -> 46 x 34 m drawn
-    where: 'colosseum-valley', complex: 'colosseum-valley',
+    where: 'colosseum-valley',
     cite: 'The gladiatorial training school with its own small practice arena (62 x 45), ' +
       'south-east of the Colosseum with the Via Labicana along its north side (41.8903 N ' +
       '12.4948 E). Domitianic. **Moved 56 m east a second time.** With the Colosseum on its own ' +
@@ -738,7 +807,7 @@ export const ROME: readonly RomeMonument[] = [
     name: 'Baths of Titus',
     e: 1023, n: -53, len: 120, wid: 105, bearing: 115,
     draw: 0.339, // 120 x 105 m real -> 41 x 36 m drawn
-    where: 'esquiline', complex: 'colosseum-valley',
+    where: 'esquiline',
     cite: '41.8914 N 12.4936 E, on the lower slope of the Oppian directly north-east of the ' +
       'Colosseum; AD 80, and much the smaller of the two Esquiline bath blocks. Moved 44 m ' +
       'west-south-west this pass. The old e 978, n -100 left it only 116 m from the Ludus ' +
@@ -764,8 +833,8 @@ export const ROME: readonly RomeMonument[] = [
     id: 'baths-trajan',
     name: 'Baths of Trajan',
     e: 1194, n: 53, len: 230, wid: 170, bearing: 125,
-    draw: 0.543, // 230 x 170 m real -> 125 x 92 m drawn
-    where: 'esquiline', complex: 'colosseum-valley',
+    draw: 0.487, // 230 x 170 m real -> 112 x 83 m drawn
+    where: 'esquiline',
     cite: '41.8930 N 12.4954 E. Platform 330 × 215 m on the Oppian over the buried Domus ' +
       'Aurea. Main axis 35°/125°, deliberately about 30° off the Domus Aurea grid the Baths ' +
       'of Titus below it still follow — both the ~30° and ~35° figures in the literature are ' +

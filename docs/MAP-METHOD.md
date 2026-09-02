@@ -2670,5 +2670,256 @@ substructure stand in the water? — and that check does not exist.** Naming the
 pass's answer; building it is not, because it needs the drawn vertices rather than the plan,
 and that is G14's machinery rather than G22's.
 
+### 1 September 2026 — the nine monument failures: six were the instrument, three were the city
+
+Rome's fabric gate read **15/27** on `main` and nine of its twelve failures were the monuments:
+G4, G5, G8c, G8d, G12, G13a, G13b, G14, G15. This pass closed eight of the nine and left G4 open
+with its cause named. Carthage, the control, did not move: **14/22 before and after, the same
+eight failing checks**, which is the tell the brief asked for — a change that moves one map and
+not the other is a finding about that map, or about a limb only that map exercises.
+
+| | before | after |
+|---|---|---|
+| Rome | 15/27, 12 failing | **23/27, 4 failing** |
+| Carthage | 14/22, 8 failing | **14/22, 8 failing** |
+
+**Six of the nine were wrong about the world in the instrument, not in the city**, and that ratio
+is the entry. The city's own faults were three: ten rows declared into complexes they were never
+part of, one theatre standing 17 m off its own porticus, and a cohort of authored `draw` scales
+whose size order did not match the archaeology.
+
+#### The two conventions, one negation apart, and how believing the wrong one cost half a day
+
+`src/city/layout.ts:axisU` sends a plan box's local +X to `(cos r, −sin r)`.
+`CitySystem:occRot` is literally `(planRot) => -planRot`, and `getObstacles()` publishes the
+negated yaw. **Both conventions are correct and they are not interchangeable**, and this
+repository has now made the same mistake four times: `rome-landmarks.mjs`, a judge's own probe,
+`assertions.ts` (caught and written up there) and — found here — `tools/scratch/mon-extents.mjs`,
+which reads `LANDMARKS` (plan yaw) with the obstacle map.
+
+The symptom is loud once you know its shape. A `W × D` rectangle read at `2θ` off its own axis
+has an axis-aligned extent of `W|cos 2θ| + D|sin 2θ|` by `W|sin 2θ| + D|cos 2θ|`, so every
+rotated monument comes out **larger and more nearly square than it is, tending to its own
+circumradius**. The tool read the Colosseum's drawn stone as 130.6 × 128.6 world metres against a
+100.7 × 83.1 box — a circle of radius 65.4, which is exactly `hypot(50.4, 41.6)` and is not a
+building. It reported **eleven G14 failures and three G13a failures that did not exist**.
+
+**The expensive part is what happened next: the mirrored tool was believed over the gate.**
+`probe-fabric` had the right convention for its own boxes all along. The first repair of this
+pass changed the *gate* to match the *tool*, in four places, and promptly failed G22 on a
+monument that was fine. Rule 29 warns that the fast instrument and the slow one can disagree and
+that the fast one is the one people run. **This is the other half of that warning: when they
+disagree it is also the one you believe, and it is the one with no scene, no second producer and
+no browser behind it.** The repair that stuck was a named `toLocal`/`toWorld` pair in the gate
+with the sign of the yaw stated, plus two assertions — that they are inverses, and that `toWorld`
+agrees with `obPoly`, the corner helper the file already had — and `--inject=obb-mirror`, which
+restores the wrong sign and must go red.
+
+#### A percentile over vertices measures tessellation, not stone
+
+G12 and G13a take the 0.5/99.5 percentile of a monument's vertices rather than min/max, so that
+one stray vertex cannot set a dimension. That is right about a stray and wrong about a **plate**.
+The Iseum Campense stands on a 200 × 50 m floor slab carrying about two dozen vertices, under a
+temple carrying several thousand; the count percentile discarded the slab and read a 200 m
+building as **59.6 m** and its aspect as **2.46 against a published 4.0** — G13a's worst row on
+Rome and G12's only Rome failure, on a monument drawn at exactly its published size.
+
+The repair is one word: weight the percentile by **triangle area**. A sliver carries nothing, a
+slab carries ten thousand square metres on eight corners. Full 3D area rather than the plan
+projection, because a vertical wall projects to a line and a building made of walls would then
+weigh nothing at all. `--inject=stone-count-weighted` restores the rank order and both gates go
+red.
+
+**The general form, and it is rule 36 one level in: a robust estimator has a weight, and the
+weight is a claim about what the sample is a sample of.** "One vertex in a thousand" claims that
+vertices are spread evenly over the thing being measured. Geometry is not: tessellation density
+is a function of curvature and detail level, and has nothing to do with extent.
+
+#### G15 could not tell whose stone it was, so the scene now says
+
+G15 asks whether one monument's drawn stone stands inside another's footprint. Carthage gives
+every monument its own chunk and the probe attributes by mesh name; Rome merges its monuments
+into three depth bands for the draw budget, so the baked scene has no call boundaries left and
+the probe attributed each vertex to **the nearest centre normalised by reach**. That rule hands a
+small monument's stone to a large neighbour: the Stadium of Domitian's reach is 211 m and the
+Baths of Nero's is 66, so a bath vertex on the side facing the stadium scores better against the
+stadium than against the building it belongs to.
+
+`tools/scratch/mon-trespass.mjs` measures the gap with the `setUvOrigin` watermark for exact
+attribution: **5,821 of Rome's 597,320 monument vertices — 1.0 % — would be credited to a
+monument that did not emit them**, and it was enough for G15 to report *"stadium-domitian into
+baths-nero, 12.07 m deep"* about a stadium whose stone never leaves its own box by more than
+0.23 m. Four faults, none of them real; the exact reading is three trespassing pairs and all
+three are inside declared complexes.
+
+`Batch.setProvenance` now records which builder emitted which vertex range and `toMeshes` puts it
+on the mesh. **That is a declaration of WHO and never of whether** — rule 37's line — and the
+gate checks it before believing it: the ranges must be ascending and inside the buffer, and every
+label must name a structure the gate already knows. Either failing drops the whole mesh back to
+nearest-centre *and prints that it did*, because a check that goes quiet is worse than one that
+fails. Rome now attributes **100 %** of monument vertices exactly and its trespass list matches
+the offline instrument's name for name. `--inject=provenance-blind` puts the guessing back and
+G15 goes red.
+
+#### A hill is not a temple, and the code had said so for two phases
+
+G14 and G13a both failed the Temple of Jupiter Optimus Maximus, which is drawn at exactly its own
+collision box. What overhangs is the **Area Capitolina** — `mound: 20, moundRadius: 96` — and
+`monuments.ts` carried a docstring saying in as many words that *"the residual over G14's 1.15 is
+a fact about the survey and not about this builder"*. Rule 36's tell exactly: the fault printed
+beside the pass, for two phases, and nothing could act on it because no instrument could separate
+the hill from the temple.
+
+`setProvenance(id + '#mound')` around the `buildMound` call separates them, and then both
+questions get asked instead of neither: the temple is graded against its published podium, and
+the platform against `moundRadius / clear`, the same `k` the geometry builder uses. **Declaring a
+mound takes on an obligation rather than shedding one** — a row that declares one and draws none
+fails, a platform wider than its own published radius fails, and the two sets are compared both
+ways against `MOUND_AGREED`. The temple reads 0.63 of published and the platform 1.06 of its
+declared radius, both inside.
+
+#### Three of Rome's five complexes were districts wearing a complex's name
+
+`assertComplexJoined` had failed at every boot for two phases with the repair recorded as owed,
+and `survey.ts` named its price: narrowing a complex makes its former members owe each other a
+7 m projected street, which re-opens the `draw` allocation. `tools/scratch/mon-joins.mjs` reads
+that bill in a second, in **both frames at once** — the published plans in real metres, which is
+the archaeology, and the world boxes the plan publishes, which is the ground the game collides
+with.
+
+Exactly **six** pairs in Rome's survey are joined at a 12 m real street, and the five declarations
+held twenty-one rows. `campus-medius`, `forum-valley` and `colosseum-valley` grouped ten rows
+around those six joints on no evidence but a shared valley. The complexes are now the connected
+components of that relation and nothing else, so the declaration and the archaeology are the same
+set **in both directions**: a pair Rome joins that nobody declares fails, and a pair declared that
+Rome does not join fails.
+
+The bill came to four pairs, 3.8 to 4.7 world metres each, and **who pays is not who is bigger**.
+Ground compresses at `KX` 0.443 east–west and `KZ` 0.35 north–south; a plan compresses at
+`PRECINCT × draw`; **a row whose rate exceeds the frame's along the line to its neighbour is
+eating that neighbour's street by arithmetic**. The Stadium of Domitian was spending 2.03× the
+frame, the Fora 1.37×, the Colosseum 1.38×, the Baths of Trajan 1.31×. Those four gave the metres
+back. `forum-romanum` came down with `imperial-fora` because `assertSizeOrder` pins them together
+— the Fora are 1.25× the piazza in the literature and may not be drawn smaller — which is the
+constraint set doing its job unprompted.
+
+#### The Theatre of Pompey stood 17.36 m from its own porticus and nothing was in the wrong place
+
+Its published plan **overlaps** the Porticus Pompei by 1.21 real metres. Both centres are at
+`worldOf(e, n)` on the plate. Both rows drew at 0.339, so their plans shrank at 0.363 while the
+ground between them shrank at 0.443, and **the projection pulled a party wall into a street** —
+the two frames disagreeing by 18.6 m on one joint. Reported as one number it sends somebody to
+move a monument that is already right; reported as two it says which lever to pull. The lever is
+`draw`, because a centre is a plate control and a scale is an authored departure. At 0.55 the
+theatre's scaena lands on its porticus at 0.48 m, which is a party wall. Rule 25, on a joint.
+
+#### A row with no authored `draw` is not a neutral choice in a cohort that has one
+
+G13b counts pairs whose size order is inverted against the archaeology. The Mausoleum of Augustus
+carried **no `draw` at all**, so it stood at its full 87 m in a cohort drawn at 0.33 to 0.62 —
+and was therefore modelled *larger* than the Theatre of Marcellus (129.8 m published) and the
+Porticus Octaviae (132 m). Rule 17 says a per-item authored departure has to be graded on the
+distribution it produces; this is the corollary and it is not obvious from that sentence. **The
+absence of a departure is a departure.** A row that abstains from a cohort-wide convention is
+making the loudest statement in the cohort.
+
+Five inversions, closed with five numbers: the stadium to 0.465, the Colosseum to 0.475, the
+Mausoleum to 0.52, the Capitoline temple to 0.55, the Theatre of Marcellus held at 0.407 — and
+the drawn order is now monotone against the published order over all ten gated rows, 0 of 43.
+
+#### Two rows the frame cannot carry, and the exclusion arrives after the check that justifies it
+
+`probe-eye` E1d's rule, applied to a footprint: **an exclusion that arrives before the check that
+justifies it is exemption-shopping; one that arrives after it is a measurement.** Two rows cannot
+reach G13a's 0.45 floor at all.
+
+- **Castra Praetoria**, capped by the +Z edge of the heightfield. `layout.ts:maxDrawAt` computes
+  the largest footprint that still stands *on* the ground at that position and bearing, and
+  `survey.ts` records `drawMax: 0.326` with the arithmetic.
+- **Theatre of Marcellus**, capped by the Tiber, and this one had to be measured rather than
+  derived. Its own over-water licence carries an envelope limb of *no deeper than its
+  substructure is drawn* — 4 m of piles. Three runs of the gate, same terrain:
+
+  ```
+  draw 0.407    1.32 m under, 434.8 m² wet    GRANTED
+  draw 0.44     4.09 m under, 582.9 m² wet    REFUSED
+  draw 0.46     4.28 m under, 665.1 m² wet    REFUSED
+  ```
+
+  **A two-point estimate of that curve is wrong, and it cost a run.** Interpolating 1.32 to 4.28
+  gives 55.8 m of depth per unit of `draw` and puts the boundary above 0.45; the boundary is in
+  fact below 0.44, because the corner that goes under does not wade in gradually — it crosses the
+  bank into the channel, where the bed drops away. **A quantity that depends on where a corner
+  sits relative to a terrain feature is not linear in anything, and a straight line through two
+  points on it will return whichever answer you were hoping for.**
+
+The licence is `FRAME_CAPPED_AGREED`: the plan publishes the cap, the gate agrees by name in both
+directions, and **the row is still gated on being drawn AT its cap**, so a row capped at 0.326 and
+authored at 0.30 fails exactly as it did before. The licence forgives the frame and forgives
+nothing else. `--inject=frame-cap-invent` proves the membership limb.
+
+#### G4 is still red, and it is a road survey rather than an instrument
+
+11,566 m² of monument inside a carriageway, which is **1.98 % of Rome's carriageway area**, over
+ten monuments. `tools/scratch/mon-corridor.mjs` asks the question in the units of the harm
+instead — `WAY_WIDTH`'s own comment says what each rank's width is *for*, so what matters is how
+much clear corridor is left, station by station — and the answer is **197 m of 13,750 severed**
+(no clear lane at any width) over six named ways, down from 294 m over seven before this pass's
+`draw` re-allocation. Rule 34's corollary again: a repair aimed at G8 that also improves an
+unmentioned G4 is evidence that it was a correction and not a tuning.
+
+The severed metres name their causes and they are not one kind of fault:
+
+- **Forum Romanum, 2,776 m², 61.7 % of its own footprint**, across the Via Sacra, the Argiletum
+  and the Clivus Argentarius. **The check is wrong about the world here.** The Via Sacra ran
+  *through* the Forum; the Forum is an open square, and `probe-fabric`'s own `PUBLISHED` row says
+  so — *"the Forum is not one building"*. Carthage already models this: its `forum` and `tophet`
+  carry `solid: false` and are named in `NO_SOLID_AGREED`. Rome has no such field, so its Forum is
+  a solid obstacle a cohort cannot walk across, which is a movement fault as much as a fabric one.
+  **Not taken in this pass**, because it changes what units may walk on and wants the movement
+  probes run beside it rather than the fabric gate alone.
+- **Mausoleum of Augustus 425 m² and Ara Pacis 86 m²**, both on the Via Lata, and both are the
+  road: three independent sources put that street **148 m** from the Mausoleum.
+- **Temple of Serapis 2,615 m², Castra Praetoria 2,020 m², Stadium of Domitian 1,962 m²,
+  Colosseum 1,488 m²** — each one way crossing one enormous precinct, and each a question for
+  that way's own survey rather than for the monument, whose centre is on the plate.
+
+The standing rule is that a way is never deflected, and that rule points at the way's own
+coordinates. **The instrument to argue with them is now in the tree; the argument itself is a
+literature task, and it is the same one as the seventeen monuments with no published row.**
+
+#### What this pass would do differently
+
+1. **When two instruments disagree about a sign, write the convention down before choosing a
+   side.** Half a day went into changing the gate to match a tool that was wrong. The thing that
+   would have prevented it — an assertion that the new helper agrees with the corner helper the
+   file already had — is four lines, and it was written afterwards.
+2. **Ask what a robust estimator is weighted by.** A percentile is a rank over a sample, and it is
+   only as good as the claim that the sample is uniform over the thing being measured.
+3. **When a merge destroys information a check needs, put the information back rather than
+   improving the guess.** Three better proximity rules were considered before `setProvenance`, and
+   every one of them traded a false positive for a false negative.
+4. **An assertion that guards a convention will kill the injection that breaks that convention,
+   and a run which dies before grading proves nothing.** `--inject=obb-mirror` flips the local
+   frame; the assertion that `toWorld` agrees with `obPoly` threw on the first line and the run
+   ended with no verdict at all — which reads exactly like a crash. The repair is to assert on
+   the TRUE convention with the injection forced off, plus a third limb that the shipped pair
+   equals the asserted pair whenever nothing is injected. **An injection has to make a check go
+   red; if it can make the instrument go dark instead, it is not a proof.**
+
+#### The proofs, on one run
+
+```
+--inject=obb-mirror,stone-count-weighted,provenance-blind,mound-invent,frame-cap-invent
+  expected red: [G12, G13a, G14, G15]
+  actually red: [G4, G12, G13a, G13b, G14, G15, G21, G22, G23, G24]
+  — every injected check went red
+```
+
+Each of the five breaks one input to the gate and never `src/`: the sign of a yaw, the weight in
+a percentile, the provenance the scene carries, and the two membership lists. G13b and G22 going
+red beside them is the mirror injection reaching further than its own `hits` claims, which is
+worth knowing and is why the banner prints both lists.
+
 <!-- Append new entries above this line. -->
 
