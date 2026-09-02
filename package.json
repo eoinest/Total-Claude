@@ -16,6 +16,8 @@
     "machine": "node tools/browsers.mjs machine",
     "reclaim": "node tools/reclaim.mjs",
     "check:reclaim": "node tools/qa-reclaim.mjs",
+    "check:supervisor": "node tools/qa-supervisor.mjs",
+    "procs": "node tools/browsers.mjs procs",
     "check:throttle": "node tools/qa-throttle.mjs",
     "build": "npm run lint && tsc --noEmit && vite build && node tools/optimize-assets.mjs",
     "build:full": "npm run lint && tsc --noEmit && vite build && node tools/optimize-assets.mjs --keep-models",

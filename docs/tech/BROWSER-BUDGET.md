@@ -219,22 +219,209 @@ another agent's branch, with a headcount that happens to differ as the only tell
 
 ---
 
+## The process supervisor: owning what we start
+
+The orphan fix above solved it **for Vite**, because the runner is our code and could be taught to
+watch its parent. It could not generalise: the next orphan was a scratch script, and there are three
+hundred entry points nobody is going to edit one at a time.
+
+**23 Aug 2026.** An agent ran `tools/scratch/net-flake-load.mjs --runs=6` to reproduce a gate flake
+under load, and was stopped. The loop had been **reparented to init** and went on launching
+browsers. It survived **two** `pkill` sweeps and was found only by walking parents up from a live
+browser. That is the second child in this repository to outlive the thing that started it, so it is
+a pattern and the fix is for the class.
+
+### Four mechanisms, no daemon
+
+A supervisor daemon is the obvious shape and it is the wrong one: it becomes the single process
+whose death leaks everything. The semaphore above had already demonstrated the better pattern —
+**state on disk, liveness re-derived on every read, never trusted** — so the supervisor is four
+independent mechanisms, any three of which can fail without leaking *and* without wedging.
+
+1. **The group, plus the descendant closure.** `spawnOwned()` runs every job under
+   `tools/lib/spawn-guard.mjs` with `detached: true`, so the guard is a process-group leader and
+   the real command runs inside its group. `detached: true` **without** a group kill is exactly
+   what happened on 23 Aug.
+2. **The guard's anchor watch.** The guard polls the PIDs whose lives the job requires — the
+   spawning process, and the **agent session** — and takes the tree down when the *first* of them
+   is gone. The agent anchor is the one that matters: on 23 Aug the spawning shell had exited
+   hours earlier, so watching the parent alone would have watched a PID that was already dead.
+3. **The registry, and `reapOwned()`.** Every job writes a file naming the group, the anchors, the
+   owner and the boot generation. `reapOwned()` re-derives liveness and kills the trees whose
+   owners are gone, and it is called from `acquireSlot` — so **every browser launch on this
+   machine, by any agent, sweeps first.** The window on a leak is "until anybody next starts a
+   browser", not "until somebody remembers".
+4. **The agent anchor inside the harness itself,** for the case none of the three above can reach:
+   a tool the agent runs *directly*. `node tools/probe-x.mjs` has no guard — it is a child of the
+   agent's shell — and on 23 Aug that shell had exited hours before, so the harness was reparented
+   to init, went on heartbeating its slot, and looked perfectly healthy to every liveness test the
+   semaphore had. **It was healthy. It was just not owned.** So `acquireSlot` starts a two-second
+   `kill(agentPid, 0)` watch in the harness: when the agent goes, the harness kills its browser by
+   group and exits, which releases the slot, restores QoS and takes down its Vite. The slot record
+   carries `agentPid` too, so a *fourth* staleness reason — `no-agent` — lets any other process on
+   the machine reach the same verdict about a harness that has stopped cooperating.
+
+Fail each in turn. Guard SIGKILLed → the reaper finds the entry and kills the tree. Registry
+unwritable → the guard still kills on anchor death. Harness wedged past its own watch → the slot
+goes `no-agent` and any reaper kills the browser PID it recorded. All of them → the group id is
+inherited by everything in it and one `browsers.mjs sweep --force` finishes it, with `machine` able
+to say whose it was.
+Machine rebooted → every entry's boot generation is wrong, so every entry is dropped **without
+signalling any PID in it**, because those numbers now belong to strangers.
+
+### A process group is not enough, and that was measured
+
+Playwright launches the browser with `detached: true` too, so the browser sits in a **process group
+of its own** while remaining our grandchild:
+
+```
+this node: pid 75124 pgid 75122
+  pid 75520 pgid 75520 ppid 75124   (browser)          <- its own group, our child
+  pid 75521 pgid 75520 ppid 75520   --type=gpu-process
+  pid 75670 pgid 75520 ppid 75520   --type=renderer
+```
+
+`kill(-75122)` reaches the harness and **not one of the four browser processes**. The first version
+of the load-bearing test passed anyway — because Playwright installs its own SIGTERM handler and
+closed them politely. Under SIGKILL, which is the shape a stopped agent actually has, nothing would
+have. So everything here signals the **descendant closure** and not the group: `treeMembers()` walks
+`ppid` as well as `pgid`, and the snapshot is taken *before* the first signal, because the instant
+the parent dies the browser is reparented to init and the link is gone.
+
+Reparenting does not defeat it: `pgid` is inherited and does **not** change when a process is
+reparented, so a loop whose shell has died is still findable by group.
+
+### Which unit the ceiling is in
+
+**Both, and they answer different questions.**
+
+**Browsers is the admission unit**, because admission is decided before anything is spent and the
+thing being decided is one `launch()`. You cannot grant three-fifths of a browser.
+
+**Processes is the audit unit and the backstop**, because it is the number read off `ps`, and
+because it catches three things a slot count provably cannot: a browser that took no slot; a tool
+that takes **one** slot and opens twenty pages, each a renderer; and a spawned tree that is not a
+browser at all — the 23 Aug loop, which held no slot at any moment a sweep looked at it.
+
+The number per unit is **measured**, `tools/scratch/procs-per-browser.mjs`, chrome-headless-shell
+under Playwright 1.62:
+
+| state | chromium | vite + guard | total |
+|---|---|---|---|
+| browser, no page | 3 (browser + gpu-process + utility) | 0 | 3 |
+| browser + Vite + one real page | 4 (+ 1 renderer) | 2 | **6** |
+| each additional page | +1 renderer | — | +1 |
+
+**One unit of gate work is six OS processes.** The older "six or seven" was full Chromium, which
+carries network and audio services this repository never launches. The guard is this file's own
+overhead and it is **counted, not exempted**: a budget that left its own cost out of the number it
+reports would be lying in the direction that flatters it.
+
+The ceiling is `cap x (6 + 3)` — the measured six plus three renderers of headroom, so that a
+legitimately multi-page tool such as `qa-net` is not refused for being multi-page. That is **36
+away, 18 present, 9 playing**. `TC_MAX_PROCS` overrides; `TC_PROC_BUDGET=off` disables it loudly.
+
+### Whose is it?
+
+The port-5901 incident was an agent killing a sibling's dev server, having written afterwards that
+one `lsof -a -p <pid> -d cwd` would have told it. Ownership was inferable and not recorded. It is
+recorded now — agent session id, agent PID, worktree, branch, port, label, argv, start time, boot
+generation — and `attribute()` still infers it for anything started outside this.
+
+Four sources of evidence, best first, and the answer says **which one it used**, because "recorded"
+and "inferred" justify different actions:
+
+1. a **registry entry** whose group contains the PID;
+2. a **live budget slot** whose `pid`, `vitePid` or `browserPid` is the PID;
+3. the **parent chain**, walked up to a `claude` — what had to be done by hand on 23 Aug;
+4. **`lsof -d cwd`** — the worktree it is standing in. Weakest, and never nothing.
+
+A sweep may refuse to kill either kind, and only kills on the strength of the first two.
+`browsers.mjs sweep` gives three verdicts — mine, a *live* sibling's (**refused**, and named), and
+unowned — and `--include-others` is the override a human recovering a wedged machine needs, which
+prints whose each one is before it acts.
+
+**The worktree is the part of the record that identifies an agent, and that was measured.** Several
+agents run as subagents of **one `claude` CLI process**, so they share `CLAUDE_PID` *and*
+`CLAUDE_CODE_SESSION_ID`. Pointing the new `sweep` at a real sibling's dev server proved it: a
+`qa-net` run in worktree `agent-aaa44128937a2cb8f` walked up its parent chain to **ppid 23238, this
+agent's own `claude`**, and came back "mine". `--force` would have killed it — the 5901 incident
+again, with a better audit trail. So a differing worktree is decisive on its own, and agreement is
+only "mine" when nothing disagrees. One agent deliberately working in two trees therefore sees its
+own work in the other tree as somebody else's and needs `--include-others`; that is the right
+direction to be wrong in.
+
+What `CLAUDE_PID` *is* good for is the anchor: while it lives, some agent may still want this work.
+The per-command case is covered separately, by anchoring a spawned job on **the process that
+spawned it** — which for a tool the agent ran directly is the tool itself.
+
+### Proof, hardest case first
+
+`node tools/qa-supervisor.mjs` — **56 assertions, 10 cases**, and it runs the destructive path for
+real. Measured on this tree:
+
+```
+1. detached child launching browsers, parent SIGKILLed
+     child tree gone, browser gone, 2,288 ms after the kill (guard polls every 2,000)
+2. THE CONTROL - the same fixture spawned the 23 Aug way
+     5 processes and 1 browser outlived a SIGKILLed parent, exactly as on 23 Aug
+3. the loop SIGKILLed instead, so Playwright's own handler never runs
+     the browsers it orphaned were swept anyway, 401 ms later
+4. a sibling's process, and `browsers.mjs sweep` itself
+     named from the registry - branch and port, not just a pid - and refused
+     killTree refused a recycled group: "nothing in it looks like vite-runner.mjs"
+     and end to end: a server standing in a worktree with a live agent in it is
+     listed as "belong to a LIVE sibling"; kill the agent, change nothing else,
+     and the same process in the same directory becomes sweepable
+5. a stale entry, owner killed, tree still up      reaped, tree killed
+6. an entry from a previous boot                   dropped, and NOTHING signalled
+7. the ceiling with no room
+     refused with a reason in 7.6 s rather than hanging, and a caller that waits
+     is in the queue and is granted the moment the ceiling allows it
+8. the guard AND its owner SIGKILLed                a reaper in another process finished it
+9. a harness the agent ran DIRECTLY, agent killed
+     harness ended itself and its browser died, 1,603 ms after the agent went;
+     its own parent stayed alive throughout - this is 23 Aug exactly
+10. the test itself                                 left no detached anything behind
+```
+
+**Case 9 is the one that would have caught 23 Aug**, and case 1 is the one that would have caught
+it a second time. On the day, the harness was *healthy*: alive, heartbeating, holding a valid slot.
+Nothing in the semaphore was wrong; it was answering a different question. **Case 2 is why case 1
+means anything.** A test that shows the fixed path working, without showing
+the unfixed path failing, cannot tell "the fix works" from "the bug does not reproduce here" — and
+this bug's entire history is that it did not reproduce when anybody looked.
+
+Two faults the test found in the thing it was testing. `spawnOwned` unlinked its record whenever the
+guard exited, which is right for a clean exit and wrong for the one case the file defends against —
+a SIGKILLed guard — where it deleted the only record naming a live process group. And case 8 then
+had to stop owning its own job, because `spawnOwned` installs an exit handler in the owner: killing
+only the guard was measuring the *owner* tidying up and crediting the reaper with it.
+
+---
+
 ## Observability
 
 ```
 node tools/browsers.mjs             who holds what, for how long, on which port, in which tree
 node tools/browsers.mjs --json      the same, machine-readable
+node tools/browsers.mjs procs       how many OS processes, against the ceiling, and whose
+node tools/browsers.mjs machine     everything: GPU, owner, memory, processes, owners, disk
 node tools/browsers.mjs reap        drop lock records whose holder is provably gone
-node tools/browsers.mjs sweep       list dev servers no live slot claims
-node tools/browsers.mjs sweep --force   …and kill them (never 5173, never an unattributable one)
+node tools/browsers.mjs sweep       every dev server nobody owns, and whose the rest are
+node tools/browsers.mjs sweep --force   …and kill the ones no live sibling owns
+node tools/browsers.mjs sweep --force --include-others   …a sibling's too, named first
 node tools/browsers.mjs cap [n]     read or set the machine-wide cap
 ```
 
-**One headless Chromium is six or seven OS processes** — a browser process, a GPU process, a
-couple of utility processes and a renderer per page. `ps | grep -c chrome-headless-shell`
-returning 136 is not 136 browsers; it is roughly twenty. `status` prints both, because the cap
-counts browsers and `ps` counts processes and confusing the two is how somebody concludes the
-cap is not working.
+**One unit of gate work is six OS processes**, measured — four `chrome-headless-shell`, one Vite,
+one guard. `ps | grep -c chrome-headless-shell` returning 136 is not 136 browsers. Both counts are
+printed, because each is authoritative for a different thing: browsers for admission, processes for
+audit. See *Which unit the ceiling is in* above.
+
+`status`, `procs` and `machine` all call `reapStale()`, so they are not quite read-only: a record
+whose holder is dead is dropped and the group it names is taken down. That is the design — the
+sweep is paid for by whoever next looks, rather than by a daemon that can itself die.
 
 It also flags, each for a specific past failure:
 
@@ -267,11 +454,27 @@ day, and a lint that blocks that is a lint people route around. `--all` includes
 the real total. Scratch scripts are still counted by `browsers.mjs`, which sees browsers with
 no slot however they started.
 
+**The third rule: `detached: true`.** The check caught a new `chromium.launch()` and had nothing to
+say about `spawn('node', ['tools/scratch/net-flake-load.mjs'], { detached: true })`, which is the
+line the 23 Aug orphan went through. You cannot see lexically whether a spawned script opens a
+browser — but you can see the shape that makes it survive its parent, and both orphans this
+repository has had wrote it. `detached: true` anywhere in `tools/` now fails, with `spawnOwned()`
+printed as the fix.
+
+It is deliberately **not** on the ratcheted allowlist and never joins it. That list is a to-do list
+of 91 pre-existing direct launches whose whole discipline is that it may only shrink; letting a new
+rule add a batch of entries would spend the discipline to buy nothing. The six legitimate uses are
+named in `DETACHED_OK` inside the check, **with a reason each**, which is a thing a JSON array of
+ninety-one paths cannot be. A file already forgiven for `chromium.launch()` is not thereby forgiven
+for detaching a child — verified by appending the line to an allowlisted file and watching it fail.
+
 **What it cannot catch:** an indirect launch through a variable or a helper; computed `spawn`
-arguments; anything outside `tools/` (`src/audio/audio-selftest.mjs` and
-`src/city/shoot-city.mjs` both spawn `npx vite` and are not scanned); and a tool that takes one
-slot and then opens ten browser *contexts* inside it. The budget counts `launch()`, not
-contexts, deliberately — a context is cheap and a browser is not.
+arguments; `detached` read from a variable or spread in from an options object built elsewhere; a
+long-running child spawned *without* `detached`, which shares its caller's group and dies with it;
+anything outside `tools/` (`src/audio/audio-selftest.mjs` and `src/city/shoot-city.mjs` both spawn
+`npx vite` and are not scanned); and a tool that takes one slot and then opens ten browser
+*contexts* inside it. The budget counts `launch()`, not contexts, deliberately — a context is cheap
+and a browser is not.
 
 ---
 
@@ -305,8 +508,12 @@ running a line of cleanup, and nothing left behind.
 
 - `tools/lib/browser-budget.mjs` — the cap, the launcher, the server starter
 - `tools/lib/vite-runner.mjs` — the dev server that cannot outlive its parent
-- `tools/browsers.mjs` — status, reap, sweep, cap
-- `tools/check-browser-budget.mjs` — the ratchet
+- `tools/lib/process-registry.mjs` — `spawnOwned`, `reapOwned`, `killTree`, `attribute`, the census
+- `tools/lib/spawn-guard.mjs` — the nanny that outlives nothing
+- `tools/lib/liveness.mjs` — boot generation, `kill(pid, 0)`, heartbeat: one verdict, two callers
+- `tools/browsers.mjs` — status, procs, machine, reap, sweep, cap
+- `tools/qa-supervisor.mjs` — 42 assertions that it kills, before any that it permits
+- `tools/check-browser-budget.mjs` — the ratchet, and the un-ratcheted `detached: true` rule
 - `tools/scratch/bb-bench.mjs` — the measurement above
 - `tools/scratch/bb-proof.mjs` — the demonstration
 - `docs/tech/TOOLING.md` — the shape of every harness here

@@ -36,11 +36,37 @@
  * includes it and prints the real total. Scratch scripts are still counted by
  * `node tools/browsers.mjs`, which reports browsers running without a slot however they started.
  *
+ * ## The third rule, and why it is not ratcheted
+ *
+ * This check caught a new `chromium.launch()` and did not catch a `spawn()` of a script that
+ * launches one. That is the exact hole the 23 Aug orphan went through: an agent ran
+ * `spawn('node', ['tools/scratch/net-flake-load.mjs', '--runs=6'], { detached: true })`, was
+ * stopped, and the loop — reparented to init — went on launching browsers through two `pkill`
+ * sweeps. Nothing in this file had an opinion about that line, and the browsers it started were
+ * inside the cap one at a time and unbounded over an afternoon.
+ *
+ * You cannot see, lexically, whether a spawned script opens a browser. But you can see the shape
+ * that makes it survivable, and it is one token: **`detached: true`**. Both orphans in this
+ * repository's history had it — the `npx vite` wrapper and the flake loop — and there is now
+ * exactly one sanctioned way to write it, `spawnOwned()` in `tools/lib/process-registry.mjs`,
+ * which puts the child in a guarded process group with a recorded owner and an anchor on the
+ * agent. So the rule is: **`detached: true` anywhere in `tools/` outside that mechanism fails.**
+ *
+ * It is **not** on the ratcheted allowlist and it never will be. That list is a to-do list of 91
+ * pre-existing direct launches; adding a rule's worth of new entries to a list whose whole
+ * discipline is that it may only shrink would spend the discipline to buy nothing. Instead the six
+ * legitimate uses are named in `DETACHED_OK` below **with a reason each**, in code, where a
+ * reviewer reads them — which is a thing a JSON array of ninety-one paths cannot be.
+ *
  * ## What it cannot catch
  *
  *   - A launch reached indirectly: `const L = chromium.launch; await L({})`, or a helper in a
  *     file the allowlist covers. This is a lexer, not a parser.
  *   - A `spawn` whose arguments are computed, or built in a variable and spread in.
+ *   - `detached` set from a variable, or an options object built elsewhere and spread in.
+ *   - A long-running child spawned **without** `detached`. It shares the caller's group, so a
+ *     group kill reaches it and a terminal Ctrl-C ends it; it is a leak only if nobody signals
+ *     anything, which is what `reapOwned()` and `browsers.mjs sweep` are for.
  *   - Anything outside `tools/`. `src/audio/audio-selftest.mjs` and `src/city/shoot-city.mjs`
  *     both spawn `npx vite`; they are named here and not scanned.
  *   - A tool that takes a slot and then opens *ten* browser contexts inside it. The budget
@@ -80,6 +106,30 @@ const EXEMPT = new Set([
   'tools/scratch/bb-bench.mjs',
 ]);
 
+/**
+ * The six files that may write `detached: true`, and why each one may.
+ *
+ * In code rather than in `browser-budget-allow.json` on purpose: this is a list that must be read
+ * to be maintained, and a reason next to each entry is the only thing that stops it growing by
+ * accident. Anything not here that wants to detach a child should call `spawnOwned()` instead —
+ * which is one line, and gets a process group, an owner in the registry and an anchor on the agent
+ * for it.
+ */
+const DETACHED_OK = new Map([
+  ['tools/lib/process-registry.mjs',
+    'it *is* the mechanism — spawnOwned is the one sanctioned detached spawn in the repository'],
+  ['tools/lib/spawn-guard.mjs',
+    'documents the flag its caller passes; the child it runs is deliberately detached: false'],
+  ['tools/host-lan.mjs',
+    "hands a URL to the OS opener; it starts nothing this repository owns, counts or could reap"],
+  ['tools/qa-reclaim.mjs',
+    'a fixture: a live process standing in a worktree, so the reclaimer can be seen to refuse it'],
+  ['tools/qa-supervisor.mjs',
+    'the test for this rule; it spawns deliberate orphans, kills them, and asserts they are gone'],
+  ['tools/fixtures/orphan-parent.mjs',
+    'the control arm — the 23 Aug bug on purpose, so the fix can be measured against something'],
+]);
+
 const walk = (dir) => {
   const out = [];
   for (const name of readdirSync(dir).sort()) {
@@ -99,7 +149,24 @@ const walk = (dir) => {
  */
 const RULES = [
   {
+    id: 'detached-spawn',
+    /*
+     * `detached: true`, in code, anywhere but the six files above. Matched on blanked source so
+     * that the paragraphs in `spawn-guard.mjs` explaining what the flag does are not violations of
+     * the rule they explain — the first version of this check failed on its own documentation, in
+     * this file, for the same reason.
+     */
+    re: /\bdetached\s*:\s*true\b/g,
+    ratcheted: false,
+    ok: DETACHED_OK,
+    fix: "const job = spawnOwned(process.execPath, [script, ...args], { label: '<tool>', root: ROOT })"
+      + "   — import { spawnOwned } from './lib/process-registry.mjs'",
+    why: 'a detached child survives its parent — this is the shape of both orphans this '
+      + 'repository has had, and it leaves nothing that knows the process group',
+  },
+  {
     id: 'direct-launch',
+    ratcheted: true,
     re: /\b(?:chromium|firefox|webkit|browserType)\s*\.\s*launch(?:PersistentContext)?\s*\(/g,
     fix: "await launchBrowser({ label: '<tool>', port: PORT, root: ROOT })"
       + "   — import { launchBrowser } from './lib/browser-budget.mjs'",
@@ -107,6 +174,7 @@ const RULES = [
   },
   {
     id: 'npx-vite',
+    ratcheted: true,
     re: /spawn\s*\(\s*['"`]npx['"`]\s*,\s*\[\s*['"`]vite['"`]/g,
     fix: "await startVite({ port: PORT, root: ROOT, label: '<tool>' })"
       + "   — import { startVite } from './lib/browser-budget.mjs'",
@@ -133,8 +201,24 @@ let allow = [];
 try { allow = JSON.parse(readFileSync(ALLOW_FILE, 'utf8')).files ?? []; } catch { /* first run */ }
 const allowed = new Set(allow);
 
-const offenders = [...new Set(violations.map((v) => v.file))].sort();
-const fresh = offenders.filter((f) => !allowed.has(f));
+/*
+ * Two populations, and only one of them is on the ratchet.
+ *
+ * The allowlist is the record of what was already being done directly when the budget landed, and
+ * it may only shrink. A rule added afterwards has no backlog to forgive: `detached-spawn` fails on
+ * anything not named in `DETACHED_OK`, today and every day, so the file allowlist cannot silently
+ * absorb it — a file forgiven for calling `chromium.launch()` in 2026 is not thereby forgiven for
+ * detaching a child.
+ */
+const ratchetedIds = new Set(RULES.filter((r) => r.ratcheted).map((r) => r.id));
+const legacy = violations.filter((v) => ratchetedIds.has(v.rule));
+const strict = violations.filter((v) => !ratchetedIds.has(v.rule));
+
+const offenders = [...new Set(legacy.map((v) => v.file))].sort();
+const strictOffenders = [...new Set(strict
+  .filter((v) => !RULES.find((r) => r.id === v.rule).ok?.has(v.file))
+  .map((v) => v.file))].sort();
+const fresh = [...new Set([...offenders.filter((f) => !allowed.has(f)), ...strictOffenders])].sort();
 /*
  * Only allowlist entries **inside the scanned scope** can be called stale. Without this the
  * default run — which skips `tools/scratch/` — reported all 146 scratch entries as "now clean",
@@ -173,8 +257,10 @@ for (const v of violations) {
   byFile.get(v.file).push(v);
 }
 
-console.log(`check-browser-budget — ${violations.length} direct launch/spawn site(s) `
-  + `across ${offenders.length} files (${ALL ? 'tools/ including scratch/' : 'tools/ excluding scratch/'})`);
+console.log(`check-browser-budget — ${legacy.length} direct launch/spawn site(s) across `
+  + `${offenders.length} files, and ${strict.length} \`detached: true\` site(s) across `
+  + `${[...new Set(strict.map((v) => v.file))].length} `
+  + `(${ALL ? 'tools/ including scratch/' : 'tools/ excluding scratch/'})`);
 console.log('');
 
 if (LIST) {
@@ -186,12 +272,16 @@ if (LIST) {
 }
 
 if (fresh.length) {
-  console.log(`FAIL  ${fresh.length} file(s) start a browser or a dev server directly and are not`);
-  console.log('      on the allowlist. Every agent runs these in its own worktree, and on 22 Aug');
-  console.log('      2026 that reached load average 160 on 16 cores and took the machine down.\n');
+  console.log(`FAIL  ${fresh.length} file(s) start a browser or a dev server outside the budget, or`);
+  console.log('      detach a child that nothing then owns. Every agent runs these in its own');
+  console.log('      worktree; on 22 Aug 2026 that reached load average 160 on 16 cores and took');
+  console.log('      the machine down, and on 23 Aug a detached loop survived two pkill sweeps.\n');
   for (const f of fresh) {
     for (const v of byFile.get(f)) {
       const rule = RULES.find((r) => r.id === v.rule);
+      // A file already forgiven for a ratcheted rule should not have that forgiven site reprinted
+      // as though it were the new problem; only the thing that actually failed is listed.
+      if (rule.ratcheted && allowed.has(f)) continue;
       console.log(`  ${f}:${v.line}`);
       console.log(`      ${v.text}   — ${rule.why}`);
       console.log(`      use: ${rule.fix}`);
@@ -199,11 +289,17 @@ if (fresh.length) {
   }
   console.log('\n  If this really must start its own browser outside the cap, add the file to');
   console.log(`  ${path.relative(ROOT, ALLOW_FILE)} and say in the commit message why.`);
+  if (fresh.some((f) => strictOffenders.includes(f))) {
+    console.log('  A `detached: true` cannot be answered that way. Either call spawnOwned(), or');
+    console.log('  add the file to DETACHED_OK in this check with a reason a reviewer will read.');
+  }
 } else {
-  console.log(`PASS  ${offenders.length} known direct site(s), 0 new.`);
+  console.log(`PASS  ${offenders.length} known direct site(s), 0 new; `
+    + `${DETACHED_OK.size} file(s) may detach a child and no others do.`);
   console.log(`      The allowlist is a to-do list: ${offenders.length} files still to convert.`);
   console.log('      Shrink it, never grow it. `--list` names them, `--prune` drops the ones');
-  console.log('      that have since been converted.');
+  console.log('      that have since been converted. `detached: true` is not on that list and');
+  console.log('      never joins it: see DETACHED_OK in this file, six entries with a reason each.');
 }
 
 if (stale.length) {
@@ -213,8 +309,10 @@ if (stale.length) {
 }
 
 console.log('\nnot covered: an indirect launch through a variable or a helper; computed spawn');
-console.log('arguments; anything outside tools/ (src/audio/audio-selftest.mjs and');
-console.log('src/city/shoot-city.mjs both spawn npx vite and are not scanned); and a tool that');
+console.log('arguments; `detached` read from a variable or spread in from an options object');
+console.log('built elsewhere; a long-running child spawned without `detached`, which shares its');
+console.log("caller's group and dies with it; anything outside tools/ (src/audio/audio-selftest.mjs");
+console.log('and src/city/shoot-city.mjs both spawn npx vite and are not scanned); and a tool that');
 console.log('takes one slot and then opens ten contexts inside it.');
 
 process.exit(fresh.length ? 1 : 0);
