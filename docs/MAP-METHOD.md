@@ -2923,3 +2923,16 @@ worth knowing and is why the banner prints both lists.
 
 <!-- Append new entries above this line. -->
 
+38. **A cleanup that matches nothing may not have run at all, and the shell will not say so.**
+   An agent finished a branch, ran an `rm` with a glob to sweep its scratch files, and only
+   noticed at a final audit that a throwaway patch script was still on disk. The glob had
+   matched nothing, and `zsh` aborts the *entire* command when a glob matches no files — so
+   the `rm` never executed, exited without complaint, and the sweep reported success by
+   reporting nothing. This is rule 12 wearing different clothes: a degenerate case returning
+   a confident answer rather than an error. The general shape is worse than the shell detail,
+   because it is the same shape as every dead check in this document — **an operation whose
+   no-op and whose success are indistinguishable from the outside.** The instrument is not a
+   better glob; it is to *count what you removed and assert the count*, or to list the
+   directory afterwards and assert it is empty. A sweep that cannot report how much it swept
+   is a sweep you have not verified, and the failure is silent by construction: the files it
+   was supposed to delete are exactly the evidence nobody goes looking for.
