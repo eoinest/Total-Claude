@@ -1480,8 +1480,9 @@ if (wanted('lag') && chrome) {
     + 'about 60 ms the knob puts in the path; '
     + `worst input delay ${rows[0].worstDelay} against ${rows[1].worstDelay} ticks; `
     + `stalled ${rows[0].stalledMs} ms and ${rows[1].stalledMs} ms`,
-    'the 200 ms at zero latency is the two turns of input delay the design schedules, so an '
-    + 'absolute floor would not discriminate — the difference between the rows is the claim');
+    'the 60-90 ms measured at zero added latency is the turn scheduling the design already '
+    + 'imposes — an order is filed for a turn two ahead and comes back when that turn executes — '
+    + 'so an absolute floor would not discriminate. The difference between the rows is the claim');
 }
 
 // ---------------------------------------------------------------------------
