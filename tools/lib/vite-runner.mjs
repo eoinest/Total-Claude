@@ -82,7 +82,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { isLoopbackHost, lanAddress } from './lan-address.mjs';
+import { isLoopbackHost, lanAddress, mdnsName } from './lan-address.mjs';
 
 const args = new Map(
   process.argv.slice(2)
@@ -104,13 +104,17 @@ const RELAY_PORT = Number(args.get('relay-port') || 0);
 const LAN_PREFER = args.get('lan') || '';
 const LAN_BIND = !isLoopbackHost(HOST);
 /**
- * `<hostname>.local`, spelled once.
+ * The Bonjour name, from `lan-address.mjs` — spelled once, and this time actually once.
  *
- * `os.hostname()` on a Mac already ends in `.local` on some networks and does not on others,
- * so the suffix is stripped before it is added. Used in two places that must agree: the name
- * the plaque advertises, and the name Vite's DNS-rebinding guard will answer to.
+ * It used to be `os.hostname().replace(/\.local\.?$/, '') + '.local'` here *and* in
+ * `tools/host-lan.mjs`, under a comment claiming it was spelled once because two places had to
+ * agree. They agreed and they were both wrong: `os.hostname()` is `Mac.attlocal.net` on this
+ * network, so the two of them produced `Mac.attlocal.net.local`, which resolves to nothing —
+ * and this file then handed it to `allowedHosts`, so the only name Vite would answer to was a
+ * name that did not exist while the one that did (`Ernests-MacBook-Pro-2.local`, which pings
+ * 192.168.1.77) was refused by the rebinding guard. See `mdnsName`.
  */
-const MDNS = `${os.hostname().replace(/\.local\.?$/, '')}.local`;
+const MDNS = mdnsName();
 
 if (!Number.isFinite(PORT) || PORT <= 0) {
   console.error('vite-runner: --port=<n> is required');

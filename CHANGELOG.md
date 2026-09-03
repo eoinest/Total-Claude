@@ -228,7 +228,16 @@ at all four quality tiers — **8,632 / 3,072 / 3,440**.
   — and with that check disabled the `WebSocket` constructor throws **`SecurityError` before a
   packet exists**: an insecure socket may not be opened from a page loaded over HTTPS. Two
   independent mechanisms, either one sufficient, and the second is not a permission anyone can
-  grant. So the relay field on the deployed site is **empty**, with the reason under it, rather than
+  grant.
+
+  > **Amended 2 September 2026 (`e/net/scan-to-join`, not yet released).** The conclusion here is
+  > right and has been re-measured; the second mechanism is engine-specific and this paragraph
+  > reads as though it were universal. In Chromium 151 the `SecurityError` applies to a *public*
+  > target: an https page whose own origin is a private address opens `ws://192.168.1.77:5959`
+  > without complaint, so what refuses the deployed site is the first mechanism, the address-space
+  > check, and not the second. **WebKit has no such carve-out** and refuses private, loopback and
+  > public alike as plain mixed content, exactly as written above. `docs/MULTIPLAYER.md` §12.6 has
+  > the table for both engines. So the relay field on the deployed site is **empty**, with the reason under it, rather than
   pre-filled with `wss://<vercel-host>:5959` — a port nothing has ever listened on.
 
   ![The deployed lobby after pressing CREATE A ROOM with the relay field empty: a red paragraph reading There is no relay address in the field below. A relay is a separate process — node tools/relay.mjs on a machine you can both reach — and this page cannot be one, because it is a static upload with no server in it. The relay field below it is empty and focused](docs/images/releases/r10-deployed-refusal.jpg)

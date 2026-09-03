@@ -35,9 +35,12 @@ import { ALL_FACTIONS, Faction } from './sim/types';
 import { installSeamCheck } from './core/seams';
 import { decodeReplay, type ReplayRecord, ReplaySystem } from './sim/replay';
 import { NetLink, netParams } from './net/NetLink';
+import { validCode } from './net/protocol';
 import { NetSession } from './net/NetSession';
 import { setPlayerFaction } from './ui/theme';
-import { esc, showLobby, showNetNotice } from './ui/NetLobby';
+import {
+  esc, HUD_MIN_WIDTH, hudFits, serverRelay, showLobby, showNetNotice, showTooNarrow,
+} from './ui/NetLobby';
 import { NetPanel } from './ui/NetPanel';
 import { stateHashes, UNIT_CTL_FIELDS, UNIT_F64_FIELDS } from './sim/stateHash';
 
@@ -117,6 +120,40 @@ if (params.get('mp') === '1') {
   await new Promise(() => { /* the lobby navigates; nothing below this line ever runs */ });
 }
 /*
+ * `?room=ABCDE`, with no relay address beside it, is an invitation — and it joins.
+ *
+ * This is the whole of "a code and that's it". A guest who scans the square on the host's
+ * screen, or types the line the host reads out, arrives here with five characters and no
+ * transport in the URL at all; the address comes out of the document, because **the only
+ * server that could have served this page is the one that started the relay** and it says so
+ * in `<meta name="tc-relay">`. Nothing is guessed: `serverRelay()` returns `null` on any origin
+ * that has not signed its own work, and `null` falls through to the lobby below.
+ *
+ * *Joins*, rather than hosts, and the asymmetry is deliberate rather than convenient. A URL
+ * carrying a room code and nothing else is not a URL anybody writes for themselves: the lobby
+ * writes the host's own navigation with `?net=…&menu=battle` and `npm run host` writes
+ * `?mp=1&room=…&create=1`. A bare code is a thing that was *sent*, and an invitation is by
+ * definition to the other side. `?net=…&room=…` keeps its old meaning exactly — host unless
+ * `&host=0` — so every link that already exists still means what it meant.
+ *
+ * The fallback is the lobby with the code already in the field, which is the honest answer for
+ * the two origins that cannot resolve a relay: the deployed site, and a `npm run dev` server
+ * that never started one. They get the screen that explains why, rather than a socket to
+ * nowhere.
+ */
+if (!params.get('net') && params.get('room')) {
+  const asked = (params.get('room') ?? '').toUpperCase();
+  const addr = validCode(asked) ? serverRelay() : null;
+  if (addr) {
+    params.set('net', addr);
+    params.set('host', '0');
+  } else {
+    if (loading) loading.hidden = true;
+    showLobby(document.getElementById('menu-root') as HTMLElement);
+    await new Promise(() => { /* as `?mp=1` above: the lobby is the end of this page's life */ });
+  }
+}
+/*
  * The relay, and why it is opened before anything else exists.
  *
  * A challenger cannot build the engine until it knows which battle it is in: the quality tier
@@ -166,6 +203,33 @@ const netFailed = (title: string, lines: string[]): Promise<never> => {
   // A promise that never settles, exactly as `?mp=1` does. Nothing below this line runs.
   return new Promise<never>(() => { /* the notice is the end of this page's life */ });
 };
+/*
+ * A device that could not finish the battle is turned away **before a socket exists**.
+ *
+ * Placed here, above `new NetLink`, and the position is the fix rather than an implementation
+ * detail. Below it, the client has already claimed a slot: a phone that scanned the square took
+ * the room's second place, could not reach BEGIN BATTLE — 434 px off the right edge of a page
+ * `scrollWidth` says cannot scroll — and the laptop that arrived afterwards was refused with
+ * "already has a challenger". One person's dead end had become both people's.
+ *
+ * `hudFits` is a measured number, not a device sniff; see `HUD_MIN_WIDTH`. The QR is the reason
+ * this matters now: before it, nobody arrived here on a phone by accident.
+ */
+if (net && !hudFits() && params.get('narrow') !== 'ok') {
+  loading?.remove();
+  const invite = new URL(location.href);
+  invite.search = '';
+  invite.searchParams.set('room', net.room);
+  showTooNarrow(document.getElementById('menu-root') as HTMLElement, {
+    code: net.room,
+    link: invite.toString(),
+    width: window.innerWidth,
+    coarse: window.matchMedia('(pointer: coarse)').matches,
+  });
+  console.warn(`[net] refusing to join ${net.room}: viewport ${window.innerWidth}px is under `
+    + `the ${HUD_MIN_WIDTH}px the deployment HUD needs. No slot taken; the room is still open.`);
+  await new Promise(() => { /* nothing below this line runs, and no socket was opened */ });
+}
 if (net) {
   link = new NetLink(net.base, net.room, net.want);
   try {

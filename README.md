@@ -106,19 +106,38 @@ npm run assets
 ### Two players, two machines, one network
 
 ```bash
-npm run host         # prints a URL to hand to the other player
+npm run host         # opens a room, prints a QR code, opens your browser on it
 ```
 
-One command, both halves: the game and the relay, bound to an address the machine next door can
-reach rather than to `127.0.0.1`. It works out which of this machine's interfaces to advertise,
-checks both listeners answer *at that address*, and prints the URL. Say Allow if macOS asks
-about incoming connections. Both machines must be on the same network — a guest network with
-client isolation will not work, and nothing here can work round that.
+One command, both halves, and nothing to type on either side. It binds an address the machine
+next door can reach rather than `127.0.0.1`, starts the relay, **asks it for a room**, and prints
+the room code, the join URL and a scannable square:
 
-The other player opens the URL, or types the five-character room code from the CREATE A ROOM
-screen into their own lobby. The deployed site cannot host this: an HTTPS page may not open a
-plain `ws://` socket to anything but loopback, which is a browser rule and not a limitation of
-the relay. `docs/MULTIPLAYER.md` §10.2 has the measurement and prices the ways round it.
+```
+      http://192.168.1.77:5958/?room=QXWYZ
+```
+
+Your own browser opens on that room. The other player points a camera at the square, or types
+that line — 36 characters, the last five of which are the code — and is in the room with no form
+to fill in and no Join to press. Say Allow if macOS asks about incoming connections. Both
+machines must be on the same network; a guest network with client isolation will not work, and
+nothing here can work round that.
+
+`npm run host -- --no-open` keeps your browser shut, `--no-qr` prints the URL without the
+square, and `--relay-port=` moves the relay.
+
+**The deployed site cannot host this and never will.** A page served from the internet is not
+allowed to open a connection into a private network — the socket is refused before a packet
+leaves, which is a browser rule and not a limitation of the relay. Every engine refuses it;
+Chromium and Safari happen to refuse it for different reasons, and `docs/MULTIPLAYER.md` §12.6
+has both measurements. The site's multiplayer screen says so and links to a copy you can run
+yourself. §12.5 says why an address packed into a longer room code would not help.
+
+**And it needs a window about 1,100 px wide.** The battle HUD has no phone layout: BEGIN BATTLE
+sits at a fixed 1,062 px whatever the viewport, on a page that cannot scroll sideways, so a
+narrower screen can join a room and then never start the battle. Scanning the square on a phone
+is therefore refused *before* anything connects — the room stays open for a machine that can
+play it, and the phone is handed the code and the link to carry. §12.10.
 
 ### Setting up a battle
 
