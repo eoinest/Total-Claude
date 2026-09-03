@@ -69,7 +69,7 @@ import { execFileSync } from 'node:child_process';
 import { request as httpRequest } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { launchBrowser, startVite } from './lib/browser-budget.mjs';
@@ -195,7 +195,25 @@ function cleanup() {
     try { fn(); } catch { /* going away regardless */ }
   }
 }
-const die = (why) => { console.error(`\n${why}`); cleanup(); process.exit(1); };
+/**
+ * Stop, say why, and **keep what was measured**.
+ *
+ * The JSON used to be written only on the way out of a clean run, so a throw took every
+ * measurement with it: the three-battle arm passed `campus-martius/field` on six checks with
+ * thirty-nine agreed checkpoints, threw on the next battle, and `/tmp/p2p-core.json` did not
+ * exist. The numbers were in the log and nowhere a reader could load them.
+ */
+const die = (why) => {
+  console.error(`\n${why}`);
+  cleanup();
+  if (JSON_OUT) {
+    try {
+      writeFileSync(path.resolve(ROOT, JSON_OUT),
+        JSON.stringify({ results, measured, died: String(why).slice(0, 400) }, null, 2));
+    } catch { /* the exit matters more than the file */ }
+  }
+  process.exit(1);
+};
 process.on('SIGINT', () => die('interrupted'));
 process.on('SIGTERM', () => die('terminated'));
 process.on('uncaughtException', (e) => die(`uncaught: ${e?.stack ?? e}`));
