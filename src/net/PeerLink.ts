@@ -499,7 +499,17 @@ export class PeerLink implements Link {
           return;
         }
         case 'answer': {
-          if (this.want !== 'host' || this.haveRemote) return;
+          if (this.want !== 'host') return;
+          /*
+           * A **second** answer, and it needs the refusal rather than silence.
+           *
+           * The host now advertises its offer every `OFFER_REPEAT_MS` until somebody takes it, so
+           * two challengers can both answer the same one. The first wins. The second has already
+           * set a remote description and would otherwise sit through the ICE deadline and be told
+           * *"your two networks would not let the game connect directly"* — an accusation against
+           * their network for a room that was simply taken.
+           */
+          if (this.haveRemote) { this.signal.send({ t: 'full', from: this.slot }); return; }
           this.claim();
           this.deadline = now() + ICE_DEADLINE_MS;
           await this.pc.setRemoteDescription({ type: 'answer', sdp: m.sdp });
@@ -515,6 +525,9 @@ export class PeerLink implements Link {
         }
         case 'full': {
           if (this.want === 'host' || this.openedAt >= 0) return;
+          // Stop the ICE deadline too: a challenger that had already answered would otherwise be
+          // told its network refused a connection to a room that was simply taken.
+          this.deadline = 0;
           this.refusedByRelay = `room ${this.room} already has a challenger`;
           this.refusal = `${this.refusedByRelay}. Somebody else is already in that room — `
             + 'ask for a new code, or open one of your own.';
