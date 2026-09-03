@@ -1914,6 +1914,18 @@ if (wanted('lobby')) {
   await guest.click('.menu-home .dest-multiplayer');
   await guest.waitForSelector('.tc-lobby', { timeout: 30000 });
   await openAdvanced(guest);
+  /*
+   * **The challenger has to ask for the relay too**, and leaving it off cost this arm a run.
+   *
+   * Since the peer transport became the default, `#tc-via-relay` is what selects the relay and
+   * it is unticked on both screens. The host above checks it; this did not, so the two clients
+   * chose *different wires* — the host waited on a relay socket for a challenger who was busy
+   * opening a peer connection to nobody. The symptom was not a refusal, because neither side is
+   * wrong on its own: it was `page.waitForFunction: Timeout 300000ms exceeded` on
+   * `window.__game.ready`, five minutes of a challenger who never connected, and the arm took
+   * the whole run down with it before the tally line could be printed.
+   */
+  await guest.check('#tc-via-relay');
   await guest.fill('#tc-relay', relay.base);
   await guest.click('#tc-room');
   await guest.type('#tc-room', room, { delay: 20 });
