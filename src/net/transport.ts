@@ -126,6 +126,9 @@ export function testKnobs(params: URLSearchParams): BuildOptions {
       fromTurn: Number(params.get('p2pfault-from') ?? 20) || 20,
       phase: params.get('p2pfault-phase') === 'deploy' ? 'deploy' : 'battle',
       once: params.get('p2pfault-every') !== '1',
+      // `?p2pfault-local=1` corrupts only what this peer plays, which is the only way to make a
+      // divergence in a topology with no canonical stream. See `PeerFault.localOnly`.
+      localOnly: params.get('p2pfault-local') === '1',
     };
   }
   const brokers = (params.get('p2pbrokers') ?? '').trim();

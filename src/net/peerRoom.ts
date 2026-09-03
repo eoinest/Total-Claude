@@ -209,6 +209,32 @@ export interface PeerFault {
   fromTurn: number;
   phase?: 'deploy' | 'battle';
   once?: boolean;
+  /**
+   * Corrupt only what this peer **plays**, leaving what it publishes intact.
+   *
+   * **This is the difference between a fault that tests the detector and a fault that tests
+   * nothing, and it took writing the browser arm to see it.** `Room.bend` sends the bent packet
+   * *to one slot* and the clean one to the other, which is how a relay makes a divergence: there
+   * is a canonical stream and one client is given something else. A peer-to-peer session has no
+   * canonical stream — a commit goes to both ends of one channel — so a peer that corrupts what
+   * it commits produces a stream both peers play **identically**, and the two battles stay
+   * bit-identical. The gate would then have injected a fault, fired it, and correctly reported no
+   * divergence.
+   *
+   * So there are two things a fault can be here and both are worth having:
+   *
+   * - **`localOnly: false`** — the corruption travels. It proves that a mangled *record* is
+   *   mangled the same way on both sides, which is a real property of this topology and the
+   *   thing `qa-p2p`'s `proto` fault checks assert.
+   * - **`localOnly: true`** — the corruption stays. This peer's simulation runs one order short,
+   *   or one order out of sequence, while its opponent runs the stream as published. That is a
+   *   genuine fork and it is what the detector exists for.
+   *
+   * `ulp` is **always** local-only, whatever this says, and it cannot be anything else: it
+   *  travels as a marker op that `NetSession.testMarker` turns into a one-ULP perturbation, and a
+   *  marker both peers receive perturbs the same field of the same unit on both. See `bend`.
+   */
+  localOnly?: boolean;
 }
 
 /** How often "I am still here" goes out in the lobby. A second; see `Room.LOBBY_BEAT_MS`. */
@@ -705,7 +731,13 @@ export class PeerRoom {
     return { local: [...local, ...lag.local], wire: [...wire, ...lag.wire] };
   }
 
-  /** One commit: everything buffered, stamped by this peer, and never restamped by anybody. */
+  /**
+   * One commit: everything buffered, stamped by this peer, and never restamped by anybody.
+   *
+   * Two versions come out of `bend` — what this peer *plays* and what it *publishes* — and with
+   * no fault configured they are the same object, which is the whole of the ordinary path. See
+   * `PeerFault.localOnly` for why they have to be separable.
+   */
   private commit(ph: 'deploy' | 'battle', n: number): PeerCommit {
     const raw = this.pending;
     this.pending = [];
@@ -713,17 +745,16 @@ export class PeerRoom {
     this.seq += raw.length;
     const ready = ph === 'deploy' && this.iAmReady;
     const msg: PeerCommit = { k: 'commit', ph, n, i0, ops: raw, ready };
-    const bent = this.bend(msg);
+    const { mine, wire } = this.bend(msg);
     const side = this.me;
     const bag = ph === 'battle' ? side.battle : side.deploy;
-    // Filed under the same turn, with the same `(slot, seq)` arithmetic the receiver will use —
-    // so this peer plays exactly the packet it published, corruption included.
-    bag.set(n, bent.ops.map((e, j) => ({ s: this.slot, i: bent.i0 + j, e })));
+    // Filed under the same turn, with the same `(slot, seq)` arithmetic the receiver will use.
+    bag.set(n, mine.ops.map((e, j) => ({ s: this.slot, i: mine.i0 + j, e })));
     if (ph === 'battle') side.committedBattle = n;
     else side.committedDeploy = n;
-    side.ready = bent.ready;
+    side.ready = mine.ready;
     this.commitsOut++;
-    return bent;
+    return wire;
   }
 
   /**
@@ -785,43 +816,59 @@ export class PeerRoom {
     return ops.slice().sort((a, b) => (a.s - b.s) || (a.i - b.i));
   }
 
-  /** The corruption, applied to what this peer publishes. See `PeerFault`. */
-  private bend(m: PeerCommit): PeerCommit {
+  /**
+   * The corruption. Returns what this peer plays and what it publishes.
+   *
+   * `{ mine: m, wire: m }` on every path with no fault configured, so the ordinary commit
+   * allocates nothing extra and there is one object.
+   */
+  private bend(m: PeerCommit): { mine: PeerCommit; wire: PeerCommit } {
+    const clean = { mine: m, wire: m };
     const f = this.opts.fault;
-    if (!f || m.ph !== (f.phase ?? 'battle') || m.n < f.fromTurn) return m;
-    if (f.once !== false && this.faultsFired > 0) return m;
+    if (!f || m.ph !== (f.phase ?? 'battle') || m.n < f.fromTurn) return clean;
+    if (f.once !== false && this.faultsFired > 0) return clean;
+    /*
+     * `ulp` is local-only and cannot be otherwise.
+     *
+     * It travels as a marker op that `NetSession.testMarker` turns into a one-ULP perturbation of
+     * one `UnitGroupState` float64 field. Published, both peers receive the marker and both
+     * perturb the same field of the same unit by the same amount — so the fault fires and the two
+     * battles stay bit-identical, which is a test of nothing. Kept local, it is exactly the
+     * failure real hardware produces: §1.4 measured 1 ULP as the true magnitude of a libm
+     * disagreement, and the whole detection design rests on `uf64` seeing it.
+     */
     if (f.kind === 'ulp') {
       this.faultsFired++;
-      return { ...m, ops: [...m.ops, ['__ulp__']] };
+      return { mine: { ...m, ops: [...m.ops, ['__ulp__']] }, wire: m };
     }
     // A fault that changed nothing is not a fault and must not spend the single-shot budget —
     // `Room.emit` has the same guard and the same reason: an arm that passes by proving nothing.
-    if (f.kind === 'drop') {
-      if (!m.ops.length) return m;
-      this.faultsFired++;
-      return { ...m, ops: m.ops.slice(1), i0: m.i0 + 1 };
-    }
-    if (f.kind === 'dup') {
-      if (!m.ops.length) return m;
-      this.faultsFired++;
-      return { ...m, ops: [m.ops[0], ...m.ops] };
-    }
-    /*
-     * `swap` exchanges the **last** adjacent pair, and both halves of that matter.
-     *
-     * Same slot is automatic here — a commit is one slot's ops by construction, which is one
-     * hazard the relay's version had to be careful about. The *last* pair is the correction
-     * `Room.bend` records: the gate fires three move orders on one selection, every one of them
-     * sets the same regiment's destination, so exchanging the first pair is last-write-wins and
-     * changes nothing at all. Exchanging the last pair moves the final order, and the regiment
-     * ends somewhere else.
-     */
-    if (m.ops.length < 2) return m;
+    const bent = ((): PeerCommit | null => {
+      if (f.kind === 'drop') {
+        return m.ops.length ? { ...m, ops: m.ops.slice(1), i0: m.i0 + 1 } : null;
+      }
+      if (f.kind === 'dup') {
+        return m.ops.length ? { ...m, ops: [m.ops[0], ...m.ops] } : null;
+      }
+      /*
+       * `swap` exchanges the **last** adjacent pair, and both halves of that matter.
+       *
+       * Same slot is automatic here — a commit is one slot's ops by construction, which is one
+       * hazard the relay's version had to be careful about. The *last* pair is the correction
+       * `Room.bend` records: the gate fires three move orders on one selection, every one of them
+       * sets the same regiment's destination, so exchanging the first pair is last-write-wins and
+       * changes nothing at all. Exchanging the last pair moves the final order, and the regiment
+       * ends somewhere else.
+       */
+      if (m.ops.length < 2) return null;
+      const ops = m.ops.slice();
+      const i = ops.length - 2;
+      const t = ops[i]; ops[i] = ops[i + 1]; ops[i + 1] = t;
+      return { ...m, ops };
+    })();
+    if (!bent) return clean;
     this.faultsFired++;
-    const ops = m.ops.slice();
-    const i = ops.length - 2;
-    const t = ops[i]; ops[i] = ops[i + 1]; ops[i + 1] = t;
-    return { ...m, ops };
+    return f.localOnly ? { mine: bent, wire: m } : { mine: bent, wire: bent };
   }
 
   // -------------------------------------------------------------------------

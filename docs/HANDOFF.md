@@ -3441,3 +3441,81 @@ because a block on a third of the ground occludes more of itself.
   `march: true` orders the cohort forward before the shutter and a simulation cannot be rewound,
   so every camera after it photographs a block that has moved. The first pass had `tactical` on
   either side of it in the two arms and the "identical station" pair differed by 1.79 m.
+
+## 2 September 2026 — peer to peer, and the deployed site can play (`e/net/webrtc-p2p`)
+
+The owner asked to *"rework the entire multiplayer system and make it just like Claude of Tanks…
+like peer to peer"*. That repository is **not** peer to peer — `ws`, `ioredis`,
+`@upstash/redis`, `@vercel/functions`, and a README describing server-authoritative snapshots for
+a 7v7 — and §4.2 already priced that model on this game at 5.5 Mbit/s per client against
+lockstep's ~100 bytes/s. The options were put to the owner and they chose **WebRTC peer to peer
+keeping the lockstep engine**. `docs/MULTIPLAYER.md` §13 is the whole record; this is the state
+somebody picking it up needs.
+
+**The prize is not "no relay".** An `https` page may not open a `ws://` connection into a private
+network, which is the entire reason multiplayer has never worked on the deployed site (§10.2,
+§12.6). A peer connection is subject to neither that rule nor mixed content — and the arm that
+proves it also runs the `ws://` refusal from the *same page*, so the difference is the transport
+and not the fixture.
+
+### Where the code is
+
+| | |
+|---|---|
+| `src/net/agree.ts` | the handshake (`agree`) and the checkpoint comparator (`firstDisagreement`, `probeDiff`), **extracted from `Room` so there is one copy**. Two schedulers must never be two opinions about whether a pairing may play. |
+| `src/net/peerRoom.ts` | the input-driven scheduler. One on **each** peer. Pure, no I/O, erasable-only TypeScript so Node can load it — which is what makes the `proto` arm possible. |
+| `src/net/link.ts` | the surface `NetSession` talks to. `NetLink implements Link` now, so a change that breaks the contract is a type error rather than a runtime surprise. |
+| `src/net/PeerLink.ts` | the `RTCPeerConnection`, the ICE dance, the STUN list, and `noDirectPath` — the sentence the no-TURN decision owes its users. |
+| `src/net/signal.ts` | MQTT 3.1.1 over `wss` to three public brokers at once, vendored (~90 lines, no dependency), topic hashed, payload AES-GCM under the room code. Plus `WsSignal`, the relay's `/signal/CODE`. |
+| `src/net/transport.ts` | which wire a URL asks for, and `testKnobs` — the single place the test-only URL parameters are read, so there is one place to audit. |
+| `tools/lib/net-drive.mjs` | the page hooks and mouse gestures, **shared by `qa-net` and `qa-p2p`**. Moved out of `qa-net`; nothing about the behaviour changed. |
+| `tools/qa-p2p.mjs` | the gate. |
+| `tools/scratch/inject-p2p.mjs` | 37 named faults, `--list` and `--all-fast`. |
+
+### The three things to know before changing any of it
+
+1. **`NetSession.update` ends with `this.link.pump?.(this.ctx.time.tick)`, and that line is the
+   pacing.** A peer earns the right to commit turn `k` by having *consumed* turn `k − delay`.
+   Delete the line and turn emission needs both commits, a commit follows immediately on an
+   emission, the ceiling races away from the simulation, `pace` sets `gameSpeed` to 8, and two
+   peers play a ten-minute battle in seventy seconds — identically, so nothing catches it but the
+   clock. `commit-without-consuming` in the injector is that fault.
+2. **`PeerLink.preOpen` is not optional.** A host's `connect()` resolves as soon as its code is
+   registered, because it has a battle to choose; it then publishes `setup` and `ready` minutes
+   before a challenger arrives. Without the queue both go to a data channel that does not exist
+   and both pages sit in `phase: lobby` for ever. The `lobby` arm found this on its first run.
+3. **ICE candidates must be queued until `setRemoteDescription`.** `addIceCandidate` rejects while
+   `remoteDescription` is null, host candidates are gathered in single-digit milliseconds, and
+   `void`-ing those rejections loses every one of them silently. Half a day of reconnaissance went
+   into learning that; `PeerLink` has the queue and says so.
+
+### Two facts about this machine that a gate has to know
+
+- **Playwright's default headless Chromium cannot hold a peer connection here.** Two browsers,
+  real STUN, host candidates: `chrome-headless-shell` connected **2 times in 17** across four flag
+  combinations, every failure sitting in `ice: checking` with no `icecandidateerror` to attribute
+  it to. `channel: 'chrome'` connected **4 of 4** in 57-209 ms at load 9.7-12, and
+  `channel: 'chromium'` (new headless, same binary) also connects. `qa-p2p` uses
+  `channel: 'chrome'` and says so by name if it is missing rather than reporting a transport
+  failure.
+- **mDNS candidate obfuscation has to be off for the harness**
+  (`--disable-features=WebRtcHideLocalIpsWithMdns`): nothing here resolves `*.local` candidate
+  names, so two browsers never complete a check over host candidates. A player's OS resolves them
+  and a player's peer is on another machine; no flag is shipped.
+
+### The honest limit
+
+**No TURN, by decision.** Roughly 80-90% of arbitrary pairings connect; both players on ordinary
+home internet does better, both on one wifi always works, and **a network that blocks outbound UDP
+cannot play at all** — that is the ~9 points of callstats.io's 22% that needed TCP, and nothing
+recovers it. §13.6 has the sources. The product says which side the block is on and what to try,
+in four sentences, and stops. `qa-p2p`'s `nodirect` arm makes that path red on purpose by
+discarding host candidates, which leaves only the hairpin — and this network refuses hairpinning,
+measured.
+
+### What is not done
+
+`srflx`-to-`srflx` — two strangers on two *different* NATs — has never carried a battle, because
+reproducing it needs a second network. Everything about the internet case is measured gathering
+plus measured policy plus one battle over `host` candidates on this laptop. That is a second open
+premise beside §7.1's, and §13.9 lists the rest.

@@ -276,9 +276,20 @@ const nextRoom = () => `PP${String(++roomSeq).padStart(3, '0')}`
  * no menu: it is given the host's battle over the data channel, which is the whole point of
  * `setup` arriving before either client has an army.
  */
+/**
+ * `extra` goes to **both** pages; `hostExtra` and `guestExtra` go to one.
+ *
+ * The distinction is not tidiness and getting it wrong makes a whole arm vacuous. A latency knob
+ * belongs on both — that is what a symmetric link is. A *fault* belongs on exactly one, because
+ * the design is symmetric: `--p2pfault=ulp` on both peers perturbs the same field of the same
+ * unit on both, by the same one unit in the last place, and the two battles stay bit-identical.
+ * The desync arm would then have injected a fault, fired it, and correctly reported no
+ * divergence — an arm passing by proving the opposite of what it claims.
+ */
 async function bootPeers(hostBrowser, guestBrowser, base, {
   room = nextRoom(), sig, deploy = true, autoplay = 0, map = 'campus-martius',
-  scenario = 'field', size = 'small', extra = '', guestExtra = '', shots = null,
+  scenario = 'field', size = 'small', extra = '', hostExtra = '', guestExtra = '',
+  shots = null,
 } = {}) {
   const q = `room=${room}&sig=${encodeURIComponent(sig)}&autoplay=${autoplay}`
     + `&deploy=${deploy ? 1 : 0}${extra}`;
@@ -291,7 +302,7 @@ async function bootPeers(hostBrowser, guestBrowser, base, {
     size,
     // `host=1` and not merely the absence of `host=0`: a bare `?room=` is an *invitation* and
     // `main.ts` reads it as a join. Peer to peer there is no `?net=` to tell the two apart.
-    query: `${q}&host=1`,
+    query: `${q}&host=1${hostExtra}`,
     onSetup: shots ? (p) => shot(p, `${shots}-01-setup`) : undefined,
   });
   const guest = await newPage(guestBrowser);
@@ -658,26 +669,69 @@ if (wanted('proto')) {
         + `stopped at ${a.tick} and ${b.tick} of a 900-tick run` : 'no end');
   }
 
-  // -- 5. every injected fault fires and lands identically on both peers -----
+  // -- 5. every injected fault fires, and the two modes do the two different things --------
+  /*
+   * A published fault is a *shared* corruption and a local fault is a *fork*, and both are worth
+   * asserting because getting the difference wrong makes a whole arm vacuous.
+   *
+   * `Room.bend` sends the bent packet to one slot and the clean one to the other: a relay has a
+   * canonical stream and one client is given something else. There is no canonical stream between
+   * two peers, so a corrupted commit is corrupted for both — which the rows below assert, because
+   * it is a real property of the topology and not an accident. The fork the *detector* exists for
+   * needs the corruption to stay on one side, which is `?p2pfault-local=1`, and the second block
+   * asserts that it does.
+   */
   for (const kind of ['drop', 'dup', 'swap', 'ulp']) {
     const orders = [];
     for (let i = 0; i < 30; i++) orders.push({ t: 30 + i * 7, slot: i % 2, tag: i, burst: 3 });
     const r = runMatch({ ticks: 500, ordersAt: orders, fault: { kind, fromTurn: 12 } });
     const [a, b] = r.peers;
     const fired = a.room.status().faultsFired;
+    // `ulp` is local-only by construction, so the host plays the marker and the guest does not.
     const want = kind === 'drop' ? r.issued.length - 1
-      : kind === 'dup' || kind === 'ulp' ? r.issued.length + 1 : r.issued.length;
+      : kind === 'dup' ? r.issued.length + 1
+        : kind === 'ulp' ? r.issued.length + 1 : r.issued.length;
     // `swap` changes the order, not the count, so the count alone cannot see it: the observable
     // is a pair out of ascending order within one turn from one slot.
     const tagOf = (o) => Number(JSON.parse(o.slice(o.indexOf('['))).at(-1));
     const swapped = kind !== 'swap' || a.ops.some((o, i) => i > 0
       && o.split('/')[0] === a.ops[i - 1].split('/')[0] && tagOf(o) < tagOf(a.ops[i - 1]));
+    const shared = kind !== 'ulp';
     record(`proto-fault-${kind}`,
-      fired === 1 && eq(a.ops, b.ops) && a.ops.length === want && swapped,
-      `--p2pfault=${kind} corrupts the record at the source and both peers play the corruption`,
-      `fired ${fired}, ${r.issued.length} issued, ${a.ops.length} played (expected ${want}), `
-      + `streams identical ${eq(a.ops, b.ops)}${kind === 'swap' ? `, pair exchanged ${swapped}` : ''}`,
-      'the fault is applied where a peer commits, so it travels honestly down the wire');
+      fired === 1 && a.ops.length === want && swapped
+      && (shared ? eq(a.ops, b.ops) : !eq(a.ops, b.ops)),
+      shared
+        ? `--p2pfault=${kind} corrupts the record at the source and both peers play the corruption`
+        : '--p2pfault=ulp perturbs only the peer that carries it, which is the fork a libm '
+          + 'disagreement actually is',
+      `fired ${fired}, ${r.issued.length} issued, host played ${a.ops.length} `
+      + `(expected ${want}) and guest played ${b.ops.length}; streams identical `
+      + `${eq(a.ops, b.ops)}${kind === 'swap' ? `, pair exchanged ${swapped}` : ''}`,
+      shared
+        ? 'a peer-to-peer commit goes to both ends of one channel, so there is no canonical '
+          + 'stream for one side to diverge from'
+        : 'the marker never leaves this peer: published, both sides would perturb the same '
+          + 'field of the same unit and the fault would prove nothing');
+  }
+
+  // -- 5b. and a local-only fault really is one-sided ------------------------
+  for (const kind of ['drop', 'swap']) {
+    const orders = [];
+    for (let i = 0; i < 30; i++) orders.push({ t: 30 + i * 7, slot: 0, tag: i, burst: 3 });
+    const r = runMatch({
+      ticks: 500, ordersAt: orders, fault: { kind, fromTurn: 12, localOnly: true },
+    });
+    const [a, b] = r.peers;
+    const fired = a.room.status().faultsFired;
+    record(`proto-fault-${kind}-local`,
+      fired === 1 && !eq(a.ops, b.ops) && b.ops.length === r.issued.length,
+      `--p2pfault=${kind}&p2pfault-local=1 forks the two simulations, which is what a detector `
+      + 'is for',
+      `fired ${fired}, ${r.issued.length} issued; the peer that carries the fault played `
+      + `${a.ops.length} and its opponent played ${b.ops.length}; streams differ `
+      + `${!eq(a.ops, b.ops)}`,
+      'without this mode every fault here is symmetric and the browser desync arm would have '
+      + 'injected a fault, fired it, and correctly found nothing');
   }
 
   // -- 6. a commit for a turn already played --------------------------------
@@ -1124,15 +1178,34 @@ if (wanted('lag') && chrome) {
 if (wanted('desync') && chrome) {
   console.log('\n=== desync: a fork injected at the source, caught and attributed ===');
   const rows = [];
-  for (const kind of ['ulp', 'swap']) {
+  /*
+   * `ulp` and a **local** `drop`, not `swap`.
+   *
+   * `swap` published is symmetric and forks nothing (see `proto-fault-swap`), so it was testing
+   * the detector against a battle that never diverged. `ulp` is local-only by construction and
+   * is the failure real hardware produces; a local `drop` is the sharper one — this peer's own
+   * simulation runs one of its own orders short while its opponent runs the published stream —
+   * and it is the shape a real bug in the commit path would take.
+   */
+  for (const kind of ['ulp', 'drop']) {
+    /*
+     * `hostExtra`, so the corruption is on **one** peer. See `bootPeers`.
+     *
+     * Both peers carrying `--p2pfault=ulp` move the same float64 field of the same unit by the
+     * same one unit in the last place, and the two battles stay identical — a fault that fires
+     * and proves nothing, which is the exact shape this repository keeps writing down.
+     */
     const m = await bootPeers(chrome, chromeGuest, base, {
-      sig: SIG(), extra: `&p2pfault=${kind}&p2pfault-from=12`,
+      sig: SIG(),
+      hostExtra: `&p2pfault=${kind}&p2pfault-from=12`
+        + `${kind === 'ulp' ? '' : '&p2pfault-local=1'}`,
     });
     await deployWith(m.host, `desync-${kind}-host`);
     await deployWith(m.guest, `desync-${kind}-guest`);
     let caught = null;
     for (let i = 0; i < 8 && !caught; i++) {
-      if (kind === 'swap') await doubleOrder(m.host, i);
+      // Several orders in one turn, so a `drop` has something of this peer's own to drop.
+      if (kind === 'drop') await doubleOrder(m.host, i);
       else await burst(m.host, i);
       await sleep(900);
       caught = await m.host.evaluate(() => {
@@ -1164,7 +1237,8 @@ if (wanted('desync') && chrome) {
         : `not detected after ${rows.at(-1).fired} fault(s) fired; ended '${caught?.ended ?? ''}'`,
       kind === 'ulp' ? 'one UnitGroupState float64 field moved by one unit in the last place, '
         + 'which is the magnitude a libm disagreement actually has (§1.4)'
-        : 'two orders on one regiment exchanged, which is the total-order hazard of §4.1');
+        : "one of this peer's own orders missing from its own simulation and present in its "
+          + 'opponent\'s, which is what a bug in the commit path would look like');
     record(`desync-${kind}-attributed`,
       !!d && Array.isArray(d.units) && d.note && !d.note.includes('deadline'),
       `--p2pfault=${kind}: the fork is attributed to named regiments, not merely to a tick`,
