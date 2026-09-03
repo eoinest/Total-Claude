@@ -133,7 +133,12 @@ One command, both halves, and nothing to type on either side. It binds an addres
 next door can reach rather than `127.0.0.1`, starts the relay, **asks it for a room**, and prints
 the room code, the join URL and a scannable square. On this path the relay does one job — it
 passes one message each way to introduce the two browsers, and is then closed — and the battle
-still runs machine to machine, over the local network rather than out to the internet and back:
+still runs machine to machine, over the local network rather than out to the internet and back.
+Those two introduction messages are **not encrypted** on this path, and that is stated rather
+than hidden: a browser only gives a page encryption on a secure address, and the address this
+command prints is a plain one. They stay on your own network, they carry an offer and an answer
+rather than any part of the battle, and the console says so once. The relay carried every order
+of every battle over that same wire until 2 September 2026:
 
 ```
       http://192.168.1.77:5958/?room=QXWYZ
