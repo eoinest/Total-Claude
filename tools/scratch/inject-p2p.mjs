@@ -11,6 +11,12 @@
  * that could not fail: a span test tangent to its own bounding box, fifty-four checks connecting
  * to loopback while testing a LAN product, and an arm whose injection only mutated the harness.
  *
+ * **Two checks deliberately have no entry here, and both are bail-outs.** `https-arm-can-run`
+ * and `p2p-browser-can-run` are the arms saying *"the fixture could not be built"* — no LAN
+ * address, no `openssl`, no Google Chrome — and they are already the red. A fault that removed
+ * the LAN address would be arranging the very condition they exist to report, which proves
+ * nothing about the product. Every other check in `tools/qa-p2p.mjs` is named by a fault below.
+ *
  * **Two of these deliberately mutate the harness rather than the product, and both are marked.**
  * `no-space-override` removes the flag that declares an origin public to the browser, which is
  * the control that separates "the browser refused" from "nothing was listening" — the previous
@@ -38,7 +44,13 @@ const FAULTS = {
   'guest-drops-an-op': [F.room,
     "      local.push({\n        k: 'turn', ph: 'battle', n: next, t: turnTick(next), ops: this.sorted([...a, ...b]),\n      });",
     "      const both = this.sorted([...a, ...b]);\n      local.push({\n        k: 'turn', ph: 'battle', n: next, t: turnTick(next),\n        ops: this.slot === 1 ? both.slice(1) : both,\n      });",
-    'proto', 'proto-one-order-stream, and every battle bit-identity check'],
+    'proto', 'proto-one-order-stream, every battle-*-bit-identical, every battle-*-one-order-log, and ab-both-transports-agree-internally'],
+  // `guest-drops-an-op` changes the *ops* and leaves the turn list identical, so the claim that
+  // both peers emit the same packets at the same execution ticks needed its own fault.
+  'guest-shifts-its-ticks': [F.room,
+    "        k: 'turn', ph: 'battle', n: next, t: turnTick(next), ops: this.sorted([...a, ...b]),",
+    "        k: 'turn', ph: 'battle', n: next,\n        t: this.slot === 1 ? turnTick(next) + 1 : turnTick(next),\n        ops: this.sorted([...a, ...b]),",
+    'proto', 'proto-one-turn-stream'],
   'unsorted-turn': [F.room,
     '    return ops.slice().sort((a, b) => (a.s - b.s) || (a.i - b.i));',
     '    return ops.slice().sort((a, b) => a.i - b.i);',
@@ -49,7 +61,7 @@ const FAULTS = {
   'clear-then-read': [F.room,
     '    const raw = this.pending;\n    this.pending = [];',
     '    this.pending = [];\n    const raw = this.pending;',
-    'proto', 'proto-nothing-dropped, proto-one-order-stream, proto-deploy-in-one-order'],
+    'proto', 'proto-nothing-dropped, proto-one-order-stream, proto-deploy-in-one-order, lag-nothing-dropped'],
   'flip-on-my-own-flag': [F.room,
     '        if (this.sides[0].ready && this.sides[1].ready) {',
     '        if (this.iAmReady) {',
@@ -163,7 +175,7 @@ const FAULTS = {
   'no-candidates': [F.peer,
     '      this.signal.send({ t: \'ice\', from: this.slot, c: e.candidate.toJSON() });',
     '      void e;',
-    'battle', 'battle-*-connected-directly and battle-*-bit-identical'],
+    'battle', 'battle-*-connected-directly, battle-*-bit-identical, https-peers-connect-and-play'],
   'setup-never-crosses': [F.peer,
     "        if (this.slot === 0) return nothing();\n        return { local: [{ k: 'config', cfg: m.cfg, deployPhase: m.deployPhase }], wire: [] };",
     '        return nothing();',
@@ -180,6 +192,12 @@ const FAULTS = {
     '      const held = this.preOpen.splice(0);\n      for (const m of held) this.push(m);',
     '      const held = this.preOpen.splice(0);\n      void held;',
     'lobby', 'lobby-two-people-and-a-code — the bug this arm actually found'],
+  // Peer to peer a code needs no permission from anybody, so Create must not be able to fail on
+  // a service that is only going to introduce you.
+  'create-needs-permission': [F.lobby,
+    "          if (r.status === 409 && j?.error === 'started') {",
+    "          if (r.status !== 200) {",
+    'lobby', 'lobby-mints-a-code-with-no-round-trip'],
   'relay-again-compulsory': [F.lobby,
     "    hostBtn.disabled = throughRelay() && relay.value.trim() === '';",
     "    hostBtn.disabled = relay.value.trim() === '';",
@@ -260,7 +278,7 @@ const FAULTS = {
   'dead-brokers': [F.sig,
     "export const PUBLIC_BROKERS = [\n  'wss://broker.emqx.io:8084/mqtt',\n  'wss://test.mosquitto.org:8081/mqtt',\n  'wss://broker.hivemq.com:8884/mqtt',\n];",
     "export const PUBLIC_BROKERS = ['wss://nothing.invalid:8084/mqtt'];",
-    'broker', 'broker-carries-an-introduction'],
+    'broker', 'broker-carries-an-introduction and (in brokerplay) broker-introduces-two-strangers'],
 };
 
 /*
