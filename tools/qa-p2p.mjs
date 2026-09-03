@@ -1541,8 +1541,9 @@ if (wanted('desync') && chrome) {
       d ? `forked at tick ${d.tick} on ${d.layer}: ${d.mine} against ${d.theirs}; `
         + `last agreed tick ${d.lastAgreedTick}`
         : `NOT DETECTED — ${why}; ended '${caught?.ended ?? ''}'`,
-      kind === 'ulp' ? 'one UnitGroupState float64 field moved by one unit in the last place, '
-        + 'which is the magnitude a libm disagreement actually has (§1.4)'
+      kind === 'ulp' ? 'one UnitGroupState position moved by one float32 ULP, which is what a '
+        + '1-3 float64 ULP libm disagreement leaves behind when it gets through the quantisation '
+        + 'firewall at all — a float64 ULP is not representable in this state (§13.9)'
         : "one of this peer's own orders missing from its own simulation and present in its "
           + 'opponent\'s, which is what a bug in the commit path would look like');
     record(`desync-${kind}-attributed`,

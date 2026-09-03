@@ -630,32 +630,26 @@ export class NetSession implements Subsystem {
    * `UnitGroupState` position field. A detector that has never been shown that fault is a
    * detector nobody has tested.
    *
-   * **One float32 ULP, and the change from float64 is a measurement rather than a preference.**
-   * Every one of the fourteen `UNIT_F64_FIELDS` turns out to be a *float32 value in a float64
-   * box*: sampled across twelve units over three frames of the shipped battle, 36 of 36 readings
-   * had their low 29 mantissa bits zero — `...80000000`, `...a0000000`, `...e0000000` — and a
-   * one-float64-ULP nudge to any of the fourteen was back to a clean float32 value within one
-   * tick. Measured 3 Sep 2026, `tools/scratch/ulpfields.mjs`.
+   * **One float32 ULP, and the change from float64 is `src/sim/quantise.ts` catching up with
+   * this file.** That system was added to give the unit layer the quantisation firewall the
+   * soldier pool has always had: at order 60, after every writer in the tick, it `Math.fround`s
+   * all fourteen `UNIT_F64_FIELDS` and the waypoint queue. A one-float64-ULP nudge is therefore
+   * **erased before the next checkpoint, by design** — measured on the shipped battle 3 Sep
+   * 2026, 36 of 36 readings across twelve units carrying float32 values, every field nudged and
+   * every nudge gone within a tick (`tools/scratch/ulpfields.mjs`).
    *
-   * That corrects §1.4. The claim there is that the float32 round trip is a firewall with ~29
-   * bits of headroom and that *"`UnitGroupState` has no such firewall"*. It has the same one:
-   * the unit layer is derived from the soldier pool and re-quantised on the way in. `uf64` is
-   * not a float64 layer, it is a float64 *hash of float32 values*, and it is sensitive for a
-   * different reason — it is per-unit and aggregated, so one man's disagreement is not averaged
-   * away — rather than because it carries more bits.
-   *
-   * The consequence for this fault is direct: **a one-float64-ULP disagreement is not
-   * representable in this simulation's state**, so injecting one models something that cannot
-   * happen and tests nothing. It was surviving less than a tick, and whether the detector saw
-   * it was a race between the checkpoint and the next step — a race the relay path won often
-   * enough to keep `qa-net --only=ulp` green while the peer path, which drains its turns inside
+   * This fault was written before that firewall existed and nobody came back to it. What it
+   * had become was a race: the perturbation survived less than one tick, and whether a detector
+   * saw it depended on whether a checkpoint fell inside that window. The relay path won the race
+   * often enough to keep `qa-net --only=ulp` green; the peer path, which drains its turns inside
    * `update()` immediately before the step, lost it every time and reported sixty-two
    * bit-identical checkpoints after a fault that had definitely fired.
    *
-   * One float32 ULP is the right magnitude for the same reason: it is what a libm disagreement
-   * of 1-3 float64 ULP leaves behind **when it lands near a rounding boundary and gets through**
-   * the firewall, which is the only case that reaches this state at all. At the shipped battle's
-   * scale that is about 15 micrometres, and it persists and grows — measured, same file.
+   * One float32 ULP is the honest magnitude now, and it is the *interesting* one: it is exactly
+   * what a 1-3 float64 ULP libm disagreement leaves behind when it straddles a rounding boundary
+   * and gets through the firewall — the ~2e-9-per-field-per-tick case `quantise.ts` is explicit
+   * about not eliminating. At the shipped battle's scale that is about 15 micrometres, and it
+   * persists and grows: measured, same file.
    *
    * It is reachable only from a relay started with an explicit test flag, or from a peer with
    * `?p2pfault=ulp`. Nothing the product builds emits this marker.

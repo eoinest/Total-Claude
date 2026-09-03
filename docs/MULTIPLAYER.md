@@ -298,6 +298,14 @@ other passes ran the same experiment shaped differently — 592 million ±4-ULP 
 control **[M: priorart]** — and all three agree: the tick loop has about 29 bits of headroom
 against 1–3 ULP of libm disagreement.
 
+> **Correction, 3 September 2026 (§13.9 no. 12).** The paragraph below describes the state
+> *before* `src/sim/quantise.ts` existed. That system now runs at order 60, after every writer in
+> the tick, and `Math.fround`s all fourteen `UNIT_F64_FIELDS` and the waypoint queue — the unit
+> layer has the same firewall the soldier pool has. Measured on the shipped battle: 36 of 36
+> readings across twelve units carry float32 values, and a one-float64-ULP nudge to any field is
+> gone within a tick. A one-float64-ULP disagreement in this layer is no longer representable,
+> which is why `--fault=ulp` now injects one **float32** ULP.
+
 **The leak is the layer nobody hashes.** `UnitGroupState.x, z, facing, targetX, targetZ,
 targetFacing, morale, fatigue, ammo, chargeTimer, routTimer` are plain JS doubles, integrated in
 place, with no quantisation step anywhere. Nothing in this repo hashes them. Measured drift
@@ -3934,12 +3942,16 @@ empty and kept only as a note to the next person tempted to add to it.
 
 ### 13.9 What the gate found, in the order it found it
 
-The most useful thing to take from this section is not the count. It is that **eleven defects were
+The most useful thing to take from this section is not the count. It is that **twelve defects were
 found by running the checks rather than by reading the code**, and that seven of them are in
 classes a relay cannot have — so no amount of care transferred from §9 would have caught them.
-Three of the eleven were found *after* this section was first written, by running arms that had
-never completed a run: they are 9, 10 and 11, and all three are about what happens when the
-coordinator that used to notice things is not there.
+Four of the twelve were found *after* this section was first written, by running arms that had
+never completed a run. Numbers 9, 10 and 11 are all about what happens when the coordinator that
+used to notice things is not there. Number 12 is not about this transport at all: it is a check
+in the *relay* gate that had quietly stopped testing anything, and the only reason it surfaced is
+that the same fault was run through a second transport that happened to lose a race the first one
+was winning. **Two implementations of one guarantee are a better instrument than either of
+them.**
 
 | # | Found by | The defect |
 |---|---|---|
@@ -3955,6 +3967,42 @@ coordinator that used to notice things is not there.
 | 9 | `qa-p2p --only=nodirect` | **A challenger that had taken the offer kept knocking.** The knock timer ran until `dc.onopen`, and ICE takes 0.7-6 s; one second in, the challenger knocked again, the host had claimed on the answer by then, and `case 'knock'` answers a claimed room with `full`. So a perfectly good introduction survived only if ICE beat a one-second timer — and where ICE cannot finish at all it never did, which is why the arm about *two networks refusing each other* was reporting **"room already has a challenger"**. `claim()` now stops the knock. |
 | 10 | `qa-p2p --only=leave` | **Closing a tab told the survivor their network had failed.** Under a relay the relay holds both sockets and names `peerLeft`; between two peers a torn-down renderer does not shut an SCTP association politely, so the survivor sat until the silence detector fired and said `linkLost` — *"the connection is gone"* — six seconds after an opponent who had simply left. One `pagehide` listener calling `NetSession.dispose`, which sends `bye` and then closes the channel: measured **`peerLeft` after 503 ms**, and the battle now halts on the tick it stood on (191 to 191, against 191 to 195). |
 | 11 | `qa-p2p --only=leave`, same run | **`endedAtTick` was not in `status()`.** The field has existed since the relay pass; the readout the UI and the gate share did not carry it. So `leave-halts-at-a-stated-tick` asserted `ended.endedAtTick >= 0` against `undefined` — a check that could never go green — and printed *"the session reports its last agreed tick as undefined"* beside a screen reading *"The last tick both battles agreed on was 180"*. The number was in the sentence and nowhere a program could read it. |
+| 12 | `qa-p2p --only=desync` | **`--fault=ulp` had been injecting a difference this simulation can no longer hold**, and the *relay* gate had been passing on it by luck. See below; it is the largest of the twelve and it is about a check older than this branch. |
+
+**Number 12 in full, because it is a check that stopped working and nobody noticed.**
+
+`--fault=ulp` moves one `UnitGroupState` float64 field by one unit in the last place. It was
+written when §1.4 was current, and §1.4 says the unit layer is *"plain JavaScript doubles,
+integrated in place, with no quantisation step anywhere"*. That has not been true since
+`src/sim/quantise.ts` was added: it runs at order 60, after every writer in the tick, and
+`Math.fround`s all fourteen `UNIT_F64_FIELDS` and the waypoint queue, precisely to give the unit
+layer the firewall the soldier pool has always had. **A one-float64-ULP nudge is therefore erased
+before the next checkpoint, by design.** Measured on the shipped battle, 3 Sep 2026,
+`tools/scratch/ulpfields.mjs`: 36 of 36 readings across twelve units and three frames carried
+float32 values — low 29 mantissa bits zero — and every one of the fourteen fields, nudged by one
+float64 ULP, was back to a clean float32 value within a tick.
+
+So what the fault had become was a **race**. The perturbation lived for less than one tick, and
+whether a detector saw it depended on whether a checkpoint fell inside that window. The relay
+path won it — `onTurn` arrives on a socket event, out of phase with the step — which is why
+`qa-net --only=ulp` has been green all along. The peer path loses it every time, because
+`PeerRoom`'s turns are drained inside `NetSession.update()` immediately before the step. The peer
+arm reported the fault firing, `perturbedUnit` set to 0, and then **sixty-two bit-identical
+checkpoints to tick 1830**, which is what sent this looking.
+
+`testMarker` now moves one **float32** ULP, which is the honest magnitude and the interesting
+one: it is exactly what a 1–3 float64 ULP libm disagreement leaves behind when it straddles a
+rounding boundary and gets through the firewall — the ~2e-9-per-field-per-tick case
+`quantise.ts` is explicit about not eliminating. About 15 µm at this battle's scale. Both gates
+now catch it deterministically and attribute it: peer to peer at **tick 60 on `uf64`, unit 0, 1
+of 37 units differing**, and the relay arm at the same tick with the same attribution — for a
+reason rather than by luck.
+
+Two sentences elsewhere were corrected with it, because both were the stale claim in load-bearing
+positions: `src/net/agree.ts`'s explanation of why `uf64` is the detector (it is the faster
+detector because it is *per unit*, not because it carries more bits — both layers are behind the
+same firewall now), and `qa-net`'s own `one-ulp-layer` rationale, which said in as many words
+that `UnitGroupState` has no firewall.
 
 **The reason 4 and 4b took a browser arm each is the finding worth acting on.** `WsSignal`'s
 plaintext branch exists only on a private plain-http origin, so nothing cheaper than

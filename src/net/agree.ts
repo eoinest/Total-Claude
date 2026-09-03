@@ -147,10 +147,27 @@ export const DEFAULT_FATAL: Layer[] = ['uf64', 'uctl', 'pool', 'alive'];
  * both Firefox and WebKit while the float32 pool hash held all the way to t+200 — seven
  * checkpoints and about 170 simulated seconds of warning. The mechanism is §1.4: every tick
  * reads float32, computes in float64 and writes float32, and that quantisation is a firewall
- * with about 29 bits of headroom against 1–3 ULP of libm disagreement. `UnitGroupState` has no
- * such firewall. A session that watched the pool hash would find its desync nearly two orders
- * of magnitude later in simulated time, by which point the battle it would have to name is
- * long gone.
+ * with about 29 bits of headroom against 1–3 ULP of libm disagreement. A session that watched
+ * the pool hash would find its desync nearly two orders of magnitude later in simulated time,
+ * by which point the battle it would have to name is long gone.
+ *
+ * **The sentence that used to be here — *"`UnitGroupState` has no such firewall"* — is out of
+ * date, and believing it cost a day.** It has one: `src/sim/quantise.ts` runs at order 60, after
+ * every writer in the tick, and `Math.fround`s all fourteen `UNIT_F64_FIELDS` and the waypoint
+ * queue. Measured on the shipped battle 3 Sep 2026 (`tools/scratch/ulpfields.mjs`): 36 of 36
+ * readings across twelve units and three frames had their low 29 mantissa bits zero, and a
+ * one-float64-ULP nudge to any of the fourteen was gone within a tick.
+ *
+ * So `uf64` is a float64 hash **of float32 values**, and it is the faster detector for a
+ * different reason than this file used to give: it is per unit and aggregated over 37 of them,
+ * where the pool hash averages one man's disagreement into thousands. The measurement above —
+ * `uf64` apart at t+30 while the pool hash held to t+200 — was taken *before* the unit firewall
+ * existed and is the reason it was built. It is retained because the ordering it establishes is
+ * still right.
+ *
+ * The consequence worth carrying: a one-**float64**-ULP disagreement in the unit layer is not
+ * representable any more, so a fault that injects one tests nothing. See
+ * `NetSession.testMarker`, which was doing exactly that.
  *
  * `uctl` sits second because a *discrete* disagreement is a much more serious finding than a
  * continuous one: it means the two battles took different decisions rather than computing the

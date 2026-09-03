@@ -35,6 +35,8 @@ const F = {
   sig: 'src/net/signal.ts',
   tr: 'src/net/transport.ts',
   lobby: 'src/ui/NetLobby.ts',
+  sess: 'src/net/NetSession.ts',
+  main: 'src/main.ts',
   gate: 'tools/qa-p2p.mjs',
 };
 
@@ -250,13 +252,28 @@ const FAULTS = {
    *   - `peerGone` without `phase = 'over'` -> the `end` message still ends the session
    *     through `NetSession.onEnd`, which pins the ceiling itself. Green.
    */
-  // The channel closing is the *specific* path `leave-ends-by-name` is about: without it the
-  // survivor waits for the silence test and is told `linkLost`, which blames the wire for
-  // somebody shutting a tab.
-  'close-is-not-a-departure': [F.peer,
-    "      this.take(this.peerRoom.peerGone('the other commander\\'s connection closed'));",
-    '      // deliberately not reported',
-    'leave', 'leave-ends-by-name (it decays to linkLost about eight seconds later)'],
+  /*
+   * `close-is-not-a-departure` used to live here and has been **retired**, because it stopped
+   * having teeth the moment the `pagehide` listener landed.
+   *
+   * It removed `dc.onclose`'s call to `peerGone`. That was the only path a closed tab had until
+   * 3 Sep 2026; now the leaver sends `bye` on the way out and the survivor learns from the
+   * message rather than from the socket, so cutting the socket path leaves the check green. The
+   * fault below removes the path the check is *now* about. The old one is not kept beside it,
+   * because a fault that cannot fail is exactly what this file exists to find.
+   */
+  // Nothing says goodbye, so the survivor waits for the silence test and is told `linkLost` --
+  // which blames the wire for somebody shutting a tab. Measured before the fix: 6,019 ms and
+  // the wrong word.
+  'no-goodbye-on-the-way-out': [F.main,
+    "if (session) window.addEventListener('pagehide', () => session.dispose());",
+    '// deliberately silent on the way out',
+    'leave', 'leave-ends-by-name (it decays to linkLost about six seconds later)'],
+  // The tick the match stopped at, in the readout rather than only in the sentence.
+  'tick-not-in-the-readout': [F.sess,
+    '      endedAtTick: this.endedAtTick,\n',
+    '',
+    'leave', 'leave-halts-at-a-stated-tick'],
   // What the survivor is told about *where* the battle stood. `lastAgreedTick` is the only
   // number in the sentence that is not this client's own guess.
   'forget-the-agreed-tick': [F.room,
@@ -267,6 +284,23 @@ const FAULTS = {
     "const KEEPS_THE_STRIP = new Set(['desync', 'complete']);",
     "const KEEPS_THE_STRIP = new Set(['desync', 'complete', 'peerLeft']);",
     'leave', 'leave-puts-a-sheet-up'],
+  /*
+   * The knock race. Put the challenger's knock timer back and `nodirect` is told the room is
+   * full instead of that the two networks would not connect -- which is the wrong accusation
+   * against the wrong party, and is how the bug was found.
+   */
+  'knock-forever': [F.peer,
+    '    if (this.knockTimer) { clearInterval(this.knockTimer); this.knockTimer = 0; }\n    for (const c of this.mine.splice(0))',
+    '    for (const c of this.mine.splice(0))',
+    'nodirect', 'nodirect-says-so-and-stops and nodirect-names-the-right-cause'],
+  /*
+   * One float64 ULP instead of one float32 ULP -- the magnitude this simulation's state cannot
+   * hold. It is gone within a tick, and the peer path's checkpoints never see it.
+   */
+  'float64-ulp': [F.sess,
+    '    const f32 = new Float32Array(1);\n    const u32 = new Uint32Array(f32.buffer);\n    f32[0] = u.x;\n    u32[0] = (u32[0] + 1) >>> 0;\n    u.x = f32[0];',
+    '    const dv = new DataView(new ArrayBuffer(8));\n    dv.setFloat64(0, u.x);\n    dv.setUint32(4, (dv.getUint32(4) + 1) >>> 0);\n    u.x = dv.getFloat64(0);',
+    'desync', 'desync-ulp-caught, desync-ulp-attributed and desync-ulp-ends-both'],
   'no-explanation': [F.peer,
     "    return 'Your two networks would not let the game connect directly. '",
     "    return '';\n    return 'Your two networks would not let the game connect directly. '",

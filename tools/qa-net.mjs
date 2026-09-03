@@ -1525,9 +1525,11 @@ if (wanted('swap')) {
 }
 if (wanted('ulp')) {
   const d = await faultArm('one-ulp', 'ulp', 5995,
-    'one UnitGroupState float64 field moved by a single ULP on one client',
-    'the magnitude §1.4 measured for a real libm disagreement. Nothing about the order '
-      + 'stream is wrong here — the arithmetic is');
+    'one UnitGroupState position moved by a single float32 ULP on one client',
+    'what a 1-3 float64 ULP libm disagreement leaves behind when it lands near a rounding '
+      + 'boundary and gets through the quantisation firewall, which is the only case that '
+      + 'reaches this state at all — a float64 ULP is not representable in it, measured 3 Sep '
+      + '2026. Nothing about the order stream is wrong here — the arithmetic is');
   /*
    * Recorded whether or not the fault was caught, for the reason `faultArm` gives at length:
    * a check that is skipped when it fails takes the denominator with it. These two were the
@@ -1538,8 +1540,9 @@ if (wanted('ulp')) {
   record('one-ulp-layer', !!d && d.layer === 'uf64',
     'and it is caught on the float64 unit layer, which is why that layer is the detector',
     d ? `caught on '${d.layer}' at tick ${d.tick}` : 'nothing was caught, so no layer was named',
-    'the float32 pool has a quantisation firewall with ~29 bits of headroom; '
-      + 'UnitGroupState has none');
+    'both layers are behind the same float32 firewall since src/sim/quantise.ts was added, and '
+      + 'uf64 reports what gets through it sooner because it is per-unit rather than averaged '
+      + 'over thousands of men. See src/net/agree.ts');
   record('one-ulp-attributed', !!d && d.units.length >= 1 && d.units.length <= 4,
     'and attributed to the regiment it happened to, not to the whole field',
     d ? `${d.units.length} unit(s): ${d.units.join(', ')} — ${d.note}`
