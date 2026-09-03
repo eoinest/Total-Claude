@@ -4275,14 +4275,39 @@ real bugs that the wrong sentence had been hiding**, which is the best argument 
 
 #### The gate after all of it
 
-| | Result |
-|---|---|
-| `npx tsc --noEmit` | 0 errors |
-| `npm run lint` | 3/3 |
-| **`node tools/qa-p2p.mjs`, one process, no `--only`** | **75/75**, nine minutes, load 7.6 rising to 21.1 |
-| `node tools/qa-net.mjs` | see below |
-| determinism ×3 | see below |
-| `inject-p2p.mjs --all-fast` | see below |
+| | Result | Machine |
+|---|---|---|
+| `npx tsc --noEmit` | 0 errors | |
+| `npm run lint` | 3/3 | |
+| **`node tools/qa-p2p.mjs`, one process, no `--only`** | **75/75** | load 7.6 → 21.1 |
+| **the same, re-run with every fix below in** | **75/75**, eight minutes | load 26.3 → 72.1 |
+| `node tools/qa-net.mjs` | **90/91** | load 36.6 → 41.4 |
+| `qa-determinism` bare | unchanged, 7 checkpoints, **8,632** men, 4 tiers | load 9.8 |
+| `qa-determinism --battle='map=campus-martius&scenario=assault'` | unchanged, 7 checkpoints, **3,072** | load 10.2 |
+| `qa-determinism --battle='map=carthage&scenario=assault'` | unchanged, 7 checkpoints, **3,440** | load 8.3 |
+| `inject-p2p.mjs --all-fast` | **33 faults, 0 left the gate green** | |
+| `inject-p2p.mjs` browser faults, run singly | `duplicate-offer-unguarded` and `offer-on-a-timer-again` both red, both reverted clean | |
+
+**The one red is `same-battle`, and it is the documented flake rather than a finding.** It reported
+*"they stopped at different ticks: 2112 and 2121"* with `checkpoints-agreed` **green** immediately
+beside it — *"every checkpoint the two exchanged agreed, all the way to the end"* — which is
+exactly the signature §12.8 records and §13.8 explains: two pages read a fifth of a second apart
+are two pages several ticks apart, and there is no relay to SIGSTOP. It is red in roughly four
+runs of five. Attributed, not chased, and **not** reported as a clean number.
+
+**Yes, the full gate has been run in one process.** Twice, on a machine that was not quiet either
+time — the second run began at load 26 and ended at 72 while two other agents worked — which is a
+stronger result than a quiet one and is why the load column is here. Three *earlier* attempts died
+in browser arms at loads between 27 and 60, every one of them on machine starvation and every one
+of them now legible rather than a Playwright locator dump: *"`.dep-begin` was covered by the net
+panel, which says … the direct connection to the other player dropped after 68.7 s"*.
+
+That last sentence is itself a fix this review produced. `connectionState === 'failed'` was
+answered with `noDirectPath` unconditionally, so a pair whose channel had been **open for
+eighteen seconds** and then lost its path told both players *"your two networks would not let the
+game connect directly"* — blaming a network for something it had already done successfully, and
+sending somebody to check a firewall that is fine. After the channel opens, `failed` means the
+connection dropped, and it now says so.
 
 
 ---
