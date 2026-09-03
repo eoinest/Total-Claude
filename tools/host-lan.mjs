@@ -22,6 +22,10 @@
  *
  * ## Why the deployed site is not part of this
  *
+ * > **Read the correction below before the next two paragraphs.** Their conclusion is right and
+ * > their mechanism is right only on WebKit; the second transcript does not describe what
+ * > Chromium 151 does. They are kept because they are the original measurement.
+ *
  * Because a browser will not let it be, and it will not let it be twice over. Measured on the
  * live site — a real certificate, a real origin — against a real relay on this machine's en0
  * address, in Chromium 151: `ws://192.168.0.238:5959` fails in 1 ms with
