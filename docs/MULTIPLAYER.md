@@ -3528,6 +3528,49 @@ and it is the default: a `ws://…/signal/CODE` endpoint on `tools/relay.mjs`, t
 what the gate uses, because a gate whose green depends on `test.mosquitto.org` is a gate that goes
 red for reasons that are not the product.
 
+**And one consequence of a fact this file already recorded and nobody had followed through.**
+§10.2's own transcript reads `origin http://192.168.0.238:5938   isSecureContext false`, and it
+records that line as an *asset*: on the LAN origin every `ws://` opens, which is the whole reason
+the LAN route works at all. What nobody drew out of it is that a page which is not a secure
+context has **no `crypto.subtle`** — and a private address over plain `http` is precisely what
+`npm run host` serves. Re-measured directly with `tools/scratch/securectx.mjs`, one server, two
+origins, Chrome:
+
+| origin | `isSecureContext` | `crypto.subtle` | `getRandomValues` | `RTCPeerConnection` |
+|---|---|---|---|---|
+| `http://127.0.0.1:5948` | true | yes | yes | constructs, channel opens |
+| `http://192.168.1.77:5948` | **false** | **undefined** | yes | constructs, channel opens |
+
+So the *transport* is fine on the LAN page and the *sealing* is not. It shipped broken and
+`qa-net`'s `lan` arm caught it, the moment a locator timeout learned to say what was on the
+screen: **"THE CONNECTION COULD NOT BE MADE — Cannot read properties of undefined (reading
+'importKey')"**, on the host, after pressing CHOOSE THE BATTLE. Every earlier measurement of this
+pass had been taken on loopback, so the bug was invisible to all of them — and §10.1 records the
+same shape of mistake one pass earlier under the heading *"both defaults were 127.0.0.1, and
+nothing had ever noticed"*. The fact was in this file the whole time; what was missing was
+anybody asking what it implied for a *new* API.
+
+What follows from it is not a compromise, because **the origin that cannot seal is exactly the
+origin whose signalling never leaves the house**:
+
+- An envelope carries a one-character marker, `1` sealed and `0` plaintext. Two peers can
+  legitimately differ — one on `https://total-claude.vercel.app`, the other on the same relay's
+  plain-http page — and without the marker the second one's plaintext is handed to
+  `crypto.subtle.decrypt`, comes back as "an envelope that would not open", and the room simply
+  never forms with nothing saying why.
+- `WsSignal` sends plaintext on such an origin and **says so once in the console**. Not on the
+  screen: the player has no decision to make, it is their own machine introducing them on their
+  own network, and the relay transport carried *every order of every battle* over that same wire
+  until today.
+- `MqttSignal` **refuses**, with a sentence naming `https` and `npm run host`. A plaintext offer
+  on a shared public test broker would put the addresses in your ICE candidates in the clear,
+  which is a different question from a relay on your own network.
+
+`MqttSignal` takes that capability as a constructor argument, defaulting to the real answer,
+because a refusal reachable only from one origin shape is a refusal that ships untested — the
+first version of its check asserted `canSeal() === true`, which in Node is a tautology.
+
+
 ### 13.3 STUN: two operators, and a finding about the third through fifth
 
 `stun.cloudflare.com:3478` and `stun.l.google.com:19302`. Measured 2 Sep 2026: 10 ms and 37 ms
