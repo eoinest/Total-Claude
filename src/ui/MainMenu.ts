@@ -130,7 +130,7 @@ const DESTINATIONS: readonly Destination[] = [
   },
   {
     id: 'multiplayer',
-    label: 'Two commanders',
+    label: 'Multiplayer',
     ic: ICON.swords,
     href: '?mp=1',
     sameTab: true,

@@ -38,7 +38,9 @@ import { NetLink, netParams } from './net/NetLink';
 import { validCode } from './net/protocol';
 import { NetSession } from './net/NetSession';
 import { setPlayerFaction } from './ui/theme';
-import { esc, serverRelay, showLobby, showNetNotice } from './ui/NetLobby';
+import {
+  esc, HUD_MIN_WIDTH, hudFits, serverRelay, showLobby, showNetNotice, showTooNarrow,
+} from './ui/NetLobby';
 import { NetPanel } from './ui/NetPanel';
 import { stateHashes, UNIT_CTL_FIELDS, UNIT_F64_FIELDS } from './sim/stateHash';
 
@@ -201,6 +203,33 @@ const netFailed = (title: string, lines: string[]): Promise<never> => {
   // A promise that never settles, exactly as `?mp=1` does. Nothing below this line runs.
   return new Promise<never>(() => { /* the notice is the end of this page's life */ });
 };
+/*
+ * A device that could not finish the battle is turned away **before a socket exists**.
+ *
+ * Placed here, above `new NetLink`, and the position is the fix rather than an implementation
+ * detail. Below it, the client has already claimed a slot: a phone that scanned the square took
+ * the room's second place, could not reach BEGIN BATTLE — 434 px off the right edge of a page
+ * `scrollWidth` says cannot scroll — and the laptop that arrived afterwards was refused with
+ * "already has a challenger". One person's dead end had become both people's.
+ *
+ * `hudFits` is a measured number, not a device sniff; see `HUD_MIN_WIDTH`. The QR is the reason
+ * this matters now: before it, nobody arrived here on a phone by accident.
+ */
+if (net && !hudFits() && params.get('narrow') !== 'ok') {
+  loading?.remove();
+  const invite = new URL(location.href);
+  invite.search = '';
+  invite.searchParams.set('room', net.room);
+  showTooNarrow(document.getElementById('menu-root') as HTMLElement, {
+    code: net.room,
+    link: invite.toString(),
+    width: window.innerWidth,
+    coarse: window.matchMedia('(pointer: coarse)').matches,
+  });
+  console.warn(`[net] refusing to join ${net.room}: viewport ${window.innerWidth}px is under `
+    + `the ${HUD_MIN_WIDTH}px the deployment HUD needs. No slot taken; the room is still open.`);
+  await new Promise(() => { /* nothing below this line runs, and no socket was opened */ });
+}
 if (net) {
   link = new NetLink(net.base, net.room, net.want);
   try {

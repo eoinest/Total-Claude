@@ -406,16 +406,21 @@ const REPO_URL = 'https://github.com/eoinest/Total-Claude';
  * practice that is `total-claude.vercel.app` and nothing else, because nothing in this
  * repository serves the game over TLS.
  *
- * **What this cannot see, said plainly.** The rule that makes the refusal permanent is not the
- * scheme; it is the *address space* the browser believes this document came from, and a page
- * cannot ask about its own. Measured on Chromium 151 (`tools/qa-net.mjs`'s `https` arm, and
- * the flag comment above `PUBLIC_ORIGIN_OVERRIDE` there): from an https page whose own origin
- * is a private address, `ws://192.168.1.77:5959` **opens**; from one the browser believes is
- * public, the same socket is refused with `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`. So the
- * one case this predicate would over-refuse is somebody serving this build over https on their
- * own LAN — which nothing here does, and which would still have no relay behind it. The
- * alternative to over-refusing in that hypothetical is offering a form on the deployed site,
- * and that is the thing being removed.
+ * **What this cannot see, said plainly, and it differs by engine.** In *Chromium 151* the rule
+ * that makes the refusal permanent is not the scheme; it is the *address space* the browser
+ * believes this document came from, and a page cannot ask about its own. Measured
+ * (`tools/qa-net.mjs`'s `https` arm and the comment above `PUBLIC_ORIGIN_OVERRIDE` there): from
+ * an https page whose own origin is private, `ws://192.168.1.77:5959` **opens**; from one the
+ * browser believes is public it is refused with `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`.
+ * In *WebKit* there is no carve-out at all — private, loopback and public are refused alike, as
+ * plain mixed content — so on Safari the scheme really is the whole story.
+ *
+ * The consequence for this predicate: the one case it would over-refuse is somebody serving
+ * this build over https on their own LAN *in Chromium*. Nothing here does that, and such a page
+ * would have no relay behind it either. The alternative to over-refusing in that hypothetical
+ * is offering a form on the deployed site, and that is the thing being removed. The sentence
+ * `secureOriginNotice` puts on screen is true on both engines, which is what a player needs;
+ * the engineering claim is the one that has to name a version.
  */
 const secureOrigin = (): boolean =>
   location.protocol === 'https:' && !isLoopback(location.hostname);
@@ -426,18 +431,18 @@ const secureOrigin = (): boolean =>
  * ## The problem, stated without euphemism
  *
  * `total-claude.vercel.app` is public, it is served over https, and multiplayer here runs
- * between two machines on one home or office network. A page the browser believes came from
- * the public internet is not allowed to open a connection into a private network — the socket
- * is refused with `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS` before a packet exists, and
- * there is no flag on the visitor's side that changes it. Measured on the live site
- * (`tools/host-lan.mjs`'s docstring, `docs/MULTIPLAYER.md` §10.2) and reproduced under test by
- * `tools/qa-net.mjs`'s `https` arm.
+ * between two machines on one home or office network. A page the browser believes came from the
+ * public internet is not allowed to open a connection into a private network, and there is no
+ * flag on the visitor's side that changes it. Both engines refuse it and they refuse it for
+ * different reasons — Chromium 151 as an address-space violation
+ * (`ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`), WebKit as plain mixed content. §12.6 has the
+ * measurement for both.
  *
  * The sentence below says *"from the internet"* and not *"over a secure connection"*, and the
- * distinction is not pedantry: the first draft of it said the second, and the arm written to
- * prove it found an https page opening exactly the socket the screen claimed was impossible.
- * What is refused is the reach from a public address space into a private one; https is how you
- * get served from a public one, not the rule itself.
+ * distinction is not pedantry: the first draft said the second, and the arm written to prove it
+ * found a Chromium https page opening exactly the socket the screen claimed was impossible. It
+ * is worded to be true on **both** engines, which is what a player needs; the engineering claim
+ * about *why* lives in the docstrings, where it names a version.
  *
  * So the honest position is that **this screen cannot ever start a battle**, and the only
  * dishonest things it could do about that are the two it used to do: offer a form field, and
@@ -453,7 +458,7 @@ const secureOrigin = (): boolean =>
  * is an instruction to somebody who already has everything the instruction assumes.
  */
 const secureOriginNotice = (): string =>
-  '<b>Two commanders is played on your own network, and it cannot be played from this page.</b> '
+  '<b>Multiplayer is played on your own network, and it cannot be played from this page.</b> '
   + 'Both players load the game from one of your own two machines, and every order passes '
   + 'through a small relay that the same machine runs beside it. '
   + 'This page came to you from the internet, and a browser does not let a page from the '
@@ -628,14 +633,107 @@ export function showNetNotice(host: HTMLElement, o: {
   lines: string[];
   /** Offered as the primary way out. Defaults to the lobby, carrying what was typed. */
   back?: { label: string; href: string };
+  /** Something to take to another machine: shown big, selectable, with a copy button. */
+  carry?: { code?: string; link?: string };
 }): void {
   const sheet = mount(host);
   const back = o.back ?? { label: 'Back to the lobby', href: '?mp=1' };
+  const carry = o.carry;
   sheet.innerHTML = `<h1>${esc(o.title)}</h1>`
     + o.lines.map((l) => `<p>${l}</p>`).join('')
+    + (carry?.code ? `<div class="tc-code" id="tc-notice-code">${esc(carry.code)}</div>` : '')
+    + (carry?.link
+      ? `<p class="tc-hint">The link, in full: <code id="tc-notice-link">${esc(carry.link)}</code></p>`
+        + '<div class="tc-row"><button type="button" id="tc-notice-copy">Copy the link</button></div>'
+      : '')
     + `<div class="tc-row"><a class="tc-back" id="tc-notice-back" href="${esc(back.href)}"
          style="margin-top:6px">&lsaquo; ${esc(back.label)}</a></div>`;
-  (sheet.querySelector('#tc-notice-back') as HTMLElement | null)?.focus();
+  const copyBtn = sheet.querySelector('#tc-notice-copy') as HTMLButtonElement | null;
+  copyBtn?.addEventListener('click', () => {
+    void navigator.clipboard.writeText(carry?.link ?? '')
+      .then(() => { copyBtn.textContent = 'Copied'; })
+      // Clipboard is permission-gated and this screen is most often reached on a phone, where
+      // it is least likely to be granted. The link is on screen and selectable; say so.
+      .catch(() => { copyBtn.textContent = 'Select it and copy'; });
+    setTimeout(() => { copyBtn.textContent = 'Copy the link'; }, 2000);
+  });
+  (copyBtn ?? sheet.querySelector('#tc-notice-back') as HTMLElement | null)?.focus();
+}
+
+/**
+ * The narrowest viewport the battle HUD can be finished in. **Measured, not chosen.**
+ *
+ * `tools/scratch/hud-width.mjs` booted the deployment phase at fourteen viewport widths in
+ * Chromium and WebKit and read `.dep-begin`'s own rectangle back. The result is not a curve:
+ * `.dep-head` is a flex row of `flex: 0 0 auto` items, so the plaque has a **fixed content
+ * width of about 1,062 px** and simply overflows anything narrower. BEGIN BATTLE's right edge
+ * sat at 1,061-1,063 px at every viewport from 390 to 1,100, and `documentElement.scrollWidth`
+ * equalled `innerWidth` at every one of them — so the button is not merely below the fold, it
+ * is **unreachable**, exactly as `.tc-lobby`'s own fault 2 was.
+ *
+ *     390  begin.right 1042   fits false      1024  begin.right 1061   fits false
+ *     640  begin.right 1049   fits false      1060  begin.right 1062   fits false
+ *     768  begin.right 1053   fits false      1070  begin.right 1062   fits TRUE
+ *     900  begin.right 1057   fits false      1280  begin.right 1231   fits true
+ *
+ * So this is not "phones cannot play". It is "anything under about 1,065 px cannot **finish
+ * deploying**", which is every iPad in portrait, every phone, and a laptop with the window at
+ * half width. 1,100 rather than 1,065 because the plaque's width depends on the tally string
+ * and the army it is counting, and the cost of the two errors is not symmetric: refusing a
+ * window that would have worked is a sentence and a link, and accepting one that does not is a
+ * room nobody can play and nobody else can join.
+ *
+ * There is no `@media` rule anywhere in `hud.css`, and adding a phone layout for the whole HUD
+ * is a pass of its own. This constant is the honest interim: it does not claim the HUD is
+ * responsive, it declines to start a session that cannot be finished.
+ */
+export const HUD_MIN_WIDTH = 1100;
+
+/** Is this viewport wide enough to finish a deployment in? */
+export const hudFits = (w: number = window.innerWidth): boolean => w >= HUD_MIN_WIDTH;
+
+/**
+ * Refuse a relayed session this device could not finish — **before the socket is opened**.
+ *
+ * The order is the whole point and it is the P0 this function exists for. A guest who scans the
+ * square on a phone used to connect, take slot 1, and land on a deployment plaque whose BEGIN
+ * BATTLE was 434 px off the right edge of an unscrollable page. Two things were then true at
+ * once: that player could never start the battle, and **the room was spent** — the real second
+ * laptop arriving afterwards was refused with "already has a challenger". A dead end for one
+ * person had become a dead end for both.
+ *
+ * So this runs in `main.ts` before `new NetLink()` exists. Nothing is connected, no slot is
+ * claimed, the room stays open, and what the phone gets is the code and the link, big, with a
+ * copy button — which is the most useful thing a phone can do here: carry the invitation to a
+ * machine that can play it.
+ *
+ * `?narrow=ok` overrides, and it is deliberately a URL to be typed rather than a button to be
+ * pressed. A button is one thumb away on the device that must not press it; an address-bar edit
+ * is easy on the machine where the override is plausible and awkward on the one where it is
+ * not. The sentence naming it is addressed to somebody at a keyboard.
+ */
+export function showTooNarrow(host: HTMLElement, o: {
+  code: string; link: string; width: number; coarse: boolean;
+}): void {
+  showNetNotice(host, {
+    title: 'This screen is too narrow to play on',
+    lines: [
+      `<b>Nothing has been joined, and the room is still open.</b> The deployment plaque needs `
+      + `about ${HUD_MIN_WIDTH} pixels of width and this window has ${o.width}, so BEGIN BATTLE `
+      + 'would sit off the edge of the screen with no way to scroll to it &mdash; the battle '
+      + 'could never be started.',
+      o.coarse
+        ? 'Open this link on a laptop or a desktop. Nothing else has to be typed: it carries the '
+          + 'room. Taking the room on this device would have held the second place in it and '
+          + 'locked the other commander out, so it was not taken.'
+        : 'Widen this window, or open the link on a larger screen, and it will go straight in. '
+          + 'Nothing else has to be typed. If you are certain, add <code>&amp;narrow=ok</code> to '
+          + 'the address to go in anyway &mdash; you will hold the second place in the room '
+          + 'whether or not you can finish deploying.',
+    ],
+    back: { label: 'Back to the front door', href: '?' },
+    carry: { code: o.code, link: o.link },
+  });
 }
 
 export function showLobby(host: HTMLElement): void {
@@ -663,7 +761,7 @@ export function showLobby(host: HTMLElement): void {
    */
   if (!ours && secureOrigin()) {
     sheet.innerHTML = `
-      <h1>Two commanders</h1>
+      <h1>Multiplayer</h1>
       <div class="tc-blocked" id="tc-no-relay" role="status">${secureOriginNotice()}</div>
       <div class="tc-row">
         <a class="tc-back" id="tc-get-copy" href="${REPO_URL}" target="_blank" rel="noopener"
@@ -683,7 +781,7 @@ export function showLobby(host: HTMLElement): void {
    * stops being is the second thing a player reads on a screen about two people and a code.
    */
   sheet.innerHTML = `
-    <h1>Two commanders</h1>
+    <h1>Multiplayer</h1>
     <p>One battle, both armies, on two machines. One of you opens a room and reads the code
        out; the other types it in. The host chooses the ground and the orders of battle; the
        challenger takes the other side.</p>
@@ -1054,9 +1152,9 @@ export function showLobby(host: HTMLElement): void {
     const q = asked ? `?room=${encodeURIComponent(asked)}` : '';
     fetch(`${httpOf(addr)}/new${q}`)
       .then(async (r) => {
-        const j = await r.json().catch(() => null) as { room?: string; detail?: string } | null;
+        const j = await r.json().catch(() => null) as { room?: string; detail?: string; error?: string } | null;
         /*
-         * 409 on a room the *command* opened is the other commander arriving first.
+         * `taken` on a room the *command* opened is the other commander arriving first.
          *
          * A real race, and it is the good outcome wearing an error's clothes: `npm run host`
          * mints the room, prints the square, and the guest may scan it before the host's own
@@ -1064,11 +1162,16 @@ export function showLobby(host: HTMLElement): void {
          * it out again — correctly, for a code somebody typed — and the host would be told
          * "room X is in use on this relay" about their own room, with no way forward.
          *
-         * Narrow on purpose: only when the code came from the link `npm run host` wrote, and
-         * only for the code that was asked for. A code the *player* typed still gets the
-         * refusal, because there it means what it says.
+         * Narrow on purpose, and narrow on **two** axes. Provenance alone was not enough: the
+         * relay answers 409 for two different conditions, and gating on `fromLink` swallowed
+         * both. A host who pressed Back, or reopened the `create=1` link out of history or a
+         * restored tab, got a Room open screen — code, link and a square — for a room that was
+         * already *playing* and could never be entered again. So the reason is read off the
+         * payload (`error`), not off the sentence and not off where the code came from; a code
+         * the *player* typed still gets the refusal either way, because there it means what it
+         * says.
          */
-        if (r.status === 409 && fromLink && asked) {
+        if (r.status === 409 && fromLink && asked && j?.error === 'taken') {
           localStorage.setItem(KEY, addr);
           opened(asked);
           return;
