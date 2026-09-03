@@ -1373,11 +1373,35 @@ if (wanted('lobby') && chrome) {
     `Create ${face.createDisabled ? 'disabled' : 'enabled'}, code field reachable `
     + `${face.roomReaches}, transport behind a closed disclosure ${!face.advOpen}`,
     'peer to peer needs no address, so there is nothing left for the form to refuse');
+  /*
+   * The panel's rule, both ways round, in one check.
+   *
+   * §11's finding was that a relay address on the front of this screen is a transport detail at
+   * the player's eye level, and the first draft of this pass put a *paragraph* about the
+   * transport there instead — on every origin, including the one where the page's own server
+   * does the introduction automatically and nothing leaves the network. `qa-net`'s
+   * `lan-lobby-says-nothing-about-transport` went red on it, correctly.
+   *
+   * So the rule is: **speak when a player would want to know, and be silent otherwise.** A third
+   * party briefly touching your traffic is worth a sentence whether or not anybody asked; your
+   * own machine doing it is not. Asserting one case would have left the other free to drift, so
+   * this asserts the rule.
+   */
+  const brokerPage = await newPage(chrome);
+  await brokerPage.goto(`${base}/?mp=1&sig=broker`, { waitUntil: 'domcontentloaded' });
+  await brokerPage.waitForSelector('#tc-room', { timeout: 20000 });
+  const brokerFace = await lobbyFace(brokerPage);
+  await brokerPage.close();
   record('lobby-says-how-you-are-introduced',
-    face.blockedShown && /introduce/i.test(face.blockedText)
-    && !/cannot be played|can never|no relay behind this page/i.test(face.blockedText),
-    'and the panel explains the introduction instead of refusing the battle',
-    face.blockedText.slice(0, 210),
+    !face.blockedShown
+    && brokerFace.blockedShown
+    && /introduction services/i.test(brokerFace.blockedText)
+    && /straight between the two browsers/i.test(brokerFace.blockedText)
+    && !/cannot be played|can never|no relay behind this page/i.test(brokerFace.blockedText),
+    'the panel is silent when this machine introduces you and explains when strangers do',
+    `with a local service named: ${face.blockedShown ? `SPEAKS — ${face.blockedText.slice(0, 90)}`
+      : 'silent'}; with the public services: `
+    + `${brokerFace.blockedShown ? brokerFace.blockedText.slice(0, 170) : 'SILENT'}`,
     'this element used to hold "there is no relay behind this page, so a battle cannot start '
     + 'from it"');
   await openAdvanced(hostPage);
@@ -1422,9 +1446,11 @@ if (wanted('lobby') && chrome) {
       : `no invite link, and it says why: ${linkFace.hint.slice(0, 150)}`}`,
     'peer to peer there is nothing to claim: a code is a rendezvous name, not a reservation');
   record('lobby-says-how-this-one-connects',
-    /introduce/i.test(linkFace.how) && linkFace.how.includes(lobbyRelay.base.replace('ws://', '')),
-    'and the open-room screen states which service will introduce the two of you',
-    linkFace.how.slice(0, 180));
+    /introduce/i.test(linkFace.how) && /nothing leaves your network/i.test(linkFace.how),
+    'and the open-room screen says how this room will connect, in the terms that matter',
+    linkFace.how.slice(0, 180),
+    'the address is deliberately not named when it is this page\'s own server: the player is '
+    + 'deciding whether the link works off this network, not reading a hostname');
 
   // The guest types the code into their own lobby while the host chooses the battle.
   const guestPage = await newPage(chromeGuest);

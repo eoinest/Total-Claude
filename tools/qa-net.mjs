@@ -1781,6 +1781,17 @@ if (wanted('lobby')) {
    */
   await openAdvanced(host);
   await host.fill('#tc-relay', relay.base);
+  /*
+   * And tick **Send every order through the relay**, because that is what this arm is about.
+   *
+   * From 2 Sep 2026 an address in this field is an *introduction service* — it passes one message
+   * each way and is then closed — and the default transport is a connection straight between the
+   * two browsers. So filling the field alone no longer makes `CREATE` ask the relay for a room,
+   * and `lobby-create-opens-the-room-asked-for` went red on a room that had been opened correctly
+   * and peer to peer. The relay *transport* is still here and still does exactly what it did;
+   * it is one checkbox in, and this is the arm that exercises it.
+   */
+  await host.check('#tc-via-relay');
 
   /*
    * Geometry and hit-testing first, because it is the measurement that named the bug.
@@ -1851,7 +1862,9 @@ if (wanted('lobby')) {
     'CREATE A ROOM reaches the relay, and the code on screen is the one that was typed',
     `the sheet reads ${shown || '(nothing)'}; the relay holds `
       + `${(rs0?.rooms ?? []).map((r) => r.code).join(', ') || 'no rooms'}`,
-    'before CORS this fetch always rejected and the lobby blamed a relay that had just answered');
+    'before CORS this fetch always rejected and the lobby blamed a relay that had just '
+      + 'answered. Reaching the relay at all now needs the transport checkbox above, which is '
+      + 'what this arm ticks');
 
   await host.click('#tc-begin');
   await driveMenu(host, { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' });

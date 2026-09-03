@@ -684,26 +684,38 @@ export function showTooNarrow(host: HTMLElement, o: {
 }
 
 /**
- * How the two of you will be introduced, said once, where the player is looking.
+ * How the two of you will be introduced — said **only when there is something to know**.
  *
- * This block used to be `noRelayHere` — a refusal, because a battle could not start without a
- * relay process and most origins had none. Nothing is refused now: a peer connection needs no
- * address, so every origin can open a room and the only question left is *who passes the two
- * offers*. That question has a real answer in every case and the answer is worth one sentence,
- * because it is the one thing about this screen that is not obvious and the one thing that can
- * fail.
+ * This block used to be `noRelayHere`, a refusal, because a battle could not start without a
+ * relay process and most origins had none. Nothing is refused now. So the question became what
+ * to put here instead, and the first answer was wrong in a way the gate caught: it explained the
+ * introduction on *every* origin, including the one where the page's own server does it
+ * automatically and nothing leaves the network.
+ *
+ * That is exactly what §11 removed. The owner read a RELAY ADDRESS field on this screen and
+ * asked what it was for, and the answer was that it is a transport detail at the player's eye
+ * level on a screen that is otherwise about two people and a code. A paragraph explaining the
+ * transport is the same mistake in prose, and `qa-net`'s `lan-lobby-says-nothing-about-transport`
+ * went red on it — correctly.
+ *
+ * So the rule is the one §11 arrived at, applied consistently: **the panel speaks when a player
+ * would want to know, and is silent otherwise.**
+ *
+ *   - The page's own server will introduce you → **nothing**. There is no decision to make,
+ *     nothing leaves the network, and the QR and the code say everything else.
+ *   - Free public services will introduce you → **one sentence**, because a third party
+ *     briefly touching your traffic is a fact a player is owed whether or not they asked.
+ *   - A named service is not answering → **one sentence**, because what is being used has
+ *     changed from what the page said.
+ *   - The relay is carrying the whole battle → **one sentence**, because somebody ticked a box
+ *     and the screen should confirm what it did.
  */
-const introNote = (kind: 'server' | 'brokers', addr: string): string =>
-  kind === 'server'
-    ? `<b>You are both on this network, so this machine will introduce you.</b> It passes one `
-      + `message each way between the two browsers &mdash; that is all &mdash; and then the game `
-      + `runs straight from one machine to the other with nothing in between. `
-      + `Introduced by <b>${esc(addr)}</b>; nothing leaves the house.`
-    : '<b>The game runs straight between the two browsers, with nothing in between.</b> To set '
-      + 'that up, one short message has to pass each way, and that goes through free public '
-      + 'introduction services &mdash; three of them at once, so one being down costs nothing. They '
-      + 'see an unreadable code and encrypted text, never your orders, and once the battle '
-      + 'starts they are not used again.';
+const introNote = (addr: string): string =>
+  '<b>The game runs straight between the two browsers, with nothing in between.</b> To set '
+  + 'that up, one short message has to pass each way, and that goes through free public '
+  + 'introduction services &mdash; three of them at once, so one being down costs nothing. They '
+  + 'see an unreadable code and encrypted text, never your orders, and once the battle '
+  + `starts they are not used again.${addr ? '' : ''}`;
 
 /**
  * A named introduction service that is not answering, and what happens next.
@@ -802,19 +814,13 @@ export function showLobby(host: HTMLElement): void {
       <label for="tc-relay">Introduction service</label>
       <input id="tc-relay" spellcheck="false" autocomplete="off"
         aria-describedby="tc-relay-hint" placeholder="ws://host:port — or leave empty">
-      <p class="tc-hint" id="tc-relay-hint">Two browsers cannot find each other unaided, so one
-         short message has to pass each way before they can talk directly. Left empty that goes
-         through free public introduction services and needs nothing from you.
-         <code>npm run host</code> starts a relay beside the game that will do it instead, on
-         your own network, and fills this in. Either way the battle itself runs straight between
-         the two machines.</p>
+      <p class="tc-hint" id="tc-relay-hint">Leave it empty and free public services introduce
+         you. <code>npm run host</code> fills this in with a relay on your own network instead.
+         Either way the battle runs straight between the two machines.</p>
       <label class="tc-check" for="tc-via-relay"><input type="checkbox" id="tc-via-relay">
         Send every order through the relay instead of connecting directly</label>
-      <p class="tc-hint" id="tc-relay-mode">The older way, and it still works exactly as it did.
-         Every order goes through the relay process rather than machine to machine, which needs
-         an address above and cannot work from the deployed site &mdash; a page served over
-         <code>https</code> may not open a plain connection into a private network. Kept because
-         it is the known-good behaviour this build is measured against.</p>
+      <p class="tc-hint" id="tc-relay-mode">The older way. Needs an address above, and cannot
+         work from the deployed site.</p>
     </details>
     <a class="tc-back" href="?">&lsaquo; Back to the front door</a>`;
 
@@ -833,20 +839,23 @@ export function showLobby(host: HTMLElement): void {
   relay.value = chosen.value;
   room.value = (params.get('room') ?? '').toUpperCase();
   /*
-   * **Only `?net=` ticks the box**, and keying this on `chosen.source` was a bug.
+   * **Only `?net=` ticks the box, and nothing opens the panel.** Both halves were bugs.
    *
    * `?net=` is somebody having explicitly asked for the relay to carry the whole battle, so the
-   * checkbox starts ticked and the panel starts open. `?sig=` is a different request with the
-   * same provenance — it names who *introduces* the two peers — and reading both as "source:
-   * url" made an invite link that stated an introduction service arrive with the relay transport
-   * selected. Measured: the panel opened, the box was ticked, and the screen said "every order
-   * will go through the relay" about a link whose whole point was that they would not.
+   * checkbox starts ticked. `?sig=` is a different request with the same provenance — it names
+   * who *introduces* the two peers — and reading both as `source: 'url'` made an invite link
+   * that stated an introduction service arrive with the relay transport selected: the screen said
+   * "every order will go through the relay" about a link whose whole point was that they would
+   * not. Nothing else pre-ticks it either; an address the *server* declared is an offer to
+   * introduce you, not a request to carry your orders.
    *
-   * Nothing else pre-ticks it either: an address the *server* declared is an offer to introduce
-   * you, not a request to carry your orders.
+   * And the panel stays **closed**, which is the second fix. Opening it added about 250 px to a
+   * sheet that `qa-net`'s own comment already measured at ~765 px in an 800 px viewport, and the
+   * back link left the fold — which is fault 2 in this file's docstring, arriving for the third
+   * time. There is nothing behind the disclosure a player needs to *see* to understand the
+   * state: `#tc-no-relay` says what the relay is about to do, where they are already looking.
    */
   viaRelay.checked = (params.get('net') ?? '').trim() !== '';
-  if (viaRelay.checked) adv.open = true;
 
   /** Whether the relay is being asked to carry the battle, as opposed to just the introduction. */
   const throughRelay = (): boolean => viaRelay.checked && relay.value.trim() !== '';
@@ -854,8 +863,10 @@ export function showLobby(host: HTMLElement): void {
   const introAddr = (): string => (viaRelay.checked ? '' : relay.value.trim());
 
   let quiet = false;
+  /** The panel's four states, and the fourth is silence. See `introNote`. */
   const describe = (): void => {
     if (throughRelay()) {
+      blocked.hidden = false;
       blocked.innerHTML = `<b>Every order will go through the relay at `
         + `${esc(relay.value.trim())}.</b> That is the older arrangement and it works as it `
         + 'always did. Untick the box under <b>How you are introduced</b> to let the two '
@@ -863,9 +874,20 @@ export function showLobby(host: HTMLElement): void {
       return;
     }
     const addr = introAddr();
-    blocked.innerHTML = quiet && addr
-      ? introFellBack(addr, chosen.source)
-      : introNote(addr ? 'server' : 'brokers', addr);
+    if (quiet && addr) {
+      blocked.hidden = false;
+      blocked.innerHTML = introFellBack(addr, chosen.source);
+      return;
+    }
+    if (addr) {
+      // This page's own server will do it. Nothing leaves the network and there is nothing to
+      // decide, so the screen is a room code, a Create and a Join and says nothing else.
+      blocked.hidden = true;
+      blocked.innerHTML = '';
+      return;
+    }
+    blocked.hidden = false;
+    blocked.innerHTML = introNote(addr);
   };
 
   /*
@@ -1115,8 +1137,11 @@ export function showLobby(host: HTMLElement): void {
       <p class="tc-hint" id="tc-how">${viaR
         ? `Every order will go through the relay at <b>${esc(addr)}</b>.`
         : addr
-          ? `You will be introduced by <b>${esc(addr)}</b>, and then the battle runs straight `
-            + 'between the two machines.'
+          ? `${addr === declared
+            ? 'This machine will introduce the two of you, and then the battle runs straight '
+              + 'between the two machines. Nothing leaves your network.'
+            : `You will be introduced by <b>${esc(addr)}</b>, and then the battle runs straight `
+              + 'between the two machines.'}`
           : 'You will be introduced over the internet, and then the battle runs straight between '
             + 'the two machines with nothing in between.'}</p>
       <div class="tc-row">
