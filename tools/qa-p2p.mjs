@@ -762,7 +762,8 @@ if (wanted('proto')) {
       'both peers declare the same fork, at the same tick, on the same layer, with no coordinator',
       da && db ? `host tick ${da.tick} layer ${da.layer}, guest tick ${db.tick} layer ${db.layer}`
         : `host ${!!da}, guest ${!!db}`,
-      'uf64 is the detector: no quantisation firewall, so it moves first (§1.4)');
+      'uf64 is the detector because it is per-unit rather than averaged over thousands of '
+    + 'men, so it moves first — both layers are behind the same float32 firewall (§13.9 no. 12)');
     record('proto-fork-mine-is-mine', !!da && da.mine === `u${da.tick}` && da.theirs === `X${da.tick}`,
       "each peer's report says which of the two hashes was its own",
       da ? `host reports mine ${da.mine}, theirs ${da.theirs}` : 'no report',
@@ -1400,7 +1401,34 @@ if (wanted('lag') && chrome) {
       fired += (await burst(m.guest, i + 2)).length ? 1 : 0;
       await sleep(500);
     }
-    await sleep(4000);
+    /*
+     * **Wait for both peers to have played the same number of orders, rather than for a clock.**
+     *
+     * A fixed `sleep(4000)` was here and it produced a red that was not about the product. At
+     * 60 ms one way on a machine at load 10, the challenger was still one operation behind when
+     * the two logs were read — *"event 5: host `{k:deploy,verb:commit}` vs guest null"*, and no
+     * checkpoints in common because it had not left the deployment phase. Lockstep guarantees
+     * both peers play every order in one order; it guarantees nothing about them having played
+     * it at the same instant of wall clock, and a snapshot taken mid-flight measures the wall
+     * clock. The comparison below is bit-for-bit, so it has to be taken at a point where both
+     * sides have caught up.
+     *
+     * The deadline is generous and its expiry is *not* silently tolerated: the comparison runs
+     * anyway and reports the difference, because "they never converged in twenty seconds" is a
+     * real failure and must not be waited away.
+     */
+    const settleBy = Date.now() + 20000;
+    let waited = 0;
+    for (;;) {
+      const [na, nb] = await Promise.all([
+        m.host.evaluate(() => window.__rec()?.events?.length ?? -1).catch(() => -1),
+        m.guest.evaluate(() => window.__rec()?.events?.length ?? -1).catch(() => -1),
+      ]);
+      if ((na > 0 && na === nb) || Date.now() > settleBy) break;
+      await sleep(500);
+      waited += 500;
+    }
+    await sleep(1500);
     const both = await readBoth(m.host, m.guest);
     const ca = await m.host.evaluate(() => window.__checks());
     const cb = await m.guest.evaluate(() => window.__checks());
@@ -1409,7 +1437,7 @@ if (wanted('lag') && chrome) {
     const worstDelay = lat.reduce((x, y) => Math.max(x, y.delayTicks), 0);
     const meanRtt = lat.length ? lat.reduce((x, y) => x + y.rttMs, 0) / lat.length : -1;
     rows.push({
-      owd, samples: lat.length, worstDelay, meanRtt: Math.round(meanRtt),
+      owd, waited, samples: lat.length, worstDelay, meanRtt: Math.round(meanRtt),
       stalls: both.a.net?.stalls, stalledMs: both.a.net?.stalledMs,
       events: both.a.rec?.events?.length ?? 0, common: cmp.common, bad: cmp.bad,
       logDiff: logDiff(both.a.rec?.events ?? [], both.b.rec?.events ?? []),
@@ -1423,7 +1451,8 @@ if (wanted('lag') && chrome) {
     'every order survives a real channel at both latencies, in one order on both peers',
     rows.map((r) => `${r.owd} ms one way: ${r.events} orders, ${r.samples} round trips measured, `
       + `worst input delay ${r.worstDelay} ticks, mean rtt ${r.meanRtt} ms, `
-      + `${r.common} checkpoints agreed${r.bad ? ` — ${r.bad}` : ''}`
+      + `${r.common} checkpoints agreed after ${r.waited} ms of settling`
+      + `${r.bad ? ` — ${r.bad}` : ''}`
       + `${r.logDiff ? ` — ${r.logDiff}` : ''}`).join('; '),
     '?p2plag= holds each outbound frame on the real data channel; ordering is preserved');
   /*
@@ -1724,12 +1753,29 @@ if (wanted('lobby') && chrome) {
       ? `invite ${linkFace.invite}`
       : `no invite link, and it says why: ${linkFace.hint.slice(0, 150)}`}`,
     'peer to peer there is nothing to claim: a code is a rendezvous name, not a reservation');
+  /*
+   * **This check asserted the wrong branch and could not pass.** It wanted *"nothing leaves your
+   * network"*, which `NetLobby` writes only when the introduction service **is this page's own
+   * server** (`addr === declared`). This arm hands the page a `?sig=` pointing at a relay it
+   * started itself on another port, so `declared` is empty and the sentence is — correctly — the
+   * other one: the service is named, because a player deciding whether to send this code to
+   * somebody wants to know who is going to introduce them.
+   *
+   * So it now asserts the branch its own fixture exercises, and asserts the whole of it: the
+   * service is named, and the sentence still says the battle itself is direct. The *silent*
+   * branch is not orphaned — `qa-net`'s `lan-lobby-says-nothing-about-transport` is exactly that
+   * case, on a page whose own server declares the relay, and it has gone red on this pass once
+   * already for a paragraph that should not have been there.
+   */
+  const sigHost = new URL(lobbyRelay.base.replace(/^ws/, 'http')).host;
   record('lobby-says-how-this-one-connects',
-    /introduce/i.test(linkFace.how) && /nothing leaves your network/i.test(linkFace.how),
-    'and the open-room screen says how this room will connect, in the terms that matter',
+    /introduced by/i.test(linkFace.how) && linkFace.how.includes(sigHost)
+    && /straight between the two machines/i.test(linkFace.how),
+    'and the open-room screen names who introduces this room and says the battle itself is direct',
     linkFace.how.slice(0, 180),
-    'the address is deliberately not named when it is this page\'s own server: the player is '
-    + 'deciding whether the link works off this network, not reading a hostname');
+    'the address is named when it is *not* this page\'s own server, and only then: the player is '
+    + 'deciding whether to send this code to somebody, and the silent case is qa-net\'s '
+    + 'lan-lobby-says-nothing-about-transport');
 
   // The guest types the code into their own lobby while the host chooses the battle.
   const guestPage = await newPage(chromeGuest);
