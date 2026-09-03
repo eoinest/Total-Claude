@@ -1504,21 +1504,43 @@ if (wanted('desync') && chrome) {
         return n?.desync || n?.ended ? n : null;
       });
     }
+    /*
+     * Read both peers **unconditionally**, and read them for the reason the rest of this pass
+     * keeps re-learning: `caught` is null on exactly the run that needs explaining, and
+     * `perturbed: caught?.perturbed ?? -1` therefore printed `-1` on a failure and `-1` on a
+     * success, which is a diagnostic that only works when you do not need it.
+     *
+     * The three questions a red here has to answer are: did the fault fire (`fired`), did the
+     * perturbation actually land on a unit (`perturbed`, which `NetSession.testMarker` sets to
+     * the unit id and leaves at -1 when it found nobody alive to perturb), and did the two
+     * peers get far enough to compare anything (`common`, and the last tick they agreed on).
+     * Without the third, "not detected" cannot be told apart from "never compared".
+     */
     const guest = await m.guest.evaluate(() => window.__net());
+    const host = await m.host.evaluate(() => window.__net());
     const diag = await m.host.evaluate(() => window.__peer());
+    const ca = await m.host.evaluate(() => window.__checks()).catch(() => null);
+    const cb = await m.guest.evaluate(() => window.__checks()).catch(() => null);
+    const cmp = compareChecks(ca ?? [], cb ?? []);
     rows.push({
       kind, fired: diag?.peerRoom?.faultsFired ?? -1,
       desync: caught?.desync ?? null, ended: caught?.ended ?? '',
       guestDesync: guest?.desync ?? null, guestEnded: guest?.ended ?? '',
-      perturbed: caught?.perturbed ?? -1,
+      perturbed: [host?.perturbed ?? -1, guest?.perturbed ?? -1],
+      lastMark: [host?.lastCheckpoint ?? null, guest?.lastCheckpoint ?? null],
+      checkpoints: { common: cmp.common, highest: cmp.highest, bad: cmp.bad },
     });
+    const r0 = rows.at(-1);
+    const why = `fault fired ${r0.fired} time(s); host perturbed unit ${r0.perturbed[0]} and `
+      + `guest unit ${r0.perturbed[1]}; ${r0.checkpoints.common} checkpoint(s) compared to tick `
+      + `${r0.checkpoints.highest}${r0.checkpoints.bad ? ` — ${r0.checkpoints.bad}` : ''}`;
     const d = caught?.desync;
     record(`desync-${kind}-caught`,
       !!d && d.tick > 0 && ['uf64', 'uctl', 'pool', 'alive'].includes(d.layer),
       `--p2pfault=${kind}: the two battles part company and the session says so`,
       d ? `forked at tick ${d.tick} on ${d.layer}: ${d.mine} against ${d.theirs}; `
         + `last agreed tick ${d.lastAgreedTick}`
-        : `not detected after ${rows.at(-1).fired} fault(s) fired; ended '${caught?.ended ?? ''}'`,
+        : `NOT DETECTED — ${why}; ended '${caught?.ended ?? ''}'`,
       kind === 'ulp' ? 'one UnitGroupState float64 field moved by one unit in the last place, '
         + 'which is the magnitude a libm disagreement actually has (§1.4)'
         : "one of this peer's own orders missing from its own simulation and present in its "

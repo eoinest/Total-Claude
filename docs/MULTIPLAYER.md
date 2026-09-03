@@ -3792,10 +3792,19 @@ block is on, and name what to try.** `PeerLink.noDirectPath` distinguishes two r
 than hedging — if this machine never got a server-reflexive candidate then nothing here learned its
 own public address, which almost always means UDP is blocked on *this* side and is fixable by the
 person reading the message; if it did, both ends found their public addresses and the block is the
-path between them, which usually is not. `qa-p2p`'s `nodirect` arm makes that path red on purpose
-by throwing away every host candidate before it is offered, which leaves only the hairpin through
-the public address — and this network refuses hairpinning, measured, so the failure is genuine
-rather than simulated.
+path between them, which usually is not.
+
+`qa-p2p`'s `nodirect` arm drives both sentences, and **its two assertions deliberately do not
+depend on this network**. The first draft used `?p2pcand=srflx` — throw away the host candidates
+and leave only the hairpin out to the public address and back, which most home routers refuse.
+That is a faithful likeness and it is the wrong basis for a check: whether it fails is a fact
+about somebody's router, so the check would go green on a different network and be believed. The
+assertions use `?p2pcand=relay` instead, which offers **no candidates at all** — there is no TURN,
+so there are no relay candidates to offer — and therefore cannot connect anywhere. That is also
+the honest likeness of the failure that matters most, because a network blocking outbound UDP
+produces exactly this. The hairpin question is still asked on every run and **reported as a
+measurement rather than asserted**: on this network, srflx-only reached `CONNECTED` after 7 s, so
+this router does hairpin. That is the router's answer and not the product's.
 
 **One escape hatch, if the no-TURN rule is ever softened.** Cloudflare's TURN free tier is 1,000
 GB/month, which for a data channel carrying ~100 bytes/s is effectively unlimited. It needs an
@@ -3859,6 +3868,22 @@ undocumented they turn into "the new transport is flaky":
 | `channel: 'chromium'` (new headless, same binary) | connected, 110 ms | |
 | `channel: 'chrome'` (system Google Chrome) | **4 of 4 connected**, 57-209 ms, rtt 0-9 ms, at load 9.7-12 | what the gate uses |
 
+**And both peers have to be kept awake, which is the third fact.** Two browsers on one machine
+cannot both be the front window, and a page whose timers Chromium has throttled *is* a peer that
+has gone quiet — correctly reported as one. The `desync` arm died of exactly that: `page.click`
+on `.dep-add` timed out against a net panel already raised over the deployment screen, because the
+guest had stopped answering while the host was being deployed. Three launch flags
+(`--disable-background-timer-throttling`, `--disable-backgrounding-occluded-windows`,
+`--disable-renderer-backgrounding`) are on both gates' peer browsers. Nothing shipped changes, and
+the silence detector they sidestep is still proved by `leave`, which makes a peer genuinely go away.
+
+The same run produced a rule for the driver rather than the browser. Playwright's answer to a
+covered button is thirty seconds of retry loop describing the geometry of a `<div>` — *"`<div
+class="tc-over-fit">` intercepts pointer events"* — and not one word about the panel's text, which
+was legible, specific and the entire explanation. `tools/lib/net-drive.mjs` now clicks through
+`clickOrExplain`, which asks what is on top before and after and quotes it with the session's
+phase. **A driver standing in front of the error message is worse than no driver.**
+
 and Chromium's mDNS candidate obfuscation has to be off for the harness
 (`--disable-features=WebRtcHideLocalIpsWithMdns`), because nothing in this environment resolves
 `*.local` candidate names and two browsers therefore never complete a check over host candidates.
@@ -3909,9 +3934,12 @@ empty and kept only as a note to the next person tempted to add to it.
 
 ### 13.9 What the gate found, in the order it found it
 
-The most useful thing to take from this section is not the count. It is that **eight defects were
-found by running the checks rather than by reading the code**, and that five of them are in
+The most useful thing to take from this section is not the count. It is that **eleven defects were
+found by running the checks rather than by reading the code**, and that seven of them are in
 classes a relay cannot have — so no amount of care transferred from §9 would have caught them.
+Three of the eleven were found *after* this section was first written, by running arms that had
+never completed a run: they are 9, 10 and 11, and all three are about what happens when the
+coordinator that used to notice things is not there.
 
 | # | Found by | The defect |
 |---|---|---|
@@ -3924,6 +3952,9 @@ classes a relay cannot have — so no amount of care transferred from §9 would 
 | 6 | Writing the `desync` arm | **A fault that travels forks nothing.** A relay bends the packet *for one slot*; a peer-to-peer commit goes to both ends of one channel, so a peer that corrupts what it commits produces a stream both peers play identically. The arm as first written would have injected a fault, fired it, and correctly found nothing. `PeerFault.localOnly`. |
 | 7 | `inject-p2p.mjs --all-fast` | **Five checks that could not fail**, listed above — including one that compared `seal`/`unseal` against a key the harness had derived itself. |
 | 8 | Moving `qa-net` to new headless | A `/favicon.ico` 404 on every page load that three *older* console arms had been asserting past for months, green only because the old headless shell does not ask for one. |
+| 9 | `qa-p2p --only=nodirect` | **A challenger that had taken the offer kept knocking.** The knock timer ran until `dc.onopen`, and ICE takes 0.7-6 s; one second in, the challenger knocked again, the host had claimed on the answer by then, and `case 'knock'` answers a claimed room with `full`. So a perfectly good introduction survived only if ICE beat a one-second timer — and where ICE cannot finish at all it never did, which is why the arm about *two networks refusing each other* was reporting **"room already has a challenger"**. `claim()` now stops the knock. |
+| 10 | `qa-p2p --only=leave` | **Closing a tab told the survivor their network had failed.** Under a relay the relay holds both sockets and names `peerLeft`; between two peers a torn-down renderer does not shut an SCTP association politely, so the survivor sat until the silence detector fired and said `linkLost` — *"the connection is gone"* — six seconds after an opponent who had simply left. One `pagehide` listener calling `NetSession.dispose`, which sends `bye` and then closes the channel: measured **`peerLeft` after 503 ms**, and the battle now halts on the tick it stood on (191 to 191, against 191 to 195). |
+| 11 | `qa-p2p --only=leave`, same run | **`endedAtTick` was not in `status()`.** The field has existed since the relay pass; the readout the UI and the gate share did not carry it. So `leave-halts-at-a-stated-tick` asserted `ended.endedAtTick >= 0` against `undefined` — a check that could never go green — and printed *"the session reports its last agreed tick as undefined"* beside a screen reading *"The last tick both battles agreed on was 180"*. The number was in the sentence and nowhere a program could read it. |
 
 **The reason 4 and 4b took a browser arm each is the finding worth acting on.** `WsSignal`'s
 plaintext branch exists only on a private plain-http origin, so nothing cheaper than

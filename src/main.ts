@@ -659,6 +659,26 @@ const session = link
   ? engine.add(new NetSession(link, config, config.quality, deployPhase))
   : null;
 
+/*
+ * Say goodbye on the way out, because peer to peer there is nobody else to say it for you.
+ *
+ * Under a relay this line was not needed: the relay holds both sockets, sees one of them go,
+ * and tells the survivor `peerLeft` by name. Between two peers the survivor has only its own
+ * data channel, and closing a tab does not politely shut an SCTP association down — the
+ * renderer is torn down and the far end simply stops hearing anything. `qa-p2p --only=leave`
+ * measured exactly that: a peer closed its tab at tick 191 and the survivor sat until the
+ * silence detector fired six seconds later and reported **`linkLost`** — *"the connection is
+ * gone"*. Honest, and the wrong accusation: nothing was wrong with the connection, and the
+ * player was told their network had failed when their opponent had walked away.
+ *
+ * `NetSession.dispose` sends `bye` and then closes the channel, so the survivor gets the
+ * reason on the wire and the close behind it. `pagehide` rather than `unload`: `unload` is
+ * deprecated, is not fired at all in some conditions, and disqualifies the page from the
+ * back/forward cache. Leaving the page ends the match either way — §4.5 refuses reconnection —
+ * so there is nothing to preserve for a page that comes back.
+ */
+if (session) window.addEventListener('pagehide', () => session.dispose());
+
 const vfx = engine.add(new VFXSystem());
 // VFX cannot write the soldier pool (not its file), so blood only dirties men once
 // this sink is wired. `grime` drives a detail-texture blend in the unit renderer.

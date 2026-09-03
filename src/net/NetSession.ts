@@ -77,6 +77,17 @@ export interface NetStatus {
   message: string;
   ended: string;
   /**
+   * The tick the match stopped at, or -1 while it is still running.
+   *
+   * The field has existed since the relay pass and was **not in this readout**, which is how
+   * `qa-p2p`'s `leave-halts-at-a-stated-tick` came to assert `ended.endedAtTick >= 0` against
+   * `undefined`: a check that could never go green, printing *"the session reports its last
+   * agreed tick as undefined"* beside a screen that says *"The last tick both battles agreed on
+   * was 180"*. The number was in the sentence and nowhere a program could read it. The third
+   * guarantee is that a match ends **attributed to a tick**, so the tick belongs here.
+   */
+  endedAtTick: number;
+  /**
    * Frames in and out on this client's socket.
    *
    * In the readout because a lockstep client that has stopped can have stopped for two very
@@ -611,29 +622,55 @@ export class NetSession implements Subsystem {
   }
 
   /**
-   * The one-ULP perturbation, and the reason it arrives as an order.
+   * The smallest perturbation this simulation can actually hold, and the reason it arrives as
+   * an order.
    *
    * A relay has no simulation, so it cannot perturb one. `tools/relay.mjs --fault=ulp` sends a
-   * marker to one slot instead and this turns it into the smallest possible disagreement: one
-   * `UnitGroupState` float64 field, one unit in the last place of its mantissa. That is the
-   * failure real hardware produces — §1.4 measured 1 ULP as the true magnitude of a libm
-   * disagreement, and the whole detection design rests on `uf64` seeing it. A detector that
-   * has never been shown a 1-ULP fault is a detector nobody has tested.
+   * marker to one slot instead and this turns it into a one-unit-in-the-last-place move of one
+   * `UnitGroupState` position field. A detector that has never been shown that fault is a
+   * detector nobody has tested.
    *
-   * It is reachable only from a relay started with an explicit test flag. A production relay
-   * has no code path that emits this marker.
+   * **One float32 ULP, and the change from float64 is a measurement rather than a preference.**
+   * Every one of the fourteen `UNIT_F64_FIELDS` turns out to be a *float32 value in a float64
+   * box*: sampled across twelve units over three frames of the shipped battle, 36 of 36 readings
+   * had their low 29 mantissa bits zero — `...80000000`, `...a0000000`, `...e0000000` — and a
+   * one-float64-ULP nudge to any of the fourteen was back to a clean float32 value within one
+   * tick. Measured 3 Sep 2026, `tools/scratch/ulpfields.mjs`.
+   *
+   * That corrects §1.4. The claim there is that the float32 round trip is a firewall with ~29
+   * bits of headroom and that *"`UnitGroupState` has no such firewall"*. It has the same one:
+   * the unit layer is derived from the soldier pool and re-quantised on the way in. `uf64` is
+   * not a float64 layer, it is a float64 *hash of float32 values*, and it is sensitive for a
+   * different reason — it is per-unit and aggregated, so one man's disagreement is not averaged
+   * away — rather than because it carries more bits.
+   *
+   * The consequence for this fault is direct: **a one-float64-ULP disagreement is not
+   * representable in this simulation's state**, so injecting one models something that cannot
+   * happen and tests nothing. It was surviving less than a tick, and whether the detector saw
+   * it was a race between the checkpoint and the next step — a race the relay path won often
+   * enough to keep `qa-net --only=ulp` green while the peer path, which drains its turns inside
+   * `update()` immediately before the step, lost it every time and reported sixty-two
+   * bit-identical checkpoints after a fault that had definitely fired.
+   *
+   * One float32 ULP is the right magnitude for the same reason: it is what a libm disagreement
+   * of 1-3 float64 ULP leaves behind **when it lands near a rounding boundary and gets through**
+   * the firewall, which is the only case that reaches this state at all. At the shipped battle's
+   * scale that is about 15 micrometres, and it persists and grows — measured, same file.
+   *
+   * It is reachable only from a relay started with an explicit test flag, or from a peer with
+   * `?p2pfault=ulp`. Nothing the product builds emits this marker.
    */
   private testMarker(blob: unknown[]): boolean {
     if (blob[0] !== '__ulp__') return false;
     const u = this.battle.units.find((x) => !x.destroyed && x.alive > 0);
     if (!u) return true;
-    const dv = new DataView(new ArrayBuffer(8));
-    dv.setFloat64(0, u.x);
-    const lo = dv.getUint32(4);
-    dv.setUint32(4, (lo + 1) >>> 0);
-    u.x = dv.getFloat64(0);
+    const f32 = new Float32Array(1);
+    const u32 = new Uint32Array(f32.buffer);
+    f32[0] = u.x;
+    u32[0] = (u32[0] + 1) >>> 0;
+    u.x = f32[0];
     this.perturbed = u.id;
-    console.warn(`[net] test perturbation: unit ${u.id} x moved by one ULP`);
+    console.warn(`[net] test perturbation: unit ${u.id} x moved by one float32 ULP`);
     return true;
   }
 
@@ -768,6 +805,7 @@ export class NetSession implements Subsystem {
       delayTicks: Math.round(dly * 100) / 100,
       message: this.message,
       ended: this.ended,
+      endedAtTick: this.endedAtTick,
       got: this.link.counts.got,
       sent: this.link.counts.sent,
       ceiling: t ? t.tickCeiling : -1,
