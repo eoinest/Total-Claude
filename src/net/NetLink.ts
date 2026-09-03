@@ -1,4 +1,5 @@
-import { RELAY_V, validCode, type ClientMsg, type RelayMsg } from './protocol';
+import type { Link } from './link.ts';
+import { RELAY_V, validCode, type ClientMsg, type RelayMsg } from './protocol.ts';
 
 /**
  * The socket, and the part of a session that has to exist before the engine does.
@@ -46,7 +47,7 @@ import { RELAY_V, validCode, type ClientMsg, type RelayMsg } from './protocol';
  * stop arriving and the browser is never told. Neither is a reconnection and neither pretends
  * to be.
  */
-export class NetLink {
+export class NetLink implements Link {
   readonly room: string;
   readonly want: 'host' | 'join';
   slot = -1;

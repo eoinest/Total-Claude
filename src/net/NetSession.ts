@@ -3,7 +3,7 @@ import type { BattleConfig } from '../sim/battleConfig';
 import type { BattleSystem } from '../sim/BattleSystem';
 import type { NetSink, ReplayMark, ReplayRecord, ReplaySystem } from '../sim/replay';
 import { stateHashes, unitDigests } from '../sim/stateHash';
-import type { NetLink } from './NetLink';
+import type { Link } from './link';
 import {
   HASH_EVERY, libmPrint, TICKS_PER_TURN, turnTick,
   type BootPrint, type MsgTurn, type RelayMsg,
@@ -124,6 +124,25 @@ const MAX_CATCHUP_SPEED = 8;
 /** Rolling window of per-unit digests, so a desync at tick T can still be answered for. */
 const DIGEST_HISTORY = 12;
 /**
+ * How many checkpoints are kept for a gate to read back. 4,096 is about 68 simulated minutes.
+ *
+ * They exist because of what a gate can otherwise *not* do in a peer-to-peer session. Under a
+ * relay a harness brings two clients to a common tick by stopping the relay process, and then
+ * compares `stateHashes` on both pages. There is no process to stop between two peers, and two
+ * pages read a fifth of a second apart are two pages several ticks apart — measured while
+ * writing this: host at tick 853 and guest at 854, every exchanged checkpoint agreeing, and a
+ * naive comparison calling that a divergence.
+ *
+ * The right comparison is *at a tick*, and this is the record of them: each client's own hashes,
+ * computed locally at ticks 30, 60, 90 …, which a harness can intersect and compare bit for bit.
+ * It is a stronger claim than a settled tick rather than a weaker one — twenty-eight agreements
+ * across a battle instead of one — and it cannot be satisfied by the instrument getting lucky.
+ *
+ * Four numbers each, so 4,096 of them is about 150 kB. Read-only, and nothing in the simulation
+ * may touch it; it is the same category of thing as `latencies()`.
+ */
+const MARK_HISTORY = 4096;
+/**
  * How long the simulation must be held at its ceiling before that counts as a stall.
  *
  * One and a half turns of *simulated* time. Derived from `TICKS_PER_TURN` and not from the
@@ -188,7 +207,7 @@ export class NetSession implements Subsystem {
   private ctx!: EngineContext;
   private battle!: BattleSystem;
   private replay!: ReplaySystem;
-  private link: NetLink;
+  private link: Link;
   private cfg: BattleConfig;
   private quality: QualityTier;
   private deployPhase: boolean;
@@ -197,6 +216,8 @@ export class NetSession implements Subsystem {
   private readyTurn = -1;
   private lastMarkTick = -1;
   private digests: { tick: number; d: [number, string][] }[] = [];
+  /** Every checkpoint this client computed, for a gate to compare tick by tick. */
+  private marks: { tick: number; hash: string; uf64: string; uctl: string; alive: number }[] = [];
   /** Sent ops awaiting their turn packet, for the input-delay measurement. */
   private inFlight = new Map<string, { at: number; tick: number }>();
   private lat: { rttMs: number; delayTicks: number }[] = [];
@@ -221,7 +242,7 @@ export class NetSession implements Subsystem {
    */
   private endedLocally = false;
 
-  constructor(link: NetLink, cfg: BattleConfig, quality: QualityTier, deployPhase: boolean) {
+  constructor(link: Link, cfg: BattleConfig, quality: QualityTier, deployPhase: boolean) {
     this.link = link;
     this.cfg = cfg;
     this.quality = quality;
@@ -346,6 +367,21 @@ export class NetSession implements Subsystem {
   update(): void {
     for (const m of this.link.drain()) this.onMessage(m);
     this.pace();
+    /*
+     * And tell the transport how far the simulation has got. **A relay does not need to know
+     * and a peer does.**
+     *
+     * The only line in this file that exists for the peer-to-peer transport, and it is here
+     * rather than inside `pace` because it is not pacing — it is the *report* the other
+     * scheduler is paced by. `NetLink` does not implement `pump` at all; `PeerLink` earns the
+     * right to commit turn `k` by having consumed turn `k - delay`, and that single dependency
+     * is what stops two peers playing the battle as fast as the wire can carry it. `Link.pump`
+     * and `PeerRoom.pump` both carry the arithmetic.
+     *
+     * After `pace`, so the tick reported is the one this frame actually reached and the ceiling
+     * for the next frame is already set.
+     */
+    this.link.pump?.(this.ctx.time.tick);
   }
 
   /**
@@ -611,6 +647,10 @@ export class NetSession implements Subsystem {
    */
   private onMark(m: ReplayMark): void {
     this.lastMarkTick = m.tick;
+    this.marks.push({
+      tick: m.tick, hash: m.hash, uf64: m.uf64, uctl: m.uctl, alive: m.alive,
+    });
+    if (this.marks.length > MARK_HISTORY) this.marks.shift();
     this.digests.push({ tick: m.tick, d: unitDigests(this.battle.units) });
     if (this.digests.length > DIGEST_HISTORY) this.digests.shift();
     this.link.send({
@@ -730,6 +770,23 @@ export class NetSession implements Subsystem {
 
   /** Every measured order round trip, for the gate's latency table. */
   latencies(): { rttMs: number; delayTicks: number }[] { return this.lat.slice(); }
+  /**
+   * The transport, so a gate can ask it what it did. Read-only by convention, like `deployment`.
+   *
+   * Named for what it is for. A method called `link` would be read as part of the session's
+   * interface and reached for; this one says in its own name that the only caller should be a
+   * harness, and `tools/lib/net-drive.mjs`'s `window.__peer()` is that caller.
+   */
+  get linkForTests(): Link { return this.link; }
+  /**
+   * Every checkpoint this client computed, keyed by tick. For a gate; see `MARK_HISTORY`.
+   *
+   * A copy, because the caller is a harness reaching in through `page.evaluate` and a live array
+   * handed out of a running simulation is the shape of a bug that only appears under load.
+   */
+  checkpoints(): { tick: number; hash: string; uf64: string; uctl: string; alive: number }[] {
+    return this.marks.slice();
+  }
   /** The unit the test perturbation hit, or -1. */
   get perturbedUnit(): number { return this.perturbed; }
   get lastCheckpoint(): number { return this.lastMarkTick; }

@@ -118,6 +118,19 @@ import path from 'node:path';
 import process from 'node:process';
 import { lanAddress } from './lib/lan-address.mjs';
 import { bootThroughMenu, driveMenu, ensureServer, waitForServer } from './lib/menu-boot.mjs';
+/*
+ * The page-side hooks and the mouse gestures, which used to live in this file.
+ *
+ * They moved to `tools/lib/net-drive.mjs` on 2 Sep 2026 when a second netcode gate appeared
+ * (`tools/qa-p2p.mjs`, for the peer-to-peer transport). Every gesture is identical between the
+ * two, because a *player* does the identical thing either way — same lobby, same plaque, same
+ * right-click — and two copies of `deployWith` would start with its three hard-won lessons and
+ * lose them one at a time. Nothing about the behaviour changed in the move; the functions are
+ * the same functions, and the run below is the check on that.
+ */
+import {
+  drivers, INSTALL, lobbyFace, logDiff, markDisagreement, openAdvanced, readBoth,
+} from './lib/net-drive.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const ARMS = ['proto', 'qr', 'battle', 'siege', 'lobby', 'lan', 'https', 'dev', 'static', 'ghost',
@@ -596,146 +609,12 @@ browsers.push(chromeGuest);
 // Page-side readers. Read-only: every order below goes through page.mouse.
 // ---------------------------------------------------------------------------
 
-const INSTALL = () => {
-  const g = window.__game;
-  const ctx = g.engine.context;
-  const V = new (ctx.camera.position.constructor)();
-  window.__proj = (x, y, z) => {
-    V.set(x, y, z).project(ctx.camera);
-    if (V.z > 1) return null;
-    return { x: (V.x * 0.5 + 0.5) * ctx.viewW, y: (-V.y * 0.5 + 0.5) * ctx.viewH };
-  };
-  window.__net = () => (g.net ? {
-    ...g.net.status(),
-    desync: g.net.desync,
-    perturbed: g.net.perturbedUnit,
-    lastCheckpoint: g.net.lastCheckpoint,
-    lat: g.net.latencies(),
-  } : null);
-  window.__tick = () => g.engine.time.tick;
-  /**
-   * The tick and the state, in **one** evaluate.
-   *
-   * Not two, and not three. A live frame lands between a driver's round trips and carries up to
-   * `maxStepsPerFrame = 5` ticks with it, so reading the tick and then reading the hash reports
-   * the hash of a *different* tick — measured elsewhere in this project as two runs both asked
-   * for tick 6,000 and arriving at 6,000 and 6,004. Nothing about that looks like a harness
-   * fault from the outside; it looks like the engine being sloppy. One evaluate, one tick.
-   */
-  window.__mark = () => ({ tick: g.engine.time.tick, sim: g.simTime(), ...g.hashes() });
-  window.__rec = () => g.replay.record();
-  window.__flow = () => ctx.tryGet('battleFlow')?.result ?? null;
-  window.__dep = () => {
-    const d = g.deployment;
-    return d ? { active: d.active, committed: d.committed, own: d.ownUnits().length } : null;
-  };
-  window.__bare = () => {
-    const out = [];
-    for (const fy of [0.42, 0.5, 0.58, 0.36]) {
-      for (const fx of [0.3, 0.45, 0.6, 0.7, 0.38]) {
-        const x = Math.round(window.innerWidth * fx);
-        const y = Math.round(window.innerHeight * fy);
-        const el = document.elementFromPoint(x, y);
-        if (el && el.id === 'viewport') out.push({ x, y });
-      }
-    }
-    return out;
-  };
-  /** A regiment of *this client's* faction, projected to the screen, camera parked on it. */
-  window.__unitAt = (i) => {
-    const mine = g.net ? g.net.myFaction : 0;
-    const own = g.battle.units.filter((u) => !u.destroyed && u.faction === mine && u.alive > 0);
-    const u = own[i % Math.max(1, own.length)];
-    if (!u) return null;
-    g.setCamera(u.x, u.z, 0.55, 0);
-    const p = g.battle.pool;
-    let n = 0, sx = 0, sy = 0, sz = 0;
-    for (const k of u.members) {
-      if (p.hp[k] <= 0) continue;
-      n++; sx += p.x[k]; sy += p.y[k]; sz += p.z[k];
-    }
-    if (!n) return null;
-    const q = window.__proj(sx / n, sy / n + 0.5, sz / n);
-    return q ? { id: u.id, ...q } : null;
-  };
-  window.__selection = () => ctx.tryGet('hud')?.controller.model.selection.slice() ?? [];
-};
-
-/**
- * `opts` exists for one arm and one flag. `https` serves the app behind a certificate this run
- * generated four seconds earlier, which no browser has any reason to trust — and trusting it is
- * beside the point, because what that arm measures is the *scheme*, not the certificate.
- */
-const newPage = async (browser, opts = {}) => {
-  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1, ...opts });
-  const errs = [];
-  page.on('pageerror', (e) => errs.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') errs.push(`console.error: ${m.text()}`); });
-  page.__errs = errs;
-  return page;
-};
 const shot = async (page, name) => {
   if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, `${name}.png`) });
 };
 
-/**
- * What the lobby is showing *about transport*, which is the whole subject of three arms.
- *
- * **`checkVisibility()` and hit-testing, not a bounding box.** Measured while writing this:
- * Chromium gives an `<input>` inside a closed `<details>` a full 550×40 box at a real `y`, so
- * `getClientRects().length` and Playwright's own `isVisible()` both call it visible. It is not:
- * `checkVisibility()` returns false, `elementFromPoint` over the middle of that box returns
- * something else, and `innerText` leaves its label and its hint out. A check written on the
- * rectangle would have passed for a field sitting open on the screen.
- *
- * `text` is `innerText` for the same reason — it is the rendered text, so it is what the player
- * can actually read, which makes `/wss?:\/\//` over it a real claim about what is on screen.
- */
-const lobbyFace = (page) => page.evaluate(() => {
-  const sheet = document.querySelector('.tc-sheet');
-  const relay = document.querySelector('#tc-relay');
-  const adv = document.querySelector('#tc-adv');
-  const blocked = document.querySelector('#tc-no-relay');
-  const shown = (el) => !!el && el.checkVisibility();
-  const flat = (el) => (el?.innerText ?? '').replace(/\s+/g, ' ').trim();
-  const reaches = (el) => {
-    if (!el) return false;
-    const r = el.getBoundingClientRect();
-    if (!r.width || !r.height) return false;
-    const t = document.elementFromPoint(Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2));
-    return !!t && (t === el || el.contains(t));
-  };
-  return {
-    origin: location.origin,
-    // The server's own claims about itself, read back so an arm can prove which fixture it got.
-    metaLan: document.querySelector('meta[name="tc-lan"]')?.getAttribute('content') ?? null,
-    metaRelay: document.querySelector('meta[name="tc-relay"]')?.getAttribute('content') ?? null,
-    text: flat(sheet),
-    relayValue: relay ? relay.value : null,
-    relayShown: shown(relay),
-    relayReaches: reaches(relay),
-    advPresent: !!adv,
-    advOpen: !!adv?.open,
-    blockedShown: shown(blocked),
-    blockedText: shown(blocked) ? flat(blocked) : '',
-    createDisabled: document.querySelector('#tc-host')?.disabled ?? null,
-    joinDisabled: document.querySelector('#tc-join')?.disabled ?? null,
-  };
-});
-
-/**
- * Open the transport disclosure, the way somebody who wanted it would.
- *
- * A real click on the summary, and then a wait on `details.open` — `page.fill('#tc-relay')`
- * needs the field rendered, and Playwright's actionability check for `fill` correctly refuses a
- * field inside a closed `<details>`. Every arm below that types an address goes through here,
- * which means the demoted capability is exercised by five checks rather than asserted by one.
- */
-const openAdvanced = async (page) => {
-  await page.click('#tc-adv-summary');
-  await page.waitForFunction(() => document.querySelector('#tc-adv')?.open === true,
-    null, { timeout: 10000 });
-};
+// Bound once to this run's viewport and screenshot sink. See `tools/lib/net-drive.mjs`.
+const { newPage, deployWith, burst, doubleOrder } = drivers({ W, H, shot });
 
 // ---------------------------------------------------------------------------
 // Booting a match
@@ -801,183 +680,6 @@ async function bootMatch(relay, {
   });
   covered.push(got ?? { map: '(unreadable)', scenario: '(unreadable)' });
   return { host, guest, room, cfg: got };
-}
-
-/** Lay out an army with the plaque and the mouse, then press BEGIN BATTLE. */
-async function deployWith(page, tag) {
-  const d = await page.evaluate(() => window.__dep());
-  if (!d?.active) return [];
-  const done = [];
-  await shot(page, `${tag}-02-deploy`);
-  /*
-   * Wait for the plaque rather than clicking straight at it.
-   *
-   * The panel is attached on `deploymentBegan`, which fires inside `boot()` — but the HUD
-   * root fades in over two frames and `bootThroughMenu` returns on `window.__game.ready`,
-   * which is the frame before that. A bare `page.click` on a page whose plaque has not been
-   * attached yet reports "waiting for locator" thirty seconds later and says nothing about
-   * which of the two clients it was.
-   */
-  try {
-    await page.waitForSelector('.dep-add', { timeout: 30000 });
-  } catch {
-    const why = await page.evaluate(() => ({
-      hud: document.querySelector('.hud')?.className ?? '(no .hud)',
-      dep: window.__dep(),
-      net: window.__net(),
-      panels: Array.from(document.querySelectorAll('.hud > *')).map((e) => e.className),
-    }));
-    throw new Error(`${tag}: no deployment plaque — ${JSON.stringify(why)}`);
-  }
-  await page.click('.dep-add');
-  await sleep(220);
-  /*
-   * The first row whose `+` is *enabled*, not simply the first row.
-   *
-   * This cost the siege arm its first run and it is the second time this repository has paid
-   * for it. `tools/lib/menu-boot.mjs` says it at length: a bare `page.click` on a disabled
-   * button waits thirty seconds and then throws, and it stopped `qa-replay`'s matrix arm dead
-   * on its second battle. The identical hazard was sitting here, invisible, because every arm
-   * in this file booted `campus-martius / field` — where every row can be added to. On the
-   * assault the establishment is fixed and `tower-assault`'s `+` ships disabled, so the driver
-   * hung on the challenger and took the arm out with a `TimeoutError` naming a locator.
-   *
-   * Skipped rather than fatal: "this battle does not let you buy another one of those" is a
-   * fact about the product. But it is *recorded* — a driver that quietly declines to do what
-   * it was asked is how six playability scripts spent two days unable to reach a setup sheet.
-   */
-  const rows = await page.evaluate(() => Array.from(document.querySelectorAll('.dep-row'))
-    .map((r) => ({
-      unit: r.dataset.unit,
-      addable: !r.querySelector('[data-d="1"]')?.disabled,
-    })));
-  const addable = rows.find((r) => r.addable);
-  if (addable) {
-    await page.click(`.dep-row[data-unit="${addable.unit}"] [data-d="1"]`);
-    done.push(`palette +1 ${addable.unit}`);
-    await sleep(320);
-  } else if (rows.length) {
-    done.push(`palette +1 skipped (all ${rows.length} rows at their establishment)`);
-  }
-  const cards = await page.$$('.cardbar .card:not(.foe)');
-  if (cards.length) {
-    const box = await cards[0].boundingBox();
-    if (box) { await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); await sleep(260); }
-  }
-  const spots = await page.evaluate(() => window.__bare());
-  if (spots.length >= 2) {
-    await page.mouse.move(spots[0].x, spots[0].y);
-    await sleep(140);
-    await page.mouse.down({ button: 'right' });
-    await page.mouse.move(spots[1].x, spots[1].y, { steps: 8 });
-    await sleep(200);
-    await page.mouse.up({ button: 'right' });
-    await sleep(420);
-    done.push('right-drag place');
-  }
-  /*
-   * BEGIN, and a legible error rather than another thirty-second locator timeout.
-   *
-   * Same lesson as the palette row above: if this button is ever disabled — an army below its
-   * minimum, a phase that has already ended under us — a bare click reports a selector and
-   * nothing about which client, which battle or why. Ask first, and say all three.
-   */
-  const beginState = await page.evaluate(() => {
-    const b = document.querySelector('.dep-begin');
-    return b ? { present: true, disabled: !!b.disabled } : { present: false, disabled: false };
-  });
-  if (!beginState.present || beginState.disabled) {
-    const why = await page.evaluate(() => ({ dep: window.__dep(), net: window.__net() }));
-    throw new Error(`${tag}: BEGIN BATTLE is ${beginState.present ? 'disabled' : 'absent'}`
-      + ` after ${done.length} gesture(s) — ${JSON.stringify(why)}`);
-  }
-  await page.click('.dep-begin');
-  done.push('BEGIN BATTLE');
-  await sleep(400);
-  return done;
-}
-
-/** One burst of orders: select a regiment, move it, change its gait. */
-async function burst(page, i) {
-  let u = null;
-  for (let k = 0; k < 4 && !u; k++) {
-    await page.evaluate((n) => window.__unitAt(n), i * 3 + k);
-    await sleep(200);
-    const qq = await page.evaluate((n) => window.__unitAt(n), i * 3 + k);
-    if (qq && qq.x > 40 && qq.x < W - 40 && qq.y > 180 && qq.y < H - 220) u = qq;
-  }
-  if (!u) return [];
-  const acts = [];
-  await page.mouse.move(u.x, u.y);
-  await sleep(160);
-  await page.mouse.click(u.x, u.y);
-  await sleep(240);
-  const sel = await page.evaluate(() => window.__selection());
-  if (!sel.length) return acts;
-  acts.push(`select ${sel.join(',')}`);
-  const spots = await page.evaluate(() => window.__bare());
-  if (spots.length) {
-    const p = spots[(i + 1) % spots.length];
-    await page.mouse.move(p.x, p.y);
-    await sleep(110);
-    await page.mouse.down({ button: 'right' });
-    await sleep(190);
-    await page.mouse.up({ button: 'right' });
-    await sleep(260);
-    acts.push('right-click move');
-  }
-  await page.keyboard.press('KeyR');
-  await sleep(180);
-  acts.push('R gait');
-  return acts;
-}
-
-/**
- * Two move orders on the same regiment, fast enough to land in one 100 ms turn.
- *
- * The `swap` arm needs exactly this and nothing else will do: `applyOrder` mutates only the
- * units an order names, so two orders on *different* regiments commute and exchanging them
- * proves nothing. §4.1's claim is about two orders touching one unit, and two right-clicks a
- * few tens of milliseconds apart on one selection is what a player does when they change their
- * mind — which is also, not coincidentally, the gesture that a reordering breaks.
- */
-async function doubleOrder(page, i) {
-  let u = null;
-  for (let k = 0; k < 4 && !u; k++) {
-    await page.evaluate((n) => window.__unitAt(n), i * 2 + k);
-    await sleep(200);
-    const qq = await page.evaluate((n) => window.__unitAt(n), i * 2 + k);
-    if (qq && qq.x > 40 && qq.x < W - 40 && qq.y > 180 && qq.y < H - 220) u = qq;
-  }
-  if (!u) return false;
-  await page.mouse.click(u.x, u.y);
-  await sleep(240);
-  const sel = await page.evaluate(() => window.__selection());
-  if (!sel.length) return false;
-  const spots = await page.evaluate(() => window.__bare());
-  if (spots.length < 2) return false;
-  /*
-   * Three, not two, and 25 ms apart.
-   *
-   * The relay closes a turn every 100 ms, and two clicks straddling a boundary land in two
-   * different turns — at which point there is no pair in one packet for the swap to exchange
-   * and the arm passes by never having fired. Three clicks inside 75 ms cannot all straddle
-   * one boundary, so at least two of them share a turn whatever the phase of the relay's clock.
-   */
-  /*
-   * Three *distinct* spots. The third used to be `spots[0]` again, which made the sequence
-   * `0,1,0`; combined with a swap of the first adjacent pair that produced `1,0,0`, and both
-   * orderings ended at `spots[0]`. Distinct destinations mean the exchange is visible in the
-   * final state whichever pair `Room.bend` takes.
-   */
-  for (const p of [spots[0], spots[1], spots[2] ?? spots[0]]) {
-    await page.mouse.move(p.x, p.y);
-    await page.mouse.down({ button: 'right' });
-    await sleep(25);
-    await page.mouse.up({ button: 'right' });
-    await sleep(25);
-  }
-  return true;
 }
 
 /** Wait until both clients sit on the same tick, or the session ends. Never longer than `ms`. */
@@ -1057,80 +759,6 @@ async function settleTogether(host, guest, ms = 40000, relay = null) {
   const b = await guest.evaluate(() => window.__tick());
   go();
   return { tick: Math.min(a, b), ended: '', timedOut: true, apart: a !== b, nudges };
-}
-
-/** Both clients' final state, for comparison. */
-async function readBoth(host, guest) {
-  const rd = async (p) => {
-    // The tick and the hashes together, in one evaluate: see `__mark`. Reading them separately
-    // lets a live frame put five ticks between the number and the state it is supposed to
-    // describe, and the comparison below is bit-for-bit.
-    const mark = await p.evaluate(() => window.__mark());
-    return {
-      net: await p.evaluate(() => window.__net()),
-      tick: mark.tick,
-      simTime: mark.sim,
-      hashes: mark,
-      rec: await p.evaluate(() => window.__rec()),
-      flow: await p.evaluate(() => window.__flow()),
-      errs: p.__errs.slice(),
-    };
-  };
-  return { a: await rd(host), b: await rd(guest) };
-}
-
-/** First event that differs between two merged order logs, spelled out. */
-/**
- * Are these two clients at the same tick of the same battle?
- *
- * Returns `null` when they are, and the term that failed when they are not — because a
- * comparison of six things that prints only four of them costs an hour the first time it goes
- * red, and it did.
- *
- * **`simTime` is deliberately *not* compared across the two clients.** It used to be, with the
- * reasoning that "equal hashes at unequal sim times would mean the comparison had been taken at
- * two moments". That reasoning is sound and the implementation did not follow from it.
- * `Time.beginFrame` accumulates `simTime += steps * fixedDt`, so the value depends on how the
- * frame loop *grouped* its ticks — five in one frame or one in five — and float addition is not
- * associative. Two clients that ran the identical 1,365 ticks therefore hold sim times
- * 3.6e-14 apart whenever the machine paced their frames differently, which is whenever the
- * machine is busy. Measured on the siege arm: tick, pool, `uf64`, `uctl`, count and alive all
- * identical, and this check red on 4 parts in 1e15 of an accumulator the simulation never
- * reads. It is a property of the wall clock, not of the battle.
- *
- * What the original intent actually needs is that each client's *own* mark is self-consistent —
- * that the tick and the state in it came from the same moment — and `window.__mark()` already
- * guarantees that by reading both in one `evaluate`. The tolerance check below is the belt to
- * that brace: it catches a clock that has been re-baselined out from under its tick counter,
- * which is a real bug this codebase has the machinery for (`Time.resync`, `tickCeiling`), and
- * it does so per client, where the question is well posed.
- */
-const TICK_HZ = 30;
-function markDisagreement(a, b) {
-  if (a.tick !== b.tick) return `they stopped at different ticks: ${a.tick} and ${b.tick}`;
-  for (const [tag, m] of [['host', a], ['guest', b]]) {
-    const want = m.tick / TICK_HZ;
-    if (Math.abs(m.hashes.sim - want) > 1e-6) {
-      return `${tag}'s own clock disagrees with its own tick: sim ${m.hashes.sim} at tick `
-        + `${m.tick} (expected ${want})`;
-    }
-  }
-  for (const layer of ['hash', 'uf64', 'uctl', 'alive', 'count']) {
-    if (a.hashes[layer] !== b.hashes[layer]) {
-      return `${layer} differs at tick ${a.tick}: ${a.hashes[layer]} against ${b.hashes[layer]}`;
-    }
-  }
-  return null;
-}
-
-function logDiff(a, b) {
-  const n = Math.max(a.length, b.length);
-  for (let i = 0; i < n; i++) {
-    const x = JSON.stringify(a[i] ?? null);
-    const y = JSON.stringify(b[i] ?? null);
-    if (x !== y) return `event ${i}: host ${x} vs guest ${y}`;
-  }
-  return null;
 }
 
 const relayStatus = async (relay) =>

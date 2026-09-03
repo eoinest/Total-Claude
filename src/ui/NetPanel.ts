@@ -133,19 +133,27 @@ const OVERHEAD = ['.topbar', '.deploy', '.replay-bar'];
  */
 const KEEPS_THE_STRIP = new Set(['desync', 'complete']);
 
+/**
+ * The headline per ending, and every one of them is now **transport-neutral**.
+ *
+ * They named the relay, because there was only one wire. There are two — a relay, and a direct
+ * connection between the two browsers — and a peer session whose channel closes must not tell
+ * the player that "the link to the relay is gone" about a relay that was never in it. The
+ * specifics are the transport's to write and they arrive in `detail`; see `raise`.
+ */
 const HEADLINE: Record<string, string> = {
   peerLeft: 'The other commander left',
-  linkLost: 'The link to the relay is gone',
-  abandoned: 'The other client fell too far behind',
+  linkLost: 'The connection is gone',
+  abandoned: 'The other commander\'s battle stopped moving',
 };
 
 const OPENING: Record<string, string> = {
-  peerLeft: 'Their end of the link closed. The battle stopped where it stood rather than '
+  peerLeft: 'Their end of the connection closed. The battle stopped where it stood rather than '
     + 'playing on without them.',
   linkLost: 'There is no reconnecting into a battle in progress &mdash; the two simulations '
     + 'would have to agree about every tick they had missed, and nothing here can make them.',
-  abandoned: 'The relay stopped waiting. One of the two clients had fallen further behind '
-    + 'than the match is allowed to stretch.',
+  abandoned: 'One of the two sides had fallen further behind than the match is allowed to '
+    + 'stretch, and waiting longer costs more than the match is worth.',
 };
 
 const fmt = (n: number): string => n.toLocaleString('en-GB');
@@ -304,6 +312,16 @@ export class NetPanel {
     }
   }
 
+  /**
+   * The sheet. `why` picks the headline; `detail` is what the transport actually said.
+   *
+   * **Both are printed when both exist**, and that is a correction rather than a flourish. The
+   * general sentence for an ending and the specific account of *this* ending are different
+   * things, and the first version showed only the general one when it had one — so
+   * `PeerLink.noDirectPath`, which is four sentences naming what happened and what to try
+   * instead, was thrown away in favour of "there is no reconnecting into a battle in progress"
+   * on the one failure this design chose to accept and therefore owes an explanation for.
+   */
   private raise(why: string, detail: string): void {
     const sheet = document.createElement('div');
     sheet.className = 'tc-over';
@@ -321,6 +339,7 @@ export class NetPanel {
         <button class="tc-over-x" type="button" title="Dismiss (Esc)" aria-label="Dismiss">&times;</button>
         <h2>${HEADLINE[why] ?? 'The battle stopped'}</h2>
         <p>${OPENING[why] ?? detail}</p>
+        ${OPENING[why] && detail && detail !== OPENING[why] ? `<p>${detail}</p>` : ''}
         <p>${this.stood()}</p>
         ${this.wall() ? `<p>${this.wall()}</p>` : ''}
         <p class="tc-over-quiet">No result has been recorded. A battle nobody finished does not
