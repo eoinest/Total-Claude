@@ -133,6 +133,16 @@ const BATTLES = (args.get('battles')
   ?? 'campus-martius/field,campus-martius/assault,carthage/assault').split(',');
 const W = 1280;
 const H = 800;
+/**
+ * How long a battle may take to boot before that is a finding rather than a slow machine.
+ *
+ * Two 8,632-man armies at once, and the work budget correctly demotes agent browsers to
+ * efficiency cores and caps them at one while the owner is at the keyboard — measured on this
+ * machine as a two-minute queue before a slot and a boot several times slower than an idle one.
+ * A boot that is merely slow must not be reported as a transport failure; that is the mistake
+ * `tools/check-tool-args.mjs` exists to prevent, one level up.
+ */
+const BOOT_MS = 420000;
 const CERT_DIR = '/tmp/tc-qa-p2p';
 
 /**
@@ -350,11 +360,11 @@ async function bootPeers(hostBrowser, guestBrowser, base, {
      * as a cap of one browser and a queue. A boot that is merely slow must not be reported as a
      * transport failure, which is the same reasoning `tools/check-tool-args.mjs` exists for.
      */
-    readyTimeout: 300000,
+    readyTimeout: BOOT_MS,
   });
   const guest = await newPage(guestBrowser);
   await guest.goto(`${base}/?${q}&host=0${guestExtra}`, { waitUntil: 'domcontentloaded' });
-  await guest.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
+  await guest.waitForFunction(() => window.__game?.ready === true, null, { timeout: BOOT_MS });
   await host.evaluate(INSTALL);
   await guest.evaluate(INSTALL);
   for (const p of [host, guest]) {
