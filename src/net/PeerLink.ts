@@ -487,6 +487,29 @@ export class PeerLink implements Link {
     this.pc.onconnectionstatechange = () => {
       this.states.push(`conn:${this.pc.connectionState}`);
       if (this.pc.connectionState !== 'failed') return;
+      /*
+       * **`failed` means two different things and they are different accusations.**
+       *
+       * Before the channel ever opens it means ICE could not find a path, and `noDirectPath` is
+       * the right four sentences: *"your two networks would not let the game connect directly."*
+       * **After** it has opened, the two networks demonstrably did let them connect — the path
+       * existed and then went away — and saying otherwise blames a network for something it
+       * already did successfully, and sends the player off to check a firewall that is fine.
+       *
+       * Measured 3 Sep 2026 on a machine at load 37: a pair whose channel had been open for
+       * 18 s went `conn=failed ice=disconnected`, and both ends printed the no-direct-path
+       * sentence at each other. `selected=null` with `open@18091ms` in the same diagnostic line
+       * is the shape to recognise.
+       */
+      if (this.openedAt >= 0) {
+        this.fail('the direct connection to the other player dropped after '
+          + `${((now() - this.openedAt) / 1000).toFixed(1)} s. The path the two of you were `
+          + 'using stopped working — a wifi handover, a sleeping laptop or a network that '
+          + 'changed underneath one of you will all do it. There is no reconnecting into a '
+          + 'battle in progress, so this one is over; open a new room and the two of you can '
+          + 'start again.');
+        return;
+      }
       this.fail(this.noDirectPath());
     };
     this.pc.oniceconnectionstatechange = () => {
