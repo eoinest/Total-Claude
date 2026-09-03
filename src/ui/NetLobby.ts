@@ -1280,15 +1280,27 @@ export function showLobby(host: HTMLElement): void {
         () => crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32,
         CODE_ALPHABET, CODE_LEN);
       /*
-       * **The room's actual secret, and it is not the code.**
+       * **The room's actual secret, and it is not the code — but only where there is a public
+       * square to cross.**
        *
-       * The five characters are a rendezvous name and are meant to be said out loud, which is
-       * 25 bits over an alphabet chosen for the telephone. This is 128 bits, it rides in the
-       * fragment of the invite link, and it is what the introduction is encrypted with. A room
-       * opened here always has one; whether it gets *used* depends on whether the other player
-       * follows the link or types the code, which is what `privacyNote` tells the player.
+       * The five characters are a rendezvous name meant to be said out loud: 25 bits over an
+       * alphabet chosen for the telephone. This is 128 bits, it rides in the fragment of the
+       * invite link, and it is what the introduction is encrypted with when that introduction
+       * goes through somebody else's broker.
+       *
+       * **Not minted when a named service is introducing you**, which on this project means the
+       * relay `npm run host` started on your own machine. There is nothing there to hide from —
+       * §11's rule is that the screen says nothing at all about a LAN introduction — and minting
+       * one anyway breaks a property the owner asked for and `qa-net`'s `lan` arm protects: the
+       * link on the screen is *character for character* the line the terminal printed. The
+       * terminal cannot know a secret the browser mints, so a fragment here would make those two
+       * lines differ for no benefit. Measured: two `lan` checks went red on exactly that, and
+       * they were right.
+       *
+       * The condition is the same one `privacyNote` speaks under, deliberately: a room gets a
+       * secret exactly when a player would otherwise be told something untrue without one.
        */
-      secret = makeSecret();
+      secret = throughRelay() || relay.value.trim() !== '' ? '' : makeSecret();
       localStorage.setItem(KEY, relay.value.trim());
       const intro = introAddr();
       /*
