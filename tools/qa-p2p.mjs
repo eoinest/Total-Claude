@@ -96,7 +96,7 @@ if (badFlag.length) {
 }
 
 const ARMS = ['proto', 'params', 'seal', 'battle', 'lag', 'desync', 'leave', 'lobby', 'https',
-  'nodirect', 'ab', 'broker', 'brokerplay'];
+  'nodirect', 'dup', 'ab', 'broker', 'brokerplay'];
 /**
  * `broker` and `brokerplay` reach the public internet, so both are opt-in for the reason
  * `xengine` is: a gate that goes red because somebody else's free service is busy teaches
@@ -1196,7 +1196,8 @@ if (wanted('seal')) {
  * no use for, printed its verdict, and then sat in the queue for the length of the machine's
  * patience. The rule is that an arm belongs here if and only if it opens a page.
  */
-const NEEDS_BROWSER = ['battle', 'lag', 'desync', 'leave', 'lobby', 'https', 'nodirect', 'ab',
+const NEEDS_BROWSER = ['battle', 'lag', 'desync', 'leave', 'lobby', 'https', 'nodirect', 'dup',
+  'ab',
   'brokerplay'];
 const anyBrowser = NEEDS_BROWSER.some((a) => wanted(a));
 
@@ -2198,6 +2199,66 @@ if (wanted('nodirect') && chrome) {
   console.log(`\n  measurement, not a check — does this network hairpin? `
     + `srflx-only ${hairpin.connected ? 'CONNECTED' : 'refused'} after ${hairpin.took} s. `
     + 'That is the shape of two peers behind one NAT, and the answer is the router\'s.');
+}
+
+// ---------------------------------------------------------------------------
+// Arm: every signalling message twice
+// ---------------------------------------------------------------------------
+
+if (wanted('dup') && chrome) {
+  console.log('\n=== dup: every signalling message sent twice, and the battle still happens ===');
+  /*
+   * **A duplicate is an ordinary event here, not an exotic one**, and it took a whole gate run
+   * down before this arm existed.
+   *
+   * The host publishes its offer on `OFFER_REPEAT_MS` *and* immediately whenever a knock
+   * arrives, both peers are subscribed to one topic, and a public MQTT broker may redeliver on
+   * its own. So two offers a few milliseconds apart happen without anybody arranging it. The
+   * answer path has two `await`s in it and `haveRemote` is only true on the far side of them, so
+   * the second offer re-entered, called `setRemoteDescription` on a connection that was already
+   * negotiating, and threw out of `setLocalDescription`. `onSignal`'s catch then did the right
+   * thing with the wrong premise and failed the session. Measured 3 Sep 2026, on a pair whose
+   * data channel was **already open**:
+   *
+   *     guest: phase=over slot=1 ended='linkLost'
+   *            msg="the introduction failed: Failed to execute 'setLocalDescription' ..."
+   *            channel=open conn=connected ice=connected open@34ms
+   *
+   * `?p2pdup=1` makes that deterministic instead of waiting for the race, and the assertion is
+   * on the *product surviving it*: with every frame doubled, two peers connect and play one
+   * battle that agrees. `duplicate-offer-unguarded` in `inject-p2p.mjs` puts the bug back.
+   */
+  const m = await bootPeers(chrome, chromeGuest, base, {
+    sig: SIG(), deploy: false, autoplay: 1, extra: '&p2pdup=1&quality=medium',
+  });
+  await sleep(14000);
+  const ca = await m.host.evaluate(() => window.__checks());
+  const cb = await m.guest.evaluate(() => window.__checks());
+  const cmp = compareChecks(ca ?? [], cb ?? []);
+  const both = await readBoth(m.host, m.guest);
+  measured.dup = {
+    common: cmp.common, highest: cmp.highest, bad: cmp.bad,
+    host: { phase: both.a.net?.phase, ended: both.a.net?.ended, msg: both.a.net?.message },
+    guest: { phase: both.b.net?.phase, ended: both.b.net?.ended, msg: both.b.net?.message },
+  };
+  record('dup-signalling-survived',
+    both.a.net?.ended === '' && both.b.net?.ended === ''
+    && both.a.net?.phase === 'battle' && both.b.net?.phase === 'battle',
+    'every signalling message delivered twice, and neither peer is broken by its own duplicate',
+    `host phase '${both.a.net?.phase}' ended '${both.a.net?.ended}'`
+    + `${both.a.net?.ended ? ` — ${String(both.a.net?.message).slice(0, 120)}` : ''}; `
+    + `guest phase '${both.b.net?.phase}' ended '${both.b.net?.ended}'`
+    + `${both.b.net?.ended ? ` — ${String(both.b.net?.message).slice(0, 120)}` : ''}`,
+    'the failure this replaces reported linkLost on a pair whose data channel was already open, '
+    + 'which is the worst kind of wrong sentence: it blames the network for a bug in the page');
+  record('dup-battle-still-agrees',
+    cmp.common >= 4 && cmp.bad === null,
+    'and the battle underneath is the same battle on both sides',
+    `${cmp.common} checkpoints in common, highest tick ${cmp.highest}`
+    + `${cmp.bad ? ` — ${cmp.bad}` : ', no layer ever differed'}`,
+    'a duplicate on the introduction must not reach the simulation, and the only way to say so '
+    + 'is to hash the simulation');
+  for (const pg of [m.host, m.guest]) await pg.close();
 }
 
 // ---------------------------------------------------------------------------

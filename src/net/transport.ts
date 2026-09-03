@@ -97,6 +97,8 @@ export interface BuildOptions {
   sendDelayMs?: number;
   /** Test-only. Corrupts what this peer commits. See `PeerFault`. */
   fault?: PeerFault | null;
+  /** Test-only. Sends every signalling message twice. See `PeerLinkOptions.dupSignal`. */
+  dupSignal?: boolean;
 }
 
 /**
@@ -131,6 +133,10 @@ export function testKnobs(params: URLSearchParams): BuildOptions {
       localOnly: params.get('p2pfault-local') === '1',
     };
   }
+  // `?p2pdup=1`: every signalling message goes out twice. A public broker can deliver a
+  // duplicate on its own, and the host publishes its offer on a timer *and* on a knock, so this
+  // is an ordinary condition rather than an exotic one. See `PeerLink.sendSignal`.
+  if (params.get('p2pdup') === '1') out.dupSignal = true;
   const brokers = (params.get('p2pbrokers') ?? '').trim();
   if (brokers) out.brokers = brokers.split(',').map((x) => x.trim()).filter(Boolean);
   return out;
@@ -165,6 +171,7 @@ export function makeLink(t: Transport, o: BuildOptions = {}): Link {
     onlyCandidates: o.onlyCandidates ?? null,
     sendDelayMs: o.sendDelayMs ?? 0,
     fault: o.fault ?? null,
+    dupSignal: o.dupSignal ?? false,
   });
 }
 

@@ -315,6 +315,12 @@ const FAULTS = {
     "      + 'pretending. What works: both of you on ordinary home internet, or both of you on the '\n      + 'same wifi — which connects without asking anybody. If either of you is on a work or '\n      + 'university network, or a VPN, that is the likeliest cause.';",
     "      + 'pretending.';",
     'nodirect', 'nodirect-names-the-right-cause (the advice half)'],
+  // Put the re-entrancy back: `haveRemote` is set two awaits later, so with `?p2pdup=1` the
+  // second offer lands inside the first one's negotiation every time.
+  'duplicate-offer-unguarded': [F.peer,
+    "          if (this.want === 'host' || this.haveRemote || this.claimed) return;\n          this.claim();",
+    "          if (this.want === 'host' || this.haveRemote) return;\n          this.claim();",
+    'dup', 'dup-signalling-survived and dup-battle-still-agrees'],
   'shifted-turn-tick': [F.room,
     "        k: 'turn', ph: 'battle', n: next, t: turnTick(next), ops: this.sorted([...a, ...b]),",
     "        k: 'turn', ph: 'battle', n: next, t: turnTick(next) + 1, ops: this.sorted([...a, ...b]),",

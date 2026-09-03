@@ -181,6 +181,22 @@ export interface PeerLinkOptions {
   sendDelayMs?: number;
   /** Test-only. Corrupts what this peer commits, so a gate can prove the detector works. */
   fault?: import('./peerRoom.ts').PeerFault | null;
+  /**
+   * Test-only. Sends every signalling message **twice**.
+   *
+   * Not an exotic condition — it is one this design produces by itself. The host publishes its
+   * offer on `OFFER_REPEAT_MS` *and* immediately whenever a knock arrives, a public MQTT broker
+   * may redeliver, and both peers are subscribed to one topic. A duplicate offer arriving inside
+   * the two awaits of the answer path used to call `setRemoteDescription` on a connection that
+   * was already negotiating, throw out of `createAnswer`/`setLocalDescription`, and fail a
+   * session **whose data channel was already open**: *"guest: phase=over ended='linkLost' … the
+   * introduction failed … channel=open conn=connected ice=connected"*, measured 3 Sep 2026.
+   *
+   * Reachable only from `?p2pdup=1`, which nothing in the product writes. `qa-p2p`'s `dup` arm
+   * is the standing check, and it is a check the *product* passes rather than one the harness
+   * arranges: with every frame doubled, two peers must still connect and play one battle.
+   */
+  dupSignal?: boolean;
 }
 
 export class PeerLink implements Link {
@@ -252,6 +268,8 @@ export class PeerLink implements Link {
    */
   private preOpen: PeerMsg[] = [];
   private sendDelayMs: number;
+  /** Test-only. See `PeerLinkOptions.dupSignal`. */
+  private dupSignal: boolean;
   /** Outbound frames waiting on `sendDelayMs`. Kept in order; see the option's docstring. */
   private outQueue: Promise<void> = Promise.resolve();
   private gathered: string[] = [];
@@ -266,6 +284,7 @@ export class PeerLink implements Link {
     this.onlyCandidates = o.onlyCandidates ?? null;
     this.signal = o.signal;
     this.sendDelayMs = Math.max(0, o.sendDelayMs ?? 0);
+    this.dupSignal = o.dupSignal === true;
     this.peerRoom = new PeerRoom(o.code, this.slot, {
       ...(o.room ?? {}),
       ...(o.fault ? { fault: o.fault } : {}),
@@ -379,7 +398,19 @@ export class PeerLink implements Link {
       if (this.offerTimer) { clearInterval(this.offerTimer); this.offerTimer = 0; }
       return;
     }
-    this.signal.send({ t: 'offer', from: this.slot, sdp: this.pc.localDescription?.sdp ?? '' });
+    this.sendSignal({ t: 'offer', from: this.slot, sdp: this.pc.localDescription?.sdp ?? '' });
+  }
+
+  /**
+   * Every outbound signalling message goes through here, so `dupSignal` has one home.
+   *
+   * `this.signal.send` is not called anywhere else in this file. That is worth keeping: the
+   * signalling channel is the only part of this transport a third party can see, and one
+   * chokepoint is what makes "what does this send, and when" answerable by reading.
+   */
+  private sendSignal(m: SignalMsg): void {
+    this.signal.send(m);
+    if (this.dupSignal) this.signal.send(m);
   }
 
   private knock(): void {
@@ -387,7 +418,7 @@ export class PeerLink implements Link {
       if (this.knockTimer) { clearInterval(this.knockTimer); this.knockTimer = 0; }
       return;
     }
-    this.signal.send({ t: 'knock', from: this.slot });
+    this.sendSignal({ t: 'knock', from: this.slot });
   }
 
   // -------------------------------------------------------------------------
@@ -402,7 +433,7 @@ export class PeerLink implements Link {
       if (this.onlyCandidates && !this.onlyCandidates.includes(kind)) return;
       // Held until somebody is on the channel to hear them. See `mine`.
       if (!this.claimed) { this.mine.push(e.candidate.toJSON()); return; }
-      this.signal.send({ t: 'ice', from: this.slot, c: e.candidate.toJSON() });
+      this.sendSignal({ t: 'ice', from: this.slot, c: e.candidate.toJSON() });
     };
     this.pc.onicecandidateerror = (e) => {
       /*
@@ -490,7 +521,7 @@ export class PeerLink implements Link {
            * in the product all over again — `Room.noSuchRoom`'s docstring is about exactly this
            * shape: waiting on a host who is not coming, with nothing anywhere saying so.
            */
-          if (this.claimed) { this.signal.send({ t: 'full', from: this.slot }); return; }
+          if (this.claimed) { this.sendSignal({ t: 'full', from: this.slot }); return; }
           // The offer already exists and is already being published every `OFFER_REPEAT_MS`, so
           // a knock only makes the common case faster. It is not what the introduction depends
           // on — see `OFFER_REPEAT_MS` for why that mattered.
@@ -498,14 +529,33 @@ export class PeerLink implements Link {
           return;
         }
         case 'offer': {
-          if (this.want === 'host' || this.haveRemote) return;
+          /*
+           * **`this.claimed` and not only `this.haveRemote`, because `haveRemote` is set on the
+           * far side of two awaits and a second offer can arrive inside them.**
+           *
+           * The host republishes its offer every `OFFER_REPEAT_MS` until somebody answers, and a
+           * knock makes it publish immediately as well — so two offers a few milliseconds apart
+           * are ordinary. `haveRemote` is set by `flushIce()`, which runs after
+           * `setRemoteDescription` resolves; until then this handler re-entered, called
+           * `setRemoteDescription` on a connection that was already negotiating, and
+           * `createAnswer`/`setLocalDescription` threw. The `catch` below then did the correct
+           * thing with an incorrect premise: it failed a session **whose channel was already
+           * open**. Measured 3 Sep 2026 — *"guest: phase=over ended='linkLost' … the
+           * introduction failed: Failed to execute 'setLocalDescription' … channel=open
+           * conn=connected ice=connected open@34ms"*.
+           *
+           * `claim()` sets `claimed` synchronously, before the first `await`, so it is the
+           * guard that actually holds. There is no renegotiation anywhere in this design: a
+           * second offer is always a duplicate and is always to be ignored.
+           */
+          if (this.want === 'host' || this.haveRemote || this.claimed) return;
           this.claim();
           await this.pc.setRemoteDescription({ type: 'offer', sdp: m.sdp });
           this.flushIce();
           const answer = await this.pc.createAnswer();
           await this.pc.setLocalDescription(answer);
           this.deadline = now() + ICE_DEADLINE_MS;
-          this.signal.send({ t: 'answer', from: this.slot, sdp: this.pc.localDescription?.sdp ?? '' });
+          this.sendSignal({ t: 'answer', from: this.slot, sdp: this.pc.localDescription?.sdp ?? '' });
           return;
         }
         case 'answer': {
@@ -519,7 +569,16 @@ export class PeerLink implements Link {
            * *"your two networks would not let the game connect directly"* — an accusation against
            * their network for a room that was simply taken.
            */
-          if (this.haveRemote) { this.signal.send({ t: 'full', from: this.slot }); return; }
+          if (this.haveRemote || this.claimed) {
+            /*
+             * Same re-entrancy as `offer` above, and the same synchronous guard — but a second
+             * *answer* is refused rather than ignored, because it is the one shape that really
+             * can be a second challenger racing for a room this host has already given away.
+             * `claimed` is set inside `claim()` before any await; `haveRemote` is not.
+             */
+            this.sendSignal({ t: 'full', from: this.slot });
+            return;
+          }
           this.claim();
           this.deadline = now() + ICE_DEADLINE_MS;
           await this.pc.setRemoteDescription({ type: 'answer', sdp: m.sdp });
@@ -587,7 +646,7 @@ export class PeerLink implements Link {
      * still refused, because a second challenger is a different browser and has never claimed.
      */
     if (this.knockTimer) { clearInterval(this.knockTimer); this.knockTimer = 0; }
-    for (const c of this.mine.splice(0)) this.signal.send({ t: 'ice', from: this.slot, c });
+    for (const c of this.mine.splice(0)) this.sendSignal({ t: 'ice', from: this.slot, c });
   }
 
   private flushIce(): void {
