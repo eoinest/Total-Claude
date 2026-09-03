@@ -156,12 +156,22 @@ const FAULTS = {
     '    if (!this.sealable()) {',
     '    if (false) {',
     'seal', 'seal-refuses-a-public-broker-unsealed'],
-  // The bug qa-net's lan arm found: a null key is the plaintext case, so guarding `send` on it
-  // drops every message on exactly the origin that needs the plaintext path.
-  'key-as-readiness-flag': [F.sig,
+  /*
+   * The two halves of the same bug, and both are now reachable from a browser-free arm.
+   *
+   * A null key **is** the plaintext case, so guarding on it drops every message on exactly the
+   * origin that needs the plaintext path. It shipped that way outbound, was fixed, and then the
+   * identical guard in `onmessage` was found doing it inbound minutes later — by an expensive
+   * browser arm driving `npm run host`, because nothing cheaper could reach the branch.
+   */
+  'key-as-readiness-flag-out': [F.sig,
     "    if (this.ws?.readyState !== 1) return;\n    void seal(this.key, m)",
     "    if (!this.key || this.ws?.readyState !== 1) return;\n    void seal(this.key, m)",
-    'lan-via-qa-net', 'qa-net --only=lan: lan-the-link-is-the-whole-invitation'],
+    'seal', 'seal-plaintext-crosses-a-real-socket (outbound)'],
+  'key-as-readiness-flag-in': [F.sig,
+    '        void unseal(this.key, String(ev.data)).then((m) => {',
+    '        if (!this.key) return;\n        void unseal(this.key, String(ev.data)).then((m) => {',
+    'seal', 'seal-plaintext-crosses-a-real-socket (inbound)'],
   'plaintext-unmarked': [F.sig,
     "  if (!key) return `0${b64(utf8(json))}`;",
     '  if (!key) return b64(utf8(json));',
@@ -300,12 +310,15 @@ if (argv.includes('--list') || argv.length === 0) {
 }
 
 /*
- * One entry names an arm of a *different* gate, because the check it breaks lives there:
- * `lan-the-link-is-the-whole-invitation` is `qa-net`'s and is the only thing that exercises a
- * plain-http LAN origin end to end. Applying it here and running the other gate by hand is
- * honest; pretending it is a `qa-p2p` arm would not be.
+ * Empty, and worth keeping empty on purpose.
+ *
+ * It held one entry, for a fault whose only check lived in `qa-net`'s `lan` arm — the plain-http
+ * LAN origin, which nothing cheaper could reach. That was a smell rather than a design: the fix
+ * was to make the branch reachable (`WsSignal` takes its capability as an argument), so the
+ * fault now names a `qa-p2p` arm that runs in two seconds with no browser. If a fault ever
+ * genuinely belongs to another gate, this is how to say so instead of mislabelling it.
  */
-const CROSS_GATE = { 'lan-via-qa-net': 'node tools/qa-net.mjs --only=lan' };
+const CROSS_GATE = {};
 
 const run = async (name) => {
   const fault = FAULTS[name];

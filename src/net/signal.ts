@@ -560,7 +560,10 @@ export class MqttSignal implements SignalChannel {
   }
 
   private async take(payload: string): Promise<void> {
-    if (!this.key) return;
+    // No `this.key` test: see `WsSignal`'s `onmessage`, where the same guard dropped every
+    // inbound message on a plaintext origin. `open` refuses such an origin here, so this could
+    // not bite — and it is removed anyway, because the *pattern* is what went wrong twice.
+    if (!this.topic) return;
     if (this.seen.has(payload)) return;
     this.seen.add(payload);
     if (this.seen.size > 512) this.seen.delete(this.seen.values().next().value as string);
@@ -616,12 +619,25 @@ export class WsSignal implements SignalChannel {
   private slot: number;
   private ws: WebSocket | null = null;
   private key: CryptoKey | null = null;
+  private sealable: () => boolean;
   private up = false;
   foreign = 0;
 
-  constructor(base: string, code: string, slot: number) {
+  /**
+   * `sealable` is the capability, injected rather than read — the same argument `MqttSignal`
+   * takes, and for a sharper reason.
+   *
+   * This channel's *plaintext* path is the one that only exists on a private plain-http origin,
+   * and it shipped broken **twice**: the `!this.key` guard dropped every outbound message, and
+   * after that was fixed the identical guard in `onmessage` dropped every inbound one. Both were
+   * found by a browser arm on a LAN fixture, minutes apart, because there was no way to reach
+   * that path from a test. There is now: `qa-p2p`'s `seal-plaintext-crosses-a-real-socket` runs
+   * two of these against a real relay with `() => false` and requires a message each way.
+   */
+  constructor(base: string, code: string, slot: number, sealable: () => boolean = canSeal) {
     this.code = code;
     this.slot = slot;
+    this.sealable = sealable;
     this.url = `${base.replace(/\/+$/, '')}/signal/${code}`;
   }
 
@@ -629,7 +645,7 @@ export class WsSignal implements SignalChannel {
   get live(): number { return this.up ? 1 : 0; }
 
   async open(timeoutMs = 8000): Promise<void> {
-    this.key = await keyFor(this.code);
+    this.key = this.sealable() ? await keyFor(this.code) : null;
     /*
      * Said once, in the console, because a downgrade nobody is told about is the shape of
      * problem this whole project keeps writing down. Not on the screen: the player has no
@@ -678,7 +694,20 @@ export class WsSignal implements SignalChannel {
         else if (was) this.onDead(`${this.url} closed the connection`);
       };
       ws.onmessage = (ev) => {
-        if (!this.key) return;
+        /*
+         * **The same `!this.key` guard was here, and fixing only `send` fixed only half of it.**
+         *
+         * A null key is the plaintext case, so this dropped every *inbound* message on the one
+         * origin that needs the plaintext path — and the symptom was identical to the send bug
+         * from the outside: the host published a standing offer every three seconds to a channel
+         * the challenger was demonstrably on (the relay's own `introduced` list recorded two
+         * peers meeting on that code), the challenger heard nothing, and the screen said the room
+         * would not have it.
+         *
+         * The lesson is the one `WsSignal.send` already carries and I did not apply widely
+         * enough: **whether there is a key is `unseal`'s business and nobody else's.** There is
+         * now no `this.key` test anywhere except inside `seal` and `unseal`.
+         */
         void unseal(this.key, String(ev.data)).then((m) => {
           if (!m) { this.foreign++; return; }
           if (m.from === this.slot) return;

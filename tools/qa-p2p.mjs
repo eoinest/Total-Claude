@@ -83,6 +83,7 @@ import {
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const FLAGS = ['only', 'port', 'relay', 'ab-relay', 'https-port', 'https-relay', 'lobby-relay',
+  'seal-relay',
   'seconds', 'shots', 'json', 'all', 'battles', 'channel'];
 const args = new Map(process.argv.slice(2).map((a) => {
   const m = a.match(/^--([^=]+)(?:=(.*))?$/);
@@ -125,6 +126,8 @@ const AB_RELAY = Number(args.get('ab-relay') ?? 5962);
 const HTTPS_PORT = Number(args.get('https-port') ?? 5963);
 const HTTPS_RELAY = Number(args.get('https-relay') ?? 5965);
 const LOBBY_RELAY = Number(args.get('lobby-relay') ?? 5966);
+/** The `seal` arm's own relay. Browser-free, so it is up for about two seconds. */
+const SEAL_RELAY = Number(args.get('seal-relay') ?? 5967);
 const SECONDS = Number(args.get('seconds') ?? 26);
 const SHOT_DIR = args.get('shots') ?? '';
 const JSON_OUT = args.get('json') ?? '';
@@ -1039,7 +1042,7 @@ if (wanted('params')) {
 
 if (wanted('seal')) {
   console.log('\n=== seal: the topic is a hash, the payload is ciphertext ===');
-  const { MqttSignal, keyFor, PUBLIC_BROKERS, seal, topicFor, unseal } =
+  const { MqttSignal, WsSignal, keyFor, PUBLIC_BROKERS, seal, topicFor, unseal } =
     await import('../src/net/signal.ts');
   const { CODE_ALPHABET } = await import('../src/net/protocol.ts');
   /*
@@ -1128,6 +1131,51 @@ if (wanted('seal')) {
     refusal.slice(0, 240),
     'a plaintext offer on a shared public test broker would put the addresses in your ICE '
     + 'candidates in the clear, which is a different question from a relay on your own network');
+  /*
+   * **The plaintext path, over a real socket, with no browser.** This is the check that did not
+   * exist while the bug it covers shipped twice.
+   *
+   * `WsSignal`'s plaintext branch only happens on a private plain-http origin, so nothing could
+   * reach it from a test — and the `!this.key` guard dropped every *outbound* message, and after
+   * that was fixed the identical guard in `onmessage` dropped every *inbound* one. Both were
+   * found minutes apart by a browser arm driving `npm run host`, which is an expensive way to
+   * learn a four-line fact. `WsSignal` takes the capability as an argument now, so this drives
+   * the branch directly against a real relay: two channels that cannot seal must still get a
+   * message each way, and one that can must be able to read one that cannot.
+   */
+  const wsRelay = await startRelay(SEAL_RELAY);
+  const heard = { host: [], guest: [], mixed: [] };
+  const plainHost = new WsSignal(wsRelay.base, 'ABCDE', 0, () => false);
+  const plainGuest = new WsSignal(wsRelay.base, 'ABCDE', 1, () => false);
+  const sealingGuest = new WsSignal(wsRelay.base, 'ZZZZZ', 1, () => true);
+  const plainOther = new WsSignal(wsRelay.base, 'ZZZZZ', 0, () => false);
+  plainHost.onMessage = (m) => heard.host.push(m.t);
+  plainGuest.onMessage = (m) => heard.guest.push(m.t);
+  sealingGuest.onMessage = (m) => heard.mixed.push(m.t);
+  let wsErr = '';
+  try {
+    await Promise.all([plainHost.open(6000), plainGuest.open(6000),
+      sealingGuest.open(6000), plainOther.open(6000)]);
+    plainGuest.send({ t: 'knock', from: 1 });
+    plainHost.send({ t: 'offer', from: 0, sdp: 'v=0\r\nplain\r\n' });
+    plainOther.send({ t: 'offer', from: 0, sdp: 'v=0\r\nmixed\r\n' });
+    await sleep(1200);
+  } catch (e) { wsErr = e?.message ?? String(e); }
+  measured.wsPlaintext = { heard, err: wsErr, foreign: [plainHost.foreign, plainGuest.foreign] };
+  record('seal-plaintext-crosses-a-real-socket',
+    !wsErr && heard.host.includes('knock') && heard.guest.includes('offer')
+    && heard.mixed.includes('offer'),
+    'two channels that cannot encrypt still get a message each way, and a sealing peer reads them',
+    wsErr
+      ? `the channels would not open: ${wsErr}`
+      : `plaintext host heard ${JSON.stringify(heard.host)}, plaintext guest heard `
+        + `${JSON.stringify(heard.guest)}, a *sealing* peer on the same relay heard `
+        + `${JSON.stringify(heard.mixed)} from a plaintext one`,
+    'this branch only happens on a private plain-http origin, so nothing could reach it from a '
+    + 'test — and it shipped broken twice, outbound and then inbound');
+  for (const c of [plainHost, plainGuest, sealingGuest, plainOther]) c.close();
+  wsRelay.stop();
+
   record('seal-brokers-listed',
     PUBLIC_BROKERS.length === 3 && PUBLIC_BROKERS.every((u) => u.startsWith('wss://'))
     && new Set(PUBLIC_BROKERS.map((u) => new URL(u).host)).size === 3
