@@ -4041,6 +4041,28 @@ asking about explicitly.
   a page beat while refusing to simulate needs a hook that does not exist, and a check with no
   injection behind it is one this file has a standing complaint about. It is written down here
   rather than claimed.
+- **A tab that is merely *slow* is tolerated for six seconds, and this is the limitation to put
+  in front of the owner.** `NetSession.linkFault` ends a match when nothing has arrived for
+  `max(LINK_SILENT_S, 8 × gapMs)` of **rendered** seconds, and peer to peer the thing that has
+  stopped sending is the other player's browser rather than a relay. Measured twice on 3 Sep
+  2026 on this machine, both times with the owner playing and both browsers demoted to the
+  efficiency cores by `work-budget`: *"nothing has arrived from the other side in 6.0 s of
+  drawing, against a 0 ms turn"*, on a pair whose channel was open and whose ICE was connected.
+  Nothing was wrong with the network; one machine was starved for six seconds.
+
+  Under a relay this shape is far more forgiving, and the asymmetry is structural rather than an
+  oversight: the relay keeps sending turns while a client is slow, so the survivor hears from
+  *the relay* rather than from its opponent, and `Room.maxLagTurns` gives a genuinely stalled
+  client **thirty** seconds before `abandoned`. Between two peers there is nobody else to hear
+  from.
+
+  **Not changed here, deliberately.** `LINK_SILENT_S` is shared with the relay path and several
+  `qa-net` arms measure the behaviour it produces, so raising it is a decision about how long a
+  player should stare at a frozen battle before being told anything — which is the owner's, not
+  this pass's. The recommendation, if asked: **raise the peer floor to match the relay's
+  tolerance**, because six seconds is inside the range an ordinary laptop hitch, a big garbage
+  collection or a thermal throttle can produce, and the cost of being wrong is a match that ends
+  with an accusation against a network that was working.
 - **A backgrounded tab is tolerated for about eight seconds rather than thirty, and that is a
   behaviour change.** Under a relay, inbound traffic comes from the relay, so a client that
   alt-tabs stops *simulating* while its opponent keeps receiving packets — `maxLagTurns` gives it
