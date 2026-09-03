@@ -3900,8 +3900,9 @@ A player's OS resolves mDNS perfectly well and a player's peer is on another mac
 shipped and `PeerLink` never looks at a candidate's address.
 
 **Every check has a named fault that turns it red, and running them found five checks that could
-not fail.** `tools/scratch/inject-p2p.mjs` holds 54; `--list` prints each with the check it is
-supposed to break and `--all-fast` runs the 30 whose arm needs no browser. On the first sweep 17
+not fail.** `tools/scratch/inject-p2p.mjs` holds 55; `--list` prints each with the check it is
+supposed to break and `--all-fast` runs the 30 whose arm needs no browser, all thirty of which
+were re-run on 3 Sep 2026 and **none left the gate green**. On the first sweep 17
 of 22 went red and **five stayed green** — and every one of those five was a defect in the
 instrument rather than a bad fault:
 
@@ -3943,8 +3944,8 @@ empty and kept only as a note to the next person tempted to add to it.
 
 ### 13.9 What the gate found, in the order it found it
 
-The most useful thing to take from this section is not the count. It is that **twelve defects were
-found by running the checks rather than by reading the code**, and that seven of them are in
+The most useful thing to take from this section is not the count. It is that **thirteen defects
+were found by running the checks rather than by reading the code**, and that eight of them are in
 classes a relay cannot have — so no amount of care transferred from §9 would have caught them.
 Four of the twelve were found *after* this section was first written, by running arms that had
 never completed a run. Numbers 9, 10 and 11 are all about what happens when the coordinator that
@@ -3969,6 +3970,7 @@ them.**
 | 10 | `qa-p2p --only=leave` | **Closing a tab told the survivor their network had failed.** Under a relay the relay holds both sockets and names `peerLeft`; between two peers a torn-down renderer does not shut an SCTP association politely, so the survivor sat until the silence detector fired and said `linkLost` — *"the connection is gone"* — six seconds after an opponent who had simply left. One `pagehide` listener calling `NetSession.dispose`, which sends `bye` and then closes the channel: measured **`peerLeft` after 503 ms**, and the battle now halts on the tick it stood on (191 to 191, against 191 to 195). |
 | 11 | `qa-p2p --only=leave`, same run | **`endedAtTick` was not in `status()`.** The field has existed since the relay pass; the readout the UI and the gate share did not carry it. So `leave-halts-at-a-stated-tick` asserted `ended.endedAtTick >= 0` against `undefined` — a check that could never go green — and printed *"the session reports its last agreed tick as undefined"* beside a screen reading *"The last tick both battles agreed on was 180"*. The number was in the sentence and nowhere a program could read it. |
 | 12 | `qa-p2p --only=desync` | **`--fault=ulp` had been injecting a difference this simulation can no longer hold**, and the *relay* gate had been passing on it by luck. See below; it is the largest of the twelve and it is about a check older than this branch. |
+| 13 | `qa-p2p`, full run | **A duplicate offer killed a connection that had already succeeded.** `case 'offer'` guarded on `haveRemote`, which is set on the far side of two `await`s; the host publishes its offer on a timer *and* immediately on a knock, so two offers milliseconds apart are ordinary. The second re-entered, called `setRemoteDescription` on a connection already negotiating, threw out of `setLocalDescription`, and `onSignal`'s catch failed the session — *"guest: phase=over ended='linkLost' … channel=open conn=connected ice=connected open@34ms"*. `claim()` sets `claimed` synchronously before any await, so that is the guard that holds. `?p2pdup=1` and the `dup` arm make it deterministic instead of a race. |
 
 **Number 12 in full, because it is a check that stopped working and nobody noticed.**
 
