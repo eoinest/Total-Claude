@@ -96,7 +96,7 @@ if (badFlag.length) {
 }
 
 const ARMS = ['proto', 'params', 'seal', 'battle', 'lag', 'desync', 'leave', 'lobby', 'https',
-  'nodirect', 'dup', 'ab', 'broker', 'brokerplay'];
+  'nodirect', 'dup', 'quiet', 'ab', 'broker', 'brokerplay'];
 /**
  * `broker` and `brokerplay` reach the public internet, so both are opt-in for the reason
  * `xengine` is: a gate that goes red because somebody else's free service is busy teaches
@@ -128,6 +128,8 @@ const HTTPS_RELAY = Number(args.get('https-relay') ?? 5965);
 const LOBBY_RELAY = Number(args.get('lobby-relay') ?? 5966);
 /** The `seal` arm's own relay. Browser-free, so it is up for about two seconds. */
 const SEAL_RELAY = Number(args.get('seal-relay') ?? 5967);
+/** The `quiet` arm's, which a third party listens to and which must therefore carry nothing. */
+const QUIET_RELAY = Number(args.get('quiet-relay') ?? 5968);
 const SECONDS = Number(args.get('seconds') ?? 26);
 const SHOT_DIR = args.get('shots') ?? '';
 const JSON_OUT = args.get('json') ?? '';
@@ -1043,8 +1045,9 @@ if (wanted('params')) {
 
 if (wanted('seal')) {
   console.log('\n=== seal: the topic is a hash, the payload is ciphertext ===');
-  const { MqttSignal, WsSignal, keyFor, PUBLIC_BROKERS, seal, topicFor, unseal } =
+  const { MqttSignal, WsSignal, keyFor, makeSecret, PUBLIC_BROKERS, seal, topicFor, unseal } =
     await import('../src/net/signal.ts');
+  const { linkSecret } = await import('../src/net/transport.ts');
   const { CODE_ALPHABET } = await import('../src/net/protocol.ts');
   /*
    * The product's own `keyFor`, and it had to be exported for this.
@@ -1177,6 +1180,81 @@ if (wanted('seal')) {
   for (const c of [plainHost, plainGuest, sealingGuest, plainOther]) c.close();
   wsRelay.stop();
 
+  /*
+   * ===================================================================================
+   * The link key, which is the whole of this design's privacy and did not exist until a
+   * review on 3 Sep 2026 showed what the code-derived key was actually worth.
+   * ===================================================================================
+   *
+   * The finding: `topicFor` is an unsalted SHA-256 of the room code, so it is an **index** and
+   * not a mask. The reviewer built the whole 33,554,432-entry table in 26 seconds on one core
+   * and reversed this gate's own published value. Since the key came from the same code, a
+   * passive listener on a public broker could reverse a topic, derive the key, and read both
+   * players' IP addresses out of the ICE candidates — in bulk, with no brute force at all.
+   *
+   * The first check below is the one that would have caught it. It does not test that the topic
+   * is *secret*, because it is not and cannot be; it tests that **the key does not come from
+   * anything the topic reveals.**
+   */
+  const secretA = makeSecret();
+  const secretB = makeSecret();
+  const lkA = await keyFor('ABCDE', secretA);
+  const lkB = await keyFor('ABCDE', secretB);
+  const codeK = await keyFor('ABCDE');
+  const lenv = await seal(lkA, msg);
+  const byCode = await unseal(codeK, lenv);
+  const byOther = await unseal(lkB, lenv);
+  const byRight = await unseal(lkA, lenv);
+  record('seal-link-key-is-not-the-code',
+    JSON.stringify(byRight) === JSON.stringify(msg) && byCode === null && byOther === null
+    && secretA !== secretB && /^[A-Za-z0-9_-]{22}$/.test(secretA),
+    'an offer sealed under the link secret does not open for somebody who has only the code',
+    `secret ${secretA.length} chars; the same room code with a different secret returns `
+    + `${byOther === null ? 'null' : 'THE OFFER'}, and the code-derived key returns `
+    + `${byCode === null ? 'null' : 'THE OFFER'}`,
+    'the topic is a public index — the full 33.5M table builds in 26 s — so a key derived from '
+    + 'the code is readable by anyone watching. This is the check that the key is not');
+  /*
+   * And the secret has to survive the trip through a URL, in the fragment, or none of it
+   * happens. `linkSecret` is deliberately strict: a query parameter is *not* accepted, because a
+   * query parameter is exactly the thing that would be sent to a server and logged.
+   */
+  const inFrag = linkSecret(`#k=${secretA}`);
+  const inQuery = linkSecret(`?k=${secretA}`);
+  const mangled = linkSecret('#k=not-a-real-secret!!');
+  record('seal-secret-rides-the-fragment-only',
+    inFrag === secretA && inQuery === '' && mangled === '',
+    'the link key is read from the URL fragment and from nowhere a server would ever see it',
+    `#k= gives it back (${inFrag === secretA}); ?k= gives '${inQuery}'; a mangled one gives `
+    + `'${mangled}'`,
+    'a fragment is never transmitted, which is the entire reason this works — accepting the same '
+    + 'value from the query string would put the key in every access log on the path');
+  /*
+   * Two peers who agree, and two who do not. The second is the case the product must not break:
+   * somebody reads five characters down a phone and their partner still gets into the room, on
+   * the code key, with the screen telling them it is not private.
+   */
+  const pairKeys = async (sa, sb) => {
+    const ka = await keyFor('QRSTU', sa);
+    const kb = await keyFor('QRSTU', sb);
+    const e = await seal(ka, msg);
+    // `await`, and the first draft of this line did not have it. `unseal(...) !== null` compares
+    // a *Promise* to null, which is true always — so two of the three clauses below were green
+    // for no reason and the third was red for a real one. The check caught its own harness.
+    return (await unseal(kb, e)) !== null;
+  };
+  const bothLinked = await pairKeys(secretA, secretA);
+  const bothCode = await pairKeys('', '');
+  const mixed = await pairKeys(secretA, '');
+  record('seal-code-only-pairing-still-meets',
+    bothLinked && bothCode && !mixed,
+    'two people who only read the code aloud can still open each other\'s envelopes',
+    `both with the link secret: ${bothLinked}; both with only the code: ${bothCode}; `
+    + `one of each without negotiating: ${mixed} (which is why the knock carries k:1 and `
+    + 'SignalChannel adopts the key that opened the last message)',
+    'the five characters are a rendezvous name and have to keep working — the fix is to stop '
+    + 'claiming they are private, not to stop them working');
+
   record('seal-brokers-listed',
     PUBLIC_BROKERS.length === 3 && PUBLIC_BROKERS.every((u) => u.startsWith('wss://'))
     && new Set(PUBLIC_BROKERS.map((u) => new URL(u).host)).size === 3
@@ -1197,7 +1275,7 @@ if (wanted('seal')) {
  * patience. The rule is that an arm belongs here if and only if it opens a page.
  */
 const NEEDS_BROWSER = ['battle', 'lag', 'desync', 'leave', 'lobby', 'https', 'nodirect', 'dup',
-  'ab',
+  'quiet', 'ab',
   'brokerplay'];
 const anyBrowser = NEEDS_BROWSER.some((a) => wanted(a));
 
@@ -2287,6 +2365,59 @@ if (wanted('dup') && chrome) {
       + 'is to hash the simulation');
     for (const pg of [m.host, m.guest]) await pg.close();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Arm: a host waiting alone says nothing at all
+// ---------------------------------------------------------------------------
+
+if (wanted('quiet') && chrome) {
+  console.log('\n=== quiet: a host waiting for a friend publishes nothing ===');
+  /*
+   * **What a host broadcasts while it waits, measured from a third seat on the channel.**
+   *
+   * Until 3 Sep 2026 the host published its sealed offer every `OFFER_REPEAT_MS` -- three
+   * seconds -- until somebody answered, with no bound at all. An ICE offer is a list of
+   * candidates, so a host waiting for a friend to pick up the phone was putting **its own public
+   * IP address** on three public brokers on a timer, for as long as the room stayed open.
+   * `SIGNAL_LINGER_MS` looks like it bounds that and does not: it starts at `dc.onopen`, which is
+   * the moment the exposure stops mattering.
+   *
+   * The check watches from where an eavesdropper would: a plain WebSocket on the relay's own
+   * `/signal/CODE`, which is the same broadcast a broker subscriber gets, counting frames while a
+   * real host page sits in a real open room. The claim is **zero**, and zero is the right number
+   * rather than a small one: nothing about a room needs to be said before somebody asks.
+   *
+   * `offer-on-a-timer-again` puts the timer back and this goes red.
+   */
+  const quietRelay = await startRelay(QUIET_RELAY);
+  const room = nextRoom();
+  const sig = quietRelay.base;
+  const heard = [];
+  const spy = new WebSocket(`${sig}/signal/${room}`);
+  spy.onmessage = (ev) => heard.push(String(ev.data).slice(0, 24));
+  await new Promise((r) => { spy.onopen = () => r(); setTimeout(r, 5000); });
+  const host = await newPage(chrome);
+  await host.goto(
+    `${base}/?room=${room}&host=1&sig=${encodeURIComponent(sig)}&deploy=0&autoplay=1`
+    + '&quality=medium&menu=0',
+    { waitUntil: 'domcontentloaded' });
+  await host.waitForFunction(() => window.__game?.ready === true, null, { timeout: 300000 });
+  const settle = Date.now();
+  await sleep(12000);
+  const waited = Math.round((Date.now() - settle) / 1000);
+  const before = heard.length;
+  measured.quiet = { room, waitedS: waited, framesWhileAlone: before, sample: heard.slice(0, 3) };
+  record('quiet-host-publishes-nothing',
+    before === 0,
+    'a host alone in an open room puts nothing on the introduction channel at all',
+    `${before} frame(s) in ${waited} s of a real host sitting in room ${room}`
+    + `${before ? `; first is ${JSON.stringify(heard[0])}` : ''}`,
+    'an offer is a list of ICE candidates, so a standing one is a home IP address published on '
+    + 'a timer to a public service, for as long as somebody waits for a friend to answer');
+  spy.close();
+  await host.close();
+  quietRelay.stop?.();
 }
 
 // ---------------------------------------------------------------------------

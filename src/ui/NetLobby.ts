@@ -121,6 +121,7 @@
 
 import { CODE_ALPHABET, CODE_LEN, DEFAULT_RELAY_PORT, validCode } from '../net/protocol';
 import { makeCode } from '../net/room';
+import { makeSecret } from '../net/signal';
 import { qrEncode, qrSvg } from '../net/qr';
 
 const KEY = 'tc.net.relay';
@@ -429,7 +430,7 @@ const servedByUs = (plaque: LanPlaque | null, port: number | null): boolean =>
  * *path* is taken from `from` too, so a build served under a sub-path keeps it.
  */
 const battleUrl = (
-  relay: string, code: string, asHost: boolean, from = location.href, sig = ''
+  relay: string, code: string, asHost: boolean, from = location.href, sig = '', secret = ''
 ): URL => {
   const u = new URL(from);
   u.search = '';
@@ -463,6 +464,8 @@ const battleUrl = (
   } else {
     u.searchParams.set('host', '0');
   }
+  // The link key, in the one part of a URL no server ever sees. See `inviteUrl`.
+  u.hash = secret ? `k=${secret}` : '';
   return u;
 };
 
@@ -492,10 +495,22 @@ const battleUrl = (
  * builds one, and any link already sent still works. Nothing was removed; one thing stopped
  * being generated.
  */
-export const inviteUrl = (code: string, from = location.href): URL => {
+export const inviteUrl = (code: string, from = location.href, secret = ''): URL => {
   const u = new URL(from);
   u.search = '';
   u.searchParams.set('room', code);
+  /*
+   * **The secret goes in the fragment, and the fragment is the reason this works at all.**
+   *
+   * A URL fragment is never put on the wire: no server sees it, including the one serving this
+   * page and the introduction service the two peers meet on. So it is the only part of a link
+   * that can carry an AES key across a public broker without entering it. `src/net/signal.ts`'s
+   * privacy section is the argument; this is the one line that implements it.
+   *
+   * A link is therefore *materially* more private than the five characters, which is a thing the
+   * screen now says out loud instead of implying the opposite.
+   */
+  u.hash = secret ? `k=${secret}` : '';
   return u;
 };
 
@@ -705,6 +720,14 @@ export function showTooNarrow(host: HTMLElement, o: {
  *     nothing leaves the network, and the QR and the code say everything else.
  *   - Free public services will introduce you → **one sentence**, because a third party
  *     briefly touching your traffic is a fact a player is owed whether or not they asked.
+ *     It used to end *"They see an unreadable code and encrypted text, never your orders"*, and
+ *     a review on 3 Sep 2026 showed the first half of that was false: the topic is an unsalted
+ *     hash of the room code, so the whole 33.5-million-entry table builds in 26 seconds and any
+ *     topic reverses in constant time. Telling somebody their introduction is unreadable, when
+ *     it carries their home IP address and is not, is the worst sentence on this screen. What is
+ *     true and is kept is the second half — the orders never go there — and the privacy of the
+ *     introduction itself is now stated per room by `privacyNote`, because it depends on whether
+ *     the other player used the link or typed the code.
  *   - A named service is not answering → **one sentence**, because what is being used has
  *     changed from what the page said.
  *   - The relay is carrying the whole battle → **one sentence**, because somebody ticked a box
@@ -713,9 +736,52 @@ export function showTooNarrow(host: HTMLElement, o: {
 const introNote = (addr: string): string =>
   '<b>The game runs straight between the two browsers, with nothing in between.</b> To set '
   + 'that up, one short message has to pass each way, and that goes through free public '
-  + 'introduction services &mdash; three of them at once, so one being down costs nothing. They '
-  + 'see an unreadable code and encrypted text, never your orders, and once the battle '
-  + `starts they are not used again.${addr ? '' : ''}`;
+  + 'introduction services &mdash; three of them at once, so one being down costs nothing. '
+  + '<b>Your orders never go near them</b>, and once the battle starts they are not used '
+  + `again.${addr ? '' : ''}`;
+
+/**
+ * **Which of the two kinds of privacy this room has, said on the screen where the code is.**
+ *
+ * This exists because the sentence it replaces was false. `introNote` used to promise that the
+ * public introduction services *"see an unreadable code and encrypted text"*. The topic is an
+ * unsalted SHA-256 of the room code, so the full table of all 33.5 million codes builds in 26
+ * seconds and any topic reverses in constant time — and the payload was encrypted under a key
+ * derived from that same code. The introduction carries both players' ICE candidates, which
+ * carry their home IP addresses. Telling somebody that is unreadable is the worst thing this
+ * screen could say, because it is exactly the thing they would rely on.
+ *
+ * The fix is `#k=`: 16 random bytes in the invite link's fragment, which no server ever receives,
+ * used to derive the key. So a room genuinely has two modes and **the difference belongs to the
+ * player, not to the implementation**:
+ *
+ * - They open your **link or your square** → the key is in it, nobody else has it.
+ * - They **type the five characters** → you can still meet, and the introduction is not private.
+ *
+ * The host cannot know in advance which will happen, so this states both. It is deliberately
+ * three lines and no more: §11's rule is that the screen speaks when a player would want to know
+ * and is silent otherwise, and *"is what I am about to send private"* is squarely inside that.
+ *
+ * Silent in the two cases where there is no public square at all — the relay carrying the whole
+ * battle, and an introduction service on your own network — for exactly that reason.
+ */
+const privacyNote = (
+  viaRelay: boolean, addr: string, declared: string, noLink: boolean
+): string => {
+  if (viaRelay || (addr && addr === declared) || (addr && addr !== '')) return '';
+  return '<p class="tc-hint" id="tc-privacy">'
+    + `<b>${noLink ? 'Read the code out' : 'Send the link or the square'} and the introduction is `
+    + (noLink
+      ? 'not private.</b> The two of you can still meet — that is what the code is for — but the '
+        + 'public introduction services carry the addresses your two computers use to find each '
+        + 'other, and a code short enough to read aloud is not enough to keep them from being '
+        + 'read. '
+      : 'private:</b> the key is inside the link, in the part no server is ever sent. If they '
+        + '<i>type the five characters</i> instead, the two of you still meet, but that '
+        + 'introduction is not private &mdash; the addresses your computers use to find each '
+        + 'other could be read by somebody watching those public services. ')
+    + '<b>Either way your orders never go through them, and the battle itself does not.</b></p>';
+};
 
 /**
  * A named introduction service that is not answering, and what happens next.
@@ -1009,10 +1075,20 @@ export function showLobby(host: HTMLElement): void {
   room.addEventListener('input', clean);
   clean();
 
+  /**
+   * The link key for the room this screen is opening. Minted by `create`, '' until then.
+   *
+   * Scope-local rather than a field, because it has exactly one lifetime: a room. It is the
+   * 16 bytes that go in the invite link's `#k=` fragment and nowhere else — not in the query
+   * string, not in `localStorage`, not on any wire. See `src/net/signal.ts`'s privacy section
+   * for what it buys and `inviteUrl` for why the fragment is the only place it can live.
+   */
+  let secret = '';
+
   const go = (code: string, asHost: boolean): void => {
     localStorage.setItem(KEY, relay.value.trim());
     location.href = battleUrl(throughRelay() ? relay.value.trim() : '', code, asHost,
-      location.href, introAddr()).toString();
+      location.href, introAddr(), secret).toString();
   };
 
   /** What to say when the relay does not answer — and it depends on where the page came from. */
@@ -1062,8 +1138,8 @@ export function showLobby(host: HTMLElement): void {
     const declared = serverRelay();
     const shortLink = !viaR && (addr === '' || addr === declared);
     const invite = (shortLink
-      ? inviteUrl(code, from)
-      : battleUrl(viaR ? addr : '', code, false, from, viaR ? '' : addr)).toString();
+      ? inviteUrl(code, from, secret)
+      : battleUrl(viaR ? addr : '', code, false, from, viaR ? '' : addr, secret)).toString();
     /*
      * When a link would be a dead end, and this is a shorter list than it used to be.
      *
@@ -1144,6 +1220,7 @@ export function showLobby(host: HTMLElement): void {
               + 'between the two machines.'}`
           : 'You will be introduced over the internet, and then the battle runs straight between '
             + 'the two machines with nothing in between.'}</p>
+      ${privacyNote(viaR, addr, declared ?? '', deadLink !== '')}
       <div class="tc-row">
         <button type="button" id="tc-begin">Choose the battle &rarr;</button>
       </div>
@@ -1202,6 +1279,16 @@ export function showLobby(host: HTMLElement): void {
       const code = asked || makeCode(
         () => crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32,
         CODE_ALPHABET, CODE_LEN);
+      /*
+       * **The room's actual secret, and it is not the code.**
+       *
+       * The five characters are a rendezvous name and are meant to be said out loud, which is
+       * 25 bits over an alphabet chosen for the telephone. This is 128 bits, it rides in the
+       * fragment of the invite link, and it is what the introduction is encrypted with. A room
+       * opened here always has one; whether it gets *used* depends on whether the other player
+       * follows the link or types the code, which is what `privacyNote` tells the player.
+       */
+      secret = makeSecret();
       localStorage.setItem(KEY, relay.value.trim());
       const intro = introAddr();
       /*

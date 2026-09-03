@@ -3,7 +3,7 @@ import { NetLink } from './NetLink.ts';
 import { PeerLink, STUN_SERVERS } from './PeerLink.ts';
 import type { PeerFault } from './peerRoom.ts';
 import { validCode } from './protocol.ts';
-import { MqttSignal, PUBLIC_BROKERS, WsSignal, type SignalChannel } from './signal.ts';
+import { canSeal, MqttSignal, PUBLIC_BROKERS, WsSignal, type SignalChannel } from './signal.ts';
 
 /**
  * Which wire does this URL want, and who introduces the two peers?
@@ -99,6 +99,26 @@ export interface BuildOptions {
   fault?: PeerFault | null;
   /** Test-only. Sends every signalling message twice. See `PeerLinkOptions.dupSignal`. */
   dupSignal?: boolean;
+  /** The invite link's `#k=` secret, or '' when this peer arrived by code. See `linkSecret`. */
+  secret?: string;
+}
+
+/**
+ * The invite link's secret, out of the **fragment** — and the fragment is the whole point.
+ *
+ * A URL fragment is never transmitted to a server. Not to the page's own origin, not to the
+ * introduction service, not to a broker, not into anybody's access log. So it is the one part of
+ * a link that can carry key material through a public square without entering it. `#k=` holds
+ * 16 random bytes as 22 base64url characters; `src/net/signal.ts`'s `keyFor` turns it into the
+ * AES-GCM key, and everything about why is in that file's privacy section.
+ *
+ * Absent is a legitimate answer, not an error: it means the two players read five characters to
+ * each other. They can still meet, their introduction is sealed under the code instead, and that
+ * is **not private** — `NetLobby` says so on the screen rather than leaving the player to guess.
+ */
+export function linkSecret(hash: string): string {
+  const m = /(?:^#|[#&])k=([A-Za-z0-9_-]{22,24})(?:&|$)/.exec(hash);
+  return m ? m[1] : '';
 }
 
 /**
@@ -147,8 +167,8 @@ export function signalFor(t: Transport, o: BuildOptions = {}): SignalChannel {
   if (t.kind !== 'peer') throw new Error('signalFor: not a peer transport');
   const slot = t.want === 'host' ? 0 : 1;
   return t.signalWs
-    ? new WsSignal(t.signalWs, t.room, slot)
-    : new MqttSignal(t.room, slot, o.brokers ?? PUBLIC_BROKERS);
+    ? new WsSignal(t.signalWs, t.room, slot, canSeal, o.secret ?? '')
+    : new MqttSignal(t.room, slot, o.brokers ?? PUBLIC_BROKERS, canSeal, o.secret ?? '');
 }
 
 /**
@@ -173,6 +193,7 @@ export function makeLink(t: Transport, o: BuildOptions = {}): Link {
     fault: o.fault ?? null,
     dupSignal: o.dupSignal ?? false,
   });
+
 }
 
 /** How this session is described on screen and in a report. Never read by the simulation. */

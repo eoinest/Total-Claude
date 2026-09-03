@@ -58,18 +58,38 @@
  *
  * ## Privacy, stated rather than implied
  *
- * A public broker is a public square. Two things are done about it and one thing is not:
+ * A public broker is a public square, and the first version of this file got the threat model
+ * wrong in the direction that flatters it. **The correction, 3 Sep 2026, from a review:**
  *
- * - The topic is `tc/` + a hash of the room code, not the code. So the traffic is not indexed
- *   under anything a person typed, and it cannot collide with another application's topics.
- * - The payload is AES-GCM under a key derived from the room code with HKDF. A broker operator,
- *   or anyone subscribed to `#`, sees an opaque topic and ciphertext.
- * - **And it is not secret from someone who has the code.** Five characters out of a
- *   32-character alphabet is 33.5 million codes, which is minutes of offline work, so a
- *   determined eavesdropper who wants *your* room can find it. What they get is the IP addresses
- *   in your ICE candidates and the ability to join your game — both of which are already true
- *   of anyone you read the code out to. The game itself never touches the broker: orders go over
- *   DTLS-encrypted SCTP straight between the two peers.
+ * `topicFor` is an unsalted, unkeyed SHA-256 of the room code alone. That does not mask the
+ * code, it *indexes* it. There are 33,554,432 codes; a full topic → code table takes **26
+ * seconds on one core and 0.44 GB** (measured on this machine), after which every observed topic
+ * reverses in **O(1)**. Subscribing `tc/#` on a public broker is allowed and works. So a key
+ * derived from the code alone protects nothing from a passive observer: they reverse the topic,
+ * derive the same key with the same constant salt and info, and read the offer. That is **bulk
+ * and passive**, not targeted, and the earlier text here — *"a determined eavesdropper who wants
+ * your room"*, *"minutes of offline work"* — described a search that nobody has to do.
+ *
+ * What is in an offer is both players' **ICE candidates**, which contain their public IP
+ * addresses; and possession of the key is also the whole of the authentication, so a listener
+ * could answer first and take the guest slot.
+ *
+ * So the key does not come from the code any more. It comes from **sixteen random bytes carried
+ * in the invite link's URL fragment** (`#k=…`). A fragment is never transmitted to any server,
+ * by specification — not to the broker, not to whatever serves the page — so the material that
+ * opens the envelope never enters the square the envelope crosses. `makeSecret` mints it and
+ * `keyFor(code, secret)` derives from it.
+ *
+ * **The five characters are now honestly what they always were: a rendezvous name.** Two people
+ * who only read a code aloud can still meet, and their introduction is sealed under the *code*
+ * key, which is a mask and not a secret. That is a real difference and `NetLobby` says so on
+ * screen rather than leaving it implied. `PeerLink` never publishes anything at all until a
+ * challenger knocks, so a host waiting for a friend to answer the phone is no longer
+ * broadcasting their address on a timer.
+ *
+ * Unchanged, and worth keeping the proportion right: **the game never touches the broker.**
+ * Orders go over DTLS-encrypted SCTP straight between the two peers. This is a privacy defect in
+ * the introduction, and it was never a game-integrity one.
  *
  * ## The other two strategies, and why the gate uses one of them
  *
@@ -94,8 +114,16 @@
 
 /** Everything two peers say to each other before they can talk directly. */
 export type SignalMsg =
-  /** "Is anybody hosting this code?" Repeated until answered; see `PeerLink`. */
-  | { t: 'knock'; from: number }
+  /**
+   * "Is anybody hosting this code?" Repeated until answered; see `PeerLink`.
+   *
+   * `k: 1` means *"I came in through a link and I hold the link key"*. It is the one field that
+   * has to travel under the **code** key, because it is what the two peers use to agree which
+   * key everything after it is sealed under — and it is safe there, because a knock says only
+   * that somebody is knocking. No address, no session, nothing a listener did not already know
+   * from seeing the topic.
+   */
+  | { t: 'knock'; from: number; k?: 1 }
   | { t: 'offer'; from: number; sdp: string }
   | { t: 'answer'; from: number; sdp: string }
   | { t: 'ice'; from: number; c: RTCIceCandidateInit }
@@ -116,6 +144,19 @@ export interface SignalChannel {
   readonly live: number;
   open(timeoutMs?: number): Promise<void>;
   send(m: SignalMsg): void;
+  /** Whether this channel was given a link secret at all, i.e. whether privacy is available. */
+  readonly canLinkKey: boolean;
+  /** Whether it is *using* it. False until both peers have shown they have one. */
+  readonly linkKeyed: boolean;
+  /**
+   * Seal everything after the knock under the link key.
+   *
+   * Called by `PeerLink` on a `knock` carrying `k: 1`, and only ever moved in that direction: a
+   * channel downgrades by *reading* — see `adopt` in each implementation — because the peer that
+   * has to find out it is talking to a code-only partner is the one receiving, not the one
+   * sending.
+   */
+  useLinkKey(on: boolean): void;
   /** Called for every message from the *other* peer. Own messages are filtered out. */
   onMessage: (m: SignalMsg) => void;
   /** Called once, when every underlying connection has gone. */
@@ -161,12 +202,20 @@ const unb64 = (s: string): Bytes => {
 };
 
 /**
- * The topic, which is a hash and not the code.
+ * The topic, which is a hash of the code — **an index, not a mask, and it must not be mistaken
+ * for one.**
  *
- * Eight bytes of SHA-256 over a namespaced string. Two properties are wanted and neither is
- * secrecy: a topic that cannot collide with another application's on a shared broker, and a
- * topic that is not the five characters somebody said out loud. `tc/` prefixed so an operator
- * looking at their own broker can see what it is.
+ * Eight bytes of SHA-256 over a namespaced string. It buys exactly two things: a topic that
+ * cannot collide with another application's on a shared broker, and a topic that is not the five
+ * characters somebody said out loud. It buys **no** secrecy whatever. There are 33,554,432
+ * codes; building the whole table takes 26 seconds on one core and 0.44 GB, so any observed topic
+ * reverses to its code in constant time. A reviewer did it and reproduced this gate's own
+ * published value, `ABCDE → tc/59fae572237a70d4`.
+ *
+ * That is fine, and it is fine *because nothing is derived from the code any more*. See
+ * `keyFor`: the key comes from the link secret, which never leaves the browser. Salting this
+ * would be worse than useless — it would hide the fact that the rendezvous name is public while
+ * changing nothing about who can read the traffic.
  */
 export async function topicFor(code: string): Promise<string> {
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256',
@@ -212,24 +261,63 @@ export const canSeal = (): boolean =>
  * ignore the room code entirely. A check that duplicates the implementation it is checking cannot
  * fail; `tools/scratch/inject-p2p.mjs`'s `one-key-for-every-room` fault is what caught it.
  *
- * The salt and the info string are constants rather than random, because there is no channel to
- * carry a salt over that is not the channel being protected — the two peers share exactly one
- * secret and it is five characters long. That is a real and stated limit: this makes the traffic
- * opaque to a passive listener, and it is not proof against somebody who guesses the code. See
- * the privacy paragraph in the file docstring.
+ * **Two keys, and which one is in use is the whole of this design's privacy story.**
+ *
+ * With a `secret` — sixteen random bytes from the invite link's `#k=` fragment — the input keying
+ * material is those bytes, and a passive listener on the broker has nothing: the fragment is
+ * never sent to any server, so it is not in the topic, not in the payload, and not in any
+ * request log anywhere. This is the path a link or a QR square takes.
+ *
+ * With no `secret` the material is the room code, and **that is a mask rather than a secret**:
+ * `topicFor` is a public index, so anybody watching can reverse the topic and derive this same
+ * key. It is kept because two people reading five characters down a phone line must still be
+ * able to meet, and it is *labelled* rather than quietly relied on — `NetLobby` tells the player
+ * which of the two they are in, and `MqttSignal.linkKeyed` is what it reads.
+ *
+ * The salt and info are constants in both cases. For the link key that costs nothing: the
+ * material is already 128 bits of fresh randomness per room, so a per-room salt would add no
+ * entropy. For the code key nothing would help, because the input is public.
  */
-export const keyFor = async (code: string): Promise<CryptoKey | null> => {
+export const keyFor = async (code: string, secret = ''): Promise<CryptoKey | null> => {
   if (!canSeal()) return null;
-  const ikm = await crypto.subtle.importKey('raw',
-    utf8(`total-claude/v1/${code.toUpperCase()}`), 'HKDF', false, ['deriveKey']);
+  const raw = secret ? secretBytes(secret) : utf8(`total-claude/v1/${code.toUpperCase()}`);
+  if (!raw) return null;
+  const ikm = await crypto.subtle.importKey('raw', raw, 'HKDF', false, ['deriveKey']);
   return crypto.subtle.deriveKey(
     {
       name: 'HKDF', hash: 'SHA-256',
       salt: utf8('total-claude/v1/signal'),
-      info: utf8('sdp'),
+      info: utf8(secret ? 'sdp/link' : 'sdp'),
     },
     ikm, { name: 'AES-GCM', length: 128 }, false, ['encrypt', 'decrypt']);
 };
+
+/**
+ * Sixteen random bytes, base64url, 22 characters. The thing that goes in `#k=`.
+ *
+ * Not the room code and not derived from it: the code is five characters out of an alphabet
+ * chosen so it can be *read aloud*, which is 25 bits and is meant to be guessable-adjacent. This
+ * is 128 bits and is meant to be typed by nobody.
+ *
+ * `getRandomValues` rather than `subtle`, deliberately — it is available on a plain-http LAN
+ * origin where `crypto.subtle` is not (see `canSeal`), so a host on `npm run host` still mints a
+ * usable link for a guest who will open it over https.
+ */
+export function makeSecret(): string {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return b64(b).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** `#k=` back to bytes, or null if it is not one of ours. Never throws on a mangled link. */
+export function secretBytes(secret: string): Bytes | null {
+  if (!/^[A-Za-z0-9_-]{22,24}$/.test(secret)) return null;
+  try {
+    const b = unb64(secret.replace(/-/g, '+').replace(/_/g, '/')
+      + '='.repeat((4 - (secret.length % 4)) % 4));
+    return b.length === 16 ? b : null;
+  } catch { return null; }
+}
 
 /**
  * One envelope. `1` + base64(nonce ‖ ciphertext) when it is sealed, `0` + base64(JSON) when it
@@ -478,10 +566,15 @@ export class MqttSignal implements SignalChannel {
   onDead: (why: string) => void = () => {};
 
   private code: string;
+  private secret: string;
   private slot: number;
   private urls: string[];
   private socks: MqttSocket[] = [];
-  private key: CryptoKey | null = null;
+  /** Derived from the code. A mask: `topicFor` is a public index, so anyone can derive it too. */
+  private codeKey: CryptoKey | null = null;
+  /** Derived from `#k=`. The one that is actually secret; null when this peer arrived by code. */
+  private linkKey: CryptoKey | null = null;
+  private useLink = false;
   private topic = '';
   private sealable: () => boolean;
   private seen = new Set<string>();
@@ -499,12 +592,42 @@ export class MqttSignal implements SignalChannel {
    */
   constructor(
     code: string, slot: number, urls: string[] = PUBLIC_BROKERS,
-    sealable: () => boolean = canSeal
+    sealable: () => boolean = canSeal, secret = ''
   ) {
     this.code = code;
+    this.secret = secretBytes(secret) ? secret : '';
     this.slot = slot;
     this.urls = urls;
     this.sealable = sealable;
+  }
+
+  get canLinkKey(): boolean { return this.secret !== ''; }
+  get linkKeyed(): boolean { return this.useLink && this.linkKey !== null; }
+  useLinkKey(on: boolean): void { this.useLink = on && this.linkKey !== null; }
+
+  /** The key a message of this kind goes out under. See `SignalMsg`'s `knock`. */
+  private outKey(m: SignalMsg): CryptoKey | null {
+    return m.t === 'knock' ? this.codeKey : (this.linkKeyed ? this.linkKey : this.codeKey);
+  }
+
+  /**
+   * Open an envelope with whichever key opens it, and **adopt that key** for what follows.
+   *
+   * This is how a peer that came in through a link discovers it is talking to one that typed the
+   * code. There is no message that says so and there should not be: the *sender* cannot know, so
+   * the receiver works it out from what it can read. A knock is excluded because a knock is
+   * always code-keyed by construction and adopting from one would undo the upgrade it carries.
+   */
+  private async openOne(payload: string): Promise<SignalMsg | null> {
+    const first = this.linkKeyed ? this.linkKey : this.codeKey;
+    const second = this.linkKeyed ? this.codeKey : this.linkKey;
+    for (const k of second && second !== first ? [first, second] : [first]) {
+      const m = await unseal(k, payload);
+      if (!m) continue;
+      if (m.t !== 'knock') this.useLink = k === this.linkKey && this.linkKey !== null;
+      return m;
+    }
+    return null;
   }
 
   get name(): string {
@@ -530,7 +653,8 @@ export class MqttSignal implements SignalChannel {
         + '. Open the game over https, or over the address `npm run host` prints, which '
         + 'introduces the two of you on your own network instead.');
     }
-    this.key = await keyFor(this.code);
+    this.codeKey = await keyFor(this.code);
+    this.linkKey = this.secret ? await keyFor(this.code, this.secret) : null;
     this.topic = await topicFor(this.code);
     const onPub = (payload: string): void => { void this.take(payload); };
     const onGone = (): void => {
@@ -567,7 +691,7 @@ export class MqttSignal implements SignalChannel {
     if (this.seen.has(payload)) return;
     this.seen.add(payload);
     if (this.seen.size > 512) this.seen.delete(this.seen.values().next().value as string);
-    const m = await unseal(this.key, payload);
+    const m = await this.openOne(payload);
     if (!m) { this.foreign++; return; }
     if (m.from === this.slot) return;
     this.onMessage(m);
@@ -583,7 +707,7 @@ export class MqttSignal implements SignalChannel {
    */
   send(m: SignalMsg): void {
     if (!this.topic) return;
-    void seal(this.key, m).then((payload) => {
+    void seal(this.outKey(m), m).then((payload) => {
       for (const s of this.socks) s.publish(payload);
     });
   }
@@ -616,9 +740,12 @@ export class WsSignal implements SignalChannel {
 
   readonly url: string;
   private code: string;
+  private secret: string;
   private slot: number;
   private ws: WebSocket | null = null;
-  private key: CryptoKey | null = null;
+  private codeKey: CryptoKey | null = null;
+  private linkKey: CryptoKey | null = null;
+  private useLink = false;
   private sealable: () => boolean;
   private up = false;
   foreign = 0;
@@ -634,25 +761,58 @@ export class WsSignal implements SignalChannel {
    * that path from a test. There is now: `qa-p2p`'s `seal-plaintext-crosses-a-real-socket` runs
    * two of these against a real relay with `() => false` and requires a message each way.
    */
-  constructor(base: string, code: string, slot: number, sealable: () => boolean = canSeal) {
+  constructor(
+    base: string, code: string, slot: number, sealable: () => boolean = canSeal, secret = ''
+  ) {
     this.code = code;
+    this.secret = secretBytes(secret) ? secret : '';
     this.slot = slot;
     this.sealable = sealable;
     this.url = `${base.replace(/\/+$/, '')}/signal/${code}`;
+  }
+
+  /*
+   * The link key is honoured here too, and the reason is not privacy — this wire is a relay on
+   * your own network and §11 is explicit that nothing about it is worth a player's attention.
+   * The reason is that **the two channels must agree about what a link means**, or a host who
+   * mints a secret and a guest who opens the link would derive different keys on a LAN and the
+   * room would never form. One rule, both channels.
+   */
+  get canLinkKey(): boolean { return this.secret !== ''; }
+  get linkKeyed(): boolean { return this.useLink && this.linkKey !== null; }
+  useLinkKey(on: boolean): void { this.useLink = on && this.linkKey !== null; }
+
+  private outKey(m: SignalMsg): CryptoKey | null {
+    return m.t === 'knock' ? this.codeKey : (this.linkKeyed ? this.linkKey : this.codeKey);
+  }
+
+  /** See `MqttSignal.openOne`: the key that opens a non-knock is the key adopted for the rest. */
+  private async openOne(payload: string): Promise<SignalMsg | null> {
+    const first = this.linkKeyed ? this.linkKey : this.codeKey;
+    const second = this.linkKeyed ? this.codeKey : this.linkKey;
+    for (const k of second && second !== first ? [first, second] : [first]) {
+      const m = await unseal(k, payload);
+      if (!m) continue;
+      if (m.t !== 'knock') this.useLink = k === this.linkKey && this.linkKey !== null;
+      return m;
+    }
+    return null;
   }
 
   get name(): string { return `the introduction service at ${this.url}`; }
   get live(): number { return this.up ? 1 : 0; }
 
   async open(timeoutMs = 8000): Promise<void> {
-    this.key = this.sealable() ? await keyFor(this.code) : null;
+    this.codeKey = this.sealable() ? await keyFor(this.code) : null;
+    this.linkKey = this.sealable() && this.secret
+      ? await keyFor(this.code, this.secret) : null;
     /*
      * Said once, in the console, because a downgrade nobody is told about is the shape of
      * problem this whole project keeps writing down. Not on the screen: the player has no
      * decision to make — this is their own machine introducing them on their own network, and
      * `describe()` in the lobby deliberately says nothing at all about that case.
      */
-    if (!this.key) {
+    if (!this.codeKey) {
       const where = typeof location === 'undefined' ? 'this page' : location.origin;
       console.warn(`[net] ${where} is not a secure page, so the browser gives it no `
         + 'encryption. The introduction through ' + this.url + ' will be sent as plain text. '
@@ -708,7 +868,7 @@ export class WsSignal implements SignalChannel {
          * enough: **whether there is a key is `unseal`'s business and nobody else's.** There is
          * now no `this.key` test anywhere except inside `seal` and `unseal`.
          */
-        void unseal(this.key, String(ev.data)).then((m) => {
+        void this.openOne(String(ev.data)).then((m) => {
           if (!m) { this.foreign++; return; }
           if (m.from === this.slot) return;
           this.onMessage(m);
@@ -735,7 +895,7 @@ export class WsSignal implements SignalChannel {
    */
   send(m: SignalMsg): void {
     if (this.ws?.readyState !== 1) return;
-    void seal(this.key, m).then((p) => {
+    void seal(this.outKey(m), m).then((p) => {
       if (this.ws?.readyState === 1) this.ws.send(p);
     });
   }

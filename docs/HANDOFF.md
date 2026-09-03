@@ -3567,7 +3567,8 @@ gates catch it at tick 60 attributed to unit 0. Three sentences elsewhere (§1.4
 
 ### The honest limit
 
-**No TURN, by decision.** Roughly 80-90% of arbitrary pairings connect; both players on ordinary
+**No TURN, by decision.** Roughly 78-82% of arbitrary pairings connect — the sources bracket it
+at 78% and 82.3% and nothing above that is supported for *arbitrary* pairings; both players on ordinary
 home internet does better, both on one wifi always works, and **a network that blocks outbound UDP
 cannot play at all** — that is the ~9 points of callstats.io's 22% that needed TCP, and nothing
 recovers it. §13.6 has the sources. The product says which side the block is on and what to try,

@@ -326,6 +326,33 @@ const FAULTS = {
     "        k: 'turn', ph: 'battle', n: next, t: turnTick(next), ops: this.sorted([...a, ...b]),",
     "        k: 'turn', ph: 'battle', n: next, t: turnTick(next) + 1, ops: this.sorted([...a, ...b]),",
     'ab', 'ab-transport-is-not-in-the-simulation'],
+  /*
+   * The P0 itself, put back: derive the key from the room code even when a link secret is
+   * present. The topic is a public index, so that is a key any observer can compute.
+   */
+  'key-from-the-code-again': [F.sig,
+    "  const raw = secret ? secretBytes(secret) : utf8(`total-claude/v1/${code.toUpperCase()}`);",
+    "  const raw = utf8(`total-claude/v1/${code.toUpperCase()}`);",
+    'seal', 'seal-link-key-is-not-the-code'],
+  // The fragment is the whole mechanism. Accept the same value from the query string and the key
+  // is in every access log between the two players.
+  'secret-from-the-query-too': [F.tr,
+    "  const m = /(?:^#|[#&])k=([A-Za-z0-9_-]{22,24})(?:&|$)/.exec(hash);",
+    "  const m = /[?#&]k=([A-Za-z0-9_-]{22,24})(?:&|$)/.exec(hash);",
+    'seal', 'seal-secret-rides-the-fragment-only'],
+  // Refuse the code-only pairing instead of labelling it, which is the tempting wrong fix.
+  'code-only-cannot-meet': [F.sig,
+    "  const raw = secret ? secretBytes(secret) : utf8(`total-claude/v1/${code.toUpperCase()}`);\n  if (!raw) return null;",
+    "  const raw = secret ? secretBytes(secret) : null;\n  if (!raw) return null;",
+    'seal', 'seal-round-trip, seal-nonce-moves and seal-plaintext-is-marked-and-readable — it '
+      + 'was written expecting seal-code-only-pairing-still-meets and it takes out three '
+      + 'louder ones first, because deleting the code key deletes the default path'],
+  // The standing offer, back on its timer: a host's public IP on three public brokers every
+  // three seconds, for as long as it waits.
+  'offer-on-a-timer-again': [F.peer,
+    "      // Published on a knock and never on a timer. See the block where `OFFER_REPEAT_MS` was.\n      return this.slot;",
+    "      this.publishOffer();\n      setInterval(() => this.publishOffer(), 3000);\n      return this.slot;",
+    'quiet', 'quiet-host-publishes-nothing'],
   'dead-brokers': [F.sig,
     "export const PUBLIC_BROKERS = [\n  'wss://broker.emqx.io:8084/mqtt',\n  'wss://test.mosquitto.org:8081/mqtt',\n  'wss://broker.hivemq.com:8884/mqtt',\n];",
     "export const PUBLIC_BROKERS = ['wss://nothing.invalid:8084/mqtt'];",

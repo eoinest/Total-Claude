@@ -86,6 +86,17 @@ export interface Link {
    * completely wrong. See `PeerRoom.pump`.
    */
   pump?(simTick: number): void;
+  /**
+   * How many seconds of silence this transport wants before it is called a fault, or undefined
+   * for `NetSession`'s default.
+   *
+   * On the `Link` rather than in `NetSession` because the two transports are asking genuinely
+   * different questions. Under a relay the thing that has gone quiet is a dedicated process that
+   * does nothing but send; if *it* stops for six seconds something is really wrong. Between two
+   * peers the thing that has gone quiet is the other player's browser, which hitches exactly the
+   * way yours does — and `NetSession` cannot tell those apart from where it sits.
+   */
+  readonly silentFloorS?: number;
 
   /**
    * What the connection actually did, for a gate and for a bug report. Never for the simulation.

@@ -36,7 +36,9 @@ import { installSeamCheck } from './core/seams';
 import { decodeReplay, type ReplayRecord, ReplaySystem } from './sim/replay';
 import type { Link } from './net/link';
 import { validCode } from './net/protocol';
-import { chooseTransport, makeLink, testKnobs, transportLabel } from './net/transport';
+import {
+  chooseTransport, linkSecret, makeLink, testKnobs, transportLabel,
+} from './net/transport';
 import { NetSession } from './net/NetSession';
 import { setPlayerFaction } from './ui/theme';
 import {
@@ -253,7 +255,12 @@ if (net) {
    * every URL the product itself builds. See its docstring for the audit; the relay's equivalents
    * are command-line flags on a process, and a browser tab's flags are its query string.
    */
-  link = makeLink(net, testKnobs(params));
+  /*
+   * `linkSecret(location.hash)` is separate from `testKnobs(params)` because it is in a
+   * *different part of the URL* — the fragment, which is never sent to any server and is
+   * therefore the only place an introduction key can live. See `src/net/transport.ts`.
+   */
+  link = makeLink(net, { ...testKnobs(params), secret: linkSecret(location.hash) });
   console.log(`[net] room ${net.room} as ${net.want} over ${transportLabel(net)}`);
   try {
     await link.connect();
@@ -677,7 +684,33 @@ const session = link
  * back/forward cache. Leaving the page ends the match either way — §4.5 refuses reconnection —
  * so there is nothing to preserve for a page that comes back.
  */
-if (session) window.addEventListener('pagehide', () => session.dispose());
+if (session) {
+  /*
+   * **Three events, not one, because there are three ways a tab stops existing** and only one of
+   * them is a person closing it.
+   *
+   * `pagehide` covers a close and a navigation. `freeze` is what Chromium fires immediately
+   * before it **discards** a backgrounded tab to reclaim memory, and a discarded tab is as gone
+   * as a closed one — without this the survivor waits out the silence detector and is told
+   * `linkLost`, *"the connection is gone"*, which is the exact wrong accusation this listener
+   * exists to remove.
+   *
+   * **`visibilitychange` to `hidden` is deliberately NOT one of them**, and this is a
+   * disagreement with a review that asked for it. The Page Lifecycle guidance that calls
+   * `hidden` "the last reliable callback" is about *persisting state*, and it is right about
+   * that. It is not a termination signal: `hidden` fires every time somebody switches tab, looks
+   * at a chat window, or locks their phone for a moment. Ending the match there would resign
+   * every game the instant a player alt-tabbed, and §4.5 makes that unrecoverable — a strictly
+   * worse failure than the one being fixed, and far more common. `freeze` is always preceded by
+   * `hidden`, so the discard case is covered without it.
+   *
+   * A *lost network* still produces `linkLost`, correctly: nothing sends a `bye` because nothing
+   * can. `dispose` is idempotent — `PeerLink.close` returns at once when `closed` — so both
+   * arriving costs nothing.
+   */
+  window.addEventListener('pagehide', () => session.dispose());
+  window.addEventListener('freeze', () => session.dispose());
+}
 
 const vfx = engine.add(new VFXSystem());
 // VFX cannot write the soldier pool (not its file), so blood only dirties men once

@@ -531,7 +531,8 @@ export class NetSession implements Subsystem {
   private linkFault(): string {
     if (this.link.dropped) return this.link.dropped;
     if (this.tick0 < 0 || !this.link.lastMessageAt) return '';
-    const limit = Math.max(LINK_SILENT_S, (this.link.gapMs * 8) / 1000);
+    const floor = this.link.silentFloorS ?? LINK_SILENT_S;
+    const limit = Math.max(floor, (this.link.gapMs * 8) / 1000);
     if (this.quietFor < limit) return '';
     /*
      * "the other side", not "the relay", because there may not be one.

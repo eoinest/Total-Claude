@@ -137,6 +137,6 @@ introduced* — matches in progress are untouched, and on a LAN there is a local
 no third party at all.
 
 The honest cost of the change is in `docs/MULTIPLAYER.md` §13.6, and it is a number rather than a
-caveat: **without TURN, roughly 80-90% of arbitrary pairings connect, and a player on a network
+caveat: **without TURN, roughly 78-82% of arbitrary pairings connect, and a player on a network
 that blocks UDP outbound cannot play at all.** A relay had no such limit. That is the trade the
 owner chose, and the product says so in four sentences and stops rather than hanging.

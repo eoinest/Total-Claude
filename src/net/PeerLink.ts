@@ -79,6 +79,32 @@ export const STUN_SERVERS: RTCIceServer[] = [
 ];
 
 /** How often the challenger asks whether anybody is hosting this code. */
+/**
+ * The silence a peer is allowed before the match is ended, in **rendered** seconds. See
+ * `Link.silentFloorS`; `NetSession`'s own default is 6 and this deliberately overrides it.
+ *
+ * **Six was structurally wrong here and a review is what made that clear.** `Room.checkStalled`
+ * exists to give a client that has fallen behind a long grace — `maxLagTurns` × `turnMs` is
+ * exactly 30 s — but it only fires when the peer is *beating and not simulating*. A main-thread
+ * hitch stops the heartbeat and the commits **together**, so the six-second silence test always
+ * fired first and the thirty-second grace was unreachable in precisely the case it was written
+ * for.
+ *
+ * Under a relay six is defensible: the thing that went quiet is a dedicated process whose whole
+ * job is to send. Between two peers it is the other player's laptop. Measured on this machine on
+ * 3 Sep 2026, and it is not an exotic condition: **the owner sitting down at the keyboard**
+ * demoted these browsers to the efficiency cores and quadrupled frame time, 5.4 s to 21.5 s to
+ * boot a battle, and produced *"nothing has arrived from the other side in 6.0 s of drawing"* on
+ * a pair whose channel was open and whose ICE was connected. A background app, a thermal event
+ * or a video call does the same to a player, on either side.
+ *
+ * Thirty, to match the relay's own tolerance, and the asymmetry of the mistake is why it is not
+ * a compromise: §4.5 refuses reconnection, so ending a match is unrecoverable. Waiting an extra
+ * twenty-four seconds costs a player twenty-four seconds of a frozen picture with the session
+ * strip still saying what it is waiting for. Ending it early costs them the battle.
+ */
+const PEER_SILENT_FLOOR_S = 30;
+
 const KNOCK_MS = 1000;
 /**
  * How long a challenger knocks before "nobody answered in room ABCDE" is the honest answer.
@@ -100,27 +126,34 @@ const KNOCK_MS = 1000;
  * that plus this.
  */
 const KNOCK_TIMEOUT_MS = 20000;
-/**
- * How often the host republishes its offer while nobody has claimed it.
+/*
+ * **There is no standing offer any more, and its removal is a privacy fix.**
  *
- * **The host does not wait to be asked, and that is the fix for a real failure.** The first
- * design created the offer when a knock arrived, which makes the introduction depend on the
- * host's *main thread* being free — and a host that has just pressed CHOOSE THE BATTLE is
- * building an 8,632-man army, which blocks that thread in multi-second chunks. `qa-net`'s `lan`
- * arm caught it exactly there: the guest followed the square, knocked for its whole budget, and
- * was told *"nobody answered in room 67ESC"* about a host that was sitting on the same
- * introduction channel the entire time.
+ * `OFFER_REPEAT_MS = 3000` used to live here: the host published its sealed offer every three
+ * seconds until somebody answered, unbounded. A host waiting for a friend to pick up the phone
+ * was therefore broadcasting **its own public IP address** — an ICE offer is a list of candidates
+ * — to three public brokers, on a timer, for as long as the room stayed open.
+ * `SIGNAL_LINGER_MS` does not bound it: that timer starts at `dc.onopen`, which is exactly the
+ * moment this stops mattering. A reviewer found it on 3 Sep 2026 and they are right.
  *
- * A relay cannot have this problem, because the relay holds the room and answers `welcome`
- * itself. The peer equivalent is for the offer to be *already on the channel* when the guest
- * arrives, so the guest needs nothing from the host's thread at all.
+ * The offer is still **created** at `connect()`, and that is what the original fix was actually
+ * about: `createOffer` is what starts ICE gathering, so by the time a challenger arrives this
+ * side's candidates are already found and waiting in `mine` rather than being gathered while
+ * somebody watches a loading screen. What has changed is only *when it is published* — on a
+ * knock, and never otherwise.
  *
- * Three seconds, and it stops the moment somebody answers. An SDP offer is about 2 kB, so a host
- * waiting a minute for a friend publishes about 40 kB — which is worth being careful about
- * because two of the three public brokers ask not to be leaned on, and is the reason this is not
- * every second.
+ * That does not reintroduce the failure it replaced, and the distinction is worth being exact
+ * about. The old bug was that a host which has just pressed CHOOSE THE BATTLE blocks its main
+ * thread for seconds building 8,632 men, so an offer *computed* on demand arrived far too late.
+ * Publishing a pre-computed one is a `postMessage` and a `publish`. A knock that lands on a
+ * blocked thread is queued by the browser and handled the moment it frees, and the challenger
+ * knocks every `KNOCK_MS` until it is answered — so the introduction still costs nothing from
+ * the host's thread except the receiving, which it had to do anyway.
+ *
+ * It also makes the key negotiation possible at all: the host cannot know which key to seal an
+ * offer under until a challenger has said whether it holds a link secret, and the knock is where
+ * it says so. See `SignalMsg`'s `knock`.
  */
-const OFFER_REPEAT_MS = 3000;
 /**
  * How long ICE gets before "these two networks will not connect" is the honest answer.
  *
@@ -185,7 +218,7 @@ export interface PeerLinkOptions {
    * Test-only. Sends every signalling message **twice**.
    *
    * Not an exotic condition — it is one this design produces by itself. The host publishes its
-   * offer on `OFFER_REPEAT_MS` *and* immediately whenever a knock arrives, a public MQTT broker
+   * offer on every knock and a challenger knocks every `KNOCK_MS`, a public MQTT broker
    * may redeliver, and both peers are subscribed to one topic. A duplicate offer arriving inside
    * the two awaits of the answer path used to call `setRemoteDescription` on a connection that
    * was already negotiating, throw out of `createAnswer`/`setLocalDescription`, and fail a
@@ -238,7 +271,6 @@ export class PeerLink implements Link {
    */
   private mine: RTCIceCandidateInit[] = [];
   private knockTimer = 0;
-  private offerTimer = 0;
   private pumpTimer = 0;
   private lingerTimer = 0;
   private deadline = 0;
@@ -336,7 +368,8 @@ export class PeerLink implements Link {
       this.deadline = 0;
       /*
        * The offer, created and published **now**, before the menu and before a single unit is
-       * built. See `OFFER_REPEAT_MS` for what waiting to be asked cost.
+       * built — `createOffer` is what starts ICE gathering, and gathering early is the whole
+       * win. It is *published* only when somebody knocks.
        *
        * `createOffer` is also what starts ICE gathering, which is the other half of the win: by
        * the time a challenger turns up, this side's candidates have been found and are waiting in
@@ -351,8 +384,7 @@ export class PeerLink implements Link {
         this.refusal = why;
         throw new Error(why);
       }
-      this.publishOffer();
-      this.offerTimer = setInterval(() => this.publishOffer(), OFFER_REPEAT_MS) as unknown as number;
+      // Published on a knock and never on a timer. See the block where `OFFER_REPEAT_MS` was.
       return this.slot;
     }
 
@@ -392,12 +424,9 @@ export class PeerLink implements Link {
     return this.slot;
   }
 
-  /** The host's standing offer, until somebody answers it. See `OFFER_REPEAT_MS`. */
+  /** The host's offer, sent in reply to a knock and at no other time. */
   private publishOffer(): void {
-    if (this.claimed || this.openedAt >= 0 || this.closed || !this.offer) {
-      if (this.offerTimer) { clearInterval(this.offerTimer); this.offerTimer = 0; }
-      return;
-    }
+    if (this.claimed || this.openedAt >= 0 || this.closed || !this.offer) return;
     this.sendSignal({ t: 'offer', from: this.slot, sdp: this.pc.localDescription?.sdp ?? '' });
   }
 
@@ -418,7 +447,14 @@ export class PeerLink implements Link {
       if (this.knockTimer) { clearInterval(this.knockTimer); this.knockTimer = 0; }
       return;
     }
-    this.sendSignal({ t: 'knock', from: this.slot });
+    /*
+     * `k: 1` when this peer holds the link secret. It is what lets the host decide which key to
+     * seal its offer under, and it is the only thing that has to cross under the code key. See
+     * `SignalMsg` and `signal.ts`'s privacy section.
+     */
+    this.sendSignal(this.signal.canLinkKey
+      ? { t: 'knock', from: this.slot, k: 1 }
+      : { t: 'knock', from: this.slot });
   }
 
   // -------------------------------------------------------------------------
@@ -522,9 +558,15 @@ export class PeerLink implements Link {
            * shape: waiting on a host who is not coming, with nothing anywhere saying so.
            */
           if (this.claimed) { this.sendSignal({ t: 'full', from: this.slot }); return; }
-          // The offer already exists and is already being published every `OFFER_REPEAT_MS`, so
-          // a knock only makes the common case faster. It is not what the introduction depends
-          // on — see `OFFER_REPEAT_MS` for why that mattered.
+          /*
+           * **Both peers hold a link secret, so everything after this is sealed under it.**
+           *
+           * Only upgrades, never downgrades: a knock without `k` from a second, code-only
+           * challenger must not be able to strip the privacy off a negotiation already under
+           * way, and `useLinkKey(false)` is never called from here. The *downgrade* happens by
+           * reading, in `SignalChannel.openOne`, on the side that needs to find out.
+           */
+          if (m.k === 1 && this.signal.canLinkKey) this.signal.useLinkKey(true);
           this.publishOffer();
           return;
         }
@@ -533,7 +575,7 @@ export class PeerLink implements Link {
            * **`this.claimed` and not only `this.haveRemote`, because `haveRemote` is set on the
            * far side of two awaits and a second offer can arrive inside them.**
            *
-           * The host republishes its offer every `OFFER_REPEAT_MS` until somebody answers, and a
+           * The host answers every knock until somebody claims the room, and a
            * knock makes it publish immediately as well — so two offers a few milliseconds apart
            * are ordinary. `haveRemote` is set by `flushIce()`, which runs after
            * `setRemoteDescription` resolves; until then this handler re-entered, called
@@ -563,7 +605,7 @@ export class PeerLink implements Link {
           /*
            * A **second** answer, and it needs the refusal rather than silence.
            *
-           * The host now advertises its offer every `OFFER_REPEAT_MS` until somebody takes it, so
+           * The host answers every knock until somebody takes the offer, so
            * two challengers can both answer the same one. The first wins. The second has already
            * set a remote description and would otherwise sit through the ICE deadline and be told
            * *"your two networks would not let the game connect directly"* — an accusation against
@@ -626,7 +668,6 @@ export class PeerLink implements Link {
    */
   private claim(): void {
     this.claimed = true;
-    if (this.offerTimer) { clearInterval(this.offerTimer); this.offerTimer = 0; }
     /*
      * **And the challenger stops knocking**, which is not tidiness — it is the fix for a race
      * that told a perfectly good challenger it had been beaten to its own room.
@@ -736,16 +777,18 @@ export class PeerLink implements Link {
     this.dropped = this.dropped || `closed by this client: ${why}`;
     this.closed = true;
     this.take(this.peerRoom.fromClient(now(), { k: 'bye', why }));
-    for (const id of [this.knockTimer, this.pumpTimer, this.offerTimer]) {
+    for (const id of [this.knockTimer, this.pumpTimer]) {
       if (id) clearInterval(id);
     }
     this.knockTimer = 0;
     this.pumpTimer = 0;
-    this.offerTimer = 0;
     this.dropSignal();
     try { this.dc?.close(); } catch { /* going away regardless */ }
     try { this.pc.close(); } catch { /* going away regardless */ }
   }
+
+  /** See `PEER_SILENT_FLOOR_S`. */
+  readonly silentFloorS = PEER_SILENT_FLOOR_S;
 
   get counts(): { sent: number; got: number } { return { sent: this.sent, got: this.got }; }
 

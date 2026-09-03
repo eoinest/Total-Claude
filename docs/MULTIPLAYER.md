@@ -3793,8 +3793,14 @@ Broken down, ranked by how much confidence the sources support:
   only fix. Secondary sources cite 60-85% relay rates on managed enterprise networks; no primary
   source was found for those figures and they are recorded as indicative only.
 
-**So: expect roughly 80-90% of arbitrary pairings to connect, better than that if both players are
+**So: expect roughly 78-82% of arbitrary pairings to connect, better than that if both players are
 on ordinary home internet, and 0% for a player on a network that blocks UDP.**
+
+That range is the sources' own and not a rounding of them: callstats.io's 22% needing a relay and
+appear.in's 17.7% bracket it directly, at 78% and 82.3% direct. An earlier draft of this section
+said 80-90%, and the top of that was an overreach — nothing above 82% is supported by a primary
+source for *arbitrary* pairings. Tailscale's "over 90%" is real and is not this: it is a
+purpose-built traversal suite doing things a browser's ICE cannot.
 
 What was built for that last group is the whole of the obligation: **say so, say which side the
 block is on, and name what to try.** `PeerLink.noDirectPath` distinguishes two real cases rather
@@ -3817,7 +3823,7 @@ this router does hairpin. That is the router's answer and not the product's.
 
 **One escape hatch, if the no-TURN rule is ever softened.** Cloudflare's TURN free tier is 1,000
 GB/month, which for a data channel carrying ~100 bytes/s is effectively unlimited. It needs an
-account but nothing to deploy or keep alive, and it would take this from ~85% to ~100%. It is not
+account but nothing to deploy or keep alive, and it would take this from ~80% to ~100%. It is not
 built and it is not recommended without the owner asking, because it reintroduces exactly the
 dependency they declined.
 
@@ -4045,16 +4051,26 @@ asking about explicitly.
   rather than claimed.
 - **A whole `qa-p2p` run in one process is at the edge of what this machine will carry, and the
   distribution says so.** On 3 Sep 2026, with two other agents working and the owner playing:
-  three consecutive full runs each died at a *later* arm than the last — `lobby`, then `desync`,
-  then `lag` — every one of them on the same sentence, *"nothing has arrived from the other side
-  in 6.0 s of drawing, against a 0 ms turn"*, raised over a deployment screen. Split in two and
-  run back to back at the same load, the same checks pass: **53/53** for
-  `proto,params,seal,battle,lag,desync` and **18/18** for `leave,lobby,https,nodirect,dup,ab`,
-  at load 6.9-9.7. Each arm starts its own servers and browsers, so the halves are not a weaker
-  claim than the whole — but a run that has already built a dozen 8,632-man battles is measuring
-  a different machine than one that has built none, and **the honest way to read a red late in a
-  long run is to re-run that arm alone before believing it.** `clickOrExplain` exists so that
-  reading is possible at all.
+  three consecutive full runs each died on the same sentence — *"nothing has arrived from the
+  other side in 6.0 s of drawing, against a 0 ms turn"*, raised over a deployment screen — at
+  arms **8, then 6, then 5**, which is progressively **earlier**. That direction matters and I
+  had it backwards in the first draft of this paragraph: a fixed per-run leak would fail later
+  and later as pressure built, and failing earlier and earlier is the signature of a machine
+  that was getting worse underneath. A reviewer hunted the leak and largely exonerated the gate —
+  eight consecutive 8,632-man battles on one reused browser left file descriptors flat (+2),
+  processes flat (9 → 9) and iteration 7 timed identically to iteration 0; RSS climbs about
+  16 MB per battle and is never released by `page.close()`, roughly 300 MB across a run, which is
+  currently benign and is written down here so it is not rediscovered. They also reproduced the
+  mechanism: **the owner sitting down at the keyboard** demotes the gate's browsers to the
+  efficiency cores and quadruples frame time, 5.4 s to 21.5 s to boot a battle, and it recovers
+  the moment they stop.
+
+  **The halves are not a substitute for the whole, and the sentence that used to be here claiming
+  otherwise was false.** It said each arm starts its own servers and browsers;
+  `tools/qa-p2p.mjs` creates `chrome`, `chromeGuest`, `vite` and `sigRelay` **once** — there are
+  two `launchBrowser` calls in the file — so splitting hands the second half brand-new browser
+  processes, which is exactly the variable the split fails to control for. The full run in one
+  process on a quiet machine is the claim, and §13.11 is that run.
 - **A tab that is merely *slow* is tolerated for six seconds, and this is the limitation to put
   in front of the owner.** `NetSession.linkFault` ends a match when nothing has arrived for
   `max(LINK_SILENT_S, 8 × gapMs)` of **rendered** seconds, and peer to peer the thing that has

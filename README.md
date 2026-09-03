@@ -116,7 +116,7 @@ hashed topic and encrypted text rather than your orders. Once the battle starts 
 again. `docs/MULTIPLAYER.md` §13.2 is the whole evaluation, including the two options that lost.
 
 **When it will not work.** There is no relay to fall back on, by choice, so two networks that
-refuse a direct connection are a match that cannot be played. Expect roughly 80-90% of arbitrary
+refuse a direct connection are a match that cannot be played. Expect roughly 78-82% of arbitrary
 pairings to connect; both on ordinary home internet does better than that, and both on the same
 wifi always works because the two machines connect without asking anybody. **A network that blocks
 UDP outbound — many offices, campuses and some guest wifi — cannot play at all**, and no amount of
