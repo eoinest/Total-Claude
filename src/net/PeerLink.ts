@@ -568,6 +568,25 @@ export class PeerLink implements Link {
   private claim(): void {
     this.claimed = true;
     if (this.offerTimer) { clearInterval(this.offerTimer); this.offerTimer = 0; }
+    /*
+     * **And the challenger stops knocking**, which is not tidiness — it is the fix for a race
+     * that told a perfectly good challenger it had been beaten to its own room.
+     *
+     * The knock timer used to run until `dc.onopen`. A challenger takes the offer, answers it,
+     * and then waits for ICE, which the `battle` arm measures at 0.7-6 s. One second into that
+     * wait it knocked again; the host had claimed on the answer by then, and `case 'knock'`
+     * answers a claimed room with `full`. So *whether the introduction survived* depended on
+     * whether ICE beat a one-second timer — green on a fast pairing, red on a slow one, and
+     * always red where ICE cannot finish at all. `tools/qa-p2p.mjs`'s `nodirect` arm found it
+     * exactly there: two peers with no candidates were told *"room already has a challenger"*
+     * instead of the sentence about their networks, which is an accusation against the wrong
+     * party and hides the one failure the product most has to name.
+     *
+     * Stopping here is also the honest reading of the protocol: a knock means *"is anybody
+     * offering?"*, and this side is holding the offer. A room really taken by somebody else is
+     * still refused, because a second challenger is a different browser and has never claimed.
+     */
+    if (this.knockTimer) { clearInterval(this.knockTimer); this.knockTimer = 0; }
     for (const c of this.mine.splice(0)) this.signal.send({ t: 'ice', from: this.slot, c });
   }
 

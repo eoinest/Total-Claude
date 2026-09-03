@@ -330,6 +330,58 @@ export function drivers({ W, H, shot = async () => {} }) {
     return page;
   };
 
+  /**
+   * What is on top of the page, if anything is. `NetPanel.raise` builds `.tc-over`.
+   *
+   * It is `position:fixed; inset:0`, so while it is up it swallows every click on the game
+   * beneath it. That is right for a player -- a session that has ended should not accept orders
+   * -- and it is the single most confusing thing that can happen to a driver.
+   */
+  const overlay = (page) => page.evaluate(() => {
+    const o = document.querySelector('.tc-over');
+    if (!o) return null;
+    return {
+      head: o.querySelector('h2')?.textContent?.trim() ?? '',
+      text: (o.innerText ?? '').replace(/\s+/g, ' ').trim().slice(0, 300),
+    };
+  }).catch(() => null);
+
+  /**
+   * Every click this driver makes on a game control, with the cause attached when it fails.
+   *
+   * The bare version cost this gate a run and told it nothing. `qa-p2p`'s `desync` arm reported
+   * *"page.click: Timeout 30000ms exceeded -- <div class="tc-over-fit"> intercepts pointer
+   * events"*, which is thirty seconds of a Playwright retry loop describing the geometry of a
+   * `<div>` and not one word about **why** a net panel was over the deployment screen. The panel
+   * was saying something specific and legible -- a peer had gone quiet, or a session had ended --
+   * and the driver stood in front of it repeating that a button would not take a click.
+   *
+   * So: ask before, ask after, and quote it. The pre-check is not redundant with the post-check,
+   * because the overlay is usually already up when the click starts, and waiting the full timeout
+   * to discover that spends the arm's budget as well as its explanation.
+   */
+  async function clickOrExplain(page, sel, tag, opts = {}) {
+    const before = await overlay(page);
+    if (before) {
+      throw new Error(`${tag}: ${sel} is covered by the net panel, which says `
+        + `"${before.head}" -- ${before.text}`);
+    }
+    try {
+      await page.click(sel, { timeout: 25000, ...opts });
+    } catch (e) {
+      const after = await overlay(page);
+      const net = await page.evaluate(() => window.__net?.() ?? null).catch(() => null);
+      const state = `phase ${net?.phase ?? '?'}, ended '${net?.ended ?? ''}'`
+        + `${net?.desync ? `, desync at tick ${net.desync.tick} on ${net.desync.layer}` : ''}`;
+      if (after) {
+        throw new Error(`${tag}: ${sel} was covered by the net panel, which says `
+          + `"${after.head}" -- ${after.text} (${state})`);
+      }
+      throw new Error(`${tag}: ${sel} would not take a click (${state}) -- `
+        + `${String(e.message).split('\n')[0]}`);
+    }
+  }
+
   /** Lay out an army with the plaque and the mouse, then press BEGIN BATTLE. */
   async function deployWith(page, tag) {
     const d = await page.evaluate(() => window.__dep());
@@ -356,7 +408,7 @@ export function drivers({ W, H, shot = async () => {} }) {
       }));
       throw new Error(`${tag}: no deployment plaque — ${JSON.stringify(why)}`);
     }
-    await page.click('.dep-add');
+    await clickOrExplain(page, '.dep-add', tag);
     await sleep(220);
     /*
      * The first row whose `+` is *enabled*, not simply the first row.
@@ -380,7 +432,7 @@ export function drivers({ W, H, shot = async () => {} }) {
       })));
     const addable = rows.find((r) => r.addable);
     if (addable) {
-      await page.click(`.dep-row[data-unit="${addable.unit}"] [data-d="1"]`);
+      await clickOrExplain(page, `.dep-row[data-unit="${addable.unit}"] [data-d="1"]`, tag);
       done.push(`palette +1 ${addable.unit}`);
       await sleep(320);
     } else if (rows.length) {
@@ -421,7 +473,7 @@ export function drivers({ W, H, shot = async () => {} }) {
       throw new Error(`${tag}: BEGIN BATTLE is ${beginState.present ? 'disabled' : 'absent'}`
         + ` after ${done.length} gesture(s) — ${JSON.stringify(why)}`);
     }
-    await page.click('.dep-begin');
+    await clickOrExplain(page, '.dep-begin', tag);
     done.push('BEGIN BATTLE');
     await sleep(400);
     return done;

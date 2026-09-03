@@ -622,7 +622,12 @@ const PUBLIC_ORIGIN_OVERRIDE = (() => {
  * matched only `chrome-headless-shell`, so a browser launched through either channel was neither
  * demoted while the owner played nor group-killed by the reaper.
  */
-const PEER_ARGS = ['--hide-scrollbars', '--disable-features=WebRtcHideLocalIpsWithMdns'];
+const PEER_ARGS = ['--hide-scrollbars', '--disable-features=WebRtcHideLocalIpsWithMdns',
+  // Two peers, and only one of them can be the front window. See `AWAKE_ARGS` in
+  // `tools/qa-p2p.mjs`: a backgrounded page's timers stop, and a lockstep peer whose
+  // timers have stopped is a peer that has gone quiet.
+  '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
+  '--disable-renderer-backgrounding'];
 const chrome = await launchBrowser({
   label: 'qa-net/host', engine: 'chromium', channel: 'chromium',
   args: [...PEER_ARGS, ...PUBLIC_ORIGIN_OVERRIDE], port: PORT, root: ROOT,

@@ -1218,7 +1218,26 @@ let sigRelay = null;
  * able to see what a player already gets, and it changes nothing about the product: no flag is
  * shipped, and `PeerLink` never looks at a candidate's address.
  */
-const CHROME_ARGS = ['--disable-features=WebRtcHideLocalIpsWithMdns'];
+/**
+ * And three flags that stop Chromium putting one of the two peers to sleep.
+ *
+ * A lockstep match is two pages that must both keep a timer running: `PeerLink` pumps every
+ * `PUMP_MS` and `PeerRoom` sends a heartbeat, and a page whose timers are throttled to one wake
+ * a minute *is* a peer that has gone quiet, correctly reported as one. Two browsers on one
+ * machine cannot both be the front window, so the loser was being backgrounded while this file
+ * spent twenty seconds clicking through the other one's deployment. The `desync` arm died of it:
+ * `page.click('.dep-add')` timed out against a net panel that had already been raised over the
+ * screen, because the guest had stopped answering while the host was being deployed.
+ *
+ * This is a *harness* flag in the same sense as the mDNS one above. A player has two machines,
+ * or two windows they are looking at; nothing here changes what `PeerLink` or `PeerRoom` do, and
+ * the silence detector they exercise is still the shipping one -- `leave` proves it still fires
+ * for a peer that really goes away.
+ */
+const AWAKE_ARGS = ['--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding'];
+
+const CHROME_ARGS = ['--disable-features=WebRtcHideLocalIpsWithMdns', ...AWAKE_ARGS];
 
 /**
  * The `https` arm's origin, declared **public** to the browser — on the run's own two browsers.
