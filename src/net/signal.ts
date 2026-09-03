@@ -80,8 +80,12 @@
  * up is a gate that goes red for reasons that are not the product, which this repository has
  * written down twice as the thing that teaches people to ignore a check.
  *
- * The broker path is not therefore untested: `qa-p2p`'s `broker` arm exercises it against the
- * real public brokers, and is opt-in for the same reason `xengine` is.
+ * The broker path is not therefore untested, and it is two arms rather than one because they
+ * cost three orders of magnitude apart. `qa-p2p`'s **`broker`** runs two `MqttSignal`s in Node
+ * against the real public brokers — four seconds, no browser, and most of what this path actually
+ * is — and **`brokerplay`** boots two battles on top of it. Both are opt-in for the same reason
+ * `xengine` is: a gate that goes red because somebody else's free service is busy teaches people
+ * to ignore it.
  */
 
 // ---------------------------------------------------------------------------

@@ -837,6 +837,59 @@ if (wanted('proto')) {
       + 'phase for ever');
   }
 
+  // -- 6c. the two transports come to the same verdict about one pairing ----
+  {
+    /*
+     * `src/net/agree.ts`'s whole reason for existing, asserted rather than asserted-in-a-comment.
+     *
+     * Its docstring says the two schedulers must never be two opinions about whether these two
+     * clients may play one battle — the answer is measured at length in §1.4 and §1.5, and a
+     * second copy of it would present as *one transport refusing a pairing the other allows*.
+     * "They call the same function" is a claim about today's source; this is a claim about the
+     * behaviour, and it is the only thing that keeps the extraction from quietly coming apart.
+     *
+     * `Room` is driven over its own message interface, exactly as `tools/relay.mjs` drives it.
+     */
+    const { Room } = await import('../src/net/room.ts');
+    const pairs = [
+      ['agree', print(), print()],
+      ['config', print(), print({ cfgKey: '{"map":"carthage"}' })],
+      ['army', print(), print({ count0: 1515, unitScale: 0.5, quality: 'low' })],
+      ['build', print(), print({ uf64: 'ffff' })],
+      ['tick', print(), print({ tick0: 7 })],
+    ];
+    const rows = [];
+    let same = true;
+    for (const [name, a, b] of pairs) {
+      // The relay: two sockets join, both announce, and the reply carries the verdict.
+      const room = new Room('ABCDE', { turnMs: 100 });
+      room.join(0, 'host', 1);
+      room.join(0, 'join', 1);
+      room.recv(0, 0, { k: 'ready', print: a, cfg: {}, factions: [0, 1] });
+      const relayOut = room.recv(0, 1, { k: 'ready', print: b, cfg: {}, factions: [0, 1] });
+      const relayWhy = relayOut.out.map((o) => o.msg).find((m) => m.k === 'refuse')?.why ?? '';
+
+      // The peer: one PeerRoom is told both prints, its own through the client and the other
+      // through the wire, which is how a real session learns them.
+      const pr = new PeerRoom('ABCDE', 0, { turnMs: 100 });
+      pr.open(0);
+      pr.fromPeer(0, { k: 'hello', v: 1, slot: 1, code: 'ABCDE' });
+      pr.fromClient(0, { k: 'ready', print: a, cfg: {}, factions: [0, 1] });
+      const peerOut = pr.fromPeer(0, { k: 'ready', print: b, cfg: {}, factions: [0, 1] });
+      const peerWhy = peerOut.local.find((m) => m.k === 'refuse')?.why ?? '';
+
+      const ok = relayWhy === peerWhy && (name === 'agree' ? relayWhy === '' : relayWhy === name);
+      same = same && ok;
+      rows.push(`${name}: relay '${relayWhy || 'allowed'}' / peer '${peerWhy || 'allowed'}'`);
+    }
+    measured.agreeShared = rows;
+    record('proto-both-transports-agree', same,
+      'the relay and the peer scheduler reach the identical verdict on the identical pairing',
+      rows.join('; '),
+      'one handshake, two schedulers — a second copy would present as one transport refusing a '
+      + 'pairing the other allows, which is the worst shape for a rule about determinism');
+  }
+
   // -- 7. two hosts in one room ---------------------------------------------
   {
     const wire = new Wire();

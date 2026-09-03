@@ -54,6 +54,11 @@ const FAULTS = {
     '        if (this.sides[0].ready && this.sides[1].ready) {',
     '        if (this.iAmReady) {',
     'proto', 'proto-phase-flip-agrees'],
+  // The extraction's whole point: if either scheduler grows its own opinion, this goes red.
+  'peer-has-its-own-handshake': [F.room,
+    '    const verdict = agree(this.opts.pairs, this.sides[0].print, this.sides[1].print);',
+    "    void agree;\n    const verdict = { refuse: null, pairNote: 'x', willFork: false };",
+    'proto', 'proto-both-transports-agree'],
   'never-disagree': [F.agree,
     '  return fatal.find((l) => differs[l]) ?? null;',
     '  void fatal; void differs; return null;',
