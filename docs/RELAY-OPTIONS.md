@@ -6,12 +6,37 @@ two answers, what each costs, and why the owner picked the one they picked on 2 
 
 ## The constraint that decides everything
 
-An `https` page may not open a `ws://` connection. Browsers block it as mixed content and
-there is no flag, no header and no permission prompt that changes it. The deployed site is
-`https://total-claude.vercel.app`. A home-network address has no certificate and cannot get
-one. **So the deployed site can never talk to a LAN relay** — not as a bug, as the rule.
+**The deployed site can never talk to a LAN relay.** Everything below follows from that.
+The *reason* is not what this file first said, and not what this repository believed.
 
-Everything below follows from that one sentence.
+The stated reason was mixed content: an https page may not open `ws://`. That is wrong, and
+it was corrected on 2 Sep 2026 by a test fixture that proved it by failing to fail — an
+https page with a real certificate, served from a private address, **opened
+`ws://192.168.1.77:5959` without complaint.** Mixed content is about the scheme, and a
+scheme check would have blocked it.
+
+The real rule is **Local Network Access**: a *public* origin may not reach into a *private*
+address space. Chromium names it `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`. What
+disqualifies `total-claude.vercel.app` is therefore not that it is https — it is that it is
+*public*, reaching for a private address.
+
+The practical conclusion is unchanged, which is exactly why the error survived so long: both
+stories predict the same failure, so no observation the repo made could tell them apart.
+
+**Settled, 3 Sep 2026, and both stories turned out to be right about different browsers.**
+An independent reviewer repeated the measurement with a genuinely trusted certificate rather
+than a bypassed one, and the socket still opened — so the Chromium result is not an artefact
+of the test rig. But **WebKit refuses `ws://` from an https page to a private address *and* to
+loopback**, with no address-space carve-out at all. That is plain mixed content, which is
+exactly what the old explanation said. So the repository was not wrong, it was **Chromium-wrong**,
+and every engineering claim now names an engine and a version. `docs/MULTIPLAYER.md` §12.6 has
+the table. The sentence the player reads never changed, because it was true on both engines all
+along.
+
+**And this whole section is now a historical note.** The constraint it describes is real and
+still governs `ws://`, but it stopped being the thing that decides the product on 3 Sep 2026,
+because WebRTC is refused by neither rule. The deployed site can carry a match after all — see
+`docs/MULTIPLAYER.md` §13.
 
 ## Option A — LAN, chosen
 
