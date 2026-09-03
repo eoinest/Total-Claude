@@ -34,8 +34,11 @@ import { MainMenu, publishConfig, resolveConfig } from './ui/MainMenu';
 import { ALL_FACTIONS, Faction } from './sim/types';
 import { installSeamCheck } from './core/seams';
 import { decodeReplay, type ReplayRecord, ReplaySystem } from './sim/replay';
-import { NetLink, netParams } from './net/NetLink';
+import type { Link } from './net/link';
 import { validCode } from './net/protocol';
+import {
+  chooseTransport, linkSecret, makeLink, testKnobs, transportLabel,
+} from './net/transport';
 import { NetSession } from './net/NetSession';
 import { setPlayerFaction } from './ui/theme';
 import {
@@ -124,28 +127,39 @@ if (params.get('mp') === '1') {
  *
  * This is the whole of "a code and that's it". A guest who scans the square on the host's
  * screen, or types the line the host reads out, arrives here with five characters and no
- * transport in the URL at all; the address comes out of the document, because **the only
- * server that could have served this page is the one that started the relay** and it says so
- * in `<meta name="tc-relay">`. Nothing is guessed: `serverRelay()` returns `null` on any origin
- * that has not signed its own work, and `null` falls through to the lobby below.
+ * transport in the URL at all.
+ *
+ * **Until 2 Sep 2026 that needed an address out of the document and now it does not**, and that
+ * is the change this whole pass exists for. The old rule was that the only server which could
+ * have served this page is the one that started the relay, so `<meta name="tc-relay">` supplied
+ * the transport — and on the deployed site, where there is no such tag and never can be, five
+ * characters fell through to a screen explaining why they could not work. A peer connection
+ * needs no address at all: `chooseTransport` reads a bare `?room=` as *peer to peer*, and how
+ * the two are introduced is decided there — this document's own relay if it declares one,
+ * public brokers otherwise. The one line left here is the invitation's asymmetry.
  *
  * *Joins*, rather than hosts, and the asymmetry is deliberate rather than convenient. A URL
  * carrying a room code and nothing else is not a URL anybody writes for themselves: the lobby
- * writes the host's own navigation with `?net=…&menu=battle` and `npm run host` writes
+ * writes the host's own navigation with `&host=1&menu=battle` and `npm run host` writes
  * `?mp=1&room=…&create=1`. A bare code is a thing that was *sent*, and an invitation is by
- * definition to the other side. `?net=…&room=…` keeps its old meaning exactly — host unless
+ * definition to the other side.
+ *
+ * **`params.get('host') === null` is the whole of the fix for the bug this caused**, and it is
+ * worth naming because the symptom was baffling. Under the relay, a host's own navigation always
+ * carried `?net=`, so this branch could not see it and the unconditional `host=0` was safe. Peer
+ * to peer there is no address to carry, so the host's URL is a bare code too — and both pages
+ * announced themselves as the challenger, both sat knocking at a room nobody was hosting, and
+ * both timed out with *"nobody answered in room SMQKE"* about each other. Read the side off the
+ * URL when the URL states it, and only fall back to "an invitation is to the other side" when it
+ * does not. `?net=…&room=…` keeps its old meaning exactly — host unless
  * `&host=0` — so every link that already exists still means what it meant.
  *
- * The fallback is the lobby with the code already in the field, which is the honest answer for
- * the two origins that cannot resolve a relay: the deployed site, and a `npm run dev` server
- * that never started one. They get the screen that explains why, rather than a socket to
- * nowhere.
+ * The fallback is now only for a code that is *malformed*. There is no longer an origin that
+ * cannot join a room, so the screen that used to explain why has nothing to explain.
  */
-if (!params.get('net') && params.get('room')) {
+if (!params.get('net') && params.get('room') && params.get('host') === null) {
   const asked = (params.get('room') ?? '').toUpperCase();
-  const addr = validCode(asked) ? serverRelay() : null;
-  if (addr) {
-    params.set('net', addr);
+  if (validCode(asked)) {
     params.set('host', '0');
   } else {
     if (loading) loading.hidden = true;
@@ -162,14 +176,17 @@ if (!params.get('net') && params.get('room')) {
  * 3,009 on medium — with the ram crew dying 16 m short of the door at one tier and opening the
  * gate at the other. So a joiner connects, waits for the host's setup, and only then boots.
  *
- * `?net=ws://host:port&room=CODE` hosts; `&host=0` joins. See `src/net/NetLink.ts`.
+ * `?net=ws://host:port&room=CODE` hosts through a relay; a bare `?room=CODE` goes peer to peer;
+ * `&host=0` joins either way. The whole table, with the reasoning, is in
+ * `src/net/transport.ts` — and the reason it is a table rather than a branch here is that there
+ * are two transports now and only one of them existed when this comment was written.
  */
-const net = netParams(params);
+const net = chooseTransport(params, serverRelay());
 const replayToken = params.get('replay');
 const skipMenu = harness || params.get('menu') === '0' || replayToken !== null
   || (net !== null && net.want === 'join');
 let config = resolveConfig(params, !harness);
-let link: NetLink | null = null;
+let link: Link | null = null;
 let netDeployPhase = false;
 /**
  * A relay that will not have us, and the two rules it has to obey.
@@ -191,7 +208,9 @@ const netFailed = (title: string, lines: string[]): Promise<never> => {
   back.search = '';
   back.searchParams.set('mp', '1');
   if (net) {
-    back.searchParams.set('net', net.base);
+    // Only a relay session carries an address back to the lobby, because only a relay session
+    // has one to correct. A peer session's way back is the code, and the code is already here.
+    if (net.kind === 'relay') back.searchParams.set('net', net.base);
     back.searchParams.set('room', net.room);
   }
   showNetNotice(document.getElementById('menu-root') as HTMLElement, {
@@ -206,7 +225,7 @@ const netFailed = (title: string, lines: string[]): Promise<never> => {
 /*
  * A device that could not finish the battle is turned away **before a socket exists**.
  *
- * Placed here, above `new NetLink`, and the position is the fix rather than an implementation
+ * Placed here, above `makeLink`, and the position is the fix rather than an implementation
  * detail. Below it, the client has already claimed a slot: a phone that scanned the square took
  * the room's second place, could not reach BEGIN BATTLE — 434 px off the right edge of a page
  * `scrollWidth` says cannot scroll — and the laptop that arrived afterwards was refused with
@@ -231,20 +250,49 @@ if (net && !hudFits() && params.get('narrow') !== 'ok') {
   await new Promise(() => { /* nothing below this line runs, and no socket was opened */ });
 }
 if (net) {
-  link = new NetLink(net.base, net.room, net.want);
+  /*
+   * `testKnobs` reads `?p2plag=`, `?p2pfault=` and friends, and every one of them is empty on
+   * every URL the product itself builds. See its docstring for the audit; the relay's equivalents
+   * are command-line flags on a process, and a browser tab's flags are its query string.
+   */
+  /*
+   * `linkSecret(location.hash)` is separate from `testKnobs(params)` because it is in a
+   * *different part of the URL* — the fragment, which is never sent to any server and is
+   * therefore the only place an introduction key can live. See `src/net/transport.ts`.
+   */
+  link = makeLink(net, { ...testKnobs(params), secret: linkSecret(location.hash) });
+  console.log(`[net] room ${net.room} as ${net.want} over ${transportLabel(net)}`);
   try {
     await link.connect();
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     // `refusedByRelay` and not `refusal`: the second is also set by a socket that never
     // opened, and "nothing is listening" is a different problem with a different fix from
-    // "the relay read your code and said no".
+    // "the other side read your code and said no".
     const refused = link.refusedByRelay;
+    /*
+     * The two transports fail differently and the screen has to say which.
+     *
+     * A relay session that cannot connect has an address that did not answer, and the useful
+     * sentence names a process to start. A peer session has no address: what failed is either
+     * the introduction — nobody is hosting that code — or the direct connection itself, and
+     * `PeerLink` has already written the specific sentence for both (`noDirectPath`, and the
+     * `connect` timeout). Reusing the relay's wording here would tell somebody on the deployed
+     * site to run a shell command, which is the exact dead end §12.6 spent a section removing.
+     */
+    if (net.kind === 'peer') {
+      await netFailed(
+        refused ? 'That room would not have you' : 'The connection could not be made',
+        [`${esc(why.charAt(0).toUpperCase() + why.slice(1))}`,
+          'Nothing has been joined and nothing is waiting, so you can try another code or '
+          + 'open a room of your own.'],
+      );
+    }
     await netFailed(
       refused ? 'The relay would not let you in' : 'No relay answered',
       refused
         ? [esc(refused.charAt(0).toUpperCase() + refused.slice(1)),
-          `Room <b>${esc(net.room)}</b> on <b>${esc(net.base)}</b>.`]
+          `Room <b>${esc(net.room)}</b> on <b>${esc(net.kind === 'relay' ? net.base : '')}</b>.`]
         : [`${esc(why.charAt(0).toUpperCase() + why.slice(1))}.`,
           'A relay is a separate process. The battle cannot start without one, and there is '
           + 'nothing to reconnect to, so this stops here rather than pretending.',
@@ -257,7 +305,7 @@ if (net) {
            * relay on a machine you can both reach" to a person who has just been sent a link
            * blames the wrong party, which is the mistake §9.12 spent a section on.
            */
-          `You reached this page, so the machine serving it is reachable and it is <b>${esc(net.base)}</b> `
+          'You reached this page, so the machine serving it is reachable and it is that relay '
           + 'specifically that did not answer. If you were sent a link, tell whoever sent it: '
           + 'one command, <code>npm run host</code>, serves the game and the relay together on '
           + 'an address you can both reach.'],
@@ -617,6 +665,61 @@ await installAI(engine, {
 const session = link
   ? engine.add(new NetSession(link, config, config.quality, deployPhase))
   : null;
+
+/*
+ * Say goodbye on the way out, because peer to peer there is nobody else to say it for you.
+ *
+ * Under a relay this line was not needed: the relay holds both sockets, sees one of them go,
+ * and tells the survivor `peerLeft` by name. Between two peers the survivor has only its own
+ * data channel, and closing a tab does not politely shut an SCTP association down — the
+ * renderer is torn down and the far end simply stops hearing anything. `qa-p2p --only=leave`
+ * measured exactly that: a peer closed its tab at tick 191 and the survivor sat until the
+ * silence detector fired six seconds later and reported **`linkLost`** — *"the connection is
+ * gone"*. Honest, and the wrong accusation: nothing was wrong with the connection, and the
+ * player was told their network had failed when their opponent had walked away.
+ *
+ * `NetSession.dispose` sends `bye` and then closes the channel, so the survivor gets the
+ * reason on the wire and the close behind it. `pagehide` rather than `unload`: `unload` is
+ * deprecated, is not fired at all in some conditions, and disqualifies the page from the
+ * back/forward cache. Leaving the page ends the match either way — §4.5 refuses reconnection —
+ * so there is nothing to preserve for a page that comes back.
+ */
+if (session) {
+  /*
+   * **Three events, not one, because there are three ways a tab stops existing** and only one of
+   * them is a person closing it.
+   *
+   * A review asked for three — `pagehide`, `freeze` and `visibilitychange` → `hidden` — and
+   * **two of the three resign matches that are still being played.** Both were tried. This is
+   * the one that is left, and the two rejections are the useful part of the note.
+   *
+   * `visibilitychange` to `hidden` fires every time somebody switches tab, glances at a chat
+   * window or locks their phone for a moment. The Page Lifecycle guidance calling `hidden` "the
+   * last reliable callback" is about *persisting state* and is right about that; it is not a
+   * termination signal. Wiring it would resign every game the instant a player alt-tabbed, and
+   * §4.5 makes that unrecoverable — strictly worse than the failure being fixed, and far
+   * commoner. Rejected by reading.
+   *
+   * `freeze` was wired, and **it went red in the gate within one run**: `qa-net`'s
+   * `peer-left-has-a-screen` reported the survivor's own screen reading *"The connection is
+   * gone"* where it had read *"the other commander left"*. Chromium fires `freeze` on a
+   * backgrounded tab it is *considering* discarding, and the matching `resume` event exists
+   * precisely because a frozen tab often comes back — so it is not "this tab is ending", and
+   * under the gate the **survivor's** occluded window froze and disposed its own link, ending
+   * its own match as `linkLost`. A player whose battle window is not in front would lose the
+   * same way. Rejected by measurement.
+   *
+   * What is left is `pagehide`, which is the real end of a document and is what a person closing
+   * a tab produces: measured `peerLeft` after 503 ms, against six seconds and the wrong word.
+   * What is genuinely not covered is a tab the OS kills outright with no event at all, and there
+   * is no API that distinguishes that from a pause. That case still falls to the silence
+   * detector, which is why `PEER_SILENT_FLOOR_S` matters and why it is now 30 s rather than 6.
+   *
+   * A *lost network* still produces `linkLost`, correctly: nothing sends a `bye` because nothing
+   * can.
+   */
+  window.addEventListener('pagehide', () => session.dispose());
+}
 
 const vfx = engine.add(new VFXSystem());
 // VFX cannot write the soldier pool (not its file), so blood only dirties men once

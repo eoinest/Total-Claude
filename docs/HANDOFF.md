@@ -3441,3 +3441,177 @@ because a block on a third of the ground occludes more of itself.
   `march: true` orders the cohort forward before the shutter and a simulation cannot be rewound,
   so every camera after it photographs a block that has moved. The first pass had `tactical` on
   either side of it in the two arms and the "identical station" pair differed by 1.79 m.
+
+## 2 September 2026 — peer to peer, and the deployed site can play (`e/net/webrtc-p2p`)
+
+The owner asked to *"rework the entire multiplayer system and make it just like Claude of Tanks…
+like peer to peer"*. That repository is **not** peer to peer — `ws`, `ioredis`,
+`@upstash/redis`, `@vercel/functions`, and a README describing server-authoritative snapshots for
+a 7v7 — and §4.2 already priced that model on this game at 5.5 Mbit/s per client against
+lockstep's ~100 bytes/s. The options were put to the owner and they chose **WebRTC peer to peer
+keeping the lockstep engine**. `docs/MULTIPLAYER.md` §13 is the whole record; this is the state
+somebody picking it up needs.
+
+**The prize is not "no relay".** An `https` page may not open a `ws://` connection into a private
+network, which is the entire reason multiplayer has never worked on the deployed site (§10.2,
+§12.6). A peer connection is subject to neither that rule nor mixed content — and the arm that
+proves it also runs the `ws://` refusal from the *same page*, so the difference is the transport
+and not the fixture.
+
+### Where the code is
+
+| | |
+|---|---|
+| `src/net/agree.ts` | the handshake (`agree`) and the checkpoint comparator (`firstDisagreement`, `probeDiff`), **extracted from `Room` so there is one copy**. Two schedulers must never be two opinions about whether a pairing may play. |
+| `src/net/peerRoom.ts` | the input-driven scheduler. One on **each** peer. Pure, no I/O, erasable-only TypeScript so Node can load it — which is what makes the `proto` arm possible. |
+| `src/net/link.ts` | the surface `NetSession` talks to. `NetLink implements Link` now, so a change that breaks the contract is a type error rather than a runtime surprise. |
+| `src/net/PeerLink.ts` | the `RTCPeerConnection`, the ICE dance, the STUN list, and `noDirectPath` — the sentence the no-TURN decision owes its users. |
+| `src/net/signal.ts` | MQTT 3.1.1 over `wss` to three public brokers at once, vendored (~90 lines, no dependency), topic hashed, payload AES-GCM under the room code. Plus `WsSignal`, the relay's `/signal/CODE`. |
+| `src/net/transport.ts` | which wire a URL asks for, and `testKnobs` — the single place the test-only URL parameters are read, so there is one place to audit. |
+| `tools/lib/net-drive.mjs` | the page hooks and mouse gestures, **shared by `qa-net` and `qa-p2p`**. Moved out of `qa-net`; nothing about the behaviour changed. |
+| `tools/qa-p2p.mjs` | the gate. |
+| `tools/scratch/inject-p2p.mjs` | 37 named faults, `--list` and `--all-fast`. |
+
+### The three things to know before changing any of it
+
+1. **`NetSession.update` ends with `this.link.pump?.(this.ctx.time.tick)`, and that line is the
+   pacing.** A peer earns the right to commit turn `k` by having *consumed* turn `k − delay`.
+   Delete the line and turn emission needs both commits, a commit follows immediately on an
+   emission, the ceiling races away from the simulation, `pace` sets `gameSpeed` to 8, and two
+   peers play a ten-minute battle in seventy seconds — identically, so nothing catches it but the
+   clock. `commit-without-consuming` in the injector is that fault.
+2. **`PeerLink.preOpen` is not optional.** A host's `connect()` resolves as soon as its code is
+   registered, because it has a battle to choose; it then publishes `setup` and `ready` minutes
+   before a challenger arrives. Without the queue both go to a data channel that does not exist
+   and both pages sit in `phase: lobby` for ever. The `lobby` arm found this on its first run.
+3. **ICE candidates must be queued until `setRemoteDescription`.** `addIceCandidate` rejects while
+   `remoteDescription` is null, host candidates are gathered in single-digit milliseconds, and
+   `void`-ing those rejections loses every one of them silently. Half a day of reconnaissance went
+   into learning that; `PeerLink` has the queue and says so.
+
+### Three facts about this machine that a gate has to know
+
+- **Playwright's default headless Chromium cannot hold a peer connection here.** Two browsers,
+  real STUN, host candidates: `chrome-headless-shell` connected **2 times in 17** across four flag
+  combinations, every failure sitting in `ice: checking` with no `icecandidateerror` to attribute
+  it to. `channel: 'chrome'` connected **4 of 4** in 57-209 ms at load 9.7-12, and
+  `channel: 'chromium'` (new headless, same binary) also connects — measured again from the
+  *non-secure LAN origin*, which is the one `npm run host` serves: **3 of 3 in 90-161 ms** over
+  host candidates. So `qa-p2p` uses `channel: 'chrome'` and names it by hand if Google Chrome is
+  not installed, rather than reporting a transport failure; and **`qa-net` now uses
+  `channel: 'chromium'`**, because its `lan` arm needs a peer connection too. Same binary means
+  the same libm generation, which is the property §9.5's pairing table rests on, so this changes
+  the headless implementation and nothing the simulation computes.
+
+  `tools/lib/work-budget.mjs`'s `ourBrowserPids` had to be widened in the same change: it matched
+  only `chrome-headless-shell`, so a browser launched through **either** channel was neither
+  demoted while the owner played nor group-killed by the reaper. That is a hole in shared
+  machinery every future `channel:` caller would have fallen into.
+- **mDNS candidate obfuscation has to be off for the harness**
+  (`--disable-features=WebRtcHideLocalIpsWithMdns`): nothing here resolves `*.local` candidate
+  names, so two browsers never complete a check over host candidates. A player's OS resolves them
+  and a player's peer is on another machine; no flag is shipped.
+- **Both peers have to be kept awake.** Two browsers on one machine cannot both be the front
+  window, and a page whose timers Chromium has throttled *is* a peer that has gone quiet —
+  correctly reported as one. `--disable-background-timer-throttling`,
+  `--disable-backgrounding-occluded-windows` and `--disable-renderer-backgrounding` are on both
+  gates' peer browsers. The `desync` arm died of this before they were: `page.click` timed out
+  against a net panel already raised over the deployment screen. Which is also why
+  `tools/lib/net-drive.mjs` clicks through `clickOrExplain` now — Playwright's answer to a covered
+  button is thirty seconds of retry loop describing the geometry of a `<div>`, and **a driver
+  standing in front of the error message is worse than no driver.**
+
+### The defects a relay cannot have
+
+Read `docs/MULTIPLAYER.md` §13.9 before changing anything here. Six of the twelve defects the
+gate found are the same category — **a relay is a third party that holds state, answers on its
+own thread, and notices things on your behalf, and every place this design leaned on that without
+noticing became a defect**:
+
+1. A host publishes `setup` and `ready` minutes before a challenger exists (`PeerLink.preOpen`).
+2. The offer was created when a knock arrived, so the introduction depended on a main thread that
+   was busy building 8,632 men (the standing offer, `OFFER_REPEAT_MS`).
+3. `WsSignal.send` guarded on the key, and a null key **is** the plaintext case — so on the one
+   origin that needs plaintext it silently dropped every message.
+4. A fault that travels forks nothing, because a peer-to-peer commit goes to both ends of one
+   channel (`PeerFault.localOnly`).
+5. **The challenger kept knocking after it had the offer**, and the host answers a claimed room
+   with `full` — so whether an introduction survived depended on whether ICE beat a one-second
+   timer. `claim()` stops the knock. Found by `nodirect`, which was being told the *room* was
+   taken when the point of the arm is the sentence about two networks.
+6. **Nobody says a departing player has departed.** A relay sees the socket close and names
+   `peerLeft`; a torn-down renderer does not shut SCTP politely, so the survivor waited out the
+   silence detector and was told `linkLost` — the wrong accusation, six seconds late. One
+   `pagehide` listener calling `NetSession.dispose`: measured `peerLeft` after 503 ms.
+
+And two of the product defects were only visible **off loopback**, which is a secure context and
+a LAN address is not. §10.1 recorded the same shape one pass earlier.
+
+### One defect that is not this branch's, and is the most important of the twelve
+
+**`--fault=ulp` had stopped testing anything, in the *relay* gate, and it passed anyway.** It
+moves one `UnitGroupState` float64 field by one ULP. `src/sim/quantise.ts` — added by an earlier
+pass to give the unit layer the float32 firewall the soldier pool has always had — `Math.fround`s
+all fourteen of those fields at the end of every tick, so the perturbation is erased before any
+checkpoint can see it. What was left was a race: the relay path, whose turns arrive on a socket
+event out of phase with the step, won it and stayed green; the peer path, which drains turns
+inside `NetSession.update()` immediately before the step, lost it every time.
+
+It only surfaced because the same fault was run through a **second transport**. `testMarker` now
+moves one *float32* ULP — the case `quantise.ts` is explicit about not eliminating — and both
+gates catch it at tick 60 attributed to unit 0. Three sentences elsewhere (§1.4, `agree.ts`,
+`qa-net`'s own rationale) said the unit layer has no firewall and have been corrected.
+
+**Two implementations of one guarantee are a better instrument than either of them.**
+
+
+### The one thing to read before touching `signal.ts`
+
+**The room code is a rendezvous name and nothing else. The key comes from the invite link's
+`#k=` fragment.** A review on 3 September 2026 measured what the previous arrangement was worth:
+`topicFor` is an unsalted SHA-256 of the code, so the full 33,554,432-entry topic → code table
+builds in **26 seconds on one core**, any observed topic reverses in O(1), and the key was derived
+from that same code with a constant salt. Subscribing `tc/#` on the public brokers is allowed and
+works. So a passive observer could enumerate live rooms in bulk, read **both players' home IP
+addresses** out of the ICE candidates, and take the guest slot — no brute force anywhere in it.
+
+A URL fragment is never transmitted to any server, which is the entire mechanism: `makeSecret`
+mints 16 bytes, `#k=` carries them on the link and inside the QR, `linkSecret` reads them, and
+`keyFor(code, secret)` derives the AES key. Two people who read the code aloud have no secret,
+still meet, and are **told on screen that the introduction is not private** — that sentence is not
+decoration, it is the thing that makes the fallback honest, and `docs/MULTIPLAYER.md` §13.11 is
+the record.
+
+Three rules follow, and breaking any of them puts the defect back:
+
+1. **Nothing derived from the room code may be treated as secret.** The topic is a public index.
+2. **The secret may only ever be read from the fragment.** `linkSecret` rejects `?k=` on purpose:
+   a query parameter is exactly the thing that reaches a server and a log.
+   `secret-from-the-query-too` is the injection.
+3. **A host publishes nothing until somebody knocks.** The old standing offer put a list of ICE
+   candidates on three public brokers every three seconds, unbounded, for as long as somebody
+   waited for a friend to answer. The `quiet` arm requires zero frames from a host sitting alone.
+
+### The honest limit
+
+**No TURN, by decision.** Roughly 78-82% of arbitrary pairings connect — the sources bracket it
+at 78% and 82.3% and nothing above that is supported for *arbitrary* pairings; both players on ordinary
+home internet does better, both on one wifi always works, and **a network that blocks outbound UDP
+cannot play at all** — that is the ~9 points of callstats.io's 22% that needed TCP, and nothing
+recovers it. §13.6 has the sources. The product says which side the block is on and what to try,
+in four sentences, and stops. The peer silence floor is **30 s** (`Link.silentFloorS`) and not
+the relay's 6: between two peers the thing that goes quiet is the other player's laptop, and a
+review measured the owner merely sitting down at the keyboard quadrupling this machine's frame
+time. `qa-p2p`'s `nodirect` arm makes that path red on purpose with
+`?p2pcand=relay`, which offers **no candidates at all** — there is no TURN, so there are no relay
+candidates — and therefore cannot connect on any network, which is also the honest likeness of a
+network that blocks outbound UDP. Whether this router hairpins is asked on every run and
+*reported rather than asserted*, because the answer is the router's: srflx-only reached
+`CONNECTED` after 7 s here.
+
+### What is not done
+
+`srflx`-to-`srflx` — two strangers on two *different* NATs — has never carried a battle, because
+reproducing it needs a second network. Everything about the internet case is measured gathering
+plus measured policy plus one battle over `host` candidates on this laptop. That is a second open
+premise beside §7.1's, and §13.10 lists the rest.

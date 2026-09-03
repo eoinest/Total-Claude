@@ -1,5 +1,9 @@
 import {
-  DEFAULT_DELAY_TURNS, DEFAULT_PAIRS, engineTag, HASH_EVERY, pairRule, RELAY_V,
+  agree, DEFAULT_FATAL, firstDisagreement, layerValue, probeDiff, probeNote,
+  type Layer, type Mark,
+} from './agree.ts';
+import {
+  DEFAULT_DELAY_TURNS, DEFAULT_PAIRS, HASH_EVERY, RELAY_V,
   TICKS_PER_TURN, turnTick,
   type BootPrint, type ClientMsg, type OpBlob, type PairTable, type RelayMsg, type TurnOp,
 } from './protocol.ts';
@@ -80,7 +84,7 @@ export interface RoomOptions {
    * Order matters: the first layer in this list that disagrees is the one named in the
    * report, so it reads as "which is the earliest and most specific thing that went wrong".
    */
-  fatal?: ('uf64' | 'uctl' | 'pool' | 'alive')[];
+  fatal?: Layer[];
   /**
    * How far behind the peer a client may fall before the match is abandoned.
    *
@@ -141,8 +145,6 @@ interface SlotState {
   lastHashTick: number;
   probe: Map<number, [number, string][]>;
 }
-
-interface Mark { hash: string; uf64: string; uctl: string; alive: number }
 
 const newSlot = (): SlotState => ({
   joined: false, print: null, cfg: null, factions: [], seq: 0,
@@ -208,7 +210,7 @@ export class Room {
       delayTurns: opts.delayTurns ?? DEFAULT_DELAY_TURNS,
       turnMs: opts.turnMs ?? (TICKS_PER_TURN * 1000) / 30,
       pairs: opts.pairs ?? DEFAULT_PAIRS,
-      fatal: opts.fatal ?? ['uf64', 'uctl', 'pool', 'alive'],
+      fatal: opts.fatal ?? DEFAULT_FATAL,
       maxLagTurns: opts.maxLagTurns ?? 300,
       fault: opts.fault ?? null,
     };
@@ -378,7 +380,22 @@ export class Room {
     const out: Outbound[] = [{ to: slot ^ 1, msg: { k: 'peer', slot, state: 'ready' } }];
     if (!other.joined || !other.print) return { out, close: [] };
 
-    const bad = this.mismatch(this.slots[0].print!, this.slots[1].print!);
+    /*
+     * The verdict comes from `src/net/agree.ts`, and it is the *same function* `PeerRoom` calls.
+     *
+     * It used to be a private method here. There are two schedulers now — this one, which closes
+     * turns on a relay's wall clock, and the peer-to-peer one, which closes them on the two
+     * peers' own commits — and they are genuinely different algorithms. What they must never be
+     * is two opinions about whether these two clients may play one battle: that answer is
+     * measured at length in `docs/MULTIPLAYER.md` §1.4 and §1.5, and a second copy of it would
+     * present as one transport refusing a pairing the other allows. `agree()` carries the note
+     * and the fork expectation out rather than writing them into a caller, because the caller
+     * is two classes now.
+     */
+    const verdict = agree(this.opts.pairs, this.slots[0].print!, this.slots[1].print!);
+    this.pairNote = verdict.pairNote;
+    this.willFork = verdict.willFork;
+    const bad = verdict.refuse;
     if (bad) {
       this.phase = 'over';
       this.endedWhy = 'refused';
@@ -402,88 +419,6 @@ export class Room {
       },
     });
     return { out, close: [] };
-  }
-
-  /**
-   * Is this pair allowed to play one battle? A sentence, or null.
-   *
-   * Every clause is a measurement from `docs/MULTIPLAYER.md`, cited in `BootPrint`. The one
-   * worth re-reading is `unitScale`: the tier *name* is neither necessary nor sufficient
-   * (`high` and `ultra` are bit-identical; `high` and `low` are 8,632 men against 1,515) so
-   * the effective scale and the pool count are what get compared, per §7.7bis.
-   */
-  private mismatch(a: BootPrint, b: BootPrint): { why: string; detail: string } | null {
-    /*
-     * The tick index, first, because it is the one clause that makes every clause after it
-     * mean anything.
-     *
-     * Two clients that announce from different ticks are not desynced — they were never
-     * synced, and every checkpoint they exchange afterwards compares different points in the
-     * same battle. The failure has a specific shape that looks like a determinism bug and is
-     * not one: a `uctl` difference at t+0, which is a *control-flow* disagreement before a
-     * tick was supposed to have run, and rounding cannot take that shape. `NetSession.init`
-     * pins the tick ceiling to 0 so this cannot happen; this refuses the day it does.
-     */
-    if (a.tick0 !== 0 || b.tick0 !== 0) {
-      return {
-        why: 'tick',
-        detail: `a client announced from tick ${a.tick0} and the other from ${b.tick0}; both `
-          + 'must be 0. The frame loop starts before the page reports itself ready, so a '
-          + 'client whose clock is not held runs ticks while its opponent loads.',
-      };
-    }
-    if (a.cfgKey !== b.cfgKey) {
-      return { why: 'config', detail: 'the two clients are set up for different battles' };
-    }
-    if (a.unitScale !== b.unitScale || a.count0 !== b.count0) {
-      return {
-        why: 'army',
-        detail: `different armies: ${a.count0} men at unit scale ${a.unitScale} (tier `
-          + `'${a.quality}') against ${b.count0} at ${b.unitScale} ('${b.quality}'). `
-          + 'The graphics tier fixes quality.maxSoldiers and fittedUnitScale fits the army '
-          + 'to it, so this is a simulation difference and not a rendering one.',
-      };
-    }
-    if (a.hash !== b.hash || a.uf64 !== b.uf64 || a.uctl !== b.uctl) {
-      const which = a.hash !== b.hash ? 'pool' : a.uctl !== b.uctl ? 'uctl' : 'uf64';
-      return {
-        why: 'build',
-        detail: `the armies differ before a tick has run (${which}: `
-          + `${a.hash}/${a.uf64}/${a.uctl} against ${b.hash}/${b.uf64}/${b.uctl}). `
-          + 'One of these is a different build of the game.',
-      };
-    }
-    const ta = engineTag(a.ua);
-    const tb = engineTag(b.ua);
-    const rule = pairRule(this.opts.pairs, { libm: a.libm, tag: ta },
-      { libm: b.libm, tag: tb });
-    if (!rule) {
-      if (this.opts.pairs.unknown === 'allow') {
-        this.pairNote = `unlisted pairing ${ta}+${tb} (${a.libm} against ${b.libm}), allowed `
-          + 'by --unknown=allow. Nothing is known about whether it holds.';
-        this.willFork = true;
-        return null;
-      }
-      const same = ta === tb;
-      return {
-        why: 'libm',
-        detail: `these two browsers compute Math differently (${a.libm} against ${b.libm}) `
-          + `and ${ta}+${tb} is not an allowed pairing. `
-          + (same
-            ? 'Same engine, different libm generation, which is not the same as a different '
-              + 'version: Chromium 143, 147 and 149 are bit-identical on all fourteen '
-              + 'approximated functions, and 149 to 151 changes twelve of them and ended a '
-              + 'ten-minute field battle 42% apart (docs/MULTIPLAYER.md §1.5, §9.5). '
-            : '')
-          + `'${a.ua}' against '${b.ua}'. `
-          + 'Allowed pairings: '
-          + this.opts.pairs.allow.map((r) => (r.a === 'exact' ? 'exact' : `${r.a}+${r.b}`)).join(', ')
-          + '. Start the relay with --unknown=allow to play anyway.',
-      };
-    }
-    this.pairNote = rule.note;
-    this.willFork = rule.willFork;
-    return null;
   }
 
   private onOps(slot: number, ev: OpBlob[]): Reply {
@@ -547,24 +482,10 @@ export class Room {
       return this.checkLag(nowMs);
     }
     other.marks.delete(tick);
-    /*
-     * Which layers count, in the order they are asked about.
-     *
-     * `uf64` first because it is the earliest signal: the float64 unit layer has no
-     * quantisation firewall, so it moves thousands of ticks before the float32 pool hash does
-     * — measured cross-engine, t+30 against t+200. `uctl` second because a *discrete*
-     * disagreement is a much more serious finding than a continuous one: it means the two
-     * battles took different decisions rather than computing the same one to different last
-     * bits. The list is an option, not a constant, because which layer deserves to be fatal
-     * changed twice in one day; see `RoomOptions.fatal`.
-     */
-    const differs: Record<string, boolean> = {
-      uf64: m.uf64 !== theirs.uf64,
-      uctl: m.uctl !== theirs.uctl,
-      pool: m.hash !== theirs.hash,
-      alive: m.alive !== theirs.alive,
-    };
-    const layer = this.opts.fatal.find((l) => differs[l]) ?? null;
+    // Which layers count, and in what order they are asked about, is `firstDisagreement` in
+    // `src/net/agree.ts` — shared with `PeerRoom` so the two transports cannot come to
+    // different verdicts about one fork.
+    const layer = firstDisagreement(m, theirs, this.opts.fatal);
     if (!layer) {
       // Agreed on every layer that counts. A layer left out of `fatal` may still differ, and
       // recording the tick as agreed anyway is the point of leaving it out.
@@ -576,8 +497,8 @@ export class Room {
     this.endedWhy = 'desync';
     this.probeTick = tick;
     this.probeDeadline = nowMs + 3000;
-    const mine = layer === 'uf64' ? m.uf64 : layer === 'uctl' ? m.uctl : layer === 'pool' ? m.hash : String(m.alive);
-    const yours = layer === 'uf64' ? theirs.uf64 : layer === 'uctl' ? theirs.uctl : layer === 'pool' ? theirs.hash : String(theirs.alive);
+    const mine = layerValue(m, layer);
+    const yours = layerValue(theirs, layer);
     return {
       out: [
         {
@@ -613,21 +534,13 @@ export class Room {
      * deadline" while the digests were sitting in the relay's own map.
      */
     this.probeTick = -1;
-    const mineMap = new Map(units);
-    const diff: number[] = [];
-    for (const [id, h] of theirs) if (mineMap.get(id) !== h) diff.push(id);
-    for (const [id] of units) if (!theirs.some((t) => t[0] === id)) diff.push(id);
-    diff.sort((x, y) => x - y);
+    const diff = probeDiff(units, theirs);
     return {
       out: [
         {
           to: 'all',
           msg: {
-            k: 'attrib', tick, units: diff,
-            note: diff.length
-              ? `${diff.length} of ${units.length} units differ at tick ${tick}`
-              : `all ${units.length} unit digests agree at tick ${tick}; the difference is `
-                + 'below the unit layer — look in the soldier pool',
+            k: 'attrib', tick, units: diff, note: probeNote(diff, units.length, tick),
           },
         },
         {

@@ -118,6 +118,20 @@ import path from 'node:path';
 import process from 'node:process';
 import { lanAddress } from './lib/lan-address.mjs';
 import { bootThroughMenu, driveMenu, ensureServer, waitForServer } from './lib/menu-boot.mjs';
+/*
+ * The page-side hooks and the mouse gestures, which used to live in this file.
+ *
+ * They moved to `tools/lib/net-drive.mjs` on 2 Sep 2026 when a second netcode gate appeared
+ * (`tools/qa-p2p.mjs`, for the peer-to-peer transport). Every gesture is identical between the
+ * two, because a *player* does the identical thing either way — same lobby, same plaque, same
+ * right-click — and two copies of `deployWith` would start with its three hard-won lessons and
+ * lose them one at a time. Nothing about the behaviour changed in the move; the functions are
+ * the same functions, and the run below is the check on that.
+ */
+import {
+  driveMenuOrExplain, drivers, INSTALL, lobbyFace, logDiff, markDisagreement, openAdvanced,
+  readBoth,
+} from './lib/net-drive.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const ARMS = ['proto', 'qr', 'battle', 'siege', 'lobby', 'lan', 'https', 'dev', 'static', 'ghost',
@@ -582,13 +596,46 @@ const PUBLIC_ORIGIN_OVERRIDE = (() => {
   return ip ? [`--ip-address-space-overrides=${ip}:${HTTPS_PORT}=public`] : [];
 })();
 
+/**
+ * `channel: 'chromium'` and mDNS off, and both are forced on this gate by one arm.
+ *
+ * From 2 Sep 2026 `npm run host` prints a link that goes **peer to peer** — the relay it starts
+ * introduces the two browsers and is then closed — so the `lan` arm's "a second client given
+ * nothing but the string that came out of the square" now needs a `RTCPeerConnection` to
+ * complete. Two measurements decide how this gate has to launch:
+ *
+ * - **`chrome-headless-shell` cannot hold one here.** That is what
+ *   `chromium.launch({ headless: true })` runs, and two browsers of it completed a connectivity
+ *   check **2 times in 17** across four flag combinations, every failure sitting in
+ *   `ice: checking` with no `icecandidateerror` to attribute it to. `channel: 'chromium'` is the
+ *   *same bundled binary* in the new headless mode and connects in 57-209 ms, as does the system
+ *   `channel: 'chrome'`. Same binary means the same libm generation, which is the property §9.5's
+ *   pairing table rests on, so this changes the headless implementation and nothing about what
+ *   the simulation computes.
+ * - **Chromium replaces host candidates with `*.local` mDNS names by default**, which is a good
+ *   privacy behaviour and which nothing in this environment resolves — so two browsers on one
+ *   machine never complete a check over host candidates. A player's operating system resolves
+ *   them and a player's peer is on another machine; no flag is shipped, and `PeerLink` never
+ *   looks at a candidate's address.
+ *
+ * `tools/lib/work-budget.mjs`'s `ourBrowserPids` had to be widened in the same change: it
+ * matched only `chrome-headless-shell`, so a browser launched through either channel was neither
+ * demoted while the owner played nor group-killed by the reaper.
+ */
+const PEER_ARGS = ['--hide-scrollbars', '--disable-features=WebRtcHideLocalIpsWithMdns',
+  // Two peers, and only one of them can be the front window. See `AWAKE_ARGS` in
+  // `tools/qa-p2p.mjs`: a backgrounded page's timers stop, and a lockstep peer whose
+  // timers have stopped is a peer that has gone quiet.
+  '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
+  '--disable-renderer-backgrounding'];
 const chrome = await launchBrowser({
-  label: 'qa-net/host', engine: 'chromium',
-  args: ['--hide-scrollbars', ...PUBLIC_ORIGIN_OVERRIDE], port: PORT, root: ROOT,
+  label: 'qa-net/host', engine: 'chromium', channel: 'chromium',
+  args: [...PEER_ARGS, ...PUBLIC_ORIGIN_OVERRIDE], port: PORT, root: ROOT,
 });
 browsers.push(chrome);
 const chromeGuest = await launchBrowser({
-  label: 'qa-net/guest', engine: 'chromium', args: ['--hide-scrollbars'], port: PORT, root: ROOT,
+  label: 'qa-net/guest', engine: 'chromium', channel: 'chromium',
+  args: PEER_ARGS, port: PORT, root: ROOT,
 });
 browsers.push(chromeGuest);
 
@@ -596,146 +643,12 @@ browsers.push(chromeGuest);
 // Page-side readers. Read-only: every order below goes through page.mouse.
 // ---------------------------------------------------------------------------
 
-const INSTALL = () => {
-  const g = window.__game;
-  const ctx = g.engine.context;
-  const V = new (ctx.camera.position.constructor)();
-  window.__proj = (x, y, z) => {
-    V.set(x, y, z).project(ctx.camera);
-    if (V.z > 1) return null;
-    return { x: (V.x * 0.5 + 0.5) * ctx.viewW, y: (-V.y * 0.5 + 0.5) * ctx.viewH };
-  };
-  window.__net = () => (g.net ? {
-    ...g.net.status(),
-    desync: g.net.desync,
-    perturbed: g.net.perturbedUnit,
-    lastCheckpoint: g.net.lastCheckpoint,
-    lat: g.net.latencies(),
-  } : null);
-  window.__tick = () => g.engine.time.tick;
-  /**
-   * The tick and the state, in **one** evaluate.
-   *
-   * Not two, and not three. A live frame lands between a driver's round trips and carries up to
-   * `maxStepsPerFrame = 5` ticks with it, so reading the tick and then reading the hash reports
-   * the hash of a *different* tick — measured elsewhere in this project as two runs both asked
-   * for tick 6,000 and arriving at 6,000 and 6,004. Nothing about that looks like a harness
-   * fault from the outside; it looks like the engine being sloppy. One evaluate, one tick.
-   */
-  window.__mark = () => ({ tick: g.engine.time.tick, sim: g.simTime(), ...g.hashes() });
-  window.__rec = () => g.replay.record();
-  window.__flow = () => ctx.tryGet('battleFlow')?.result ?? null;
-  window.__dep = () => {
-    const d = g.deployment;
-    return d ? { active: d.active, committed: d.committed, own: d.ownUnits().length } : null;
-  };
-  window.__bare = () => {
-    const out = [];
-    for (const fy of [0.42, 0.5, 0.58, 0.36]) {
-      for (const fx of [0.3, 0.45, 0.6, 0.7, 0.38]) {
-        const x = Math.round(window.innerWidth * fx);
-        const y = Math.round(window.innerHeight * fy);
-        const el = document.elementFromPoint(x, y);
-        if (el && el.id === 'viewport') out.push({ x, y });
-      }
-    }
-    return out;
-  };
-  /** A regiment of *this client's* faction, projected to the screen, camera parked on it. */
-  window.__unitAt = (i) => {
-    const mine = g.net ? g.net.myFaction : 0;
-    const own = g.battle.units.filter((u) => !u.destroyed && u.faction === mine && u.alive > 0);
-    const u = own[i % Math.max(1, own.length)];
-    if (!u) return null;
-    g.setCamera(u.x, u.z, 0.55, 0);
-    const p = g.battle.pool;
-    let n = 0, sx = 0, sy = 0, sz = 0;
-    for (const k of u.members) {
-      if (p.hp[k] <= 0) continue;
-      n++; sx += p.x[k]; sy += p.y[k]; sz += p.z[k];
-    }
-    if (!n) return null;
-    const q = window.__proj(sx / n, sy / n + 0.5, sz / n);
-    return q ? { id: u.id, ...q } : null;
-  };
-  window.__selection = () => ctx.tryGet('hud')?.controller.model.selection.slice() ?? [];
-};
-
-/**
- * `opts` exists for one arm and one flag. `https` serves the app behind a certificate this run
- * generated four seconds earlier, which no browser has any reason to trust — and trusting it is
- * beside the point, because what that arm measures is the *scheme*, not the certificate.
- */
-const newPage = async (browser, opts = {}) => {
-  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1, ...opts });
-  const errs = [];
-  page.on('pageerror', (e) => errs.push(`pageerror: ${e.message}`));
-  page.on('console', (m) => { if (m.type() === 'error') errs.push(`console.error: ${m.text()}`); });
-  page.__errs = errs;
-  return page;
-};
 const shot = async (page, name) => {
   if (SHOT_DIR) await page.screenshot({ path: path.join(SHOT_DIR, `${name}.png`) });
 };
 
-/**
- * What the lobby is showing *about transport*, which is the whole subject of three arms.
- *
- * **`checkVisibility()` and hit-testing, not a bounding box.** Measured while writing this:
- * Chromium gives an `<input>` inside a closed `<details>` a full 550×40 box at a real `y`, so
- * `getClientRects().length` and Playwright's own `isVisible()` both call it visible. It is not:
- * `checkVisibility()` returns false, `elementFromPoint` over the middle of that box returns
- * something else, and `innerText` leaves its label and its hint out. A check written on the
- * rectangle would have passed for a field sitting open on the screen.
- *
- * `text` is `innerText` for the same reason — it is the rendered text, so it is what the player
- * can actually read, which makes `/wss?:\/\//` over it a real claim about what is on screen.
- */
-const lobbyFace = (page) => page.evaluate(() => {
-  const sheet = document.querySelector('.tc-sheet');
-  const relay = document.querySelector('#tc-relay');
-  const adv = document.querySelector('#tc-adv');
-  const blocked = document.querySelector('#tc-no-relay');
-  const shown = (el) => !!el && el.checkVisibility();
-  const flat = (el) => (el?.innerText ?? '').replace(/\s+/g, ' ').trim();
-  const reaches = (el) => {
-    if (!el) return false;
-    const r = el.getBoundingClientRect();
-    if (!r.width || !r.height) return false;
-    const t = document.elementFromPoint(Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2));
-    return !!t && (t === el || el.contains(t));
-  };
-  return {
-    origin: location.origin,
-    // The server's own claims about itself, read back so an arm can prove which fixture it got.
-    metaLan: document.querySelector('meta[name="tc-lan"]')?.getAttribute('content') ?? null,
-    metaRelay: document.querySelector('meta[name="tc-relay"]')?.getAttribute('content') ?? null,
-    text: flat(sheet),
-    relayValue: relay ? relay.value : null,
-    relayShown: shown(relay),
-    relayReaches: reaches(relay),
-    advPresent: !!adv,
-    advOpen: !!adv?.open,
-    blockedShown: shown(blocked),
-    blockedText: shown(blocked) ? flat(blocked) : '',
-    createDisabled: document.querySelector('#tc-host')?.disabled ?? null,
-    joinDisabled: document.querySelector('#tc-join')?.disabled ?? null,
-  };
-});
-
-/**
- * Open the transport disclosure, the way somebody who wanted it would.
- *
- * A real click on the summary, and then a wait on `details.open` — `page.fill('#tc-relay')`
- * needs the field rendered, and Playwright's actionability check for `fill` correctly refuses a
- * field inside a closed `<details>`. Every arm below that types an address goes through here,
- * which means the demoted capability is exercised by five checks rather than asserted by one.
- */
-const openAdvanced = async (page) => {
-  await page.click('#tc-adv-summary');
-  await page.waitForFunction(() => document.querySelector('#tc-adv')?.open === true,
-    null, { timeout: 10000 });
-};
+// Bound once to this run's viewport and screenshot sink. See `tools/lib/net-drive.mjs`.
+const { newPage, deployWith, burst, doubleOrder } = drivers({ W, H, shot });
 
 // ---------------------------------------------------------------------------
 // Booting a match
@@ -801,183 +714,6 @@ async function bootMatch(relay, {
   });
   covered.push(got ?? { map: '(unreadable)', scenario: '(unreadable)' });
   return { host, guest, room, cfg: got };
-}
-
-/** Lay out an army with the plaque and the mouse, then press BEGIN BATTLE. */
-async function deployWith(page, tag) {
-  const d = await page.evaluate(() => window.__dep());
-  if (!d?.active) return [];
-  const done = [];
-  await shot(page, `${tag}-02-deploy`);
-  /*
-   * Wait for the plaque rather than clicking straight at it.
-   *
-   * The panel is attached on `deploymentBegan`, which fires inside `boot()` — but the HUD
-   * root fades in over two frames and `bootThroughMenu` returns on `window.__game.ready`,
-   * which is the frame before that. A bare `page.click` on a page whose plaque has not been
-   * attached yet reports "waiting for locator" thirty seconds later and says nothing about
-   * which of the two clients it was.
-   */
-  try {
-    await page.waitForSelector('.dep-add', { timeout: 30000 });
-  } catch {
-    const why = await page.evaluate(() => ({
-      hud: document.querySelector('.hud')?.className ?? '(no .hud)',
-      dep: window.__dep(),
-      net: window.__net(),
-      panels: Array.from(document.querySelectorAll('.hud > *')).map((e) => e.className),
-    }));
-    throw new Error(`${tag}: no deployment plaque — ${JSON.stringify(why)}`);
-  }
-  await page.click('.dep-add');
-  await sleep(220);
-  /*
-   * The first row whose `+` is *enabled*, not simply the first row.
-   *
-   * This cost the siege arm its first run and it is the second time this repository has paid
-   * for it. `tools/lib/menu-boot.mjs` says it at length: a bare `page.click` on a disabled
-   * button waits thirty seconds and then throws, and it stopped `qa-replay`'s matrix arm dead
-   * on its second battle. The identical hazard was sitting here, invisible, because every arm
-   * in this file booted `campus-martius / field` — where every row can be added to. On the
-   * assault the establishment is fixed and `tower-assault`'s `+` ships disabled, so the driver
-   * hung on the challenger and took the arm out with a `TimeoutError` naming a locator.
-   *
-   * Skipped rather than fatal: "this battle does not let you buy another one of those" is a
-   * fact about the product. But it is *recorded* — a driver that quietly declines to do what
-   * it was asked is how six playability scripts spent two days unable to reach a setup sheet.
-   */
-  const rows = await page.evaluate(() => Array.from(document.querySelectorAll('.dep-row'))
-    .map((r) => ({
-      unit: r.dataset.unit,
-      addable: !r.querySelector('[data-d="1"]')?.disabled,
-    })));
-  const addable = rows.find((r) => r.addable);
-  if (addable) {
-    await page.click(`.dep-row[data-unit="${addable.unit}"] [data-d="1"]`);
-    done.push(`palette +1 ${addable.unit}`);
-    await sleep(320);
-  } else if (rows.length) {
-    done.push(`palette +1 skipped (all ${rows.length} rows at their establishment)`);
-  }
-  const cards = await page.$$('.cardbar .card:not(.foe)');
-  if (cards.length) {
-    const box = await cards[0].boundingBox();
-    if (box) { await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); await sleep(260); }
-  }
-  const spots = await page.evaluate(() => window.__bare());
-  if (spots.length >= 2) {
-    await page.mouse.move(spots[0].x, spots[0].y);
-    await sleep(140);
-    await page.mouse.down({ button: 'right' });
-    await page.mouse.move(spots[1].x, spots[1].y, { steps: 8 });
-    await sleep(200);
-    await page.mouse.up({ button: 'right' });
-    await sleep(420);
-    done.push('right-drag place');
-  }
-  /*
-   * BEGIN, and a legible error rather than another thirty-second locator timeout.
-   *
-   * Same lesson as the palette row above: if this button is ever disabled — an army below its
-   * minimum, a phase that has already ended under us — a bare click reports a selector and
-   * nothing about which client, which battle or why. Ask first, and say all three.
-   */
-  const beginState = await page.evaluate(() => {
-    const b = document.querySelector('.dep-begin');
-    return b ? { present: true, disabled: !!b.disabled } : { present: false, disabled: false };
-  });
-  if (!beginState.present || beginState.disabled) {
-    const why = await page.evaluate(() => ({ dep: window.__dep(), net: window.__net() }));
-    throw new Error(`${tag}: BEGIN BATTLE is ${beginState.present ? 'disabled' : 'absent'}`
-      + ` after ${done.length} gesture(s) — ${JSON.stringify(why)}`);
-  }
-  await page.click('.dep-begin');
-  done.push('BEGIN BATTLE');
-  await sleep(400);
-  return done;
-}
-
-/** One burst of orders: select a regiment, move it, change its gait. */
-async function burst(page, i) {
-  let u = null;
-  for (let k = 0; k < 4 && !u; k++) {
-    await page.evaluate((n) => window.__unitAt(n), i * 3 + k);
-    await sleep(200);
-    const qq = await page.evaluate((n) => window.__unitAt(n), i * 3 + k);
-    if (qq && qq.x > 40 && qq.x < W - 40 && qq.y > 180 && qq.y < H - 220) u = qq;
-  }
-  if (!u) return [];
-  const acts = [];
-  await page.mouse.move(u.x, u.y);
-  await sleep(160);
-  await page.mouse.click(u.x, u.y);
-  await sleep(240);
-  const sel = await page.evaluate(() => window.__selection());
-  if (!sel.length) return acts;
-  acts.push(`select ${sel.join(',')}`);
-  const spots = await page.evaluate(() => window.__bare());
-  if (spots.length) {
-    const p = spots[(i + 1) % spots.length];
-    await page.mouse.move(p.x, p.y);
-    await sleep(110);
-    await page.mouse.down({ button: 'right' });
-    await sleep(190);
-    await page.mouse.up({ button: 'right' });
-    await sleep(260);
-    acts.push('right-click move');
-  }
-  await page.keyboard.press('KeyR');
-  await sleep(180);
-  acts.push('R gait');
-  return acts;
-}
-
-/**
- * Two move orders on the same regiment, fast enough to land in one 100 ms turn.
- *
- * The `swap` arm needs exactly this and nothing else will do: `applyOrder` mutates only the
- * units an order names, so two orders on *different* regiments commute and exchanging them
- * proves nothing. §4.1's claim is about two orders touching one unit, and two right-clicks a
- * few tens of milliseconds apart on one selection is what a player does when they change their
- * mind — which is also, not coincidentally, the gesture that a reordering breaks.
- */
-async function doubleOrder(page, i) {
-  let u = null;
-  for (let k = 0; k < 4 && !u; k++) {
-    await page.evaluate((n) => window.__unitAt(n), i * 2 + k);
-    await sleep(200);
-    const qq = await page.evaluate((n) => window.__unitAt(n), i * 2 + k);
-    if (qq && qq.x > 40 && qq.x < W - 40 && qq.y > 180 && qq.y < H - 220) u = qq;
-  }
-  if (!u) return false;
-  await page.mouse.click(u.x, u.y);
-  await sleep(240);
-  const sel = await page.evaluate(() => window.__selection());
-  if (!sel.length) return false;
-  const spots = await page.evaluate(() => window.__bare());
-  if (spots.length < 2) return false;
-  /*
-   * Three, not two, and 25 ms apart.
-   *
-   * The relay closes a turn every 100 ms, and two clicks straddling a boundary land in two
-   * different turns — at which point there is no pair in one packet for the swap to exchange
-   * and the arm passes by never having fired. Three clicks inside 75 ms cannot all straddle
-   * one boundary, so at least two of them share a turn whatever the phase of the relay's clock.
-   */
-  /*
-   * Three *distinct* spots. The third used to be `spots[0]` again, which made the sequence
-   * `0,1,0`; combined with a swap of the first adjacent pair that produced `1,0,0`, and both
-   * orderings ended at `spots[0]`. Distinct destinations mean the exchange is visible in the
-   * final state whichever pair `Room.bend` takes.
-   */
-  for (const p of [spots[0], spots[1], spots[2] ?? spots[0]]) {
-    await page.mouse.move(p.x, p.y);
-    await page.mouse.down({ button: 'right' });
-    await sleep(25);
-    await page.mouse.up({ button: 'right' });
-    await sleep(25);
-  }
-  return true;
 }
 
 /** Wait until both clients sit on the same tick, or the session ends. Never longer than `ms`. */
@@ -1057,80 +793,6 @@ async function settleTogether(host, guest, ms = 40000, relay = null) {
   const b = await guest.evaluate(() => window.__tick());
   go();
   return { tick: Math.min(a, b), ended: '', timedOut: true, apart: a !== b, nudges };
-}
-
-/** Both clients' final state, for comparison. */
-async function readBoth(host, guest) {
-  const rd = async (p) => {
-    // The tick and the hashes together, in one evaluate: see `__mark`. Reading them separately
-    // lets a live frame put five ticks between the number and the state it is supposed to
-    // describe, and the comparison below is bit-for-bit.
-    const mark = await p.evaluate(() => window.__mark());
-    return {
-      net: await p.evaluate(() => window.__net()),
-      tick: mark.tick,
-      simTime: mark.sim,
-      hashes: mark,
-      rec: await p.evaluate(() => window.__rec()),
-      flow: await p.evaluate(() => window.__flow()),
-      errs: p.__errs.slice(),
-    };
-  };
-  return { a: await rd(host), b: await rd(guest) };
-}
-
-/** First event that differs between two merged order logs, spelled out. */
-/**
- * Are these two clients at the same tick of the same battle?
- *
- * Returns `null` when they are, and the term that failed when they are not — because a
- * comparison of six things that prints only four of them costs an hour the first time it goes
- * red, and it did.
- *
- * **`simTime` is deliberately *not* compared across the two clients.** It used to be, with the
- * reasoning that "equal hashes at unequal sim times would mean the comparison had been taken at
- * two moments". That reasoning is sound and the implementation did not follow from it.
- * `Time.beginFrame` accumulates `simTime += steps * fixedDt`, so the value depends on how the
- * frame loop *grouped* its ticks — five in one frame or one in five — and float addition is not
- * associative. Two clients that ran the identical 1,365 ticks therefore hold sim times
- * 3.6e-14 apart whenever the machine paced their frames differently, which is whenever the
- * machine is busy. Measured on the siege arm: tick, pool, `uf64`, `uctl`, count and alive all
- * identical, and this check red on 4 parts in 1e15 of an accumulator the simulation never
- * reads. It is a property of the wall clock, not of the battle.
- *
- * What the original intent actually needs is that each client's *own* mark is self-consistent —
- * that the tick and the state in it came from the same moment — and `window.__mark()` already
- * guarantees that by reading both in one `evaluate`. The tolerance check below is the belt to
- * that brace: it catches a clock that has been re-baselined out from under its tick counter,
- * which is a real bug this codebase has the machinery for (`Time.resync`, `tickCeiling`), and
- * it does so per client, where the question is well posed.
- */
-const TICK_HZ = 30;
-function markDisagreement(a, b) {
-  if (a.tick !== b.tick) return `they stopped at different ticks: ${a.tick} and ${b.tick}`;
-  for (const [tag, m] of [['host', a], ['guest', b]]) {
-    const want = m.tick / TICK_HZ;
-    if (Math.abs(m.hashes.sim - want) > 1e-6) {
-      return `${tag}'s own clock disagrees with its own tick: sim ${m.hashes.sim} at tick `
-        + `${m.tick} (expected ${want})`;
-    }
-  }
-  for (const layer of ['hash', 'uf64', 'uctl', 'alive', 'count']) {
-    if (a.hashes[layer] !== b.hashes[layer]) {
-      return `${layer} differs at tick ${a.tick}: ${a.hashes[layer]} against ${b.hashes[layer]}`;
-    }
-  }
-  return null;
-}
-
-function logDiff(a, b) {
-  const n = Math.max(a.length, b.length);
-  for (let i = 0; i < n; i++) {
-    const x = JSON.stringify(a[i] ?? null);
-    const y = JSON.stringify(b[i] ?? null);
-    if (x !== y) return `event ${i}: host ${x} vs guest ${y}`;
-  }
-  return null;
 }
 
 const relayStatus = async (relay) =>
@@ -1863,9 +1525,11 @@ if (wanted('swap')) {
 }
 if (wanted('ulp')) {
   const d = await faultArm('one-ulp', 'ulp', 5995,
-    'one UnitGroupState float64 field moved by a single ULP on one client',
-    'the magnitude §1.4 measured for a real libm disagreement. Nothing about the order '
-      + 'stream is wrong here — the arithmetic is');
+    'one UnitGroupState position moved by a single float32 ULP on one client',
+    'what a 1-3 float64 ULP libm disagreement leaves behind when it lands near a rounding '
+      + 'boundary and gets through the quantisation firewall, which is the only case that '
+      + 'reaches this state at all — a float64 ULP is not representable in it, measured 3 Sep '
+      + '2026. Nothing about the order stream is wrong here — the arithmetic is');
   /*
    * Recorded whether or not the fault was caught, for the reason `faultArm` gives at length:
    * a check that is skipped when it fails takes the denominator with it. These two were the
@@ -1876,8 +1540,9 @@ if (wanted('ulp')) {
   record('one-ulp-layer', !!d && d.layer === 'uf64',
     'and it is caught on the float64 unit layer, which is why that layer is the detector',
     d ? `caught on '${d.layer}' at tick ${d.tick}` : 'nothing was caught, so no layer was named',
-    'the float32 pool has a quantisation firewall with ~29 bits of headroom; '
-      + 'UnitGroupState has none');
+    'both layers are behind the same float32 firewall since src/sim/quantise.ts was added, and '
+      + 'uf64 reports what gets through it sooner because it is per-unit rather than averaged '
+      + 'over thousands of men. See src/net/agree.ts');
   record('one-ulp-attributed', !!d && d.units.length >= 1 && d.units.length <= 4,
     'and attributed to the regiment it happened to, not to the whole field',
     d ? `${d.units.length} unit(s): ${d.units.join(', ')} — ${d.note}`
@@ -2153,6 +1818,17 @@ if (wanted('lobby')) {
    */
   await openAdvanced(host);
   await host.fill('#tc-relay', relay.base);
+  /*
+   * And tick **Send every order through the relay**, because that is what this arm is about.
+   *
+   * From 2 Sep 2026 an address in this field is an *introduction service* — it passes one message
+   * each way and is then closed — and the default transport is a connection straight between the
+   * two browsers. So filling the field alone no longer makes `CREATE` ask the relay for a room,
+   * and `lobby-create-opens-the-room-asked-for` went red on a room that had been opened correctly
+   * and peer to peer. The relay *transport* is still here and still does exactly what it did;
+   * it is one checkbox in, and this is the arm that exercises it.
+   */
+  await host.check('#tc-via-relay');
 
   /*
    * Geometry and hit-testing first, because it is the measurement that named the bug.
@@ -2223,10 +1899,14 @@ if (wanted('lobby')) {
     'CREATE A ROOM reaches the relay, and the code on screen is the one that was typed',
     `the sheet reads ${shown || '(nothing)'}; the relay holds `
       + `${(rs0?.rooms ?? []).map((r) => r.code).join(', ') || 'no rooms'}`,
-    'before CORS this fetch always rejected and the lobby blamed a relay that had just answered');
+    'before CORS this fetch always rejected and the lobby blamed a relay that had just '
+      + 'answered. Reaching the relay at all now needs the transport checkbox above, which is '
+      + 'what this arm ticks');
 
   await host.click('#tc-begin');
-  await driveMenu(host, { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' });
+  await driveMenuOrExplain(host, driveMenu,
+    { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' },
+    'lobby host after CHOOSE THE BATTLE');
 
   const guest = await newPage(chromeGuest);
   await guest.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
@@ -2234,6 +1914,18 @@ if (wanted('lobby')) {
   await guest.click('.menu-home .dest-multiplayer');
   await guest.waitForSelector('.tc-lobby', { timeout: 30000 });
   await openAdvanced(guest);
+  /*
+   * **The challenger has to ask for the relay too**, and leaving it off cost this arm a run.
+   *
+   * Since the peer transport became the default, `#tc-via-relay` is what selects the relay and
+   * it is unticked on both screens. The host above checks it; this did not, so the two clients
+   * chose *different wires* — the host waited on a relay socket for a challenger who was busy
+   * opening a peer connection to nobody. The symptom was not a refusal, because neither side is
+   * wrong on its own: it was `page.waitForFunction: Timeout 300000ms exceeded` on
+   * `window.__game.ready`, five minutes of a challenger who never connected, and the arm took
+   * the whole run down with it before the tally line could be printed.
+   */
+  await guest.check('#tc-via-relay');
   await guest.fill('#tc-relay', relay.base);
   await guest.click('#tc-room');
   await guest.type('#tc-room', room, { delay: 20 });
@@ -2692,7 +2384,9 @@ if (wanted('lan')) {
       + 'claimed — the ordering is the entire fix');
 
   await hostPage.click('#tc-begin');
-  await driveMenu(hostPage, { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' });
+  await driveMenuOrExplain(hostPage, driveMenu,
+    { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' },
+    'lan host after CHOOSE THE BATTLE');
 
   const guestPage = await newPage(chromeGuest);
   /*
@@ -2971,20 +2665,41 @@ if (wanted('https')) {
   }));
   await shot(page, 'https-01-deployed-lobby');
   measured.https = { origin: face.origin, sheet, text: face.text.slice(0, 400) };
-  const noForm = !sheet.hasRoom && !sheet.hasCreate && !sheet.hasJoin && !sheet.hasRelay
-    && !sheet.hasAdv;
-  const saysWhy = /own network/i.test(face.text) && /from the internet/i.test(face.text)
-    && /private network/i.test(face.text);
-  record('https-lobby-refuses-honestly',
-    face.origin === secureBase && noForm && saysWhy && !/wss?:\/\//.test(face.text)
-      && !/npm run/.test(face.text) && sheet.copy.startsWith('https://github.com/'),
-    'on an https origin the multiplayer entry leads to four sentences and a link to a copy, '
-      + 'with no form on the screen at all',
+  /*
+   * **Rewritten 2 Sep 2026, and the claim is now the opposite of what it was.**
+   *
+   * This check used to require that an https origin's multiplayer screen have *no form on it at
+   * all* — no code field, no Create, no Join, no relay address — because a page the browser
+   * believes came from the internet cannot open a plain connection into a private network, so
+   * every control on it would have been furniture. That was right, and §12.6 has the measurement
+   * both ways round.
+   *
+   * `e/net/webrtc-p2p` made the transport a connection straight between the two browsers, which
+   * is subject to neither mixed content nor Local Network Access — so the screen has controls
+   * again, and asserting their absence would now be asserting a regression. What is checked
+   * instead is that the entry still leads somewhere *usable*: the code field is reachable by a
+   * mouse, Create is enabled, and the sheet no longer claims the battle cannot be played from
+   * here.
+   *
+   * **The socket check below is untouched, and is now the control rather than the limit.** The
+   * `ws://` refusal is still exactly true and is the reason a relay cannot be the answer on this
+   * origin; `tools/qa-p2p.mjs`'s `https` arm reuses this same fixture to show a peer connection
+   * succeeding from the same page that this fails from.
+   */
+  const usable = sheet.hasRoom && sheet.hasCreate && sheet.hasJoin && sheet.hasAdv
+    && face.roomReaches && face.createDisabled === false;
+  const noLongerRefuses = !/cannot be played from this page/i.test(face.text)
+    && !/nothing typed on this screen/i.test(face.text);
+  record('https-lobby-offers-a-room',
+    face.origin === secureBase && usable && noLongerRefuses && !/npm run/.test(face.text),
+    'on an https origin the multiplayer entry leads to a room code, a Create and a Join',
     `origin ${face.origin}; controls present: `
       + `${Object.entries(sheet).filter(([, v]) => v === true).map(([k]) => k).join(', ') || 'none'}; `
-      + `link ${sheet.copy || '(none)'}; sheet reads: ${face.text.slice(0, 170)}`,
-    'it used to print a shell command at a stranger with no checkout, under a field they '
-      + 'could type into for ever — a button that dead-ends is the thing being removed');
+      + `code field reachable ${face.roomReaches}, Create `
+      + `${face.createDisabled ? 'disabled' : 'enabled'}; sheet reads: ${face.text.slice(0, 150)}`,
+    'this screen had no controls on it at all until 2 Sep 2026, because a relay was compulsory '
+      + 'and this origin cannot reach one — see §13.1 and the socket check below, which is now '
+      + 'the control for that rather than the limit');
 
   /*
    * And the reason it gives, measured. Two pages, one relay, one character of difference.
@@ -3099,24 +2814,37 @@ if (wanted('dev')) {
     await shot(page, 'dev-01-lobby');
     measured.dev = { origin: face.origin, face, errs: page.__errs.slice(0, 4) };
 
+    /*
+     * **Rewritten 2 Sep 2026: the *field* claim survives and the *refusal* claim is inverted.**
+     *
+     * What this pair asserted was that a dev server with no relay beside it names no address and
+     * disables both buttons, and then says so and names `npm run host`. The first half is still
+     * exactly the claim — never a guessed address, which is the whole subject of §11 — and it is
+     * kept including the negative on `ws://` in the rendered text.
+     *
+     * The second half is now false, and it is false because the product got better: a peer
+     * connection needs no relay, so a battle *can* start from here, and both buttons are live.
+     * Keeping the old assertion would be demanding a refusal the player no longer deserves.
+     */
     record('dev-server-offers-no-relay-address',
       face.metaRelay === null && face.metaLan === null && face.relayValue === ''
-        && !face.relayShown && !face.relayReaches && !/wss?:\/\//.test(face.text)
-        && face.createDisabled === true,
+        && !face.relayShown && !face.relayReaches && !/wss?:\/\//.test(face.text),
       'a dev server with no relay beside it puts no address on the screen and none in the field',
       `${face.origin}: the field holds ${JSON.stringify(face.relayValue)} and is `
         + `${face.relayShown ? 'ON SCREEN' : 'behind the disclosure'}; the sheet reads: `
         + face.text.slice(0, 130),
       'it used to read ws://localhost:5959 here — well-formed, plausible, and nothing behind it');
 
-    record('dev-server-names-the-command-that-works',
-      face.blockedShown && /no relay behind this page/i.test(face.blockedText)
-        && /npm run host/.test(face.blockedText)
-        && /serving the game and nothing else/i.test(face.blockedText),
-      'it says so where the player is looking, and names the one command that fixes it',
-      face.blockedShown ? face.blockedText.slice(0, 230)
-        : 'nothing on the panel says why a battle cannot start from here',
-      'a refusal that does not name the thing that would work is only half honest');
+    record('dev-server-can-still-open-a-room',
+      face.createDisabled === false && face.joinDisabled === true
+        && face.blockedShown && /introduction services/i.test(face.blockedText)
+        && !/npm run/.test(face.blockedText),
+      'and a battle can start from it anyway, with no address and no command to run',
+      `CREATE ${face.createDisabled ? 'disabled' : 'enabled'}, JOIN `
+        + `${face.joinDisabled ? 'disabled until a code is typed' : 'ENABLED WITH NO CODE'}; `
+        + `the panel reads: ${face.blockedText.slice(0, 170)}`,
+      'this used to be a refusal naming a shell command, which is a dead end for anybody who '
+        + 'has no checkout — and is now unnecessary, because a peer connection needs no relay');
 
     /*
      * And the capability, exercised rather than asserted.
@@ -3235,22 +2963,32 @@ if (wanted('static')) {
     record('static-origin-offers-no-relay-address',
       offMachine && face.metaRelay === null && face.metaLan === null
         && face.relayValue === '' && !face.relayShown && !face.relayReaches
-        && !/wss?:\/\//.test(face.text) && face.createDisabled === true,
-      'an origin that has said nothing about itself gets no address, no field on screen, and '
-        + 'no button that would fail',
+        && !/wss?:\/\//.test(face.text),
+      'an origin that has said nothing about itself gets no address and no field on screen',
       `${face.origin} (asserted off-loopback: ${offMachine}), no tc-lan and no tc-relay in the `
         + `document; the field holds ${JSON.stringify(face.relayValue)}`,
       'the deployed site got this half right already — empty and honest — while still asking '
         + 'the player to fill a form field in');
 
-    record('static-origin-keeps-the-sentence-that-was-right',
-      face.blockedShown && /static upload with no server in it/.test(face.blockedText)
-        && /npm run host/.test(face.blockedText)
-        && !/stop this server/i.test(face.blockedText),
-      'and it still says what this page *is*, which is what explains why no typing will help',
+    /*
+     * **This is the check whose subject changed most, and the new one is the better claim.**
+     *
+     * It asserted that the page still says what it *is* — "a static upload with no server in it"
+     * — because that sentence was what explained why no typing would help. There is nothing left
+     * for it to explain: this origin shape is the deployed site's, and the deployed site plays
+     * now. What matters instead is that nothing on the screen tells a stranger with no checkout
+     * to run a shell command, which was §12.6's finding and is the part worth keeping.
+     */
+    record('static-origin-names-no-command-a-stranger-cannot-run',
+      face.blockedShown && !/npm run/.test(face.blockedText)
+        && !/stop this server/i.test(face.blockedText)
+        && /introduction services/i.test(face.blockedText)
+        && face.createDisabled === false,
+      'and it explains the introduction rather than printing a shell command at a stranger',
       face.blockedShown ? face.blockedText.slice(0, 230)
-        : 'nothing on the panel says why a battle cannot start from here',
-      'telling somebody on a static host to stop their server names a process they do not have');
+        : 'nothing on the panel says how the two of you will be introduced',
+      'a button that dead-ends under a command the reader has nothing to run it in was §12.6\'s '
+        + 'finding; the dead end is gone and the rule against the command is kept');
 
     record('static-origin-lobby-console', page.__errs.length === 0,
       'and nothing was probed, so the deployed site logs no network error on a lobby visit',
@@ -3313,18 +3051,32 @@ if (wanted('ghost')) {
     const want = `ws://127.0.0.1:${GHOST_RELAY}`;
     measured.ghost = { declared: face.metaRelay, want, face, errs: page.__errs.slice(0, 4) };
 
+    /*
+     * **The probe still runs and is still not believed. What changed is the consequence.**
+     *
+     * This asserted that both buttons go dead, because without a relay there was no battle. There
+     * is one now, so the honest response to a service that is not answering is a *fallback and a
+     * sentence* rather than a closed door — and the check is stronger for it: it asserts that the
+     * server's claim is contradicted **by name**, that the address is quoted, **and** that the
+     * player is told what will be used instead and left able to press the button.
+     *
+     * The arm's reason for existing is untouched: without it `relayAnswers()` could return true
+     * unconditionally and `dev`, `static` and `lan` would all still be green.
+     */
     record('ghost-relay-is-probed-and-not-believed',
       face.metaRelay === String(GHOST_RELAY) && face.relayValue === want
         && face.blockedShown && face.blockedText.includes(want)
         && /said it had started a relay there/.test(face.blockedText)
-        && face.createDisabled === true && face.joinDisabled === true,
+        && /introduced over the internet instead/i.test(face.blockedText)
+        && face.createDisabled === false,
       'a relay the server advertised and did not start is caught before the player presses '
-        + 'anything, and named as the server\'s claim rather than the player\'s mistake',
+        + 'anything, named as the server\'s claim rather than the player\'s mistake, and '
+        + 'replaced rather than fatal',
       `the document says tc-relay=${face.metaRelay}, the field holds ${JSON.stringify(face.relayValue)}, `
         + `CREATE disabled=${face.createDisabled}; the panel says: ${face.blockedText.slice(0, 190)
           || '(nothing — the lobby believed the tag)'}`,
-      'without this arm relayAnswers() could return true unconditionally and dev, static and '
-        + 'lan would all still be green');
+      'it used to grey both buttons out, because without a relay there was no battle; there is '
+        + 'one now, so a dead introduction service costs a fallback and nothing else');
 
     const thrown = page.__errs.filter((e) => e.startsWith('pageerror'));
     record('ghost-relay-no-pageerror', thrown.length === 0,
@@ -3424,6 +3176,18 @@ if (wanted('norelay')) {
     await form.waitForSelector('.tc-lobby', { timeout: 30000 });
     await openAdvanced(form);
     await form.fill('#tc-relay', DEAD);
+    /*
+     * And ask for the relay *transport*, because that is what "CREATE names the address that did
+     * not answer" is about.
+     *
+     * From 2 Sep 2026 an address in this field is an *introduction service*, and a peer session
+     * whose introduction service is unreachable **opens the room anyway** — deliberately: peer to
+     * peer a code needs no permission from anybody, and a lobby that refused to open a room
+     * because a signalling service was down would be refusing something it does not need. So
+     * without this the Room open screen replaces the sheet, `#tc-note` goes with it, and the arm
+     * died on a locator. The relay transport is still exactly as it was, one checkbox in.
+     */
+    await form.check('#tc-via-relay');
     await form.click('#tc-host');
     await form.waitForSelector('#tc-note.tc-bad', { timeout: 20000 }).catch(() => { /* asserted */ });
     const said = ((await form.textContent('#tc-note')) ?? '').replace(/\s+/g, ' ').trim();

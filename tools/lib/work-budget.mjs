@@ -380,7 +380,27 @@ export const ourBrowserPids = () => {
     for (const line of ps.split('\n')) {
       const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
       if (!m || Number(m[2]) !== process.pid) continue;
-      if (/chrome-headless-shell/.test(m[3]) && !/--type=/.test(m[3])) out.add(Number(m[1]));
+      /*
+       * **Three binaries, not one, and the omission was a silent hole in the throttle.**
+       *
+       * `chrome-headless-shell` is what `chromium.launch({ headless: true })` runs, and it was
+       * the only thing matched here. A caller that passes `channel: 'chromium'` gets the *new*
+       * headless mode — the same bundled binary, named `Google Chrome for Testing` — and
+       * `channel: 'chrome'` gets the system `Google Chrome`. Both were invisible to this scan,
+       * so `newBrowserPid` returned null for them and they were **neither demoted while the
+       * owner played nor group-killed by the reaper**. `e/net/webrtc-p2p` is the first pass to
+       * need either channel: `chrome-headless-shell` completed a WebRTC connectivity check 2
+       * times in 17 on this machine and the other two modes connect in 57-209 ms, so a peer
+       * transport cannot be tested in the mode this regex knew about.
+       *
+       * Safe to widen because the filter above is `ppid === process.pid` — our own direct
+       * children and nothing else, so the owner's own Chrome cannot be caught by it. The
+       * `--type=` exclusion stays for the renderer and GPU subprocesses, which are parented to
+       * the browser rather than to us but cost nothing to exclude twice.
+       */
+      const isBrowser = /chrome-headless-shell|Google Chrome for Testing|Google Chrome|Chromium/
+        .test(m[3]);
+      if (isBrowser && !/--type=/.test(m[3])) out.add(Number(m[1]));
     }
   } catch { /* ps failed; the caller gets an empty set and skips throttling */ }
   return out;

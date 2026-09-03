@@ -4,7 +4,11 @@ A browser tab cannot accept an incoming connection. Two players therefore need a
 thing that both can dial, and the only question is where it lives. This file records the
 two answers, what each costs, and why the owner picked the one they picked on 2 Sep 2026.
 
-## The constraint that decides everything
+## The constraint that decided everything until 2 Sep 2026
+
+**Read the last section of this file first if you are here to find out where the relay runs. It
+is no longer the question that decides whether two people can play.** Everything between here and
+there is a correct account of a world in which a relay was compulsory.
 
 **The deployed site can never talk to a LAN relay.** Everything below follows from that.
 The *reason* is not what this file first said, and not what this repository believed.
@@ -115,3 +119,49 @@ If that ever changes, Option B is not a rewrite. The room logic is a pure state 
 The work is a deploy, an env var pointing the build at the `wss://` address, and proving
 the DO adapter has not drifted from the state machine — that last one is unmeasured and
 should not be assumed.
+
+## The constraint stopped deciding everything — 2 Sep 2026
+
+Everything above is about a **relay**, and a relay was compulsory: two browser tabs cannot dial
+each other, so a third thing both could reach was the only arrangement. The sentence at the top
+of this file follows from that and is still exactly true — an `https` page may not open a `ws://`
+connection into a private network, and `docs/MULTIPLAYER.md` §12.6 has the transcript on both
+engines.
+
+**Two browser tabs can now dial each other.** `src/net/PeerLink.ts` opens an `RTCPeerConnection`
+straight between them, and a peer connection is blocked by neither mixed content nor Local Network
+Access — measured on Chromium 151 from an https origin the browser had been *told* was public,
+which is the same `--ip-address-space-overrides` the web-platform tests for Local Network Access
+use. ICE gathered host candidates for the private address and server-reflexive candidates for the
+public one, the console was clean, and a data channel opened and carried a battle.
+
+So the question this file was written to answer — *where does the relay run* — is no longer the
+question that decides whether two people can play. What is left of it:
+
+- **Option A, LAN, is not withdrawn and is not a downgrade.** `npm run host` still serves the game
+  and still starts a relay beside it. What the relay now does on that path is pass **one message
+  each way** to introduce the two browsers, and then it is closed. The orders go machine to
+  machine over ICE host candidates, which is a switch rather than a process on one of the two
+  laptops. The guest's first page still has to come from the host's machine on that path, and the
+  QR still carries it; that cost was never the relay's and has not moved.
+- **Option B, the Cloudflare Durable Object, is no longer needed for the case it was for.** The
+  research above stands and the free-tier arithmetic stands. It bought "both players open the
+  public site, one clicks Create and reads out five characters" — and that now works with no
+  account, no deploy and nothing to keep alive, which is what the owner said they wanted when they
+  declined it.
+- **A third option exists and is the new default: nothing.** The two peers are introduced through
+  free public MQTT-over-`wss` brokers — three at once, so one being down costs nothing — and after
+  the introduction nothing but the two browsers is involved. `docs/MULTIPLAYER.md` §13.2 has the
+  full evaluation, including why PeerJS's free cloud broker and a signalling endpoint on the
+  owner's own Vercel project both lost.
+
+**And one thing this buys that a relay never could.** A relay carries every order, so the choice
+of where it runs is a permanent dependency and a permanent cost. Signalling is needed **at join
+and never again**, so the failure mode of the third party disappearing is *new matches cannot be
+introduced* — matches in progress are untouched, and on a LAN there is a local answer that needs
+no third party at all.
+
+The honest cost of the change is in `docs/MULTIPLAYER.md` §13.6, and it is a number rather than a
+caveat: **without TURN, roughly 78-82% of arbitrary pairings connect, and a player on a network
+that blocks UDP outbound cannot play at all.** A relay had no such limit. That is the trade the
+owner chose, and the product says so in four sentences and stops rather than hanging.

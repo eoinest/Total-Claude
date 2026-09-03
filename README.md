@@ -103,7 +103,33 @@ against pinned SHA-256s):
 npm run assets
 ```
 
-### Two players, two machines, one network
+### Two players, anywhere
+
+Open **https://total-claude.vercel.app**, press *Multiplayer*, and one of you presses **Create a
+room** and reads out the five characters on the screen. The other types them and presses **Join
+that room**. Nothing installed, no terminal, no address for either of you to type.
+
+The battle runs **straight between the two browsers** — every order goes machine to machine with
+nothing in between. To set that up, one short message has to pass each way, and that goes through
+free public introduction services: three at once, so one being down costs nothing. **Your orders
+never go near them**, and once the battle starts they are not used again.
+
+**Send the link or the square and that introduction is private** — the key is sixteen random bytes
+inside the link, in the part of a URL that is never sent to any server. **Read the five characters
+out instead and it is not**: the two of you still meet, but somebody watching those public
+services could read the addresses your two computers use to find each other. The game is unaffected
+either way. `docs/MULTIPLAYER.md` §13.2 is the whole evaluation and §13.11 is the review that
+corrected it.
+
+**When it will not work.** There is no relay to fall back on, by choice, so two networks that
+refuse a direct connection are a match that cannot be played. Expect roughly 78-82% of arbitrary
+pairings to connect; both on ordinary home internet does better than that, and both on the same
+wifi always works because the two machines connect without asking anybody. **A network that blocks
+UDP outbound — many offices, campuses and some guest wifi — cannot play at all**, and no amount of
+retrying changes that. The screen says which of the two it is and what to try instead, in four
+sentences, rather than hanging. The sourced numbers are in §13.6.
+
+### Two players on one network, from your own machine
 
 ```bash
 npm run host         # opens a room, prints a QR code, opens your browser on it
@@ -111,7 +137,14 @@ npm run host         # opens a room, prints a QR code, opens your browser on it
 
 One command, both halves, and nothing to type on either side. It binds an address the machine
 next door can reach rather than `127.0.0.1`, starts the relay, **asks it for a room**, and prints
-the room code, the join URL and a scannable square:
+the room code, the join URL and a scannable square. On this path the relay does one job — it
+passes one message each way to introduce the two browsers, and is then closed — and the battle
+still runs machine to machine, over the local network rather than out to the internet and back.
+Those two introduction messages are **not encrypted** on this path, and that is stated rather
+than hidden: a browser only gives a page encryption on a secure address, and the address this
+command prints is a plain one. They stay on your own network, they carry an offer and an answer
+rather than any part of the battle, and the console says so once. The relay carried every order
+of every battle over that same wire until 2 September 2026:
 
 ```
       http://192.168.1.77:5958/?room=QXWYZ
@@ -126,12 +159,14 @@ nothing here can work round that.
 `npm run host -- --no-open` keeps your browser shut, `--no-qr` prints the URL without the
 square, and `--relay-port=` moves the relay.
 
-**The deployed site cannot host this and never will.** A page served from the internet is not
-allowed to open a connection into a private network — the socket is refused before a packet
-leaves, which is a browser rule and not a limitation of the relay. Every engine refuses it;
-Chromium and Safari happen to refuse it for different reasons, and `docs/MULTIPLAYER.md` §12.6
-has both measurements. The site's multiplayer screen says so and links to a copy you can run
-yourself. §12.5 says why an address packed into a longer room code would not help.
+**Corrected 2 Sep 2026.** This section used to end *"the deployed site cannot host this and never
+will"*, and that was true of the arrangement it described: a page served from the internet is not
+allowed to open a plain connection into a private network, the socket is refused before a packet
+leaves, and §12.6 has the measurement on both engines. It is still true, and it stopped mattering
+— a direct connection between two browsers is subject to neither that rule nor mixed content, so
+the deployed site plays. See *Two players, anywhere* above. The relay is still here, still
+supported, and still what the peer-to-peer transport is measured against (§13.7); it is one
+disclosure click into the multiplayer screen, unticked.
 
 **And it needs a window about 1,100 px wide.** The battle HUD has no phone layout: BEGIN BATTLE
 sits at a fixed 1,062 px whatever the viewport, on a page that cannot scroll sideways, so a

@@ -3,7 +3,7 @@ import type { BattleConfig } from '../sim/battleConfig';
 import type { BattleSystem } from '../sim/BattleSystem';
 import type { NetSink, ReplayMark, ReplayRecord, ReplaySystem } from '../sim/replay';
 import { stateHashes, unitDigests } from '../sim/stateHash';
-import type { NetLink } from './NetLink';
+import type { Link } from './link';
 import {
   HASH_EVERY, libmPrint, TICKS_PER_TURN, turnTick,
   type BootPrint, type MsgTurn, type RelayMsg,
@@ -77,6 +77,17 @@ export interface NetStatus {
   message: string;
   ended: string;
   /**
+   * The tick the match stopped at, or -1 while it is still running.
+   *
+   * The field has existed since the relay pass and was **not in this readout**, which is how
+   * `qa-p2p`'s `leave-halts-at-a-stated-tick` came to assert `ended.endedAtTick >= 0` against
+   * `undefined`: a check that could never go green, printing *"the session reports its last
+   * agreed tick as undefined"* beside a screen that says *"The last tick both battles agreed on
+   * was 180"*. The number was in the sentence and nowhere a program could read it. The third
+   * guarantee is that a match ends **attributed to a tick**, so the tick belongs here.
+   */
+  endedAtTick: number;
+  /**
    * Frames in and out on this client's socket.
    *
    * In the readout because a lockstep client that has stopped can have stopped for two very
@@ -123,6 +134,25 @@ export interface DesyncReport {
 const MAX_CATCHUP_SPEED = 8;
 /** Rolling window of per-unit digests, so a desync at tick T can still be answered for. */
 const DIGEST_HISTORY = 12;
+/**
+ * How many checkpoints are kept for a gate to read back. 4,096 is about 68 simulated minutes.
+ *
+ * They exist because of what a gate can otherwise *not* do in a peer-to-peer session. Under a
+ * relay a harness brings two clients to a common tick by stopping the relay process, and then
+ * compares `stateHashes` on both pages. There is no process to stop between two peers, and two
+ * pages read a fifth of a second apart are two pages several ticks apart — measured while
+ * writing this: host at tick 853 and guest at 854, every exchanged checkpoint agreeing, and a
+ * naive comparison calling that a divergence.
+ *
+ * The right comparison is *at a tick*, and this is the record of them: each client's own hashes,
+ * computed locally at ticks 30, 60, 90 …, which a harness can intersect and compare bit for bit.
+ * It is a stronger claim than a settled tick rather than a weaker one — twenty-eight agreements
+ * across a battle instead of one — and it cannot be satisfied by the instrument getting lucky.
+ *
+ * Four numbers each, so 4,096 of them is about 150 kB. Read-only, and nothing in the simulation
+ * may touch it; it is the same category of thing as `latencies()`.
+ */
+const MARK_HISTORY = 4096;
 /**
  * How long the simulation must be held at its ceiling before that counts as a stall.
  *
@@ -188,7 +218,7 @@ export class NetSession implements Subsystem {
   private ctx!: EngineContext;
   private battle!: BattleSystem;
   private replay!: ReplaySystem;
-  private link: NetLink;
+  private link: Link;
   private cfg: BattleConfig;
   private quality: QualityTier;
   private deployPhase: boolean;
@@ -197,6 +227,8 @@ export class NetSession implements Subsystem {
   private readyTurn = -1;
   private lastMarkTick = -1;
   private digests: { tick: number; d: [number, string][] }[] = [];
+  /** Every checkpoint this client computed, for a gate to compare tick by tick. */
+  private marks: { tick: number; hash: string; uf64: string; uctl: string; alive: number }[] = [];
   /** Sent ops awaiting their turn packet, for the input-delay measurement. */
   private inFlight = new Map<string, { at: number; tick: number }>();
   private lat: { rttMs: number; delayTicks: number }[] = [];
@@ -221,7 +253,7 @@ export class NetSession implements Subsystem {
    */
   private endedLocally = false;
 
-  constructor(link: NetLink, cfg: BattleConfig, quality: QualityTier, deployPhase: boolean) {
+  constructor(link: Link, cfg: BattleConfig, quality: QualityTier, deployPhase: boolean) {
     this.link = link;
     this.cfg = cfg;
     this.quality = quality;
@@ -346,6 +378,21 @@ export class NetSession implements Subsystem {
   update(): void {
     for (const m of this.link.drain()) this.onMessage(m);
     this.pace();
+    /*
+     * And tell the transport how far the simulation has got. **A relay does not need to know
+     * and a peer does.**
+     *
+     * The only line in this file that exists for the peer-to-peer transport, and it is here
+     * rather than inside `pace` because it is not pacing — it is the *report* the other
+     * scheduler is paced by. `NetLink` does not implement `pump` at all; `PeerLink` earns the
+     * right to commit turn `k` by having consumed turn `k - delay`, and that single dependency
+     * is what stops two peers playing the battle as fast as the wire can carry it. `Link.pump`
+     * and `PeerRoom.pump` both carry the arithmetic.
+     *
+     * After `pace`, so the tick reported is the one this frame actually reached and the ceiling
+     * for the next frame is already set.
+     */
+    this.link.pump?.(this.ctx.time.tick);
   }
 
   /**
@@ -484,10 +531,19 @@ export class NetSession implements Subsystem {
   private linkFault(): string {
     if (this.link.dropped) return this.link.dropped;
     if (this.tick0 < 0 || !this.link.lastMessageAt) return '';
-    const limit = Math.max(LINK_SILENT_S, (this.link.gapMs * 8) / 1000);
+    const floor = this.link.silentFloorS ?? LINK_SILENT_S;
+    const limit = Math.max(floor, (this.link.gapMs * 8) / 1000);
     if (this.quietFor < limit) return '';
-    return `nothing has arrived from the relay in ${this.quietFor.toFixed(1)} s of `
-      + `drawing, against a ${Math.round(this.link.gapMs)} ms turn — the link is gone`;
+    /*
+     * "the other side", not "the relay", because there may not be one.
+     *
+     * The sentence reaches the player through `NetPanel`'s session-over sheet, and on a peer
+     * session it was an accusation against a process that was never in the match. What the
+     * measurement actually says is the same either way: nothing has arrived, for this long, on a
+     * wire that sends unconditionally.
+     */
+    return `nothing has arrived from the other side in ${this.quietFor.toFixed(1)} s of `
+      + `drawing, against a ${Math.round(this.link.gapMs)} ms turn — the connection is gone`;
   }
 
   // -------------------------------------------------------------------------
@@ -567,29 +623,49 @@ export class NetSession implements Subsystem {
   }
 
   /**
-   * The one-ULP perturbation, and the reason it arrives as an order.
+   * The smallest perturbation this simulation can actually hold, and the reason it arrives as
+   * an order.
    *
    * A relay has no simulation, so it cannot perturb one. `tools/relay.mjs --fault=ulp` sends a
-   * marker to one slot instead and this turns it into the smallest possible disagreement: one
-   * `UnitGroupState` float64 field, one unit in the last place of its mantissa. That is the
-   * failure real hardware produces — §1.4 measured 1 ULP as the true magnitude of a libm
-   * disagreement, and the whole detection design rests on `uf64` seeing it. A detector that
-   * has never been shown a 1-ULP fault is a detector nobody has tested.
+   * marker to one slot instead and this turns it into a one-unit-in-the-last-place move of one
+   * `UnitGroupState` position field. A detector that has never been shown that fault is a
+   * detector nobody has tested.
    *
-   * It is reachable only from a relay started with an explicit test flag. A production relay
-   * has no code path that emits this marker.
+   * **One float32 ULP, and the change from float64 is `src/sim/quantise.ts` catching up with
+   * this file.** That system was added to give the unit layer the quantisation firewall the
+   * soldier pool has always had: at order 60, after every writer in the tick, it `Math.fround`s
+   * all fourteen `UNIT_F64_FIELDS` and the waypoint queue. A one-float64-ULP nudge is therefore
+   * **erased before the next checkpoint, by design** — measured on the shipped battle 3 Sep
+   * 2026, 36 of 36 readings across twelve units carrying float32 values, every field nudged and
+   * every nudge gone within a tick (`tools/scratch/ulpfields.mjs`).
+   *
+   * This fault was written before that firewall existed and nobody came back to it. What it
+   * had become was a race: the perturbation survived less than one tick, and whether a detector
+   * saw it depended on whether a checkpoint fell inside that window. The relay path won the race
+   * often enough to keep `qa-net --only=ulp` green; the peer path, which drains its turns inside
+   * `update()` immediately before the step, lost it every time and reported sixty-two
+   * bit-identical checkpoints after a fault that had definitely fired.
+   *
+   * One float32 ULP is the honest magnitude now, and it is the *interesting* one: it is exactly
+   * what a 1-3 float64 ULP libm disagreement leaves behind when it straddles a rounding boundary
+   * and gets through the firewall — the ~2e-9-per-field-per-tick case `quantise.ts` is explicit
+   * about not eliminating. At the shipped battle's scale that is about 15 micrometres, and it
+   * persists and grows: measured, same file.
+   *
+   * It is reachable only from a relay started with an explicit test flag, or from a peer with
+   * `?p2pfault=ulp`. Nothing the product builds emits this marker.
    */
   private testMarker(blob: unknown[]): boolean {
     if (blob[0] !== '__ulp__') return false;
     const u = this.battle.units.find((x) => !x.destroyed && x.alive > 0);
     if (!u) return true;
-    const dv = new DataView(new ArrayBuffer(8));
-    dv.setFloat64(0, u.x);
-    const lo = dv.getUint32(4);
-    dv.setUint32(4, (lo + 1) >>> 0);
-    u.x = dv.getFloat64(0);
+    const f32 = new Float32Array(1);
+    const u32 = new Uint32Array(f32.buffer);
+    f32[0] = u.x;
+    u32[0] = (u32[0] + 1) >>> 0;
+    u.x = f32[0];
     this.perturbed = u.id;
-    console.warn(`[net] test perturbation: unit ${u.id} x moved by one ULP`);
+    console.warn(`[net] test perturbation: unit ${u.id} x moved by one float32 ULP`);
     return true;
   }
 
@@ -611,6 +687,10 @@ export class NetSession implements Subsystem {
    */
   private onMark(m: ReplayMark): void {
     this.lastMarkTick = m.tick;
+    this.marks.push({
+      tick: m.tick, hash: m.hash, uf64: m.uf64, uctl: m.uctl, alive: m.alive,
+    });
+    if (this.marks.length > MARK_HISTORY) this.marks.shift();
     this.digests.push({ tick: m.tick, d: unitDigests(this.battle.units) });
     if (this.digests.length > DIGEST_HISTORY) this.digests.shift();
     this.link.send({
@@ -720,6 +800,7 @@ export class NetSession implements Subsystem {
       delayTicks: Math.round(dly * 100) / 100,
       message: this.message,
       ended: this.ended,
+      endedAtTick: this.endedAtTick,
       got: this.link.counts.got,
       sent: this.link.counts.sent,
       ceiling: t ? t.tickCeiling : -1,
@@ -730,6 +811,23 @@ export class NetSession implements Subsystem {
 
   /** Every measured order round trip, for the gate's latency table. */
   latencies(): { rttMs: number; delayTicks: number }[] { return this.lat.slice(); }
+  /**
+   * The transport, so a gate can ask it what it did. Read-only by convention, like `deployment`.
+   *
+   * Named for what it is for. A method called `link` would be read as part of the session's
+   * interface and reached for; this one says in its own name that the only caller should be a
+   * harness, and `tools/lib/net-drive.mjs`'s `window.__peer()` is that caller.
+   */
+  get linkForTests(): Link { return this.link; }
+  /**
+   * Every checkpoint this client computed, keyed by tick. For a gate; see `MARK_HISTORY`.
+   *
+   * A copy, because the caller is a harness reaching in through `page.evaluate` and a live array
+   * handed out of a running simulation is the shape of a bug that only appears under load.
+   */
+  checkpoints(): { tick: number; hash: string; uf64: string; uctl: string; alive: number }[] {
+    return this.marks.slice();
+  }
   /** The unit the test perturbation hit, or -1. */
   get perturbedUnit(): number { return this.perturbed; }
   get lastCheckpoint(): number { return this.lastMarkTick; }

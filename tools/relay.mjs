@@ -248,6 +248,53 @@ function frameIn(buf) {
 /** `code -> { room, sockets: [sock|null, sock|null] }` */
 const rooms = new Map();
 
+/**
+ * `code -> Set<socket>` for the *introduction* service. Nothing to do with `rooms`.
+ *
+ * Two facts about this map are the whole design and both are worth stating, because the obvious
+ * reading of "the relay signals for the peer-to-peer transport" is that the relay is still in
+ * the middle of the match, and it is not:
+ *
+ *  - **It carries an offer, an answer and some ICE candidates, and then it is closed.** About
+ *    4 kB, once, over two or three seconds. `PeerLink` drops it when the battle starts. Not one
+ *    order, checkpoint or turn packet passes through here.
+ *  - **It knows nothing about a `Room`.** There is no state machine, no slot assignment, no
+ *    handshake and no refusal — the payloads are AES-GCM sealed under the room code
+ *    (`src/net/signal.ts`) and this cannot read them even in principle. Which is why the code
+ *    below is a dozen lines: a `Set`, a broadcast, and a delete.
+ *
+ * It exists for two reasons. On a LAN it is strictly better than a public broker: the two
+ * machines are already talking to each other and nothing needs to leave the house. And it is
+ * what `tools/qa-p2p.mjs` uses, because a gate whose green depends on `test.mosquitto.org` being
+ * up is a gate that goes red for reasons that are not the product.
+ */
+const signals = new Map();
+const SIGNAL_MAX_PER_CODE = 8;
+/**
+ * `code -> when a second peer arrived on its introduction channel`.
+ *
+ * The one fact about a peer-to-peer match this relay can honestly know, and it exists to keep a
+ * refusal the relay transport used to give for free.
+ *
+ * `/new` answers `started` for a room past the lobby, and `src/ui/NetLobby.ts` keys on it so that
+ * a host who presses Back, or reopens a `?create=1` URL out of history, is told *"room X is
+ * already in its battle phase"* rather than handed a Room open screen with a code, a link and a
+ * square for a room nobody can enter. That was a reviewer's finding and §12.3 records it.
+ *
+ * Peer to peer there is no socket in the room to move it past the lobby, so `phase` stays
+ * `lobby` for ever and the refusal disappeared. What is left is this: **two peers turned up on
+ * one introduction channel**, which is not a guess and needs no payload — this relay cannot read
+ * a sealed envelope and does not try. A code that two people have been introduced on is a code
+ * that has been spent.
+ *
+ * Reaped on the same TTL as an empty room, because a rendezvous name is worth reusing eventually
+ * and holding it for ever would make a restarted relay the only way to reuse a five-character
+ * code. There is deliberately **no equivalent on the deployed site**: the public brokers are not
+ * a registry and nobody is keeping this list, so that refusal is a LAN-only property. See
+ * `docs/MULTIPLAYER.md` §13.9.
+ */
+const introduced = new Map();
+
 const roomOpts = () => ({
   delayTurns: DELAY, turnMs: TURN_MS, pairs: PAIRS, fatal: FATAL,
   maxLagTurns: MAX_LAG_TURNS, fault: FAULT,
@@ -312,6 +359,9 @@ function flush(entry, reply) {
  */
 setInterval(() => {
   const now = Date.now();
+  for (const [code, when] of introduced) {
+    if (now - when > EMPTY_ROOM_TTL_MS) introduced.delete(code);
+  }
   for (const [code, entry] of rooms) {
     flush(entry, entry.room.tick(now));
     if (entry.room.over && !entry.sockets[0] && !entry.sockets[1]) { rooms.delete(code); continue; }
@@ -358,7 +408,10 @@ const server = createServer((req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); res.end(); return; }
   if (url.pathname === '/health') {
     res.writeHead(200, { 'content-type': 'text/plain', ...CORS });
-    res.end(`relay ok rooms=${rooms.size} sends=${sends} recvs=${recvs}\n`);
+    // `relay ok` first and unchanged: `NetLobby.relayAnswers` tests exactly that prefix, and
+    // `tools/qa-net.mjs`'s `startRelay` reads the body rather than trusting a 200.
+    res.end(`relay ok rooms=${rooms.size} signals=${signals.size} `
+      + `sends=${sends} recvs=${recvs}\n`);
     return;
   }
   /*
@@ -377,6 +430,10 @@ const server = createServer((req, res) => {
       port: PORT, host: HOST, pairs: PAIRS, fatal: FATAL, delayTurns: DELAY, turnMs: TURN_MS,
       lagMs: LAG, fault: FAULT, sends, recvs,
       rooms: [...rooms.values()].map((e) => e.room.status()),
+      // The introduction service, by code and by how many peers are on it. A count and never a
+      // payload: this relay cannot read a sealed envelope and must not look as though it might.
+      signals: [...signals.entries()].map(([code, set]) => ({ code, peers: set.size })),
+      introduced: [...introduced.keys()],
     }, false);
     return;
   }
@@ -440,6 +497,26 @@ const server = createServer((req, res) => {
        * the whole of that repair. Answering it here rather than inferring it there is the same
        * rule as everywhere else in this file: the relay is the only party that knows.
        */
+      /*
+       * A code two peers have already been introduced on. See `introduced`.
+       *
+       * Answered as `started` rather than as a fourth error, because it is the same fact from
+       * the player's point of view — *this code is in use and cannot be minted again* — and
+       * `NetLobby` already has the screen for it. A new `error` string would be a second sentence
+       * for one situation, and the relay has three of those already.
+       */
+      if (introduced.has(asked)) {
+        sendJson(res, 409, {
+          error: 'started',
+          // "cannot be re-entered" deliberately matches the wording of the other `started`
+          // refusal a few lines down: they are one fact from the player's point of view, and
+          // `qa-net`'s `lan-a-playing-room-is-not-reopened` reads the meaning rather than the
+          // sentence.
+          detail: `room ${asked} has already introduced two players, so it cannot be re-entered. `
+            + 'Pick another code, or leave the field empty and one will be chosen for you.',
+        });
+        return;
+      }
       if (held && held.room.phase !== 'lobby') {
         sendJson(res, 409, {
           error: 'started',
@@ -467,24 +544,82 @@ const server = createServer((req, res) => {
     return;
   }
   res.writeHead(404, { 'content-type': 'text/plain', ...CORS });
-  res.end('relay: /room/<CODE> over websocket, /status, /health, /new[?room=CODE]\n');
+  res.end('relay: /room/<CODE> and /signal/<CODE> over websocket, /status, /health, '
+    + '/new[?room=CODE]\n');
 });
+
 
 server.on('upgrade', (req, sock) => {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
-  const m = url.pathname.match(/^\/room\/([A-Za-z0-9]+)$/);
+  const m = url.pathname.match(/^\/(room|signal)\/([A-Za-z0-9]+)$/);
   const key = req.headers['sec-websocket-key'];
   const die = (why) => {
     sock.write(`HTTP/1.1 400 Bad Request\r\nconnection: close\r\n\r\n${why}`);
     sock.destroy();
   };
-  if (!m || !key) return die('expected /room/<CODE> with a websocket key');
-  const code = m[1].toUpperCase();
+  if (!m || !key) return die('expected /room/<CODE> or /signal/<CODE> with a websocket key');
+  const code = m[2].toUpperCase();
   if (!validCode(code)) return die(`'${code}' is not a room code`);
+  const accept = createHash('sha1').update(key + GUID).digest('base64');
+
+  if (m[1] === 'signal') {
+    sock.write('HTTP/1.1 101 Switching Protocols\r\n'
+      + 'upgrade: websocket\r\nconnection: Upgrade\r\n'
+      + `sec-websocket-accept: ${accept}\r\n\r\n`);
+    sock.setNoDelay(true);
+    let peers = signals.get(code);
+    if (!peers) signals.set(code, (peers = new Set()));
+    /*
+     * A cap, because this is a `Map` keyed by anything that looks like a room code and it is
+     * reachable by anyone who can reach the port. Eight is four matches' worth of sockets on one
+     * code and there is no legitimate reason for a ninth.
+     */
+    if (peers.size >= SIGNAL_MAX_PER_CODE) {
+      log(`  signal ${code}: refused, ${peers.size} already here`);
+      setTimeout(() => sock.end(frameOut('', 0x8)), 20);
+      return;
+    }
+    peers.add(sock);
+    // Two peers on one channel is an introduction. Recorded before either of them has said
+    // anything, because what matters is that the code is in use and not what they said.
+    if (peers.size >= 2 && !introduced.has(code)) introduced.set(code, Date.now());
+    log(`  signal ${code}: ${peers.size} peer(s) waiting to be introduced`);
+    let sbuf = Buffer.alloc(0);
+    sock.on('data', (chunk) => {
+      sbuf = Buffer.concat([sbuf, chunk]);
+      const { frames, rest, err, close } = frameIn(sbuf);
+      sbuf = rest;
+      for (const f of frames) {
+        if (f.ping) { sock.write(frameOut(f.ping, 0xa)); continue; }
+        /*
+         * Broadcast to everyone else on this code, opaquely. The sender is excluded here as
+         * well as filtered on receipt (`src/net/signal.ts` drops its own `from`), because two
+         * independent guards against a peer answering its own offer is cheap and the failure it
+         * prevents — `setRemoteDescription` on your own SDP — is a room that never opens.
+         */
+        for (const other of peers) {
+          if (other === sock || other.destroyed) continue;
+          if (LAG > 0) setTimeout(() => { if (!other.destroyed) other.write(frameOut(f.text)); }, LAG);
+          else other.write(frameOut(f.text));
+        }
+      }
+      if (err) { log(`  signal ${code} framing: ${err}`); sock.destroy(); }
+      if (close) sock.end(frameOut('', 0x8));
+    });
+    const bye = () => {
+      const set = signals.get(code);
+      if (!set) return;
+      set.delete(sock);
+      if (!set.size) signals.delete(code);
+    };
+    sock.on('close', bye);
+    sock.on('error', bye);
+    return;
+  }
 
   sock.write('HTTP/1.1 101 Switching Protocols\r\n'
     + 'upgrade: websocket\r\nconnection: Upgrade\r\n'
-    + `sec-websocket-accept: ${createHash('sha1').update(key + GUID).digest('base64')}\r\n\r\n`);
+    + `sec-websocket-accept: ${accept}\r\n\r\n`);
   sock.setNoDelay(true);
 
   const want = url.searchParams.get('want') === 'join' ? 'join' : 'host';

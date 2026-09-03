@@ -2,6 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      There is no favicon in this project, and until 2 Sep 2026 there was nothing saying so, so
+      every browser asked for one and every page load logged
+      "Failed to load resource: the server responded with a status of 404".
+      Harmless, and not nothing: three `qa-net` arms assert that a page raises no console error,
+      and they were green only because Playwright's old headless shell does not request a
+      favicon at all. Moving those arms to the new headless mode — which a peer connection needs
+      — surfaced it on every page at once. `data:,` is an empty data URI: it satisfies the
+      declaration without a request, so the 404 is gone in every browser and on the deployed site
+      rather than filtered in one harness.
+    -->
+    <link rel="icon" href="data:," />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TOTAL CLAUDE — Model Viewer</title>
     <link rel="stylesheet" href="/src/viewer/viewer.css" />
