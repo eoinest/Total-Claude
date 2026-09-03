@@ -81,6 +81,26 @@ export const STUN_SERVERS: RTCIceServer[] = [
 /** How often the challenger asks whether anybody is hosting this code. */
 const KNOCK_MS = 1000;
 /**
+ * How long a challenger knocks before "nobody answered in room ABCDE" is the honest answer.
+ *
+ * **Fifteen seconds, and it was forty-five, and the difference is a whole class of complaint.**
+ * A correct code is answered on the *first* knock: the host creates its offer when the knock
+ * arrives, so the reply is one round trip through the introduction service, and the measured
+ * end-to-end open is 0.7-6 s including a full ICE exchange. A wrong code is never answered, ever.
+ * So the only thing a longer wait buys is a longer silence for somebody who mistyped — and
+ * `qa-net`'s `badcode` arm caught exactly that, reporting *"nothing said anything in 25.0 s —
+ * this is the silent wait"*, which is the sentence this whole design keeps being written against.
+ *
+ * Fifteen rather than five because the *host* may legitimately not be there yet: two people on
+ * the phone do not press their buttons in the same second. Past that, saying so and offering the
+ * form again is more use than waiting, and the message names both possibilities rather than
+ * accusing the typist.
+ *
+ * `signal.open()`'s own timeout is separate and comes first, so the worst case a player sees is
+ * that plus this.
+ */
+const KNOCK_TIMEOUT_MS = 15000;
+/**
  * How long ICE gets before "these two networks will not connect" is the honest answer.
  *
  * Measured on this machine, two browsers, real STUN: a connection that works opens in **57 to
@@ -243,7 +263,7 @@ export class PeerLink implements Link {
    * from a host who has not opened their page yet, and both are "nobody answered in room ABCDE"
    * with the code in the sentence.
    */
-  async connect(timeoutMs = 45000): Promise<number> {
+  async connect(timeoutMs = KNOCK_TIMEOUT_MS): Promise<number> {
     this.startedAt = now();
     try {
       await this.signal.open(Math.min(timeoutMs, 10000));
@@ -280,8 +300,10 @@ export class PeerLink implements Link {
         if (this.dropped) { clearInterval(poll); reject(new Error(this.dropped)); return; }
         if (now() - started < timeoutMs) return;
         clearInterval(poll);
-        this.refusal = `nobody answered in room ${this.room}. Nothing is hosting that code — `
-          + 'check it against the other screen, or have them read it out again.';
+        this.refusal = `Nobody answered in room ${this.room}.`
+          + ` Either that code is not the one on the other screen, or whoever opened it has not `
+          + 'got their page up yet. Check the five characters and try again — nothing has been '
+          + 'joined, so the room is still there if it exists.';
         this.refusedByRelay = this.refusal;
         reject(new Error(this.refusal));
       }, 100);

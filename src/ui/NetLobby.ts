@@ -1203,7 +1203,38 @@ export function showLobby(host: HTMLElement): void {
         () => crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32,
         CODE_ALPHABET, CODE_LEN);
       localStorage.setItem(KEY, relay.value.trim());
-      opened(code);
+      const intro = introAddr();
+      /*
+       * **Claim the code on the introduction service, when there is one.** Peer to peer there is
+       * nothing to *reserve* — a code is a rendezvous name — but a relay that is going to
+       * introduce the two of you is also a thing that knows which names are in use, and asking
+       * costs one round trip on your own network.
+       *
+       * It buys back a refusal that the relay transport gave for free and that a registry-free
+       * design cannot have: a host who presses Back, or reopens a `?create=1` URL out of history,
+       * is told *"this code has already introduced two players"* instead of being handed a Room
+       * open screen with a code, a link and a square for a code somebody else is mid-battle on.
+       * §12.3's reviewer found that hole in the relay path; this is the same hole in this one.
+       *
+       * **Never fatal.** A `started` refusal is the whole point and is shown; anything else — a
+       * dead relay, a 404 from something that is not one, a network error — falls through and
+       * opens the room, because peer to peer the code needs no permission from anybody and a
+       * lobby that refused to open a room because a *signalling* service was down would be
+       * refusing something it does not need.
+       */
+      if (!intro) { opened(code); return; }
+      hostBtn.disabled = true;
+      fetch(`${httpOf(intro)}/new?room=${encodeURIComponent(code)}`)
+        .then(async (r) => {
+          const j = await r.json().catch(() => null) as { error?: string; detail?: string } | null;
+          hostBtn.disabled = false;
+          if (r.status === 409 && j?.error === 'started') {
+            say(esc(j.detail ?? `room ${code} is already in use`), true);
+            return;
+          }
+          opened(code);
+        })
+        .catch(() => { hostBtn.disabled = false; opened(code); });
       return;
     }
     const addr = relay.value.trim();

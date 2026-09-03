@@ -596,13 +596,41 @@ const PUBLIC_ORIGIN_OVERRIDE = (() => {
   return ip ? [`--ip-address-space-overrides=${ip}:${HTTPS_PORT}=public`] : [];
 })();
 
+/**
+ * `channel: 'chromium'` and mDNS off, and both are forced on this gate by one arm.
+ *
+ * From 2 Sep 2026 `npm run host` prints a link that goes **peer to peer** — the relay it starts
+ * introduces the two browsers and is then closed — so the `lan` arm's "a second client given
+ * nothing but the string that came out of the square" now needs a `RTCPeerConnection` to
+ * complete. Two measurements decide how this gate has to launch:
+ *
+ * - **`chrome-headless-shell` cannot hold one here.** That is what
+ *   `chromium.launch({ headless: true })` runs, and two browsers of it completed a connectivity
+ *   check **2 times in 17** across four flag combinations, every failure sitting in
+ *   `ice: checking` with no `icecandidateerror` to attribute it to. `channel: 'chromium'` is the
+ *   *same bundled binary* in the new headless mode and connects in 57-209 ms, as does the system
+ *   `channel: 'chrome'`. Same binary means the same libm generation, which is the property §9.5's
+ *   pairing table rests on, so this changes the headless implementation and nothing about what
+ *   the simulation computes.
+ * - **Chromium replaces host candidates with `*.local` mDNS names by default**, which is a good
+ *   privacy behaviour and which nothing in this environment resolves — so two browsers on one
+ *   machine never complete a check over host candidates. A player's operating system resolves
+ *   them and a player's peer is on another machine; no flag is shipped, and `PeerLink` never
+ *   looks at a candidate's address.
+ *
+ * `tools/lib/work-budget.mjs`'s `ourBrowserPids` had to be widened in the same change: it
+ * matched only `chrome-headless-shell`, so a browser launched through either channel was neither
+ * demoted while the owner played nor group-killed by the reaper.
+ */
+const PEER_ARGS = ['--hide-scrollbars', '--disable-features=WebRtcHideLocalIpsWithMdns'];
 const chrome = await launchBrowser({
-  label: 'qa-net/host', engine: 'chromium',
-  args: ['--hide-scrollbars', ...PUBLIC_ORIGIN_OVERRIDE], port: PORT, root: ROOT,
+  label: 'qa-net/host', engine: 'chromium', channel: 'chromium',
+  args: [...PEER_ARGS, ...PUBLIC_ORIGIN_OVERRIDE], port: PORT, root: ROOT,
 });
 browsers.push(chrome);
 const chromeGuest = await launchBrowser({
-  label: 'qa-net/guest', engine: 'chromium', args: ['--hide-scrollbars'], port: PORT, root: ROOT,
+  label: 'qa-net/guest', engine: 'chromium', channel: 'chromium',
+  args: PEER_ARGS, port: PORT, root: ROOT,
 });
 browsers.push(chromeGuest);
 

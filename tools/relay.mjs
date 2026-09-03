@@ -270,6 +270,30 @@ const rooms = new Map();
  */
 const signals = new Map();
 const SIGNAL_MAX_PER_CODE = 8;
+/**
+ * `code -> when a second peer arrived on its introduction channel`.
+ *
+ * The one fact about a peer-to-peer match this relay can honestly know, and it exists to keep a
+ * refusal the relay transport used to give for free.
+ *
+ * `/new` answers `started` for a room past the lobby, and `src/ui/NetLobby.ts` keys on it so that
+ * a host who presses Back, or reopens a `?create=1` URL out of history, is told *"room X is
+ * already in its battle phase"* rather than handed a Room open screen with a code, a link and a
+ * square for a room nobody can enter. That was a reviewer's finding and §12.3 records it.
+ *
+ * Peer to peer there is no socket in the room to move it past the lobby, so `phase` stays
+ * `lobby` for ever and the refusal disappeared. What is left is this: **two peers turned up on
+ * one introduction channel**, which is not a guess and needs no payload — this relay cannot read
+ * a sealed envelope and does not try. A code that two people have been introduced on is a code
+ * that has been spent.
+ *
+ * Reaped on the same TTL as an empty room, because a rendezvous name is worth reusing eventually
+ * and holding it for ever would make a restarted relay the only way to reuse a five-character
+ * code. There is deliberately **no equivalent on the deployed site**: the public brokers are not
+ * a registry and nobody is keeping this list, so that refusal is a LAN-only property. See
+ * `docs/MULTIPLAYER.md` §13.9.
+ */
+const introduced = new Map();
 
 const roomOpts = () => ({
   delayTurns: DELAY, turnMs: TURN_MS, pairs: PAIRS, fatal: FATAL,
@@ -335,6 +359,9 @@ function flush(entry, reply) {
  */
 setInterval(() => {
   const now = Date.now();
+  for (const [code, when] of introduced) {
+    if (now - when > EMPTY_ROOM_TTL_MS) introduced.delete(code);
+  }
   for (const [code, entry] of rooms) {
     flush(entry, entry.room.tick(now));
     if (entry.room.over && !entry.sockets[0] && !entry.sockets[1]) { rooms.delete(code); continue; }
@@ -406,6 +433,7 @@ const server = createServer((req, res) => {
       // The introduction service, by code and by how many peers are on it. A count and never a
       // payload: this relay cannot read a sealed envelope and must not look as though it might.
       signals: [...signals.entries()].map(([code, set]) => ({ code, peers: set.size })),
+      introduced: [...introduced.keys()],
     }, false);
     return;
   }
@@ -469,6 +497,22 @@ const server = createServer((req, res) => {
        * the whole of that repair. Answering it here rather than inferring it there is the same
        * rule as everywhere else in this file: the relay is the only party that knows.
        */
+      /*
+       * A code two peers have already been introduced on. See `introduced`.
+       *
+       * Answered as `started` rather than as a fourth error, because it is the same fact from
+       * the player's point of view — *this code is in use and cannot be minted again* — and
+       * `NetLobby` already has the screen for it. A new `error` string would be a second sentence
+       * for one situation, and the relay has three of those already.
+       */
+      if (introduced.has(asked)) {
+        sendJson(res, 409, {
+          error: 'started',
+          detail: `room ${asked} has already introduced two players and cannot be opened again. `
+            + 'Pick another code, or leave the field empty and one will be chosen.',
+        });
+        return;
+      }
       if (held && held.room.phase !== 'lobby') {
         sendJson(res, 409, {
           error: 'started',
@@ -532,6 +576,9 @@ server.on('upgrade', (req, sock) => {
       return;
     }
     peers.add(sock);
+    // Two peers on one channel is an introduction. Recorded before either of them has said
+    // anything, because what matters is that the code is in use and not what they said.
+    if (peers.size >= 2 && !introduced.has(code)) introduced.set(code, Date.now());
     log(`  signal ${code}: ${peers.size} peer(s) waiting to be introduced`);
     let sbuf = Buffer.alloc(0);
     sock.on('data', (chunk) => {
