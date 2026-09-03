@@ -911,7 +911,8 @@ if (wanted('params')) {
 
 if (wanted('seal')) {
   console.log('\n=== seal: the topic is a hash, the payload is ciphertext ===');
-  const { keyFor, PUBLIC_BROKERS, seal, topicFor, unseal } = await import('../src/net/signal.ts');
+  const { MqttSignal, keyFor, PUBLIC_BROKERS, seal, topicFor, unseal } =
+    await import('../src/net/signal.ts');
   const { CODE_ALPHABET } = await import('../src/net/protocol.ts');
   /*
    * The product's own `keyFor`, and it had to be exported for this.
@@ -950,6 +951,55 @@ if (wanted('seal')) {
   record('seal-nonce-moves', twice !== env,
     'two seals of one message differ, so the nonce is real and a replay is visible',
     `${env.slice(0, 16)}… against ${twice.slice(0, 16)}…`);
+  /*
+   * The plaintext envelope, and the fact that the two kinds are told apart.
+   *
+   * `crypto.subtle` is secure-context-only and `npm run host` serves a *private* plain-http
+   * address, which is not one — measured in `tools/scratch/securectx.mjs`, and it shipped broken
+   * until `qa-net`'s `lan` arm caught the host getting *"Cannot read properties of undefined
+   * (reading 'importKey')"* after pressing CHOOSE THE BATTLE. Every earlier measurement of this
+   * pass was on loopback, which *is* a secure context, so the bug was invisible to all of them.
+   *
+   * Node always has `crypto.subtle`, so what is asserted here is the mechanism rather than the
+   * environment: a null key produces a marked plaintext envelope, both kinds open, and a
+   * plaintext envelope is **not** mistaken for a sealed one it cannot read. The environment half
+   * is asserted end to end by `qa-net`'s `lan` arm playing a battle over that origin.
+   */
+  const plain = await seal(null, msg);
+  const plainBack = await unseal(null, plain);
+  const plainViaKey = await unseal(kA, plain);
+  const sealedNoKey = await unseal(null, env);
+  record('seal-plaintext-is-marked-and-readable',
+    plain[0] === '0' && env[0] === '1'
+    && JSON.stringify(plainBack) === JSON.stringify(msg)
+    && JSON.stringify(plainViaKey) === JSON.stringify(msg)
+    && sealedNoKey === null,
+    'a page with no crypto.subtle sends a marked plaintext envelope that a sealing peer can read',
+    `plaintext begins '${plain[0]}', sealed begins '${env[0]}'; plaintext opens with no key `
+    + `${JSON.stringify(plainBack) === JSON.stringify(msg)} and with a key `
+    + `${JSON.stringify(plainViaKey) === JSON.stringify(msg)}; a sealed envelope with no key `
+    + `returns ${sealedNoKey === null ? 'null' : 'SOMETHING'}`,
+    'the marker is what lets an https page and a LAN http page introduce each other; without it '
+    + "the second one's plaintext is silently \"an envelope that would not open\"");
+  /*
+   * The refusal, **reached**, and the first version of this check could not reach it.
+   *
+   * It asserted `canSeal() === true`, which in Node is a tautology — a check that cannot fail,
+   * which is the thing this file's header is about. `MqttSignal` takes the capability as an
+   * argument now, defaulting to the real answer, so the branch a private plain-http origin would
+   * take can be driven from here. An empty broker list makes the refusal the only thing that can
+   * happen; if it did not fire, `open` would fail on "none of the 0 introduction services
+   * answered" instead, which is a different sentence and would be caught.
+   */
+  const refusal = await new MqttSignal('ABCDE', 0, [], () => false).open(300)
+    .then(() => '(it opened anyway)').catch((e) => e.message);
+  record('seal-refuses-a-public-broker-unsealed',
+    /cannot encrypt an introduction/i.test(refusal) && /https/.test(refusal)
+    && /npm run host/.test(refusal) && !/introduction services answered/i.test(refusal),
+    'a page that cannot encrypt refuses a public broker rather than downgrading to it',
+    refusal.slice(0, 240),
+    'a plaintext offer on a shared public test broker would put the addresses in your ICE '
+    + 'candidates in the clear, which is a different question from a relay on your own network');
   record('seal-brokers-listed',
     PUBLIC_BROKERS.length === 3 && PUBLIC_BROKERS.every((u) => u.startsWith('wss://'))
     && new Set(PUBLIC_BROKERS.map((u) => new URL(u).host)).size === 3

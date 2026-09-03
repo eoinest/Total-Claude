@@ -173,7 +173,34 @@ export async function topicFor(code: string): Promise<string> {
 }
 
 /**
- * The key, derived from the room code with HKDF-SHA256. AES-GCM 128.
+ * Is `crypto.subtle` here at all? **On the LAN path it is not, and that is measured.**
+ *
+ * `crypto.subtle` is secure-context-only, and `npm run host` serves the game over plain `http`
+ * on an address like `192.168.1.77:5938` — which is a *private* address, not loopback, so the
+ * browser does not treat it as secure. Measured (`tools/scratch/securectx.mjs`), Chrome, same
+ * server on two origins:
+ *
+ * | origin | `isSecureContext` | `crypto.subtle` | `getRandomValues` | `RTCPeerConnection` |
+ * |---|---|---|---|---|
+ * | `http://127.0.0.1:5948` | true | yes | yes | constructs, channel opens |
+ * | `http://192.168.1.77:5948` | **false** | **undefined** | yes | constructs, channel opens |
+ *
+ * So the *transport* is fine on a LAN http origin and the *sealing* is not, and this shipped
+ * broken until `qa-net`'s `lan` arm found it: `keyFor` threw
+ * `Cannot read properties of undefined (reading 'importKey')`, `signal.open()` rejected, and the
+ * host got *"The connection could not be made"* after pressing CHOOSE THE BATTLE. Loopback is a
+ * secure context, so every earlier measurement of this pass was taken on the one origin where
+ * the bug is invisible.
+ *
+ * What follows from it is in `seal` and in `MqttSignal.open`, and the split is not a compromise:
+ * the origin that cannot seal is exactly the origin whose signalling never leaves the house.
+ */
+export const canSeal = (): boolean =>
+  typeof crypto !== 'undefined' && !!(crypto as Crypto).subtle;
+
+/**
+ * The key, derived from the room code with HKDF-SHA256. AES-GCM 128. **Null where there is no
+ * `crypto.subtle`** — see `canSeal`, and `seal` for what is done about it.
  *
  * **Exported for the gate, and that is not a convenience.** `qa-p2p`'s `seal` arm had its own
  * copy of this derivation inline, so `seal-round-trip` compared `seal` and `unseal` against a key
@@ -187,7 +214,8 @@ export async function topicFor(code: string): Promise<string> {
  * opaque to a passive listener, and it is not proof against somebody who guesses the code. See
  * the privacy paragraph in the file docstring.
  */
-export const keyFor = async (code: string): Promise<CryptoKey> => {
+export const keyFor = async (code: string): Promise<CryptoKey | null> => {
+  if (!canSeal()) return null;
   const ikm = await crypto.subtle.importKey('raw',
     utf8(`total-claude/v1/${code.toUpperCase()}`), 'HKDF', false, ['deriveKey']);
   return crypto.subtle.deriveKey(
@@ -199,15 +227,33 @@ export const keyFor = async (code: string): Promise<CryptoKey> => {
     ikm, { name: 'AES-GCM', length: 128 }, false, ['encrypt', 'decrypt']);
 };
 
-/** One sealed envelope: 12-byte nonce, then the ciphertext, base64. */
-export async function seal(key: CryptoKey, m: SignalMsg): Promise<string> {
+/**
+ * One envelope. `1` + base64(nonce ‖ ciphertext) when it is sealed, `0` + base64(JSON) when it
+ * cannot be.
+ *
+ * **The prefix is not decoration.** Two peers can legitimately differ in whether they have
+ * `crypto.subtle`: one on `https://total-claude.vercel.app`, the other on the same LAN relay's
+ * plain-http page. Without a marker the second one's plaintext would be handed to
+ * `crypto.subtle.decrypt` and returned as "an envelope that would not open" — which `unseal` is
+ * deliberately quiet about, so a room would simply never form and nothing would say why.
+ *
+ * A `null` key means `canSeal()` was false. That happens on exactly one origin shape — a private
+ * plain-http address, which is what `npm run host` serves — and on that origin the channel is a
+ * relay on your own network, carrying an offer and an answer between two machines that are
+ * already talking to each other. The relay transport carried *every order of every battle* over
+ * that same wire until today. `MqttSignal` refuses rather than downgrading, because a public
+ * broker is a different question entirely.
+ */
+export async function seal(key: CryptoKey | null, m: SignalMsg): Promise<string> {
+  const json = JSON.stringify(m);
+  if (!key) return `0${b64(utf8(json))}`;
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key,
-    utf8(JSON.stringify(m))));
+    utf8(json)));
   const out = new Uint8Array(iv.length + ct.length);
   out.set(iv, 0);
   out.set(ct, iv.length);
-  return b64(out);
+  return `1${b64(out)}`;
 }
 
 /**
@@ -218,18 +264,26 @@ export async function seal(key: CryptoKey, m: SignalMsg): Promise<string> {
  * is an error worth interrupting a handshake for. What *would* be an error is treating a failure
  * to decrypt as a failure of the room, so this is quiet on purpose and `PeerLink` counts them.
  */
-export async function unseal(key: CryptoKey, s: string): Promise<SignalMsg | null> {
+export async function unseal(key: CryptoKey | null, s: string): Promise<SignalMsg | null> {
   try {
-    const raw = unb64(s);
+    const kind = s[0];
+    const body = s.slice(1);
+    // A plaintext envelope is readable whether or not *this* peer can seal, which is what makes
+    // an https page and a LAN http page able to introduce each other.
+    if (kind === '0') return shaped(JSON.parse(dec.decode(unb64(body))) as SignalMsg);
+    if (kind !== '1' || !key) return null;
+    const raw = unb64(body);
     if (raw.length < 29) return null;
     const pt = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: raw.subarray(0, 12) }, key, raw.subarray(12));
-    const m = JSON.parse(dec.decode(pt)) as SignalMsg;
-    return typeof m?.t === 'string' && typeof m?.from === 'number' ? m : null;
+    return shaped(JSON.parse(dec.decode(pt)) as SignalMsg);
   } catch {
     return null;
   }
 }
+
+const shaped = (m: SignalMsg): SignalMsg | null =>
+  (typeof m?.t === 'string' && typeof m?.from === 'number' ? m : null);
 
 // ---------------------------------------------------------------------------
 // MQTT 3.1.1, the part of it two browsers need
@@ -425,15 +479,28 @@ export class MqttSignal implements SignalChannel {
   private socks: MqttSocket[] = [];
   private key: CryptoKey | null = null;
   private topic = '';
+  private sealable: () => boolean;
   private seen = new Set<string>();
   private dead = false;
   /** Envelopes that arrived and would not open. Counted, never reported as a room failure. */
   foreign = 0;
 
-  constructor(code: string, slot: number, urls: string[] = PUBLIC_BROKERS) {
+  /**
+   * `sealable` is the *capability*, injected rather than read, and it is not a test knob.
+   *
+   * "May this page encrypt?" is a fact about the origin, and a class that reads it out of a
+   * global is a class whose refusal branch cannot be reached from anywhere but that origin — so
+   * the one sentence this design owes a player who would otherwise get a plaintext offer on a
+   * public broker would ship untested. The default is the real answer; a caller may state it.
+   */
+  constructor(
+    code: string, slot: number, urls: string[] = PUBLIC_BROKERS,
+    sealable: () => boolean = canSeal
+  ) {
     this.code = code;
     this.slot = slot;
     this.urls = urls;
+    this.sealable = sealable;
   }
 
   get name(): string {
@@ -444,6 +511,21 @@ export class MqttSignal implements SignalChannel {
   get live(): number { return this.socks.filter((s) => s.connected).length; }
 
   async open(timeoutMs = 8000): Promise<void> {
+    /*
+     * **Refused rather than downgraded.** A public broker is a public square, and publishing an
+     * unsealed offer to one would put the addresses in your ICE candidates on somebody else's
+     * shared test broker in the clear. `canSeal()` is false on exactly one origin shape — a
+     * private plain-http address — and that origin has a better answer sitting in front of it:
+     * the relay its own server started, which is what `chooseTransport` picks by default there.
+     * So this is a sentence and not a fallback.
+     */
+    if (!this.sealable()) {
+      throw new Error('this page cannot encrypt an introduction, so it will not send one '
+        + 'through a public service. Browsers only allow encryption on a secure page, and this '
+        + `one is at ${typeof location === 'undefined' ? 'an insecure address' : location.origin}`
+        + '. Open the game over https, or over the address `npm run host` prints, which '
+        + 'introduces the two of you on your own network instead.');
+    }
     this.key = await keyFor(this.code);
     this.topic = await topicFor(this.code);
     const onPub = (payload: string): void => { void this.take(payload); };
@@ -536,6 +618,18 @@ export class WsSignal implements SignalChannel {
 
   async open(timeoutMs = 8000): Promise<void> {
     this.key = await keyFor(this.code);
+    /*
+     * Said once, in the console, because a downgrade nobody is told about is the shape of
+     * problem this whole project keeps writing down. Not on the screen: the player has no
+     * decision to make — this is their own machine introducing them on their own network, and
+     * `describe()` in the lobby deliberately says nothing at all about that case.
+     */
+    if (!this.key) {
+      console.warn(`[net] ${location.origin} is not a secure page, so the browser gives it no `
+        + 'encryption. The introduction through ' + this.url + ' will be sent as plain text. '
+        + 'It stays on this network, and it carries an offer and an answer rather than any part '
+        + 'of the battle.');
+    }
     await new Promise<void>((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
