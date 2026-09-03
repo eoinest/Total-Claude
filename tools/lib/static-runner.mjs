@@ -348,6 +348,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /*
+   * `dist/.tc-build.json` is in the output directory and is not part of the site.
+   *
+   * `tools/lib/dist-build.mjs` writes it so `npm run host` can tell whether what it is about to
+   * serve is older than the source — a local question with a local answer, carrying this
+   * machine's build time and node version. Nothing fetches it, so a 404 is the true statement:
+   * there is no such resource on this site. `tools/deploy-vercel.mjs` leaves it out of an
+   * upload for the same reason.
+   */
+  if (urlPath === '/.tc-build.json') {
+    send(res, 404, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+      `not found: ${urlPath}\n`);
+    return;
+  }
+
   let abs = resolveInDist(urlPath);
   if (!abs) {
     send(res, 403, { 'content-type': 'text/plain; charset=utf-8' }, 'forbidden\n');
