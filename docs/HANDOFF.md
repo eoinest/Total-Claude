@@ -3514,7 +3514,7 @@ and not the fixture.
 
 ### The four defects a relay cannot have
 
-Read `docs/MULTIPLAYER.md` §13.8bis before changing anything here. Four of the eight defects the
+Read `docs/MULTIPLAYER.md` §13.9 before changing anything here. Four of the eight defects the
 gate found are the same category — **a relay is a third party that holds state and answers on its
 own thread, and every place this design leaned on that without noticing became a defect**:
 
@@ -3545,4 +3545,4 @@ measured.
 `srflx`-to-`srflx` — two strangers on two *different* NATs — has never carried a battle, because
 reproducing it needs a second network. Everything about the internet case is measured gathering
 plus measured policy plus one battle over `host` candidates on this laptop. That is a second open
-premise beside §7.1's, and §13.9 lists the rest.
+premise beside §7.1's, and §13.10 lists the rest.

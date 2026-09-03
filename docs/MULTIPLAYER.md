@@ -3907,7 +3907,7 @@ every browser and on the deployed site rather than filtered in one harness — m
 empty and kept only as a note to the next person tempted to add to it.
 
 
-### 13.8bis What the gate found, in the order it found it
+### 13.9 What the gate found, in the order it found it
 
 The most useful thing to take from this section is not the count. It is that **eight defects were
 found by running the checks rather than by reading the code**, and that five of them are in
@@ -3935,7 +3935,7 @@ coordinator moves work onto two main threads and onto arrival order, and both of
 asking about explicitly.
 
 
-### 13.9 What is still not done
+### 13.10 What is still not done
 
 - **Two machines, two networks, played by two people.** Everything in §13.1 and §13.6 about the
   internet case is measured *gathering* and measured *policy*, plus one battle played between two
