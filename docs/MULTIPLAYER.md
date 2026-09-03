@@ -4248,14 +4248,23 @@ real bugs that the wrong sentence had been hiding**, which is the best argument 
 
 #### The smaller three
 
-- **`pagehide` was the only exit wired.** `freeze` joins it, because a tab Chromium *discards* is
-  as gone as a closed one and produced `linkLost` — the exact wrong accusation the listener exists
-  to remove. **`visibilitychange` was asked for and is deliberately not wired**, which is the one
-  place this pass disagrees with the review: `hidden` fires every time somebody switches tab or
-  locks their phone for a moment, and resigning the match there would be a worse failure than the
-  one being fixed and a far commoner one. `freeze` is always preceded by `hidden`, so the discard
-  case is covered without it. A lost network still gives `linkLost`, correctly — nothing sends a
-  goodbye because nothing can.
+- **`pagehide` was the only exit wired, and after trying the other two it still is.** The review
+  asked for `freeze` and `visibilitychange` → `hidden` as well, and **both resign matches that are
+  still being played.** `hidden` fires every time somebody switches tab or locks their phone for a
+  moment; wiring it would resign a game the instant a player alt-tabbed, and §4.5 makes that
+  unrecoverable. That one was rejected by reading. `freeze` was actually wired, and it **went red
+  in the gate within one run**: `qa-net`'s `peer-left-has-a-screen` reported the *survivor's own*
+  screen reading *"The connection is gone"* where it had read *"the other commander left"*.
+  Chromium fires `freeze` on a backgrounded tab it is *considering* discarding — the matching
+  `resume` event exists precisely because a frozen tab often comes back — so under the gate the
+  survivor's occluded window froze, disposed its own link, and ended its own match as `linkLost`.
+  A player whose battle window is not in front would lose the same way. Rejected by measurement,
+  and the measurement is the reason this is written down rather than argued.
+
+  What is genuinely not covered is a tab an OS kills outright with no event at all, and no API
+  distinguishes that from a pause. It falls to the silence detector — which is the other half of
+  why `PEER_SILENT_FLOOR_S` is 30 s and not 6. A lost network still gives `linkLost`, correctly:
+  nothing sends a goodbye because nothing can.
 - **The failure-rate range was an overreach at the top.** The sources bracket it at **78% and
   82.3%** (callstats.io's 22% needing a relay; appear.in's 17.7%), and 80–90% put a number above
   every primary source in front of the owner. Corrected in four places. Both of the cautions §13.6

@@ -689,27 +689,36 @@ if (session) {
    * **Three events, not one, because there are three ways a tab stops existing** and only one of
    * them is a person closing it.
    *
-   * `pagehide` covers a close and a navigation. `freeze` is what Chromium fires immediately
-   * before it **discards** a backgrounded tab to reclaim memory, and a discarded tab is as gone
-   * as a closed one — without this the survivor waits out the silence detector and is told
-   * `linkLost`, *"the connection is gone"*, which is the exact wrong accusation this listener
-   * exists to remove.
+   * A review asked for three — `pagehide`, `freeze` and `visibilitychange` → `hidden` — and
+   * **two of the three resign matches that are still being played.** Both were tried. This is
+   * the one that is left, and the two rejections are the useful part of the note.
    *
-   * **`visibilitychange` to `hidden` is deliberately NOT one of them**, and this is a
-   * disagreement with a review that asked for it. The Page Lifecycle guidance that calls
-   * `hidden` "the last reliable callback" is about *persisting state*, and it is right about
-   * that. It is not a termination signal: `hidden` fires every time somebody switches tab, looks
-   * at a chat window, or locks their phone for a moment. Ending the match there would resign
-   * every game the instant a player alt-tabbed, and §4.5 makes that unrecoverable — a strictly
-   * worse failure than the one being fixed, and far more common. `freeze` is always preceded by
-   * `hidden`, so the discard case is covered without it.
+   * `visibilitychange` to `hidden` fires every time somebody switches tab, glances at a chat
+   * window or locks their phone for a moment. The Page Lifecycle guidance calling `hidden` "the
+   * last reliable callback" is about *persisting state* and is right about that; it is not a
+   * termination signal. Wiring it would resign every game the instant a player alt-tabbed, and
+   * §4.5 makes that unrecoverable — strictly worse than the failure being fixed, and far
+   * commoner. Rejected by reading.
+   *
+   * `freeze` was wired, and **it went red in the gate within one run**: `qa-net`'s
+   * `peer-left-has-a-screen` reported the survivor's own screen reading *"The connection is
+   * gone"* where it had read *"the other commander left"*. Chromium fires `freeze` on a
+   * backgrounded tab it is *considering* discarding, and the matching `resume` event exists
+   * precisely because a frozen tab often comes back — so it is not "this tab is ending", and
+   * under the gate the **survivor's** occluded window froze and disposed its own link, ending
+   * its own match as `linkLost`. A player whose battle window is not in front would lose the
+   * same way. Rejected by measurement.
+   *
+   * What is left is `pagehide`, which is the real end of a document and is what a person closing
+   * a tab produces: measured `peerLeft` after 503 ms, against six seconds and the wrong word.
+   * What is genuinely not covered is a tab the OS kills outright with no event at all, and there
+   * is no API that distinguishes that from a pause. That case still falls to the silence
+   * detector, which is why `PEER_SILENT_FLOOR_S` matters and why it is now 30 s rather than 6.
    *
    * A *lost network* still produces `linkLost`, correctly: nothing sends a `bye` because nothing
-   * can. `dispose` is idempotent — `PeerLink.close` returns at once when `closed` — so both
-   * arriving costs nothing.
+   * can.
    */
   window.addEventListener('pagehide', () => session.dispose());
-  window.addEventListener('freeze', () => session.dispose());
 }
 
 const vfx = engine.add(new VFXSystem());
