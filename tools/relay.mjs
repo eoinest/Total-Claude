@@ -508,8 +508,12 @@ const server = createServer((req, res) => {
       if (introduced.has(asked)) {
         sendJson(res, 409, {
           error: 'started',
-          detail: `room ${asked} has already introduced two players and cannot be opened again. `
-            + 'Pick another code, or leave the field empty and one will be chosen.',
+          // "cannot be re-entered" deliberately matches the wording of the other `started`
+          // refusal a few lines down: they are one fact from the player's point of view, and
+          // `qa-net`'s `lan-a-playing-room-is-not-reopened` reads the meaning rather than the
+          // sentence.
+          detail: `room ${asked} has already introduced two players, so it cannot be re-entered. `
+            + 'Pick another code, or leave the field empty and one will be chosen for you.',
         });
         return;
       }

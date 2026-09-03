@@ -136,17 +136,25 @@ const H = 800;
 const CERT_DIR = '/tmp/tc-qa-p2p';
 
 /**
- * The console errors a battle boot produces on this branch's base, and therefore not findings.
+ * A filter with nothing left to filter, kept as a one-line record of why it is empty.
  *
- * Attributed rather than assumed: `tools/scratch/console404.mjs` boots a *single-player* battle
- * with no room, no relay and no peer connection in it, and gets two of these. The lobby
- * (`?mp=1`) gets none, which is why `qa-net`'s console arms are green. So they predate this work
- * and filtering them by exact text leaves every other error fatal — which is the property that
- * matters, and the reason this is a list of one string rather than a threshold.
+ * It held one string — *"Failed to load resource: the server responded with a status of 404"* —
+ * on the reasoning that `tools/scratch/console404.mjs` produced it from a single-player boot with
+ * no room, no relay and no peer connection in it, so it predated this work.
+ *
+ * **Half right, and the wrong half was the interesting one.** It was a `/favicon.ico` request:
+ * this project has no favicon and, until 2 Sep 2026, nothing in `index.html` saying so.
+ * Playwright's old headless shell does not ask for one, which is why three `qa-net` arms had
+ * been asserting "no console error" over it for months and staying green; the new headless mode
+ * — which a peer connection needs — asks on every page load and surfaced it everywhere at once.
+ * `<link rel="icon" href="data:," />` satisfies the declaration with no request, so the 404 is
+ * gone in every browser and on the deployed site rather than filtered in one harness. Measured
+ * after: **zero console errors on a battle boot and zero on the lobby.**
+ *
+ * Left as an empty list rather than deleted so the next person who is tempted to filter a
+ * console error reads this first.
  */
-const KNOWN_CONSOLE = [
-  'Failed to load resource: the server responded with a status of 404 (Not Found)',
-];
+const KNOWN_CONSOLE = [];
 const newErrors = (errs) => errs.filter((e) => !KNOWN_CONSOLE.some((k) => e.includes(k)));
 
 const results = [];
@@ -1173,11 +1181,12 @@ if (wanted('battle') && chrome) {
         'the challenger built the host\'s battle without ever seeing a menu',
         `asked for ${spec}; the challenger's own record says ${m.cfg?.map}/${m.cfg?.scenario}`);
       record('battle-console-clean', errs.length === 0,
-        'neither page logged an error the base build does not already log',
+        'neither page logged a console error or threw, over a whole battle',
         errs.length ? errs.join(' | ')
-          : `no new errors; ${KNOWN_CONSOLE.length} known 404(s) filtered, attributed to a `
-            + 'single-player boot by tools/scratch/console404.mjs',
-        'the filter is by exact text, so any other error is still fatal');
+          : 'no console errors and no page errors on either side; the filter this used to need '
+            + 'is empty, because the 404 it held was a favicon request and index.html now '
+            + 'declares one',
+        'unfiltered, so any error at all is fatal');
       record('battle-no-fast-forward',
         (both.a.net?.behindTicks ?? 99) <= 9 && (both.b.net?.behindTicks ?? 99) <= 9,
         'the ceiling never runs far enough ahead for the catch-up lever to engage',

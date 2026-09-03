@@ -99,7 +99,28 @@ const KNOCK_MS = 1000;
  * `signal.open()`'s own timeout is separate and comes first, so the worst case a player sees is
  * that plus this.
  */
-const KNOCK_TIMEOUT_MS = 15000;
+const KNOCK_TIMEOUT_MS = 20000;
+/**
+ * How often the host republishes its offer while nobody has claimed it.
+ *
+ * **The host does not wait to be asked, and that is the fix for a real failure.** The first
+ * design created the offer when a knock arrived, which makes the introduction depend on the
+ * host's *main thread* being free — and a host that has just pressed CHOOSE THE BATTLE is
+ * building an 8,632-man army, which blocks that thread in multi-second chunks. `qa-net`'s `lan`
+ * arm caught it exactly there: the guest followed the square, knocked for its whole budget, and
+ * was told *"nobody answered in room 67ESC"* about a host that was sitting on the same
+ * introduction channel the entire time.
+ *
+ * A relay cannot have this problem, because the relay holds the room and answers `welcome`
+ * itself. The peer equivalent is for the offer to be *already on the channel* when the guest
+ * arrives, so the guest needs nothing from the host's thread at all.
+ *
+ * Three seconds, and it stops the moment somebody answers. An SDP offer is about 2 kB, so a host
+ * waiting a minute for a friend publishes about 40 kB — which is worth being careful about
+ * because two of the three public brokers ask not to be leaned on, and is the reason this is not
+ * every second.
+ */
+const OFFER_REPEAT_MS = 3000;
 /**
  * How long ICE gets before "these two networks will not connect" is the honest answer.
  *
@@ -189,7 +210,19 @@ export class PeerLink implements Link {
   /** The offer, kept so a repeated knock is answered rather than re-negotiated. */
   private offer: RTCSessionDescriptionInit | null = null;
   private claimed = false;
+  /**
+   * This peer's own ICE candidates, held until somebody is there to send them to.
+   *
+   * The host now gathers from the moment it opens its room, which can be minutes before a
+   * challenger exists — so every candidate it produces in that window would go to a channel with
+   * nobody on it and be lost, and the guest would then be trying to connect to a peer whose
+   * addresses it never learned. This is the mirror of `iceQueue`: that one holds *their*
+   * candidates until there is a remote description to attach them to, this one holds *ours*
+   * until there is somebody to hear them.
+   */
+  private mine: RTCIceCandidateInit[] = [];
   private knockTimer = 0;
+  private offerTimer = 0;
   private pumpTimer = 0;
   private lingerTimer = 0;
   private deadline = 0;
@@ -282,6 +315,25 @@ export class PeerLink implements Link {
 
     if (this.want === 'host') {
       this.deadline = 0;
+      /*
+       * The offer, created and published **now**, before the menu and before a single unit is
+       * built. See `OFFER_REPEAT_MS` for what waiting to be asked cost.
+       *
+       * `createOffer` is also what starts ICE gathering, which is the other half of the win: by
+       * the time a challenger turns up, this side's candidates have been found and are waiting in
+       * `mine` rather than being gathered while somebody watches a loading screen.
+       */
+      try {
+        this.offer = await this.pc.createOffer();
+        await this.pc.setLocalDescription(this.offer);
+      } catch (e) {
+        const why = `this browser would not open a connection: ${
+          e instanceof Error ? e.message : String(e)}`;
+        this.refusal = why;
+        throw new Error(why);
+      }
+      this.publishOffer();
+      this.offerTimer = setInterval(() => this.publishOffer(), OFFER_REPEAT_MS) as unknown as number;
       return this.slot;
     }
 
@@ -311,6 +363,15 @@ export class PeerLink implements Link {
     return this.slot;
   }
 
+  /** The host's standing offer, until somebody answers it. See `OFFER_REPEAT_MS`. */
+  private publishOffer(): void {
+    if (this.claimed || this.openedAt >= 0 || this.closed || !this.offer) {
+      if (this.offerTimer) { clearInterval(this.offerTimer); this.offerTimer = 0; }
+      return;
+    }
+    this.signal.send({ t: 'offer', from: this.slot, sdp: this.pc.localDescription?.sdp ?? '' });
+  }
+
   private knock(): void {
     if (this.openedAt >= 0 || this.closed) {
       if (this.knockTimer) { clearInterval(this.knockTimer); this.knockTimer = 0; }
@@ -329,6 +390,8 @@ export class PeerLink implements Link {
       const kind = typeOf(e.candidate.candidate);
       this.gathered.push(`${kind}:${e.candidate.candidate.split(' ')[4] ?? '?'}`);
       if (this.onlyCandidates && !this.onlyCandidates.includes(kind)) return;
+      // Held until somebody is on the channel to hear them. See `mine`.
+      if (!this.claimed) { this.mine.push(e.candidate.toJSON()); return; }
       this.signal.send({ t: 'ice', from: this.slot, c: e.candidate.toJSON() });
     };
     this.pc.onicecandidateerror = (e) => {
@@ -418,19 +481,15 @@ export class PeerLink implements Link {
            * shape: waiting on a host who is not coming, with nothing anywhere saying so.
            */
           if (this.claimed) { this.signal.send({ t: 'full', from: this.slot }); return; }
-          if (!this.offer) {
-            this.offer = await this.pc.createOffer();
-            await this.pc.setLocalDescription(this.offer);
-            this.deadline = now() + ICE_DEADLINE_MS;
-          }
-          // Re-sent on every knock, not just the first. An offer that was lost on a shared
-          // broker is otherwise a room that hangs, and re-sending one is free.
-          this.signal.send({ t: 'offer', from: this.slot, sdp: this.pc.localDescription?.sdp ?? '' });
+          // The offer already exists and is already being published every `OFFER_REPEAT_MS`, so
+          // a knock only makes the common case faster. It is not what the introduction depends
+          // on — see `OFFER_REPEAT_MS` for why that mattered.
+          this.publishOffer();
           return;
         }
         case 'offer': {
           if (this.want === 'host' || this.haveRemote) return;
-          this.claimed = true;
+          this.claim();
           await this.pc.setRemoteDescription({ type: 'offer', sdp: m.sdp });
           this.flushIce();
           const answer = await this.pc.createAnswer();
@@ -441,7 +500,8 @@ export class PeerLink implements Link {
         }
         case 'answer': {
           if (this.want !== 'host' || this.haveRemote) return;
-          this.claimed = true;
+          this.claim();
+          this.deadline = now() + ICE_DEADLINE_MS;
           await this.pc.setRemoteDescription({ type: 'answer', sdp: m.sdp });
           this.flushIce();
           return;
@@ -474,6 +534,18 @@ export class PeerLink implements Link {
        */
       this.fail(`the introduction failed: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  /**
+   * Somebody is on the other end. Stop advertising, and send what we have been holding.
+   *
+   * The order matters: the peer must have this side's addresses, and a candidate gathered before
+   * anybody was listening is a candidate that would otherwise never be sent. See `mine`.
+   */
+  private claim(): void {
+    this.claimed = true;
+    if (this.offerTimer) { clearInterval(this.offerTimer); this.offerTimer = 0; }
+    for (const c of this.mine.splice(0)) this.signal.send({ t: 'ice', from: this.slot, c });
   }
 
   private flushIce(): void {
@@ -563,9 +635,12 @@ export class PeerLink implements Link {
     this.dropped = this.dropped || `closed by this client: ${why}`;
     this.closed = true;
     this.take(this.peerRoom.fromClient(now(), { k: 'bye', why }));
-    for (const id of [this.knockTimer, this.pumpTimer]) if (id) clearInterval(id);
+    for (const id of [this.knockTimer, this.pumpTimer, this.offerTimer]) {
+      if (id) clearInterval(id);
+    }
     this.knockTimer = 0;
     this.pumpTimer = 0;
+    this.offerTimer = 0;
     this.dropSignal();
     try { this.dc?.close(); } catch { /* going away regardless */ }
     try { this.pc.close(); } catch { /* going away regardless */ }
