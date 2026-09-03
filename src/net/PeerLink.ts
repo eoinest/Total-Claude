@@ -350,7 +350,17 @@ export class PeerLink implements Link {
           return;
         }
         if (this.dropped) { clearInterval(poll); reject(new Error(this.dropped)); return; }
-        if (now() - started < timeoutMs) return;
+        /*
+         * **The knock deadline stops applying the moment an offer arrives**, and the two
+         * deadlines racing was a wrong sentence waiting to happen.
+         *
+         * "Nobody answered" and "the two networks would not connect" are different accusations
+         * about different parties, and up to here they were both on 20 s timers started a second
+         * apart — so a challenger whose introduction worked perfectly and whose *ICE* then failed
+         * would be told nobody had answered. `claimed` is set the instant an offer is taken, and
+         * from then on the ICE deadline governs and `noDirectPath` writes the sentence.
+         */
+        if (this.claimed || now() - started < timeoutMs) return;
         clearInterval(poll);
         this.refusal = `Nobody answered in room ${this.room}.`
           + ` Either that code is not the one on the other screen, or whoever opened it has not `
