@@ -3907,6 +3907,34 @@ every browser and on the deployed site rather than filtered in one harness — m
 empty and kept only as a note to the next person tempted to add to it.
 
 
+### 13.8bis What the gate found, in the order it found it
+
+The most useful thing to take from this section is not the count. It is that **eight defects were
+found by running the checks rather than by reading the code**, and that five of them are in
+classes a relay cannot have — so no amount of care transferred from §9 would have caught them.
+
+| # | Found by | The defect |
+|---|---|---|
+| 1 | `qa-p2p --only=lobby`, first run | A host's `connect()` resolves as soon as its code is registered, because it has a battle to choose — so it publishes `setup` and `ready` **minutes** before a challenger arrives, and both went to a data channel that did not exist. Two clients connected, both `ready`, neither ever leaving `phase: lobby`. `PeerLink.preOpen`. |
+| 2 | `qa-net --only=lan` | `crypto.subtle` is absent on a *private plain-http* origin, which is what `npm run host` serves. `keyFor` threw `Cannot read properties of undefined (reading 'importKey')` and the host got *"The connection could not be made"* after CHOOSE THE BATTLE. Every earlier measurement of this pass was on loopback, which is a secure context. |
+| 3 | `qa-net --only=lan` | The introduction depended on the host's **main thread**: the offer was created when a knock arrived, and a host that has just pressed CHOOSE THE BATTLE blocks that thread for seconds building an 8,632-man army. The host now advertises a standing offer. |
+| 4 | `qa-net --only=lan` | `WsSignal.send` guarded on `this.key`, and **a null key is the plaintext case** — so on the one origin that needs plaintext it silently dropped every message. The host published its standing offer into nothing and the guest was told *"nobody answered"* about a host on the same channel with an offer ready. |
+| 5 | Reasoning out from 4 | The knock deadline and the ICE deadline were on 20 s timers a second apart, so a challenger whose introduction worked and whose ICE then failed was told nobody had answered — the wrong accusation against the wrong party. |
+| 6 | Writing the `desync` arm | **A fault that travels forks nothing.** A relay bends the packet *for one slot*; a peer-to-peer commit goes to both ends of one channel, so a peer that corrupts what it commits produces a stream both peers play identically. The arm as first written would have injected a fault, fired it, and correctly found nothing. `PeerFault.localOnly`. |
+| 7 | `inject-p2p.mjs --all-fast` | **Five checks that could not fail**, listed above — including one that compared `seal`/`unseal` against a key the harness had derived itself. |
+| 8 | Moving `qa-net` to new headless | A `/favicon.ico` 404 on every page load that three *older* console arms had been asserting past for months, green only because the old headless shell does not ask for one. |
+
+Two of those are worth naming as a pattern rather than as bugs. **Numbers 2 and 4 are both
+"loopback is a secure context and a LAN address is not"**, and §10.1 recorded the same shape one
+pass earlier — *"both defaults were 127.0.0.1, and nothing had ever noticed"*. Every cheap
+measurement in this pass was taken on `127.0.0.1`, and the LAN origin is where two of the four
+product defects were hiding. **Numbers 1, 3, 4 and 6 are all the same category**: a relay is a
+third party that holds state and answers on its own thread, and every place this design leaned on
+that without noticing became a defect. The lesson is not "test more"; it is that removing the
+coordinator moves work onto two main threads and onto arrival order, and both of those need
+asking about explicitly.
+
+
 ### 13.9 What is still not done
 
 - **Two machines, two networks, played by two people.** Everything in §13.1 and §13.6 about the
