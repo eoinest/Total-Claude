@@ -18,9 +18,9 @@ import {
  * which is the worst possible shape for a rule about determinism.
  *
  * So: one handshake, one comparator, two schedulers. `Room` calls both of these and so does
- * `PeerRoom`, and `tools/qa-p2p.mjs`'s `agree-shared` arm asserts that the two transports
- * return the identical verdict on the identical pair of fingerprints — because "they call the
- * same function" is a claim about today's source and not about the behaviour.
+ * `PeerRoom`, and `tools/qa-p2p.mjs`'s `proto-both-transports-agree` check drives both over their
+ * own message interfaces and requires the identical verdict on five pairings — because "they call
+ * the same function" is a claim about today's source and not about the behaviour.
  *
  * ## Erasable-only TypeScript, inherited
  *
@@ -60,7 +60,7 @@ export interface Verdict {
  *
  * Lifted verbatim out of `Room.mismatch` on 2 September 2026. Every clause is a measurement
  * from `docs/MULTIPLAYER.md`, cited on `BootPrint`; nothing about the reasoning changed in the
- * move, and `tools/qa-p2p.mjs`'s `agree-shared` arm is what keeps it from drifting.
+ * move, and `tools/qa-p2p.mjs`'s `proto-both-transports-agree` is what keeps it from drifting.
  */
 export function agree(pairs: PairTable, a: BootPrint, b: BootPrint): Verdict {
   const no = (why: string, detail: string): Verdict =>
