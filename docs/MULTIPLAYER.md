@@ -3688,6 +3688,37 @@ own simulation. Under a relay it can, because the relay closes turns on its own 
   that stops committing stops its opponent at the ceiling within `delayTurns`, so the two hash
   streams are pinned together and the relay's test **could never fire** — a check that cannot fail.
   What is measurable instead is that the peer is beating and its committed turn has not moved.
+- **The host advertises its offer instead of waiting to be asked**, and this one is a repaired
+  failure rather than a design note. The first version created the offer when a knock arrived,
+  which makes the introduction depend on the host's **main thread** being free — and a host that
+  has just pressed CHOOSE THE BATTLE is building an 8,632-man army, which blocks that thread in
+  multi-second chunks. `qa-net`'s `lan` arm caught it exactly there: the guest followed the
+  square, knocked for its whole budget, and was told *"nobody answered in room 67ESC"* about a
+  host sitting on the same channel the whole time. A relay cannot have this problem, because the
+  relay holds the room and answers `welcome` itself. So the offer is created at `connect`, before
+  the menu and before a unit exists, and republished every 3 s until somebody answers — and the
+  guest then needs nothing from the host's thread at all. Creating it early starts ICE early too,
+  which needs the mirror of the candidate queue: `PeerLink.mine` holds *this* side's candidates
+  until there is somebody on the channel to hear them, because one gathered before anybody was
+  listening would otherwise never be sent.
+- **A code a relay has introduced two peers on cannot be minted again.** The relay transport's
+  `/new` answers `started` for a room past the lobby, and §12.3 records a reviewer finding the
+  hole that closed: a host who presses Back, or reopens a `?create=1` URL out of history, was
+  handed a Room open screen with a code, a link and a square for a room nobody could enter. Peer
+  to peer nothing joins the relay's room, so its phase stays `lobby` for ever and the refusal
+  disappeared. What a relay *does* honestly know is that two peers turned up on one introduction
+  channel — no payload, and it cannot read a sealed envelope even in principle — so that is the
+  list `/new` now consults, reaped on the same TTL as an empty room. **There is deliberately no
+  equivalent on the deployed site**: public brokers are not a registry, nobody is keeping the
+  list, and that refusal is a LAN-only property.
+- **A challenger knocks for twenty seconds, and it was forty-five.** A correct code is answered by
+  the standing offer; a wrong one is never answered at all. So a long wait buys nothing but
+  silence for somebody who mistyped, and `qa-net`'s `badcode` arm said so in the only words that
+  matter: *"nothing said anything in 25.0 s — this is the silent wait"*.
+- **A second challenger is refused by name rather than by a timeout.** Two of them can answer one
+  standing offer; the first wins, and the second had already set a remote description and would
+  have sat through the ICE deadline and been told *"your two networks would not let the game
+  connect directly"* — an accusation against their network for a room that was simply taken.
 
 **And one hazard that cost half a day of measurement, recorded so nobody pays for it twice.**
 `addIceCandidate` rejects while `remoteDescription` is null. Host candidates are gathered in
@@ -3862,6 +3893,18 @@ one channel, so there is no canonical stream for one side to diverge from. The d
 written would have injected a fault, fired it, and correctly found nothing. `PeerFault.localOnly`
 is the fix, and both properties are asserted rather than assumed: the four **published** faults
 must leave the two op streams *identical*, and the two **local** faults must make them *differ*.
+
+
+**One finding that is about three *older* arms rather than about this transport.** Moving
+`qa-net` to the new headless mode surfaced a `/favicon.ico` request on every page load: this
+project has no favicon and, until 2 Sep 2026, nothing in `index.html` saying so, so every browser
+asked and every page logged *"Failed to load resource: the server responded with a status of
+404"*. Playwright's **old** headless shell does not ask, which is the only reason `lan-console`,
+`dev-server-lobby-console` and `static-origin-lobby-console` had ever been green.
+`<link rel="icon" href="data:," />` satisfies the declaration with no request, so it is gone in
+every browser and on the deployed site rather than filtered in one harness — measured after:
+**zero console errors on a battle boot and zero on the lobby**, so `qa-p2p`'s filter list is now
+empty and kept only as a note to the next person tempted to add to it.
 
 
 ### 13.9 What is still not done
