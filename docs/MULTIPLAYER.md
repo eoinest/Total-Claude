@@ -3919,10 +3919,22 @@ classes a relay cannot have — so no amount of care transferred from §9 would 
 | 2 | `qa-net --only=lan` | `crypto.subtle` is absent on a *private plain-http* origin, which is what `npm run host` serves. `keyFor` threw `Cannot read properties of undefined (reading 'importKey')` and the host got *"The connection could not be made"* after CHOOSE THE BATTLE. Every earlier measurement of this pass was on loopback, which is a secure context. |
 | 3 | `qa-net --only=lan` | The introduction depended on the host's **main thread**: the offer was created when a knock arrived, and a host that has just pressed CHOOSE THE BATTLE blocks that thread for seconds building an 8,632-man army. The host now advertises a standing offer. |
 | 4 | `qa-net --only=lan` | `WsSignal.send` guarded on `this.key`, and **a null key is the plaintext case** — so on the one origin that needs plaintext it silently dropped every message. The host published its standing offer into nothing and the guest was told *"nobody answered"* about a host on the same channel with an offer ready. |
+| 4b | `qa-net --only=lan`, again | **The identical guard in `onmessage`**, doing the same thing inbound. Fixing `send` fixed half of it, and the symptom was indistinguishable: the relay's own `introduced` list recorded two peers meeting on that code, and the challenger still heard nothing. There is now no `this.key` test anywhere outside `seal` and `unseal`. |
 | 5 | Reasoning out from 4 | The knock deadline and the ICE deadline were on 20 s timers a second apart, so a challenger whose introduction worked and whose ICE then failed was told nobody had answered — the wrong accusation against the wrong party. |
 | 6 | Writing the `desync` arm | **A fault that travels forks nothing.** A relay bends the packet *for one slot*; a peer-to-peer commit goes to both ends of one channel, so a peer that corrupts what it commits produces a stream both peers play identically. The arm as first written would have injected a fault, fired it, and correctly found nothing. `PeerFault.localOnly`. |
 | 7 | `inject-p2p.mjs --all-fast` | **Five checks that could not fail**, listed above — including one that compared `seal`/`unseal` against a key the harness had derived itself. |
 | 8 | Moving `qa-net` to new headless | A `/favicon.ico` 404 on every page load that three *older* console arms had been asserting past for months, green only because the old headless shell does not ask for one. |
+
+**The reason 4 and 4b took a browser arm each is the finding worth acting on.** `WsSignal`'s
+plaintext branch exists only on a private plain-http origin, so nothing cheaper than
+`npm run host` under Playwright could reach it — and an expensive check that runs rarely found
+one half of a four-line bug, was believed, and left the other half in place. So the capability is
+now an argument (`new WsSignal(base, code, slot, sealable)`, matching `MqttSignal`), and
+`seal-plaintext-crosses-a-real-socket` drives the branch against a real relay **in two seconds
+with no browser**: two channels that cannot encrypt must get a message each way, and a sealing
+peer must be able to read one that cannot. `key-as-readiness-flag-out` and `-in` turn it red.
+**A branch that can only be reached by the most expensive instrument you own is a branch that
+will be tested once.**
 
 Two of those are worth naming as a pattern rather than as bugs. **Numbers 2 and 4 are both
 "loopback is a secure context and a LAN address is not"**, and §10.1 recorded the same shape one
