@@ -1440,8 +1440,17 @@ if (wanted('leave') && chrome) {
    * `bye` on the way out and the data channel closes behind it, which is what shutting a tab
    * actually does.
    */
+  /*
+   * No `&menu=0` here, and that is a correction rather than a preference.
+   *
+   * `bootPeers` boots the host through `bootThroughMenu`, which *drives* the menu — so `menu=0`
+   * skips the very sheet the driver is waiting for and the arm dies on a locator timeout sixty
+   * seconds later, having measured nothing. The other arms get their tier and their battle from
+   * the menu for the same reason: a gate that sets them in the query string is not booting the
+   * way a player boots.
+   */
   const m = await bootPeers(chrome, chromeGuest, base, {
-    sig: SIG(), deploy: false, autoplay: 1, extra: '&menu=0&quality=medium',
+    sig: SIG(), deploy: false, autoplay: 1,
   });
   await m.host.waitForFunction(
     () => window.__net()?.phase === 'battle', null, { timeout: 120000 });
