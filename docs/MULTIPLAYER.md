@@ -3396,8 +3396,9 @@ Serve `dist/`, and build it first if the source has moved.
     the entry count** across `src/`, `public/`, both HTML entries, `vite.config.ts`,
     `tsconfig.json`, `package.json` and `tools/optimize-assets.mjs`. The count is not redundant:
     a deleted file leaves the newest mtime untouched, and a build that still ships a module the
-    source no longer has is exactly the stale serve this exists to prevent. The walk is 431
-    entries and 21 ms, so it happens on every start rather than being trusted to a flag.
+    source no longer has is exactly the stale serve this exists to prevent. The walk is 439
+    entries and 50 ms cold, 6 ms warm, so it happens on every start rather than being trusted to
+    a flag.
   - It is `vite build` + `optimize-assets`, **not `npm run build`**. That script is
     `lint && tsc --noEmit && vite build && optimize-assets`, and the first two are gates on the
     repository. A lint rule about a detached spawn in an unrelated tool must not be the reason

@@ -25,9 +25,9 @@
  * The fingerprint is the newest mtime **and the file count**, and the count is not redundant: a
  * deleted file leaves the newest mtime untouched, and a build that still ships a module the
  * source no longer has is exactly the stale-serve this exists to prevent. Directory mtimes are
- * included for the same reason — a rename shows up there and nowhere else. The walk is 431
- * entries and takes 21 ms, which is cheap enough to do on every start rather than trusting a
- * flag.
+ * included for the same reason — a rename shows up there and nowhere else. The walk is 439
+ * entries and takes 50 ms cold, 6 ms once the directories are in the page cache — cheap enough
+ * to do on every start rather than trusting a flag.
  *
  * ## Why it is `vite build` and not `npm run build`
  *

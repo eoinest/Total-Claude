@@ -471,11 +471,12 @@ put(`  relay   ${relayUrl}${relayOk ? '' : '   NOT ANSWERING'}`);
  * otherwise have no way to know why his friend is still waiting.
  */
 if (DEV) {
-  put('  serving the Vite dev server: the guest fetches ~200 source modules and pays for');
-  put('          each one. Drop --dev to serve the built bundle instead.');
+  put('  serves  the Vite dev server. The guest fetches ~200 source modules and pays');
+  put('          for each one — 23.2 MB, and 6.8 s on Wi-Fi. Drop --dev for the build.');
 } else {
-  put(`  serving the production build from dist/${build.rebuilt ? `, built just now in ${(build.ms / 1000).toFixed(1)}s` : ' (already current)'}`);
-  if (build.staleServed) put('          — and it is STALE: --no-build was given. The guest gets the previous build.');
+  put(`  serves  the production build in dist/${build.rebuilt
+    ? `, built just now in ${(build.ms / 1000).toFixed(1)}s` : ', already current'}`);
+  if (build.staleServed) put('          and it is STALE: --no-build was given, so the guest gets the previous one.');
 }
 if (!LOOPBACK) {
   put(`  also    http://${MDNS}:${PORT}/${ROOM ? `?room=${ROOM}` : '?mp=1'}`);
