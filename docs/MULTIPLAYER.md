@@ -3168,11 +3168,10 @@ state beside each row.
 | B | 77-99 | **playing** | 80/87 — `same-battle`, `reordered-pair` ×2, `one-ulp` ×2, `peer-left` ×2 |
 | C | ~35 rising | playing | **died at exit 1**, 30 checks in: `page.click` timeout on `.dest-battle` |
 | D | 21-40 | present, not playing | **88/89** — `same-battle` only |
+| E | 11-18 | present, not playing | **88/89** — `same-battle` only |
 
-Run D is the one to read, because it is the first with the denominator fixed: 89 checks in A and
-89 in D, the same number, which is the property that was missing. Its single red is
-`same-battle` at ticks 2106 and 2111 — the reviewer independently measured 2109 and 2115 — with
-`checkpoints-agreed` green beside it.
+D and E are the ones to read, because they are the first with the denominator fixed: 89 checks in
+A, 89 in D, 89 in E, the same number three times, which is the property that was missing.
 
 Every red in B is a full-battle arm timing out, and the signatures say so rather than being
 inferred: `peer-left` reported *"nothing has arrived from the relay in 6.1 s of drawing"*, which
@@ -3192,10 +3191,21 @@ identical signature. And it is unreachable from the one change this branch made 
 requires `--fault=` on the relay — and the `battle` arm's relay has none. The swap change cannot
 touch an arm that injects no fault.
 
-**It correlates with load and nothing else.** Green at load 6; red at 21, at 35 and at 99. Three
-of the four runs were on a machine with the load average above 20 from work that was not this
-gate's — measured: two browsers and 0.7 cores of Chromium against a 16-core machine reporting
-7.4 cores in use.
+**And the load story is weaker than it first looked, which is worth saying because the first
+draft of this paragraph got it wrong.** After three runs it read "it correlates with load and
+nothing else — green at 6, red at 21, 35 and 99". Run E then went red at load 11-18. So the
+honest statement is not a correlation: **`same-battle` is red in four of five runs on this
+machine and has been green once.** It is a flaky arm, not a busy laptop, and calling it the
+second was the same over-generalisation from three data points that §12.6 records making about
+address spaces.
+
+What is stable across all of them is the *shape*: the two clients end a handful of ticks apart —
+2248/2263, 2106/2111, 2115/2120, and 1359/1369 at the branch base — with every exchanged
+checkpoint agreeing. `settleTogether` stops the relay's turn clock and polls for a common tick;
+what it cannot do is stop the two browsers' own frame loops, so whichever client is scheduled
+more generously keeps ticking. That is a bug in the instrument and it is older than this branch.
+Fixing it means giving the arm a simulated clock instead of a wall clock, which is a pass of its
+own and is not one to do underneath a networking change.
 
 **What was fixed here rather than explained away.** The denominator used to move with the
 result: `record(\`${name}-both\`)` sat inside `if (d)`, and so did `one-ulp-layer` and
@@ -3297,6 +3307,17 @@ Two checks, and the second is the one that matters: `lan-a-phone-is-turned-away`
 off a 390x844 touch page and asserts no engine booted, and `lan-a-phone-does-not-take-the-slot`
 reads `occupied` off the relay and requires **0**. With the gate removed the second reports
 *"room GG5ZV reports 1 occupant(s) after the phone visited"*, which is the harm in one line.
+
+The override was verified too, because a documented escape that does not work is a lie in a
+docstring. The same 390x844 page, the same room, twice:
+
+```
+plain      title "This screen is too narrow to play on"   occupied 0
+narrow=ok  loading "Room ZG5KJ — waiting for the host…"   occupied 1
+```
+
+Which is exactly what its own sentence promises: you go in, and you hold the second place in the
+room whether or not you can finish deploying.
 
 **A phone HUD is not in this branch and should not be.** Giving `hud.css` a small-screen layout
 is a pass of its own, touching the plaque, the unit cards, the order palette and every gesture;
