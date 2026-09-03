@@ -384,8 +384,35 @@ export function drivers({ W, H, shot = async () => {} }) {
 
   /** Lay out an army with the plaque and the mouse, then press BEGIN BATTLE. */
   async function deployWith(page, tag) {
-    const d = await page.evaluate(() => window.__dep());
-    if (!d?.active) return [];
+    /*
+     * **A session in the deployment phase whose plaque has not attached yet is not a session
+     * with nothing to deploy**, and the one-line version of this could not tell them apart.
+     *
+     * `window.__dep()` reads `main.ts`'s `deployment`, which is attached on `deploymentBegan`
+     * inside `boot()`. A client that has just been told the phase is `deploy` reports
+     * `active: false` for a beat, and `if (!d?.active) return []` walked away in silence. On a
+     * peer connection with `?p2plag=60` that beat is long enough to lose the race: `qa-p2p`'s
+     * `lag` arm reported *"60 ms one way: 6 orders … 0 checkpoints agreed"*, which reads as a
+     * lost order under latency — the exact accusation this gate exists to make and the last one
+     * it should make wrongly. Nothing had been lost; the challenger had never been asked.
+     *
+     * So the question is asked of the *session* first. `phase: 'deploy'` means a plaque is
+     * coming and this waits for it; anything else means this client genuinely has no deployment
+     * phase (`?deploy=0`), and returning `[]` is right.
+     */
+    let d = await page.evaluate(() => window.__dep());
+    if (!d?.active) {
+      const until = Date.now() + 20000;
+      for (;;) {
+        const st = await page.evaluate(() => ({
+          dep: window.__dep(), phase: window.__net?.()?.phase ?? null,
+        })).catch(() => null);
+        d = st?.dep ?? null;
+        if (d?.active) break;
+        if (st?.phase !== 'deploy' || Date.now() > until) return [];
+        await sleep(250);
+      }
+    }
     const done = [];
     await shot(page, `${tag}-02-deploy`);
     /*

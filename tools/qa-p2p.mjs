@@ -1393,8 +1393,20 @@ if (wanted('lag') && chrome) {
     const m = await bootPeers(chrome, chromeGuest, base, {
       sig: SIG(), extra: owd ? `&p2plag=${owd}` : '', guestExtra: owd ? `&p2plag=${owd}` : '',
     });
-    await deployWith(m.host, `lag${owd}-host`);
-    await deployWith(m.guest, `lag${owd}-guest`);
+    /*
+     * The two deployment states, read before either side is driven, because a challenger that
+     * never deployed and a challenger that deployed and lost an order look identical from the
+     * order log alone — and this arm exists to tell exactly those two apart. `deployWith`
+     * returns `[]` in silence when `__dep()` is inactive, which is right for an arm that does
+     * not deploy and wrong to leave unrecorded here.
+     */
+    const depBefore = await Promise.all([m.host, m.guest].map((pg) => pg
+      .evaluate(() => ({ dep: window.__dep(), phase: window.__net()?.phase ?? '?' }))
+      .catch(() => null)));
+    const gestures = [
+      await deployWith(m.host, `lag${owd}-host`),
+      await deployWith(m.guest, `lag${owd}-guest`),
+    ];
     let fired = 0;
     for (let i = 0; i < 5; i++) {
       fired += (await burst(m.host, i)).length ? 1 : 0;
@@ -1437,7 +1449,8 @@ if (wanted('lag') && chrome) {
     const worstDelay = lat.reduce((x, y) => Math.max(x, y.delayTicks), 0);
     const meanRtt = lat.length ? lat.reduce((x, y) => x + y.rttMs, 0) / lat.length : -1;
     rows.push({
-      owd, waited, samples: lat.length, worstDelay, meanRtt: Math.round(meanRtt),
+      owd, waited, depBefore, gestures: gestures.map((g) => g.length),
+      samples: lat.length, worstDelay, meanRtt: Math.round(meanRtt),
       stalls: both.a.net?.stalls, stalledMs: both.a.net?.stalledMs,
       events: both.a.rec?.events?.length ?? 0, common: cmp.common, bad: cmp.bad,
       logDiff: logDiff(both.a.rec?.events ?? [], both.b.rec?.events ?? []),
@@ -1451,7 +1464,10 @@ if (wanted('lag') && chrome) {
     'every order survives a real channel at both latencies, in one order on both peers',
     rows.map((r) => `${r.owd} ms one way: ${r.events} orders, ${r.samples} round trips measured, `
       + `worst input delay ${r.worstDelay} ticks, mean rtt ${r.meanRtt} ms, `
-      + `${r.common} checkpoints agreed after ${r.waited} ms of settling`
+      + `${r.common} checkpoints agreed after ${r.waited} ms of settling `
+      + `(${r.gestures[0]} host and ${r.gestures[1]} guest deployment gestures, from phases `
+      + `${r.depBefore?.map((d) => `${d?.phase}/${d?.dep?.active ? 'plaque up' : 'no plaque'}`)
+        .join(' and ')})`
       + `${r.bad ? ` — ${r.bad}` : ''}`
       + `${r.logDiff ? ` — ${r.logDiff}` : ''}`).join('; '),
     '?p2plag= holds each outbound frame on the real data channel; ordering is preserved');
