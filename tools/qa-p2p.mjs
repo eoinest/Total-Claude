@@ -334,6 +334,15 @@ async function bootPeers(hostBrowser, guestBrowser, base, {
     // `main.ts` reads it as a join. Peer to peer there is no `?net=` to tell the two apart.
     query: `${q}&host=1${hostExtra}`,
     onSetup: shots ? (p) => shot(p, `${shots}-01-setup`) : undefined,
+    /*
+     * Five minutes, not the four `bootThroughMenu` defaults to.
+     *
+     * Two 8,632-man battles boot at once here, and the work budget correctly demotes agent
+     * browsers to efficiency cores while the owner is at the keyboard — measured on this machine
+     * as a cap of one browser and a queue. A boot that is merely slow must not be reported as a
+     * transport failure, which is the same reasoning `tools/check-tool-args.mjs` exists for.
+     */
+    readyTimeout: 300000,
   });
   const guest = await newPage(guestBrowser);
   await guest.goto(`${base}/?${q}&host=0${guestExtra}`, { waitUntil: 'domcontentloaded' });
