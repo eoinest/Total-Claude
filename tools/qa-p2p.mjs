@@ -93,7 +93,7 @@ if (badFlag.length) {
   process.exit(2);
 }
 
-const ARMS = ['proto', 'params', 'seal', 'battle', 'lag', 'desync', 'lobby', 'https',
+const ARMS = ['proto', 'params', 'seal', 'battle', 'lag', 'desync', 'leave', 'lobby', 'https',
   'nodirect', 'ab', 'broker', 'brokerplay'];
 /**
  * `broker` and `brokerplay` reach the public internet, so both are opt-in for the reason
@@ -939,7 +939,7 @@ if (wanted('seal')) {
  * no use for, printed its verdict, and then sat in the queue for the length of the machine's
  * patience. The rule is that an arm belongs here if and only if it opens a page.
  */
-const NEEDS_BROWSER = ['battle', 'lag', 'desync', 'lobby', 'https', 'nodirect', 'ab',
+const NEEDS_BROWSER = ['battle', 'lag', 'desync', 'leave', 'lobby', 'https', 'nodirect', 'ab',
   'brokerplay'];
 const anyBrowser = NEEDS_BROWSER.some((a) => wanted(a));
 
@@ -1252,6 +1252,69 @@ if (wanted('desync') && chrome) {
     for (const p of [m.host, m.guest]) await p.close();
   }
   measured.desync = rows;
+}
+
+// ---------------------------------------------------------------------------
+// Arm: one player walks away, and the other is told by name
+// ---------------------------------------------------------------------------
+
+if (wanted('leave') && chrome) {
+  console.log('\n=== leave: a peer disappears mid-battle ===');
+  /*
+   * The third guarantee's other half. A desync ends the match by name; so must a peer who closes
+   * their tab, and the *reason* has to be the right one — `peerLeft` and not `linkLost`, because
+   * they are accusations about different parties. Under a relay the relay sees both sockets and
+   * says which; between two peers the survivor has only its own channel to go on, and the two
+   * are told apart by whether the far end said goodbye before it went.
+   *
+   * A real close, with `page.close()`, rather than a protocol message: `NetSession.dispose` sends
+   * `bye` on the way out and the data channel closes behind it, which is what shutting a tab
+   * actually does.
+   */
+  const m = await bootPeers(chrome, chromeGuest, base, {
+    sig: SIG(), deploy: false, autoplay: 1, extra: '&menu=0&quality=medium',
+  });
+  await m.host.waitForFunction(
+    () => window.__net()?.phase === 'battle', null, { timeout: 120000 });
+  await sleep(6000);
+  const beforeTick = await m.host.evaluate(() => window.__tick());
+  await m.guest.close();
+  let ended = null;
+  const t0 = Date.now();
+  for (let i = 0; i < 40 && !ended; i++) {
+    await sleep(500);
+    ended = await m.host.evaluate(() => {
+      const n = window.__net();
+      return n?.ended ? n : null;
+    }).catch(() => null);
+  }
+  const took = Math.round(Date.now() - t0);
+  await sleep(1200);
+  const sheet = await m.host.evaluate(() => {
+    const el = document.querySelector('.tc-over-sheet');
+    return el ? (el.innerText ?? '').replace(/\s+/g, ' ').trim() : '';
+  }).catch(() => '');
+  const afterTick = await m.host.evaluate(() => window.__tick()).catch(() => -1);
+  measured.leave = { beforeTick, afterTick, took, ended, sheet: sheet.slice(0, 300) };
+  record('leave-ends-by-name',
+    !!ended && ended.ended === 'peerLeft' && took < 12000,
+    'a peer that closes its tab ends the match as peerLeft, not as a link failure',
+    ended ? `'${ended.ended}' after ${took} ms: ${String(ended.message).slice(0, 150)}`
+      : `nothing after ${took} ms, which is the hang this check exists to forbid`,
+    'peerLeft and linkLost are accusations about different parties; the survivor tells them '
+    + 'apart by whether the far end said goodbye');
+  record('leave-halts-at-a-stated-tick',
+    !!ended && ended.endedAtTick >= 0 && afterTick > 0 && afterTick - beforeTick < 200,
+    'and it halts where it stood rather than playing on alone',
+    `tick ${beforeTick} when the peer left, ${afterTick} a second later; the session reports `
+    + `its last agreed tick as ${ended?.endedAtTick}`);
+  record('leave-puts-a-sheet-up',
+    /commander left|connection/i.test(sheet) && sheet.length > 40,
+    'and the survivor gets a screen rather than a frozen picture',
+    sheet ? sheet.slice(0, 190) : 'no session-over sheet was drawn',
+    'the freeze this whole design exists to avoid: animations running, nothing moving, and '
+    + 'nothing anywhere saying why');
+  await m.host.close();
 }
 
 // ---------------------------------------------------------------------------

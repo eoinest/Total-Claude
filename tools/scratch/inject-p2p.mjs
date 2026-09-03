@@ -186,6 +186,34 @@ const FAULTS = {
     '`--ip-address-space-overrides=${lan.ip}:${HTTPS_PORT}=public`',
     "'--hide-scrollbars'",
     'https', 'https-plain-socket-still-refused (HARNESS fault, deliberately)'],
+  /*
+   * The first two faults written for the `leave` arm did not bite, and both failed for the same
+   * reason: **the survivor has two independent ways of learning the same thing.** Sending `bye`
+   * into a void still leaves `dc.onclose`, and `dc.onclose` not calling `peerGone` still leaves
+   * the silence test. Redundancy is the right design and it makes a fault have to remove the
+   * *specific* path a check is about.
+   *
+   *   - `bye` handled as `nothing()`  -> `dc.onclose` still reports `peerLeft`. Green.
+   *   - `peerGone` without `phase = 'over'` -> the `end` message still ends the session
+   *     through `NetSession.onEnd`, which pins the ceiling itself. Green.
+   */
+  // The channel closing is the *specific* path `leave-ends-by-name` is about: without it the
+  // survivor waits for the silence test and is told `linkLost`, which blames the wire for
+  // somebody shutting a tab.
+  'close-is-not-a-departure': [F.peer,
+    "      this.take(this.peerRoom.peerGone('the other commander\\'s connection closed'));",
+    '      // deliberately not reported',
+    'leave', 'leave-ends-by-name (it decays to linkLost about eight seconds later)'],
+  // What the survivor is told about *where* the battle stood. `lastAgreedTick` is the only
+  // number in the sentence that is not this client's own guess.
+  'forget-the-agreed-tick': [F.room,
+    '      if (tick > this.lastAgreedTick) this.lastAgreedTick = tick;',
+    '      void tick;',
+    'leave', 'leave-halts-at-a-stated-tick'],
+  'no-sheet-for-a-departure': ['src/ui/NetPanel.ts',
+    "const KEEPS_THE_STRIP = new Set(['desync', 'complete']);",
+    "const KEEPS_THE_STRIP = new Set(['desync', 'complete', 'peerLeft']);",
+    'leave', 'leave-puts-a-sheet-up'],
   'no-explanation': [F.peer,
     "    return 'Your two networks would not let the game connect directly. '",
     "    return '';\n    return 'Your two networks would not let the game connect directly. '",
