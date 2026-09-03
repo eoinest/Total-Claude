@@ -3101,6 +3101,18 @@ if (wanted('norelay')) {
     await form.waitForSelector('.tc-lobby', { timeout: 30000 });
     await openAdvanced(form);
     await form.fill('#tc-relay', DEAD);
+    /*
+     * And ask for the relay *transport*, because that is what "CREATE names the address that did
+     * not answer" is about.
+     *
+     * From 2 Sep 2026 an address in this field is an *introduction service*, and a peer session
+     * whose introduction service is unreachable **opens the room anyway** — deliberately: peer to
+     * peer a code needs no permission from anybody, and a lobby that refused to open a room
+     * because a signalling service was down would be refusing something it does not need. So
+     * without this the Room open screen replaces the sheet, `#tc-note` goes with it, and the arm
+     * died on a locator. The relay transport is still exactly as it was, one checkbox in.
+     */
+    await form.check('#tc-via-relay');
     await form.click('#tc-host');
     await form.waitForSelector('#tc-note.tc-bad', { timeout: 20000 }).catch(() => { /* asserted */ });
     const said = ((await form.textContent('#tc-note')) ?? '').replace(/\s+/g, ' ').trim();
