@@ -160,7 +160,7 @@ const coresInUse = (ms = 2000) => {
     if (d <= 0) continue;
     all += d;
     if (/chrome-headless-shell|Chromium Helper/.test(cur.cmd)) chrome += d;
-    if (/vite-runner\.mjs|bin\/vite|npm exec vite/.test(cur.cmd)) vite += d;
+    if (/(?:vite|static)-runner\.mjs|bin\/vite|npm exec vite/.test(cur.cmd)) vite += d;
   }
   return { all: all / dt, chrome: chrome / dt, vite: vite / dt };
 };
@@ -188,12 +188,20 @@ const scanProcesses = () => {
        * `vite 2` where there was one. Classify the guard first and continue.
        */
       guards.push({ ...rec, pgid: null });
-    } else if (/vite-runner\.mjs|node_modules\/\.bin\/vite|bin\/vite\.js|npm exec vite/.test(command)) {
+    } else if (/(?:vite|static)-runner\.mjs|node_modules\/\.bin\/vite|bin\/vite\.js|npm exec vite/.test(command)) {
       const p = command.match(/--port[= ](\d+)/);
       vites.push({
         ...rec,
         port: p ? Number(p[1]) : null,
-        style: /vite-runner\.mjs/.test(command) ? 'runner' : 'npx',
+        /*
+         * Three styles now. `static` is `tools/lib/static-runner.mjs`, which `npm run host`
+         * starts by default — it holds a port and answers `/__tc/tree` exactly as the dev
+         * runner does, so every count, sweep and reclaim decision here has to see it. Left out
+         * of these patterns it would have been classified `other`, which is the category this
+         * file's whole job is to keep empty.
+         */
+        style: /static-runner\.mjs/.test(command) ? 'static'
+          : /vite-runner\.mjs/.test(command) ? 'runner' : 'npx',
         /*
          * `npm exec vite …` is the wrapper; `node …/.bin/vite …` two processes below it is the
          * one holding the port. Counting both is how a `ps | grep -c` turns twenty servers into
@@ -932,8 +940,9 @@ const unrecorded = statProcs.unclaimed.filter((u) => !u.att.recorded);
 console.log(`  ${statProcs.owned.length} registered process group(s) with a recorded owner`
   + `${unrecorded.length ? `; ${unrecorded.length} process(es) whose owner is only an inference` : ''}`
   + '   (node tools/browsers.mjs procs)');
-console.log(`  ${procs.vites.length} vite server(s) on ${procs.viteProcs.length} processes: `
+console.log(`  ${procs.vites.length} game server(s) on ${procs.viteProcs.length} processes: `
   + `${procs.vites.filter((v) => v.style === 'runner').length} via vite-runner, `
+  + `${procs.vites.filter((v) => v.style === 'static').length} via static-runner, `
   + `${procs.vites.filter((v) => v.style === 'npx').length} via npx`
   + `; gpu ${gpu.metal} metal / ${gpu.swiftshader} swiftshader / ${gpu.unknown} unstated`);
 

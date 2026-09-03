@@ -3,13 +3,35 @@
  * `npm run host` — the game and the relay, on this machine, reachable from the next one.
  *
  * Usage:
- *   npm run host                       # print a URL to hand over and wait
+ *   npm run host                       # build if needed, then serve it; print a URL and wait
+ *   npm run host -- --dev                  # the Vite dev server instead, with HMR
+ *   npm run host -- --rebuild              # build even if dist/ looks current
+ *   npm run host -- --no-build             # serve dist/ as it stands, and say if it is stale
  *   npm run host -- --port=5958 --relay-port=5959
  *   npm run host -- --lan=192.168.0.238    # when the ranking picks the wrong interface
  *   npm run host -- --loopback             # bind 127.0.0.1: no firewall prompt, no invite
  *   npm run host -- --open | --no-open     # open the room here (default: on a terminal)
  *   npm run host -- --no-qr                # no square in the terminal, just the URL
  *   npm run host -- --json                 # one machine-readable line, then serve
+ *
+ * ## Why this serves a build and not the dev server
+ *
+ * It served the dev server until now, and the person who paid for that was never the person who
+ * typed the command. The host's browser is on loopback, warm, and holds every transform from
+ * the last run; the guest on the other laptop gets `<script src="/@vite/client">`, **194
+ * requests and 23.2 MB**, every module transformed on demand, none of it compressed, out of a
+ * `public/` tree that is 214 MB on disk. Measured from a second browser over 192.168.1.77 on a
+ * 30 Mbit/s Wi-Fi profile that was **6.8 seconds** of nothing, and the owner's friend reported
+ * exactly that: *"takes wayyyy too long to load"*.
+ *
+ * The production build is the same game in one entry point and a handful of hashed chunks, and
+ * `tools/optimize-assets.mjs` has already taken its textures from 164.9 MB to 4.6 MB. Nothing
+ * about it is new — it is what `npm run deploy` has always shipped. It simply was not what the
+ * guest was being handed. `tools/lib/static-runner.mjs` serves it, with the two meta tags the
+ * lobby depends on injected into the built HTML; `tools/qa-hostload.mjs` is the instrument, and
+ * prints both numbers.
+ *
+ * `--dev` keeps the old path exactly, for working on the game rather than playing it.
  *
  * ## Why one command and not two
  *
@@ -90,6 +112,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { startVite } from './lib/browser-budget.mjs';
+import { buildDist, distStatus } from './lib/dist-build.mjs';
 import { DEFAULT_RELAY_PORT } from '../src/net/protocol.ts';
 import { qrEncode, qrHalfBlocks } from '../src/net/qr.ts';
 import { lanCandidates, mdnsName } from './lib/lan-address.mjs';
@@ -97,7 +120,7 @@ import { lanCandidates, mdnsName } from './lib/lan-address.mjs';
 const ROOT = path.resolve(import.meta.dirname, '..');
 
 const FLAGS = ['port', 'relay-port', 'lan', 'loopback', 'open', 'no-open', 'json', 'quiet',
-  'turn-ms', 'delay', 'no-qr'];
+  'turn-ms', 'delay', 'no-qr', 'dev', 'rebuild', 'no-build'];
 const args = new Map(process.argv.slice(2).map((a) => {
   const m = a.match(/^--([^=]+)(?:=(.*))?$/);
   return m ? [m[1], m[2] ?? 'true'] : [a, 'true'];
@@ -116,6 +139,29 @@ const JSON_OUT = args.has('json');
 const QUIET = args.has('quiet');
 /* A terminal that cannot draw half blocks, or a transcript that has to stay plain. */
 const NO_QR = args.has('no-qr');
+/*
+ * `--dev` is the escape hatch and not the default, and the asymmetry is the point.
+ *
+ * Somebody working on the game wants HMR and knows to ask for it. Somebody handing a link to a
+ * friend wants the friend's browser to be quick, and will not think to ask — so the fast path
+ * is what happens when nobody says anything.
+ *
+ * `--rebuild` forces a build that the staleness check would have skipped, and `--no-build`
+ * refuses to run one. The second is honest rather than silent: it still prints that the build
+ * is stale, because serving yesterday's game without saying so is the failure this whole
+ * section exists to avoid.
+ */
+const DEV = args.has('dev');
+const REBUILD = args.has('rebuild');
+const NO_BUILD = args.has('no-build');
+if (DEV && (REBUILD || NO_BUILD)) {
+  console.error('--dev serves the source directly; there is no build for --rebuild or --no-build to act on.');
+  process.exit(2);
+}
+if (REBUILD && NO_BUILD) {
+  console.error('--rebuild and --no-build ask for opposite things.');
+  process.exit(2);
+}
 /*
  * Open the host's own browser when this is a person at a terminal, and never when it is a
  * pipe. `tools/qa-net.mjs` runs this arm with its stdout captured and must not have a window
@@ -192,6 +238,58 @@ if (!LOOPBACK) {
 }
 
 // ---------------------------------------------------------------------------
+// The build, if the source has moved since the last one
+// ---------------------------------------------------------------------------
+
+/*
+ * Narration on **stderr**, always, and not through `say`.
+ *
+ * `--json` promises one machine-readable line on stdout and `tools/qa-net.mjs` parses it with
+ * `out.match(/^\{.*\}$/m)`; a build's chatter on that stream is at best noise and at worst a
+ * line that looks like the contract. On a terminal both streams land in the same window, so a
+ * person watching sees it either way, which is the only reader this text is for.
+ */
+const narrate = (line) => { if (!QUIET) process.stderr.write(`${line}\n`); };
+
+let build = null;
+if (!DEV) {
+  const status = await distStatus(ROOT);
+  build = { mode: 'static', fresh: status.fresh, reason: status.reason, rebuilt: false, ms: 0 };
+  if (status.fresh && !REBUILD) {
+    narrate(`  build   current — ${status.reason}`);
+  } else if (NO_BUILD) {
+    /*
+     * Stale and told not to fix it. This is a warning and not a refusal: `--no-build` is asked
+     * for by somebody who knows what they have, and refusing to serve it would make the flag
+     * useless. What must not happen is serving it *quietly* — the owner changing code and
+     * wondering why nothing moved is the whole reason the check exists.
+     */
+    narrate(`  build   STALE and --no-build was given — ${status.reason}`);
+    narrate('          The guest will load the previous build. Drop --no-build to fix it.');
+    build.staleServed = true;
+  } else {
+    narrate(`  build   ${REBUILD && status.fresh ? 'rebuilding on request' : `out of date — ${status.reason}`}`);
+    narrate('          Building the production bundle. This is once; the next start skips it.');
+    const t0 = Date.now();
+    const res = await buildDist(ROOT, { onLine: (l) => narrate(`          ${l}`) });
+    build.ms = Date.now() - t0;
+    build.rebuilt = true;
+    if (!res.ok) {
+      console.error(`\nThe build failed at ${res.step}. Nothing was served.`);
+      console.error('Fix it, or run with --dev to serve the source through Vite instead.');
+      process.exit(1);
+    }
+    build.builtByAnother = !!res.builtByAnother;
+    narrate(res.builtByAnother
+      ? `          another process in this tree built it while we waited (${(build.ms / 1000).toFixed(1)}s)`
+      : `          done in ${(build.ms / 1000).toFixed(1)}s`);
+  }
+} else {
+  build = { mode: 'dev', fresh: null, reason: 'the dev server reads the source on every request', rebuilt: false, ms: 0 };
+  narrate('  build   skipped: --dev serves the source through Vite, with HMR');
+}
+
+// ---------------------------------------------------------------------------
 // The two listeners
 // ---------------------------------------------------------------------------
 
@@ -255,6 +353,15 @@ if (relayHealth === null) {
   stop(1);
 }
 
+/*
+ * One call for both servers, and that is deliberate rather than convenient.
+ *
+ * `startVite` carries the port-theft refusal, the `/__tc/tree` identity check, `spawnOwned`'s
+ * guard and registry entry, and the cleanup that survives this process being SIGKILLed — all of
+ * it the accumulated answer to two orphan incidents and a stolen port. A static server that
+ * opened its own `http.createServer` beside that would have had none of it, and would have been
+ * the nineteen-orphan morning again with a new cause.
+ */
 try {
   vite = await startVite({
     port: PORT,
@@ -263,7 +370,8 @@ try {
     relayPort: RELAY_PORT,
     lan: prefer,
     label: 'host-lan',
-    cacheDir: process.env.TC_VITE_CACHE_DIR || `/tmp/tc-vite-host-${PORT}`,
+    mode: DEV ? 'dev' : 'static',
+    ...(DEV ? { cacheDir: process.env.TC_VITE_CACHE_DIR || `/tmp/tc-vite-host-${PORT}` } : {}),
   });
 } catch (err) {
   console.error(`\n${err?.message ?? err}`);
@@ -354,6 +462,21 @@ let qrEnd = -1;
 put(rule);
 put(`  game    ${gameUrl}${gameOk ? '' : '   NOT ANSWERING'}`);
 put(`  relay   ${relayUrl}${relayOk ? '' : '   NOT ANSWERING'}`);
+/*
+ * Which of the two servers is behind that URL, said on screen.
+ *
+ * Not decoration. The two differ by about 23 MB and six seconds *for the other machine*, and
+ * the person reading this is the one person who cannot feel the difference — his own browser
+ * is on loopback and warm either way. A host who has left `--dev` on a shell alias would
+ * otherwise have no way to know why his friend is still waiting.
+ */
+if (DEV) {
+  put('  serving the Vite dev server: the guest fetches ~200 source modules and pays for');
+  put('          each one. Drop --dev to serve the built bundle instead.');
+} else {
+  put(`  serving the production build from dist/${build.rebuilt ? `, built just now in ${(build.ms / 1000).toFixed(1)}s` : ' (already current)'}`);
+  if (build.staleServed) put('          — and it is STALE: --no-build was given. The guest gets the previous build.');
+}
 if (!LOOPBACK) {
   put(`  also    http://${MDNS}:${PORT}/${ROOM ? `?room=${ROOM}` : '?mp=1'}`);
   put('          Mac to Mac. This name follows the machine across a DHCP lease');
@@ -434,6 +557,7 @@ if (JSON_OUT) {
     iface: chosen?.iface ?? 'lo0', mdns: LOOPBACK ? null : MDNS,
     gamePort: PORT, relayPort: RELAY_PORT, gameUrl, lobbyUrl, relayUrl,
     room: ROOM, joinUrl, hostUrl, qr: showQr,
+    served: DEV ? 'dev' : 'static', build,
     lines: out.length, linesAfterQr,
     plaque, alternatives: candidates.filter((c) => c.ip !== ADDR),
     node: process.execPath, pid: process.pid,
