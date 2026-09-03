@@ -3824,7 +3824,7 @@ dependency they declined.
 
 Not deleted, not deprecated, and it earned its keep during this pass:
 
-- **It is the control.** `qa-net`'s 89 checks are the known-good behaviour. `qa-p2p`'s `ab` arm
+- **It is the control.** `qa-net`'s 91 checks are the known-good behaviour. `qa-p2p`'s `ab` arm
   runs the same battle over both transports and requires every shared checkpoint to match
   *across* them — the strongest available statement that the transport is not in the simulation.
 - **It is the LAN introduction service**, and on a home network that is strictly better than a
@@ -3899,8 +3899,8 @@ A player's OS resolves mDNS perfectly well and a player's peer is on another mac
 shipped and `PeerLink` never looks at a candidate's address.
 
 **Every check has a named fault that turns it red, and running them found five checks that could
-not fail.** `tools/scratch/inject-p2p.mjs` holds 42; `--list` prints each with the check it is
-supposed to break and `--all-fast` runs the 24 whose arm needs no browser. On the first sweep 17
+not fail.** `tools/scratch/inject-p2p.mjs` holds 54; `--list` prints each with the check it is
+supposed to break and `--all-fast` runs the 30 whose arm needs no browser. On the first sweep 17
 of 22 went red and **five stayed green** — and every one of those five was a defect in the
 instrument rather than a bad fault:
 
