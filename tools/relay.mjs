@@ -276,6 +276,9 @@ function roomFor(code) {
  */
 const EMPTY_ROOM_TTL_MS = 600_000;
 
+/** The most rooms this relay will hold at once. See `/new`. */
+const MAX_ROOMS = 256;
+
 let sends = 0;
 let recvs = 0;
 
@@ -344,8 +347,8 @@ const CORS = {
   'access-control-allow-methods': 'GET, OPTIONS',
   'access-control-max-age': '600',
 };
-const sendJson = (res, status, body) => {
-  res.writeHead(status, { 'content-type': 'application/json', ...CORS });
+const sendJson = (res, status, body, cors = true) => {
+  res.writeHead(status, { 'content-type': 'application/json', ...(cors ? CORS : {}) });
   res.end(JSON.stringify(body));
 };
 
@@ -358,12 +361,23 @@ const server = createServer((req, res) => {
     res.end(`relay ok rooms=${rooms.size} sends=${sends} recvs=${recvs}\n`);
     return;
   }
+  /*
+   * `/status` lists every live room code, and it is **not** CORS-open.
+   *
+   * `/health` and `/new` are, because the lobby fetches both from a page the relay did not
+   * serve. Nothing in `src/` has ever fetched this one: it is a diagnostic for a person with a
+   * shell and for `tools/qa-net.mjs`, and both of those read it with a plain HTTP client that
+   * has no same-origin policy to satisfy. Leaving the header on it meant **any page open in any
+   * browser on the network could read out every room code on this relay** — and a room code is
+   * the whole of the authentication here, because §4.5 refuses anti-cheat and lockstep hands
+   * both clients the world. Removing one header closes that without costing the gate anything.
+   */
   if (url.pathname === '/status') {
     sendJson(res, 200, {
       port: PORT, host: HOST, pairs: PAIRS, fatal: FATAL, delayTurns: DELAY, turnMs: TURN_MS,
       lagMs: LAG, fault: FAULT, sends, recvs,
       rooms: [...rooms.values()].map((e) => e.room.status()),
-    });
+    }, false);
     return;
   }
   /*
@@ -379,6 +393,24 @@ const server = createServer((req, res) => {
    * to spend a minute in the setup sheet and the challenger may well arrive first.
    */
   if (url.pathname === '/new') {
+    /*
+     * A ceiling on live rooms, because `/new` is unauthenticated by design and now gets called
+     * by a *command* as well as by a button.
+     *
+     * `npm run host` mints one on every start, `EMPTY_ROOM_TTL_MS` reaps an unentered room
+     * after ten minutes, and nothing in between bounded the number — so anything on the LAN
+     * that could reach this port could hold the process's memory open at whatever rate it
+     * liked. 256 is far above any real use (two people need one) and far below anything that
+     * matters to a laptop, and the refusal names itself rather than failing as a hang.
+     */
+    if (rooms.size >= MAX_ROOMS) {
+      sendJson(res, 503, {
+        error: 'busy',
+        detail: `this relay is holding ${rooms.size} rooms, which is its limit. Empty rooms are `
+          + 'reaped ten minutes after they are opened.',
+      });
+      return;
+    }
     const asked = (url.searchParams.get('room') ?? '').trim().toUpperCase();
     if (asked) {
       if (!validCode(asked)) {
@@ -389,11 +421,37 @@ const server = createServer((req, res) => {
         return;
       }
       const held = rooms.get(asked);
-      if (held && (held.room.phase !== 'lobby' || held.room.occupied > 0)) {
+      /*
+       * Two refusals, and they are told apart because one of them is recoverable.
+       *
+       * Both used to answer `error: 'taken'`, which made them one fact on the wire and left the
+       * only difference in an English sentence. They are not one fact:
+       *
+       *   - **`taken`** — somebody is *waiting* in the room, still in the lobby phase. For a
+       *     host reopening the room their own `npm run host` minted, that is the other
+       *     commander having arrived first, and it is the good outcome: the open-room screen is
+       *     exactly where they should be.
+       *   - **`started`** — the room is past the lobby and playing. Nothing can be re-entered.
+       *     A host who presses Back, or reopens the `create=1` link out of history or a
+       *     restored tab, must be told that and not handed a room-open screen with a square on
+       *     it pointing at a room nobody can enter.
+       *
+       * `src/ui/NetLobby.ts` keys on `error` and not on the sentence, so this distinction is
+       * the whole of that repair. Answering it here rather than inferring it there is the same
+       * rule as everywhere else in this file: the relay is the only party that knows.
+       */
+      if (held && held.room.phase !== 'lobby') {
+        sendJson(res, 409, {
+          error: 'started',
+          detail: `room ${asked} is already in its ${held.room.phase} phase and cannot be `
+            + 're-entered',
+        });
+        return;
+      }
+      if (held && held.room.occupied > 0) {
         sendJson(res, 409, {
           error: 'taken',
-          detail: `room ${asked} is in use on this relay${held.room.phase !== 'lobby'
-            ? ` and is already in its ${held.room.phase} phase` : ''}`,
+          detail: `room ${asked} is in use on this relay`,
         });
         return;
       }

@@ -39,7 +39,9 @@
  * answer. Failing 3 demotes: an unusual network is still a network.
  */
 
+import { execFileSync } from 'node:child_process';
 import os from 'node:os';
+import process from 'node:process';
 
 /** Interface-name prefixes that are never the address to hand somebody. See rule 4. */
 const VIRTUAL = ['utun', 'awdl', 'llw', 'bridge', 'vnic', 'vmenet', 'vboxnet', 'docker', 'tap',
@@ -105,4 +107,43 @@ export function lanAddress({ prefer = '', interfaces = os.networkInterfaces() } 
       why: 'given on the command line with --lan=', overridden: true };
   }
   return all[0] ?? null;
+}
+
+/**
+ * The name Bonjour actually answers to on this machine, and the reason `os.hostname()` is not it.
+ *
+ * `os.hostname()` returns whatever the DHCP server handed back — on this machine, and on any
+ * machine on an AT&T router, `Mac.attlocal.net`. The old spelling was
+ * `os.hostname().replace(/\.local\.?$/, '') + '.local'`, which turns that into
+ * **`Mac.attlocal.net.local`**: a name that resolves to nothing, printed by `npm run host` under
+ * the words "Mac to Mac", and — worse — fed to Vite's `allowedHosts`. So the only name Vite
+ * would answer to did not resolve, and `Ernests-MacBook-Pro-2.local`, which *does* resolve to
+ * this machine's LAN address, was refused by the DNS-rebinding guard. Both halves wrong, in
+ * opposite directions, from one expression that was written twice.
+ *
+ * macOS keeps the Bonjour name separately, and `scutil --get LocalHostName` is the only thing
+ * that knows it. Measured here: `scutil` says `Ernests-MacBook-Pro-2`, `os.hostname()` says
+ * `Mac.attlocal.net`, and `dns-sd`/`ping` resolve `Ernests-MacBook-Pro-2.local` to 192.168.1.77.
+ *
+ * Spelled **once**, in this file, because it was previously spelled twice — in
+ * `tools/host-lan.mjs` and in `tools/lib/vite-runner.mjs`, the second under a comment that
+ * said "spelled once, [because] used in two places that must agree". They did agree. They were
+ * both wrong.
+ *
+ * Off darwin, or with `scutil` unavailable, this falls back to the old derivation, which is
+ * right on a Linux box whose hostname is not a FQDN. `null` is never returned: a caller that
+ * gets a name still has to be prepared for it not to resolve, which is why every place that
+ * prints one also prints the address.
+ */
+export function mdnsName({ platform = process.platform, exec = null } = {}) {
+  if (platform === 'darwin') {
+    try {
+      const run = exec ?? ((c, a) => execFileSync(c, a, { encoding: 'utf8', timeout: 2000 }));
+      const said = String(run('scutil', ['--get', 'LocalHostName'])).trim();
+      if (said) return `${said.replace(/\.local\.?$/, '')}.local`;
+    } catch {
+      // No scutil, or it refused. Fall through to the derivation below.
+    }
+  }
+  return `${os.hostname().replace(/\.local\.?$/, '')}.local`;
 }

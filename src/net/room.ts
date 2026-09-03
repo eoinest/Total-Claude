@@ -766,7 +766,23 @@ export class Room {
        * assertion is precisely about two orders **touching one unit**, and the surest way to
        * get that is two consecutive orders from one player, which is what the gate fires.
        */
-      for (let i = 0; i + 1 < ops.length; i++) {
+      /*
+       * The **last** such pair, not the first, and that is a correction rather than a taste.
+       *
+       * The gate fires three move orders on one selection inside one turn. Every one of them
+       * sets the same regiment's destination, so the sequence is last-write-wins and exchanging
+       * the *first* pair changes the final state by nothing at all — `0,1,2` becomes `1,0,2`
+       * and the regiment marches to `2` either way. The fault fired, the packet differed, and
+       * the two clients ran identical battles; the arm then reported "NOT DETECTED &mdash; the
+       * two clients diverged and the session said nothing", which was an accusation against the
+       * product for a corruption that was semantically a no-op. Measured: `faultsFired: 1,
+       * detected: false`, every run.
+       *
+       * Exchanging the last pair moves the *final* order, so `0,1,2` becomes `0,2,1` and the
+       * regiment ends somewhere else on the client that was corrupted. Same slot, same units,
+       * one packet — §4.1's claim exactly, and now a difference the hashes can see.
+       */
+      for (let i = ops.length - 2; i >= 0; i--) {
         if (ops[i].s !== ops[i + 1].s) continue;
         const o = ops.slice();
         const t = o[i]; o[i] = o[i + 1]; o[i + 1] = t;

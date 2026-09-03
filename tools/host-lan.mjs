@@ -34,15 +34,22 @@
  * in either a certificate somebody has to install on both machines or a tunnel out to the
  * public internet, and the second of those is what `net/worker.ts` is already for.
  *
- * **One correction to the paragraph above, measured 2 September 2026.** The refusal is not
- * caused by https as such: it is caused by the *address space* the browser believes the page
- * came from. From an https page whose own origin is a private address, Chromium 151 opens
- * `ws://192.168.1.77:5959` without complaint; the same page opens nothing to `ws://1.1.1.1`,
- * which throws `SecurityError` as mixed content. The live site is refused because it is
- * **public** reaching into **private**, which is `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`
- * and is the first of the two transcripts, not the second. The conclusion is unchanged and the
- * mechanism is not; `tools/qa-net.mjs`'s `https` arm reproduces it with
- * `--ip-address-space-overrides`, and §12.6 has the table.
+ * **One correction to the paragraph above, measured 2 September 2026 — and it is engine-specific.**
+ *
+ *   - **Chromium 151** does not refuse this because of https as such. It refuses the reach from
+ *     a *public* address space into a *private* one. From an https page whose own origin is a
+ *     private address it opens `ws://192.168.1.77:5959` without complaint, and refuses only
+ *     `ws://1.1.1.1`, as mixed content. The live site is refused because it is public reaching
+ *     into private: `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`, the first of the two
+ *     transcripts above and not the second.
+ *   - **WebKit** has no such carve-out. The same page refuses all three targets — private,
+ *     loopback and public — as plain mixed content, which is exactly what the paragraph above
+ *     says. On Safari the original explanation was right all along.
+ *
+ * So the conclusion is unchanged on every engine and only the *reason* differs, which matters
+ * because the owner is on a Mac and the likeliest guest device is an iPhone. §12.6 has the
+ * table; `tools/qa-net.mjs`'s `https` arm reproduces the Chromium half with
+ * `--ip-address-space-overrides`.
  *
  * So: the host serves both halves, over plain HTTP, on the LAN. Which has a property the
  * deployed path does not — **both machines are loading the same bytes from the same server**,
@@ -81,7 +88,7 @@ import process from 'node:process';
 import { startVite } from './lib/browser-budget.mjs';
 import { DEFAULT_RELAY_PORT } from '../src/net/protocol.ts';
 import { qrEncode, qrHalfBlocks } from '../src/net/qr.ts';
-import { lanCandidates } from './lib/lan-address.mjs';
+import { lanCandidates, mdnsName } from './lib/lan-address.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -164,7 +171,7 @@ if (!LOOPBACK) {
 }
 const BIND = LOOPBACK ? '127.0.0.1' : '0.0.0.0';
 const ADDR = LOOPBACK ? '127.0.0.1' : chosen.ip;
-const MDNS = `${os.hostname().replace(/\.local\.?$/, '')}.local`;
+const MDNS = mdnsName();
 
 // ---------------------------------------------------------------------------
 // The firewall, said before it happens rather than after
@@ -320,76 +327,115 @@ const hostUrl = ROOM ? `http://${ADDR}:${PORT}/?mp=1&room=${ROOM}&create=1` : lo
  */
 const showQr = !!(joinUrl && !LOOPBACK && !NO_QR);
 
+/*
+ * The block is *built* before it is printed, and the square goes at the bottom.
+ *
+ * Two reasons, and the second is the one a reviewer had to find. The first: with the square in
+ * the middle, this command printed 55 lines of which 22 came after the last row of it — so on
+ * an 80x24 window the thing the other machine is supposed to photograph had scrolled off the
+ * top by the time the command settled. The address, the interfaces and the network caveats are
+ * reference material; the square and the line under it are the thing to act on, and the thing
+ * to act on goes last, where a terminal leaves it.
+ *
+ * The second: building an array rather than printing as we go means the layout is a *fact this
+ * command can report*. `--json` carries `lines` and `linesAfterQr`, so `tools/qa-net.mjs` can
+ * assert the square is still on screen without running a terminal — which is the only way that
+ * claim could be checked at all, since the JSON mode prints no square.
+ */
+const out = [];
+const rule = '─'.repeat(64);
+const put = (line = '') => out.push(line);
+let qrEnd = -1;
+
+put(rule);
+put(`  game    ${gameUrl}${gameOk ? '' : '   NOT ANSWERING'}`);
+put(`  relay   ${relayUrl}${relayOk ? '' : '   NOT ANSWERING'}`);
+if (!LOOPBACK) {
+  put(`  also    http://${MDNS}:${PORT}/${ROOM ? `?room=${ROOM}` : '?mp=1'}`);
+  put('          Mac to Mac. This name follows the machine across a DHCP lease');
+  put('          change; the numbers above do not.');
+  put(`  on      ${chosen.iface}${chosen.overridden ? ', given with --lan=' : ''}`);
+  for (const c of candidates.filter((c) => c.ip !== ADDR)) {
+    put(`          not chosen: ${c.ip} (${c.why}) — --lan=${c.ip} to use it instead`);
+  }
+  put(rule);
+  put('  Both machines must be on the same network. Same Wi-Fi is usually enough;');
+  put('  a "guest" network, or one with client isolation on, is not — those exist');
+  put('  specifically to stop two devices seeing each other, and nothing here can');
+  put('  work round that.');
+}
+put(rule);
+if (LOOPBACK) {
+  put('  Serving on 127.0.0.1 only. Nothing outside this machine can reach it,');
+  put('  and the lobby will withhold the invite link and say so.');
+  put('');
+  put(`      ${hostUrl}`);
+} else if (joinUrl) {
+  put(`  Room ${ROOM} is open. Read out this line, or point the other machine's`);
+  put('  camera at the square under it. Either one puts them in the room.');
+  put('');
+  put(`      ${joinUrl}`);
+  put('');
+  put(`  The code on its own is ${ROOM}, for a phone call.`);
+  if (OPEN) put('  Your own browser is opening on this room now.');
+  else put(`  Open this room here: ${hostUrl}`);
+  /*
+   * Which terminals this actually scans in, said where somebody can act on it.
+   *
+   * Measured over 90 combinations of font, size and line spacing: **85 of them failed to
+   * decode.** The square is drawn with U+2588 and friends, and most macOS monospace fonts —
+   * SF Mono, which is Terminal.app's default, among them — leave a gap of up to 16% between
+   * tiled block glyphs, which breaks the module grid. It scans in terminals that draw block
+   * elements geometrically rather than from the font: iTerm2, kitty, Ghostty, WezTerm and VS
+   * Code. So the line above comes first and is the one to rely on, and this says plainly that
+   * the square is the convenience rather than the contract.
+   */
+  put('  If the square below will not scan, that line always works: most fonts leave');
+  put('  gaps between block characters. iTerm2, Ghostty, kitty, WezTerm and VS Code');
+  put('  draw them solid; Terminal.app\'s default font does not.');
+  if (showQr) {
+    /*
+     * **Last.** The square is the thing to point a camera at, and a terminal leaves the last
+     * thing it printed on the screen. With the square in the middle this command printed 55
+     * lines of which 22 came after it, so on an 80x24 window it had scrolled off the top by
+     * the time the command settled — a symbol that fits and cannot be seen.
+     *
+     * Both servers are up by this line and the room is open, so nothing here may be fatal.
+     * `--lan=` accepts whatever it is given, and `qrEncode` throws by name past 213 bytes;
+     * a command that has done its job must not die printing a decoration.
+     */
+    put('');
+    try {
+      for (const line of qrHalfBlocks(qrEncode(joinUrl)).split('\n')) put(`  ${line}`);
+      qrEnd = out.length;
+    } catch (err) {
+      put(`  (no square: ${err?.message ?? err})`);
+    }
+  }
+} else {
+  put('  The relay would not open a room, so there is no code and no square to');
+  put('  print. The lobby still works — press CREATE A ROOM there:');
+  put('');
+  put(`      ${lobbyUrl}`);
+}
+put('');
+put('  Ctrl-C stops both.');
+
+/** Lines printed after the last row of the square. The square must survive an 80x24 window. */
+const linesAfterQr = qrEnd < 0 ? 0 : out.length - qrEnd;
+
 if (JSON_OUT) {
   console.log(JSON.stringify({
     tc: 'host-lan', ok: !!(gameOk && relayOk), bind: BIND, lan: ADDR,
     iface: chosen?.iface ?? 'lo0', mdns: LOOPBACK ? null : MDNS,
     gamePort: PORT, relayPort: RELAY_PORT, gameUrl, lobbyUrl, relayUrl,
     room: ROOM, joinUrl, hostUrl, qr: showQr,
+    lines: out.length, linesAfterQr,
     plaque, alternatives: candidates.filter((c) => c.ip !== ADDR),
     node: process.execPath, pid: process.pid,
   }));
 } else {
-  const rule = '─'.repeat(64);
-  say(rule);
-  if (LOOPBACK) {
-    say('  Serving on 127.0.0.1 only. Nothing outside this machine can reach it,');
-    say('  and the lobby will withhold the invite link and say so.');
-    say('');
-    say(`      ${hostUrl}`);
-  } else if (joinUrl) {
-    say(`  Room ${ROOM} is open. Point the other machine's camera at this, or read`);
-    say('  out the line under it. Either one puts them in the room; nothing is typed.');
-    say('');
-    if (showQr) {
-      /*
-       * Both servers are up by this line and the room is open, so nothing here may be fatal.
-       * `--lan=` accepts whatever it is given, and `qrEncode` throws by name past 213 bytes;
-       * a command that has done its job must not die printing a decoration.
-       */
-      try {
-        for (const line of qrHalfBlocks(qrEncode(joinUrl)).split('\n')) say(`  ${line}`);
-        say('');
-      } catch (err) {
-        say(`  (no square: ${err?.message ?? err})`);
-        say('');
-      }
-    }
-    say(`      ${joinUrl}`);
-    say('');
-    say(`  The code on its own is ${ROOM}, for a phone call.`);
-    if (OPEN) say('  Your own browser is opening on this room now.');
-    else say(`  Open this room here: ${hostUrl}`);
-  } else {
-    say('  The relay would not open a room, so there is no code and no square to');
-    say('  print. The lobby still works — press CREATE A ROOM there:');
-    say('');
-    say(`      ${lobbyUrl}`);
-  }
-  say(rule);
-  say(`  game    ${gameUrl}${gameOk ? '' : '   NOT ANSWERING'}`);
-  say(`  relay   ${relayUrl}${relayOk ? '' : '   NOT ANSWERING'}`);
-  if (!LOOPBACK) {
-    say(`  also    http://${MDNS}:${PORT}/${ROOM ? `?room=${ROOM}` : '?mp=1'}`);
-    say('          Mac to Mac. This name follows the machine across a DHCP lease');
-    say('          change; the numbers above do not.');
-    say(`  on      ${chosen.iface}${chosen.overridden ? ', given with --lan=' : ''}`);
-    for (const c of candidates.filter((c) => c.ip !== ADDR)) {
-      say(`          not chosen: ${c.ip} (${c.why}) — --lan=${c.ip} to use it instead`);
-    }
-  }
-  say(rule);
-  if (!LOOPBACK) {
-    say('  Both machines must be on the same network. Same Wi-Fi is usually enough;');
-    say('  a "guest" network, or one with client isolation on, is not — those exist');
-    say('  specifically to stop two devices seeing each other, and nothing here can');
-    say('  work round that.');
-    say('  If the other machine cannot open it: check the firewall said Allow, and');
-    say(`  that ${ADDR} is the address on the network they are on.`);
-    say(rule);
-  }
-  say('  Ctrl-C stops both.');
-  say('');
+  for (const line of out) say(line);
 }
 
 if (!gameOk || !relayOk) {

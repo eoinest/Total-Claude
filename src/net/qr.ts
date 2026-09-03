@@ -73,10 +73,14 @@ export interface QrSymbol {
  * Per version 1–10: `[ecCodewordsPerBlock, group1Blocks, group1Data, group2Blocks, group2Data]`.
  *
  * Checked against the total-codeword count for every one of the forty entries — the sum
- * `ec * (g1 + g2) + g1 * d1 + g2 * d2` must equal 26, 44, 70, 100, 134, 172, 196, 242, 292, 346
- * for versions 1 to 10. `tools/qa-net.mjs`'s `qr-tables-sum` asserts exactly that at run time,
- * because a single mistyped digit in here produces a symbol that is structurally valid, scans,
- * and decodes to rubbish — the one class of bug an eyeball over a rendered image cannot catch.
+ * `ec * (g1 + g2) + g1 * d1 + g2 * d2` must equal `TOTAL_CODEWORDS[version - 1]`.
+ * `tools/qa-net.mjs`'s `qr-tables-sum` asserts exactly that at run time, and `qr-every-version`
+ * fills all forty pairs to capacity and reads them back through a decoder that is not ours.
+ * Both, because they fail differently: the sum catches a digit that breaks the arithmetic, and
+ * the round trip catches a pair of digits that agree with each other and with nothing else.
+ *
+ * (This paragraph promised `qr-tables-sum` for a day before the check existed, which a reviewer
+ * found. A docstring that names a check is a claim, and an unwritten one is a false claim.)
  */
 const BLOCKS: Record<Ecc, number[][]> = {
   L: [
@@ -103,6 +107,13 @@ const BLOCKS: Record<Ecc, number[][]> = {
 
 /** Total codewords per version, 1–10. The cross-check `BLOCKS` is validated against. */
 export const TOTAL_CODEWORDS = [26, 44, 70, 100, 134, 172, 196, 242, 292, 346];
+
+/**
+ * One row of the block table: `[ecPerBlock, g1Blocks, g1Data, g2Blocks, g2Data]`.
+ *
+ * Exported for `qa-net`'s `qr-tables-sum`, which is the check this file's docstring names.
+ */
+export const blockPlan = (version: number, ecc: Ecc): number[] => BLOCKS[ecc][version - 1];
 
 /** Alignment-pattern centre coordinates per version, 1–10. */
 const ALIGN: number[][] = [
@@ -352,8 +363,24 @@ const drawFunctions = (mod: Uint8Array, fn: Uint8Array, size: number, version: n
       }
     }
   }
-  // Reserve the format-information strips. Values are written after a mask is chosen.
+  /*
+   * Reserve the format-information strips. Values are written after a mask is chosen.
+   *
+   * **`i === 6` is skipped, and leaving it in was a real conformance bug.** The format strips
+   * run (8,0)-(8,5), (8,7), (8,8), (7,8) and (5,8)-(0,8); they step *over* the timing row and
+   * column, which cross at (8,6) and (6,8). Reserving those two cleared them to light, and
+   * `drawFormat` never writes either — its own loops stop at (8,5) and (5,8) — so both stayed
+   * light where the specification requires dark, in every symbol this encoder has ever made.
+   * Diffed against `segno`: exactly two function-module differences, and these were they.
+   *
+   * It cost nothing measurable — 71 against 70 decodes over 216 degraded trials, which is
+   * noise — because a decoder samples the timing pattern along its whole length and two
+   * modules do not move the grid. That is precisely why it needed a check rather than a
+   * measurement: nothing observable was wrong, and the file's docstring claims conformance to
+   * ISO/IEC 18004. `qr-function-patterns` in `tools/qa-net.mjs` now walks both timing runs.
+   */
   for (let i = 0; i <= 8; i++) {
+    if (i === 6) continue;
     put(8, i, false);
     put(i, 8, false);
   }
