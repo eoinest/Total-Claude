@@ -4053,6 +4053,18 @@ asking about explicitly.
   throttling — a `Worker`, most plausibly — or a longer floor shared with the relay path, and
   neither is a change to make without deciding which of the two failures a player would rather
   be told about.
+- **The detector's floor is now stated, and it is one float32 ULP.** §13.9 no. 12 established
+  that a one-float64-ULP disagreement in the unit layer is erased by `src/sim/quantise.ts` before
+  any checkpoint can see it, so the smallest fault either gate can inject — and the smallest
+  disagreement `uf64` can catch — is one float32 ULP, about 15 µm at this battle's scale. That is
+  the right floor, because it is also the smallest disagreement that can *reach* the state. What
+  is **not** covered is the case `quantise.ts` names and does not eliminate: two engines whose
+  float64 results straddle a rounding boundary about 2e-9 of the time per field per tick, which
+  is a probability rather than a fault anything here can arrange on demand. `qa-xengine` remains
+  the only instrument that has ever seen the real thing.
+- **A *closed* tab is now `peerLeft` in half a second; a *backgrounded* one is still the eight
+  seconds above.** The `pagehide` listener covers leaving, not hiding, and it deliberately does
+  not try to: a player who alt-tabs has not left.
 - **The `broker` arm is opt-in** and therefore not in the default run, exactly as `xengine` is. It
   uses the public internet, and a gate that goes red because somebody else's free service is busy
   is the thing §12.8 warns about.

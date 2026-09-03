@@ -3489,7 +3489,7 @@ and not the fixture.
    `void`-ing those rejections loses every one of them silently. Half a day of reconnaissance went
    into learning that; `PeerLink` has the queue and says so.
 
-### Two facts about this machine that a gate has to know
+### Three facts about this machine that a gate has to know
 
 - **Playwright's default headless Chromium cannot hold a peer connection here.** Two browsers,
   real STUN, host candidates: `chrome-headless-shell` connected **2 times in 17** across four flag
@@ -3511,12 +3511,22 @@ and not the fixture.
   (`--disable-features=WebRtcHideLocalIpsWithMdns`): nothing here resolves `*.local` candidate
   names, so two browsers never complete a check over host candidates. A player's OS resolves them
   and a player's peer is on another machine; no flag is shipped.
+- **Both peers have to be kept awake.** Two browsers on one machine cannot both be the front
+  window, and a page whose timers Chromium has throttled *is* a peer that has gone quiet —
+  correctly reported as one. `--disable-background-timer-throttling`,
+  `--disable-backgrounding-occluded-windows` and `--disable-renderer-backgrounding` are on both
+  gates' peer browsers. The `desync` arm died of this before they were: `page.click` timed out
+  against a net panel already raised over the deployment screen. Which is also why
+  `tools/lib/net-drive.mjs` clicks through `clickOrExplain` now — Playwright's answer to a covered
+  button is thirty seconds of retry loop describing the geometry of a `<div>`, and **a driver
+  standing in front of the error message is worse than no driver.**
 
-### The four defects a relay cannot have
+### The defects a relay cannot have
 
-Read `docs/MULTIPLAYER.md` §13.9 before changing anything here. Four of the eight defects the
-gate found are the same category — **a relay is a third party that holds state and answers on its
-own thread, and every place this design leaned on that without noticing became a defect**:
+Read `docs/MULTIPLAYER.md` §13.9 before changing anything here. Six of the twelve defects the
+gate found are the same category — **a relay is a third party that holds state, answers on its
+own thread, and notices things on your behalf, and every place this design leaned on that without
+noticing became a defect**:
 
 1. A host publishes `setup` and `ready` minutes before a challenger exists (`PeerLink.preOpen`).
 2. The offer was created when a knock arrived, so the introduction depended on a main thread that
@@ -3525,9 +3535,34 @@ own thread, and every place this design leaned on that without noticing became a
    origin that needs plaintext it silently dropped every message.
 4. A fault that travels forks nothing, because a peer-to-peer commit goes to both ends of one
    channel (`PeerFault.localOnly`).
+5. **The challenger kept knocking after it had the offer**, and the host answers a claimed room
+   with `full` — so whether an introduction survived depended on whether ICE beat a one-second
+   timer. `claim()` stops the knock. Found by `nodirect`, which was being told the *room* was
+   taken when the point of the arm is the sentence about two networks.
+6. **Nobody says a departing player has departed.** A relay sees the socket close and names
+   `peerLeft`; a torn-down renderer does not shut SCTP politely, so the survivor waited out the
+   silence detector and was told `linkLost` — the wrong accusation, six seconds late. One
+   `pagehide` listener calling `NetSession.dispose`: measured `peerLeft` after 503 ms.
 
-And two of the four product defects were only visible **off loopback**, which is a secure context
-and a LAN address is not. §10.1 recorded the same shape one pass earlier.
+And two of the product defects were only visible **off loopback**, which is a secure context and
+a LAN address is not. §10.1 recorded the same shape one pass earlier.
+
+### One defect that is not this branch's, and is the most important of the twelve
+
+**`--fault=ulp` had stopped testing anything, in the *relay* gate, and it passed anyway.** It
+moves one `UnitGroupState` float64 field by one ULP. `src/sim/quantise.ts` — added by an earlier
+pass to give the unit layer the float32 firewall the soldier pool has always had — `Math.fround`s
+all fourteen of those fields at the end of every tick, so the perturbation is erased before any
+checkpoint can see it. What was left was a race: the relay path, whose turns arrive on a socket
+event out of phase with the step, won it and stayed green; the peer path, which drains turns
+inside `NetSession.update()` immediately before the step, lost it every time.
+
+It only surfaced because the same fault was run through a **second transport**. `testMarker` now
+moves one *float32* ULP — the case `quantise.ts` is explicit about not eliminating — and both
+gates catch it at tick 60 attributed to unit 0. Three sentences elsewhere (§1.4, `agree.ts`,
+`qa-net`'s own rationale) said the unit layer has no firewall and have been corrected.
+
+**Two implementations of one guarantee are a better instrument than either of them.**
 
 
 ### The honest limit
@@ -3536,9 +3571,12 @@ and a LAN address is not. §10.1 recorded the same shape one pass earlier.
 home internet does better, both on one wifi always works, and **a network that blocks outbound UDP
 cannot play at all** — that is the ~9 points of callstats.io's 22% that needed TCP, and nothing
 recovers it. §13.6 has the sources. The product says which side the block is on and what to try,
-in four sentences, and stops. `qa-p2p`'s `nodirect` arm makes that path red on purpose by
-discarding host candidates, which leaves only the hairpin — and this network refuses hairpinning,
-measured.
+in four sentences, and stops. `qa-p2p`'s `nodirect` arm makes that path red on purpose with
+`?p2pcand=relay`, which offers **no candidates at all** — there is no TURN, so there are no relay
+candidates — and therefore cannot connect on any network, which is also the honest likeness of a
+network that blocks outbound UDP. Whether this router hairpins is asked on every run and
+*reported rather than asserted*, because the answer is the router's: srflx-only reached
+`CONNECTED` after 7 s here.
 
 ### What is not done
 
