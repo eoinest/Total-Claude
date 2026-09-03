@@ -3167,6 +3167,12 @@ state beside each row.
 | A | ~6 | present, not playing | **89/89** |
 | B | 77-99 | **playing** | 80/87 — `same-battle`, `reordered-pair` ×2, `one-ulp` ×2, `peer-left` ×2 |
 | C | ~35 rising | playing | **died at exit 1**, 30 checks in: `page.click` timeout on `.dest-battle` |
+| D | 21-40 | present, not playing | **88/89** — `same-battle` only |
+
+Run D is the one to read, because it is the first with the denominator fixed: 89 checks in A and
+89 in D, the same number, which is the property that was missing. Its single red is
+`same-battle` at ticks 2106 and 2111 — the reviewer independently measured 2109 and 2115 — with
+`checkpoints-agreed` green beside it.
 
 Every red in B is a full-battle arm timing out, and the signatures say so rather than being
 inferred: `peer-left` reported *"nothing has arrived from the relay in 6.1 s of drawing"*, which
@@ -3178,10 +3184,18 @@ touched, and `reordered-pair` passes in isolation (`--only=swap`, 2/2, caught at
 uf64). The 22 checks this branch owns — `qr`, the LAN additions, `https`, the `dev` completion —
 have never gone red except when deliberately injected.
 
-**Attribution, measured rather than asserted.** The same failure class is present at the branch
-base: a run of `ad94279` before any of this work reported `siege-same-battle` red with
+**Attribution, measured rather than asserted, two ways.** The same failure class is present at
+the branch base: a run of `ad94279` before any of this work reported `siege-same-battle` red with
 *"they stopped at different ticks: 1359 and 1369"* and `siege-checkpoints-agreed` green — the
-identical signature.
+identical signature. And it is unreachable from the one change this branch made to `room.ts`:
+`bend` is called only from `emit`'s `eligible` branch, which requires `this.opts.fault`, which
+requires `--fault=` on the relay — and the `battle` arm's relay has none. The swap change cannot
+touch an arm that injects no fault.
+
+**It correlates with load and nothing else.** Green at load 6; red at 21, at 35 and at 99. Three
+of the four runs were on a machine with the load average above 20 from work that was not this
+gate's — measured: two browsers and 0.7 cores of Chromium against a 16-core machine reporting
+7.4 cores in use.
 
 **What was fixed here rather than explained away.** The denominator used to move with the
 result: `record(\`${name}-both\`)` sat inside `if (d)`, and so did `one-ulp-layer` and
