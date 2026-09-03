@@ -2544,20 +2544,41 @@ if (wanted('https')) {
   }));
   await shot(page, 'https-01-deployed-lobby');
   measured.https = { origin: face.origin, sheet, text: face.text.slice(0, 400) };
-  const noForm = !sheet.hasRoom && !sheet.hasCreate && !sheet.hasJoin && !sheet.hasRelay
-    && !sheet.hasAdv;
-  const saysWhy = /own network/i.test(face.text) && /from the internet/i.test(face.text)
-    && /private network/i.test(face.text);
-  record('https-lobby-refuses-honestly',
-    face.origin === secureBase && noForm && saysWhy && !/wss?:\/\//.test(face.text)
-      && !/npm run/.test(face.text) && sheet.copy.startsWith('https://github.com/'),
-    'on an https origin the multiplayer entry leads to four sentences and a link to a copy, '
-      + 'with no form on the screen at all',
+  /*
+   * **Rewritten 2 Sep 2026, and the claim is now the opposite of what it was.**
+   *
+   * This check used to require that an https origin's multiplayer screen have *no form on it at
+   * all* — no code field, no Create, no Join, no relay address — because a page the browser
+   * believes came from the internet cannot open a plain connection into a private network, so
+   * every control on it would have been furniture. That was right, and §12.6 has the measurement
+   * both ways round.
+   *
+   * `e/net/webrtc-p2p` made the transport a connection straight between the two browsers, which
+   * is subject to neither mixed content nor Local Network Access — so the screen has controls
+   * again, and asserting their absence would now be asserting a regression. What is checked
+   * instead is that the entry still leads somewhere *usable*: the code field is reachable by a
+   * mouse, Create is enabled, and the sheet no longer claims the battle cannot be played from
+   * here.
+   *
+   * **The socket check below is untouched, and is now the control rather than the limit.** The
+   * `ws://` refusal is still exactly true and is the reason a relay cannot be the answer on this
+   * origin; `tools/qa-p2p.mjs`'s `https` arm reuses this same fixture to show a peer connection
+   * succeeding from the same page that this fails from.
+   */
+  const usable = sheet.hasRoom && sheet.hasCreate && sheet.hasJoin && sheet.hasAdv
+    && face.roomReaches && face.createDisabled === false;
+  const noLongerRefuses = !/cannot be played from this page/i.test(face.text)
+    && !/nothing typed on this screen/i.test(face.text);
+  record('https-lobby-offers-a-room',
+    face.origin === secureBase && usable && noLongerRefuses && !/npm run/.test(face.text),
+    'on an https origin the multiplayer entry leads to a room code, a Create and a Join',
     `origin ${face.origin}; controls present: `
       + `${Object.entries(sheet).filter(([, v]) => v === true).map(([k]) => k).join(', ') || 'none'}; `
-      + `link ${sheet.copy || '(none)'}; sheet reads: ${face.text.slice(0, 170)}`,
-    'it used to print a shell command at a stranger with no checkout, under a field they '
-      + 'could type into for ever — a button that dead-ends is the thing being removed');
+      + `code field reachable ${face.roomReaches}, Create `
+      + `${face.createDisabled ? 'disabled' : 'enabled'}; sheet reads: ${face.text.slice(0, 150)}`,
+    'this screen had no controls on it at all until 2 Sep 2026, because a relay was compulsory '
+      + 'and this origin cannot reach one — see §13.1 and the socket check below, which is now '
+      + 'the control for that rather than the limit');
 
   /*
    * And the reason it gives, measured. Two pages, one relay, one character of difference.

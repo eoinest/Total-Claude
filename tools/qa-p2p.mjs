@@ -67,7 +67,7 @@
  */
 import { spawn } from 'node:child_process';
 import { execFileSync } from 'node:child_process';
-import { createServer as createHttpServer, request as httpRequest } from 'node:http';
+import { request as httpRequest } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
@@ -94,9 +94,19 @@ if (badFlag.length) {
 }
 
 const ARMS = ['proto', 'params', 'seal', 'battle', 'lag', 'desync', 'lobby', 'https',
-  'nodirect', 'ab', 'broker'];
-/** `broker` reaches the public internet, so it is opt-in for the reason `xengine` is. */
-const DEFAULT_ARMS = ARMS.filter((a) => a !== 'broker');
+  'nodirect', 'ab', 'broker', 'brokerplay'];
+/**
+ * `broker` and `brokerplay` reach the public internet, so both are opt-in for the reason
+ * `xengine` is: a gate that goes red because somebody else's free service is busy teaches
+ * people to ignore it.
+ *
+ * They are two arms rather than one because they cost three orders of magnitude apart.
+ * `broker` is two `MqttSignal`s in Node — four seconds, no browser, and most of what the
+ * broker path actually is. `brokerplay` boots two battles on top of it. Splitting them is
+ * what lets `tools/scratch/inject-p2p.mjs` prove the cheap one red without queueing for a
+ * browser slot behind the expensive one.
+ */
+const DEFAULT_ARMS = ARMS.filter((a) => a !== 'broker' && a !== 'brokerplay');
 const ONLY = args.get('only') ?? '';
 if (ONLY) {
   const unknown = ONLY.split(',').filter((a) => !ARMS.includes(a));
@@ -868,7 +878,15 @@ if (wanted('seal')) {
 // Browsers. Two, and both `channel: 'chrome'`; see the file docstring.
 // ---------------------------------------------------------------------------
 
-const NEEDS_BROWSER = ['battle', 'lag', 'desync', 'lobby', 'https', 'nodirect', 'ab', 'broker'];
+/**
+ * Which arms need a browser, and `broker` is deliberately not one of them.
+ *
+ * Getting this list wrong is silent and expensive: `--only=broker` took two browser slots it had
+ * no use for, printed its verdict, and then sat in the queue for the length of the machine's
+ * patience. The rule is that an arm belongs here if and only if it opens a page.
+ */
+const NEEDS_BROWSER = ['battle', 'lag', 'desync', 'lobby', 'https', 'nodirect', 'ab',
+  'brokerplay'];
 const anyBrowser = NEEDS_BROWSER.some((a) => wanted(a));
 
 let chrome = null;
@@ -892,15 +910,36 @@ let sigRelay = null;
  */
 const CHROME_ARGS = ['--disable-features=WebRtcHideLocalIpsWithMdns'];
 
+/**
+ * The `https` arm's origin, declared **public** to the browser — on the run's own two browsers.
+ *
+ * `--ip-address-space-overrides` is a launch argument, so this has to be decided before any arm
+ * runs. The first version launched a third and fourth browser for the arm rather than put the
+ * flag on these two, on the reasoning that applying it here would "silently change what the other
+ * arms measure". **That reasoning was wrong and it cost the arm a run.** The override names *one
+ * host and one port* — this arm's TLS front end, which nothing else touches — and every other arm
+ * in this file is on `127.0.0.1`, so there is nothing for it to change. What four browsers did
+ * change was the load: two extra Chromes booting two extra 3,000-man battles took the arm past
+ * its five-minute readiness budget on a machine at load 12, and the failure presented as a
+ * transport timeout rather than as a queue.
+ *
+ * Empty when there is no LAN address, in which case the arm bails out with a named check anyway.
+ */
+const PUBLIC_ORIGIN_ARGS = lanAddress().ip
+  ? [`--ip-address-space-overrides=${lanAddress().ip}:${HTTPS_PORT}=public`]
+  : [];
+
 if (anyBrowser) {
   if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
   try {
     chrome = await launchBrowser({
-      label: 'qa-p2p/host', port: PORT, root: ROOT, channel: CHANNEL, args: CHROME_ARGS,
+      label: 'qa-p2p/host', port: PORT, root: ROOT, channel: CHANNEL,
+      args: [...CHROME_ARGS, ...PUBLIC_ORIGIN_ARGS],
     });
     cleanups.push(() => { void chrome.close(); });
     chromeGuest = await launchBrowser({
-      label: 'qa-p2p/guest', root: ROOT, channel: CHANNEL, args: CHROME_ARGS,
+      label: 'qa-p2p/guest', root: ROOT, channel: CHANNEL,
+      args: [...CHROME_ARGS, ...PUBLIC_ORIGIN_ARGS],
     });
     cleanups.push(() => { void chromeGuest.close(); });
   } catch (e) {
@@ -1284,29 +1323,99 @@ if (wanted('https') && chrome) {
       break secure;
     }
     /*
-     * A TLS front end over this run's own vite, and a `wss://` proxy to the relay's `/signal`.
+     * **The built bundle, served statically over TLS. Not a proxy in front of the dev server.**
      *
-     * Both halves are the point. The page has to come from an https origin, and the
-     * introduction has to come from the *same* origin — which is exactly the arrangement the
-     * deployed site would have if the owner ran a signalling endpoint on it, and is the only
-     * way to keep the whole exchange inside a scheme a public page is allowed to use. The
-     * public brokers would do too and are `wss://` for the same reason; this one is offline.
+     * The first version reverse-proxied this run's vite, and it cost the arm two runs. Vite's
+     * client opens an HMR WebSocket back to the page's own origin, my `upgrade` handler
+     * forwarded *every* upgrade to the relay, and the relay refused `/?token=…` — so the page
+     * sat behind a socket that never completed and the two errors the harness eventually
+     * reported were both about HMR. Routing only `/signal/` to the relay fixes that, and the
+     * better answer is not to have a dev server in the fixture at all.
+     *
+     * This is what the deployed site *is*: a static tree over TLS with no server in it. So the
+     * arm builds `dist/` and serves it, which removes the proxy, the HMR socket and the whole
+     * class of "a chunk 502'd" failure, and makes the fixture a closer likeness of the thing it
+     * is standing in for. The build is run here rather than assumed, because a stale `dist/`
+     * would have this arm measure code that is not on the branch.
      */
+    /*
+     * In-process, through the `vite` package, and not by spawning a CLI.
+     *
+     * There is no `node_modules/vite/bin` in a worktree — the install is hoisted to the main
+     * checkout and only the *package* resolves from here, so `node …/vite/bin/vite.js build`
+     * exits with a module-not-found and the arm reports "vite build failed" about a path rather
+     * than about the build. `tools/lib/vite-runner.mjs` had already learned this for the dev
+     * server and says why at length: no `npx`, no shell, and the process the caller holds is the
+     * process doing the work.
+     */
+    const built = await (async () => {
+      try {
+        const { build } = await import('vite');
+        await build({ root: ROOT, logLevel: 'error' });
+        return '';
+      } catch (e) {
+        return e?.message ?? String(e);
+      }
+    })();
+    if (built) {
+      record('https-arm-can-run', false, 'the arm serves the built bundle over TLS',
+        `vite build failed: ${built.slice(0, 200)}`);
+      break secure;
+    }
     const relay = await startRelay(HTTPS_RELAY);
+    const DIST = path.join(ROOT, 'dist');
+    const TYPES = {
+      '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+      '.css': 'text/css; charset=utf-8', '.json': 'application/json',
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+      '.glb': 'model/gltf-binary', '.hdr': 'image/vnd.radiance', '.ktx2': 'image/ktx2',
+      '.bin': 'application/octet-stream', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg',
+      '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.exr': 'image/x-exr',
+    };
+    const bad = [];
     const front = createHttpsServer({
       key: await readFile(`${CERT_DIR}/key.pem`),
       cert: await readFile(`${CERT_DIR}/cert.pem`),
     }, (req, res) => {
-      const up = httpRequest({ host: '127.0.0.1', port: PORT, path: req.url, method: req.method,
-        headers: req.headers }, (r) => {
-        res.writeHead(r.statusCode ?? 500, r.headers);
-        r.pipe(res);
-      });
-      up.on('error', () => { res.writeHead(502); res.end('upstream'); });
-      req.pipe(up);
+      const url = new URL(req.url, 'https://x');
+      // Anything that is not a file is `index.html`, which is what a static host does and what
+      // `?mp=1` and `?room=` need.
+      let rel = decodeURIComponent(url.pathname);
+      if (rel.endsWith('/')) rel += 'index.html';
+      // No traversal out of `dist/`: this listens on 0.0.0.0 for the length of one arm.
+      const file = path.normalize(path.join(DIST, rel));
+      if (!file.startsWith(DIST)) { res.writeHead(403); res.end('no'); return; }
+      void readFile(file)
+        .then((body) => {
+          res.writeHead(200, { 'content-type': TYPES[path.extname(file)] ?? 'application/octet-stream' });
+          res.end(body);
+        })
+        .catch(() => {
+          if (path.extname(file)) {
+            bad.push(`404 ${rel}`);
+            res.writeHead(404);
+            res.end('not found');
+            return;
+          }
+          void readFile(path.join(DIST, 'index.html')).then((body) => {
+            res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+            res.end(body);
+          }).catch(() => { res.writeHead(500); res.end('no index'); });
+        });
     });
-    // `/signal/CODE` upgrades are tunnelled straight to the relay, byte for byte.
+    /*
+     * **Only `/signal/` is tunnelled**, and the restriction is the fix.
+     *
+     * Forwarding every upgrade sent Vite's HMR socket to a relay that had no route for it, and a
+     * socket that neither opens nor closes is worse than one that fails. Nothing else on this
+     * origin has any business upgrading, so everything else is refused in one line.
+     */
     front.on('upgrade', (req, sock, head) => {
+      if (!/^\/signal\//.test(new URL(req.url, 'https://x').pathname)) {
+        sock.write('HTTP/1.1 404 Not Found\r\nconnection: close\r\n\r\n');
+        sock.destroy();
+        return;
+      }
       const up = httpRequest({ host: '127.0.0.1', port: HTTPS_RELAY, path: req.url,
         headers: req.headers });
       up.on('upgrade', (r, upSock, upHead) => {
@@ -1332,20 +1441,21 @@ if (wanted('https') && chrome) {
     const sig = `wss://${lan.ip}:${HTTPS_PORT}`;
     console.log(`  origin ${origin}, declared PUBLIC to the browser, introduced by ${sig}`);
     /*
-     * A third browser, and it is the only reason a third is taken.
+     * The run's own two browsers, which already carry the override. See `PUBLIC_ORIGIN_ARGS`.
      *
-     * `--ip-address-space-overrides` is a launch argument, so the two long-lived browsers cannot
-     * be reused: the override has to name this arm's TLS port, and applying it to the browsers
-     * every other arm uses would silently change what those arms measure. It is closed the
-     * moment the arm is done.
+     * The flag has to be applied at launch, so if it is not on these two it cannot be on any —
+     * and it names one host and one port that no other arm touches, so putting it here costs
+     * nothing. Two extra browsers did cost something: the arm ran out of its readiness budget.
      */
-    const pubArgs = [...CHROME_ARGS, `--ip-address-space-overrides=${lan.ip}:${HTTPS_PORT}=public`];
-    const pubHost = await launchBrowser({
-      label: 'qa-p2p/https-host', root: ROOT, channel: CHANNEL, args: pubArgs,
-    });
-    const pubGuest = await launchBrowser({
-      label: 'qa-p2p/https-guest', root: ROOT, channel: CHANNEL, args: pubArgs,
-    });
+    if (!PUBLIC_ORIGIN_ARGS.length) {
+      record('https-arm-can-run', false,
+        'the arm needs its origin declared public at browser launch',
+        'no LAN address was available when the browsers were launched');
+      relay.stop();
+      break secure;
+    }
+    const pubHost = chrome;
+    const pubGuest = chromeGuest;
     try {
       // 1. The lobby, from a page the browser believes came from the internet.
       const lp = await newPage(pubHost, { ignoreHTTPSErrors: true });
@@ -1408,12 +1518,29 @@ if (wanted('https') && chrome) {
         }
         await sleep(14000);
         played = true;
-      } catch (e) { why = e.message; }
+      } catch (e) {
+        /*
+         * A timeout here says which `waitForFunction` gave up and nothing else, which is not
+         * enough to act on: "the page never booted" and "the peers never connected" are different
+         * failures with different fixes, and the first run of this arm could not tell them apart.
+         * So both pages are asked what they think happened, and it goes in the record.
+         */
+        why = e.message;
+        const ask = async (p, tag) => {
+          const g2 = await p.evaluate(() => !!window.__game?.ready).catch(() => 'unreadable');
+          const load = await p.evaluate(
+            () => document.querySelector('#load-text')?.textContent ?? '').catch(() => '');
+          const n = await p.evaluate(() => window.__net?.() ?? null).catch(() => null);
+          return `${tag}: ready=${g2} loading="${String(load).slice(0, 70)}" `
+            + `phase=${n?.phase ?? '-'} errs=[${newErrors(p.__errs).slice(0, 2).join(' | ')}]`;
+        };
+        why += ` — ${await ask(h, 'host')}; ${await ask(g, 'guest')}`;
+      }
       const ca = await h.evaluate(() => window.__checks()).catch(() => null);
       const cb = await g.evaluate(() => window.__checks()).catch(() => null);
       const cmp = compareChecks(ca ?? [], cb ?? []);
       const diag = await h.evaluate(() => window.__peer()).catch(() => null);
-      measured.https = { origin, sig, room, cmp, diag, played, why };
+      measured.https = { origin, sig, room, cmp, diag, played, why, missing: bad.slice(0, 10) };
       record('https-peers-connect-and-play',
         played && cmp.bad === null && cmp.common >= 4 && !!diag?.selected,
         'two pages the browser believes came from the internet connect directly and play',
@@ -1422,13 +1549,13 @@ if (wanted('https') && chrome) {
             + `open after ${diag?.openedMs} ms, rtt ${diag?.rttMs} ms; `
             + `${cmp.common} checkpoints agreed to tick ${cmp.highest}, `
             + `${cmp.bad ?? 'no layer ever differed'}`
-          : `they never reached a battle: ${why}`,
+          : `they never reached a battle: ${why}`
+            + `${bad.length ? `; ${bad.length} file(s) the static host did not have: ${bad.slice(0, 4).join(', ')}` : ''}`,
         'blocked by neither mixed content nor Local Network Access — the two rules that make '
         + 'the deployed site unable to reach a relay');
       for (const p of [h, g]) await p.close();
     } finally {
-      await pubHost.close();
-      await pubGuest.close();
+      // The browsers are the run's; only what this arm started is closed.
       front.close();
       relay.stop();
     }
@@ -1577,8 +1704,66 @@ if (wanted('ab') && chrome) {
 // Arm: the public brokers, for real. Opt-in.
 // ---------------------------------------------------------------------------
 
-if (wanted('broker') && chrome) {
+/*
+ * `broker` runs its first half with **no browser at all**, which is why it is above the
+ * browser gate rather than below it.
+ *
+ * `src/net/signal.ts` needs a `WebSocket` that takes a subprotocol, `crypto.subtle`, `btoa` and
+ * `atob`, and Node 24 has all four — so the vendored MQTT client, the topic hash and the sealed
+ * envelope can be exercised against the *real* public brokers in about four seconds. That is
+ * most of what the broker path actually is: two peers finding each other. What a browser adds on
+ * top is the `RTCPeerConnection`, and that is measured by every other arm in this file.
+ *
+ * Opt-in either way (`--only=broker` or `--all`), for the reason `xengine` is: it uses somebody
+ * else's free service, and a gate that goes red because a public test broker is busy is the thing
+ * §12.8 warns about.
+ */
+if (wanted('broker')) {
   console.log('\n=== broker: the real public introduction services ===');
+  const { MqttSignal, PUBLIC_BROKERS: BROKERS } = await import('../src/net/signal.ts');
+  const code = `Q${Math.random().toString(36).slice(2, 6).toUpperCase().replace(/[IOL01]/g, 'X')}`;
+  const sa = new MqttSignal(code, 0, BROKERS);
+  const sb = new MqttSignal(code, 1, BROKERS);
+  const heard = { host: [], guest: [] };
+  sa.onMessage = (m) => heard.host.push(m);
+  sb.onMessage = (m) => heard.guest.push(m);
+  const t0 = Date.now();
+  let openErr = '';
+  try {
+    await Promise.all([sa.open(10000), sb.open(10000)]);
+  } catch (e) { openErr = e.message; }
+  const openMs = Date.now() - t0;
+  if (!openErr) {
+    sb.send({ t: 'knock', from: 1 });
+    await sleep(1200);
+    sa.send({ t: 'offer', from: 0, sdp: 'v=0\r\no=- 1 1 IN IP4 192.168.1.77\r\n' });
+    await sleep(1200);
+    sb.send({ t: 'answer', from: 1, sdp: 'v=0\r\nanswer\r\n' });
+    await sleep(1200);
+  }
+  const gotKnock = heard.host.some((m) => m.t === 'knock');
+  const gotOffer = heard.guest.some((m) => m.t === 'offer' && m.sdp.includes('192.168.1.77'));
+  const gotAnswer = heard.host.some((m) => m.t === 'answer');
+  const noEcho = !heard.host.some((m) => m.from === 0) && !heard.guest.some((m) => m.from === 1);
+  measured.brokerSignal = {
+    code, openMs, live: [sa.live, sb.live], of: BROKERS.length,
+    foreign: [sa.foreign, sb.foreign], heard, openErr,
+  };
+  record('broker-carries-an-introduction',
+    !openErr && gotKnock && gotOffer && gotAnswer && noEcho,
+    'a knock, an offer and an answer cross the real public brokers, sealed, with no account',
+    openErr
+      ? `could not open: ${openErr}`
+      : `${sa.live} and ${sb.live} of ${BROKERS.length} brokers answered, first in ${openMs} ms; `
+        + `knock ${gotKnock}, offer ${gotOffer}, answer ${gotAnswer}, no self-echo ${noEcho}; `
+        + `${sa.foreign + sb.foreign} envelope(s) arrived that would not open`,
+    'the topic is a hash and the payload is AES-GCM under the room code, so an operator sees '
+    + 'neither');
+  sa.close();
+  sb.close();
+}
+
+if (wanted('broker') && chrome) {
   const room = nextRoom();
   const q = `room=${room}&sig=broker&deploy=0&autoplay=1&menu=0&quality=medium`;
   const h = await newPage(chrome);

@@ -192,9 +192,13 @@ const FAULTS = {
   'dead-brokers': [F.sig,
     "export const PUBLIC_BROKERS = [\n  'wss://broker.emqx.io:8084/mqtt',\n  'wss://test.mosquitto.org:8081/mqtt',\n  'wss://broker.hivemq.com:8884/mqtt',\n];",
     "export const PUBLIC_BROKERS = ['wss://nothing.invalid:8084/mqtt'];",
-    'broker', 'broker-introduces-two-strangers'],
+    'broker', 'broker-carries-an-introduction'],
 };
 
+/*
+ * Arms that need no browser. `broker` is in the list even though it uses the internet: it is
+ * four seconds and no browser slot, so it belongs with the cheap ones when it is asked for.
+ */
 const FAST = ['proto', 'params', 'seal'];
 const argv = process.argv.slice(2);
 

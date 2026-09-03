@@ -660,6 +660,19 @@ export class PeerRoom {
           wire.push(this.commit('battle', this.nextBattle++));
         }
       } else {
+        /*
+         * A backgrounded tab must not leave the deploy clock owing time it can never repay.
+         *
+         * `nextDeployClose` advances by one `turnMs` per commit, and the number of commits per
+         * pump is capped at `delayTurns` by the clause below — correctly, since that is the
+         * lockstep gate. So a tab hidden for a minute comes back with the deadline sixty seconds
+         * in the past and `nowMs >= nextDeployClose` permanently true, and deploy turns then
+         * close as fast as the wire carries them rather than ten a second. Harmless — the clock
+         * is stopped at tick 0 for the whole phase and what has to be canonical is the sequence —
+         * and still a hundred turns a second of empty commits for no reason. Four turns of slack
+         * absorbs an ordinary hitch; past that the deadline is simply re-based on now.
+         */
+        if (nowMs - this.nextDeployClose > this.opts.turnMs * 4) this.nextDeployClose = nowMs;
         let guard = 0;
         while (this.nextDeploy <= this.deployTurn + this.opts.delayTurns
           && nowMs >= this.nextDeployClose && guard++ < 64) {

@@ -522,8 +522,16 @@ export class NetSession implements Subsystem {
     if (this.tick0 < 0 || !this.link.lastMessageAt) return '';
     const limit = Math.max(LINK_SILENT_S, (this.link.gapMs * 8) / 1000);
     if (this.quietFor < limit) return '';
-    return `nothing has arrived from the relay in ${this.quietFor.toFixed(1)} s of `
-      + `drawing, against a ${Math.round(this.link.gapMs)} ms turn — the link is gone`;
+    /*
+     * "the other side", not "the relay", because there may not be one.
+     *
+     * The sentence reaches the player through `NetPanel`'s session-over sheet, and on a peer
+     * session it was an accusation against a process that was never in the match. What the
+     * measurement actually says is the same either way: nothing has arrived, for this long, on a
+     * wire that sends unconditionally.
+     */
+    return `nothing has arrived from the other side in ${this.quietFor.toFixed(1)} s of `
+      + `drawing, against a ${Math.round(this.link.gapMs)} ms turn — the connection is gone`;
   }
 
   // -------------------------------------------------------------------------

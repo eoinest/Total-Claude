@@ -235,33 +235,18 @@ export class NetLink implements Link {
 }
 
 /**
- * What `?net=…` says, parsed once.
+ * What `?net=…` says, parsed once. **Superseded, and deleted rather than left to rot.**
  *
- * `net` is the relay's WebSocket origin — `ws://127.0.0.1:5901` locally, `wss://…workers.dev`
- * once the Worker in `net/` is deployed. It is a parameter rather than a constant because
- * `tools/deploy-vercel.mjs` uploads a static tree with no build step, so there is nowhere to
- * bake one in; the lobby writes it into the invite link it puts on the clipboard.
+ * `src/net/transport.ts`'s `chooseTransport` answers the same question for both transports now,
+ * and it answers a strictly larger one: which *wire* a URL asks for, and who introduces the two
+ * peers when it is a peer connection. Keeping this beside it would be two functions reading the
+ * same query string with one of them wrong about the default — which is the shape of duplication
+ * `protocol.ts` opens its own docstring by refusing.
+ *
+ * The one clause worth carrying forward is recorded where it now lives: `want` is host unless
+ * `&host=0`, and `main.ts` reads a *bare* `?room=` the other way round because an invitation is
+ * by definition to the other side.
+ *
+ * The `NetParams` shape went with it. `?net=` itself is unchanged and every link that names one
+ * still works.
  */
-export interface NetParams {
-  base: string;
-  room: string;
-  want: 'host' | 'join';
-}
-
-export function netParams(params: URLSearchParams): NetParams | null {
-  const base = params.get('net');
-  const room = (params.get('room') ?? '').toUpperCase();
-  if (!base || !room) return null;
-  if (!validCode(room)) {
-    console.error(`[net] '${room}' is not a room code`);
-    return null;
-  }
-  /*
-   * The pairing policy is deliberately *not* a client parameter.
-   *
-   * It is the relay's, because the relay is the only party that sees both fingerprints, and
-   * because a policy either side could set is a policy either side could set to 'allow
-   * anything'. `--pairs` and `--unknown` on `tools/relay.mjs`; see `PairTable`.
-   */
-  return { base, room, want: params.get('host') === '0' ? 'join' : 'host' };
-}

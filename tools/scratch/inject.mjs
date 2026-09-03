@@ -4,6 +4,20 @@
  *
  * `node tools/scratch/inject.mjs <name>` — the list is below. Every new check on this branch has
  * an entry here, because a check nobody has seen fail is a check nobody has tested.
+ *
+ * ## Four anchors moved on 2 Sep 2026, and one subject stopped existing
+ *
+ * `e/net/webrtc-p2p` rewrote the lobby around a transport that needs no address, so four of the
+ * anchors below no longer matched anything and an unmatched anchor exits 2 rather than lying.
+ * `no-autojoin` and `long-invite` are repointed at the lines that replaced them. `form-on-https`
+ * and `https-noise` were about the deployed site's *refusal screen* — a page with no controls on
+ * it, because an `https` origin could not reach a relay — and that screen is gone, because a peer
+ * connection can. Their successors are `https-form-removed` and `console-noise` in
+ * `tools/scratch/inject-p2p.mjs`, against `tools/qa-p2p.mjs`'s `https` arm, which asserts the
+ * opposite of what the old ones did.
+ *
+ * `no-race-fix` was already stale at this branch's base: the anchor it names lost its fourth
+ * clause when `provenance-only` was added. It is left as it was found.
  */
 import { spawn } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -30,12 +44,20 @@ const FAULTS = {
   'block-sum': [F.qr, 'export const TOTAL_CODEWORDS = [26, 44, 70, 100, 134, 172, 196, 242, 292, 346];',
     'export const TOTAL_CODEWORDS = [26, 44, 70, 100, 134, 172, 196, 242, 293, 346];', 'qr'],
   'no-autocreate': [F.lobby, "if (params.get('create') === '1' && validCode(room.value.trim().toUpperCase())) create(true);", '', 'lan'],
-  'long-invite': [F.lobby, 'const shortLink = declared !== null && declared === addr;', 'const shortLink = false;', 'lan'],
-  'no-autojoin': [F.main, "if (!params.get('net') && params.get('room')) {", 'if (false) {', 'lan'],
+  // Repointed 2 Sep 2026: the short-link test now also asks whether the relay is carrying the
+  // battle, because an empty address is the ordinary case rather than a missing one.
+  'long-invite': [F.lobby,
+    "    const shortLink = !viaR && (addr === '' || addr === declared);",
+    '    const shortLink = false;', 'lan'],
+  // Repointed 2 Sep 2026: the branch added `&& params.get('host') === null`, because peer to
+  // peer a host's own URL is a bare code too and both pages were reading themselves as the guest.
+  'no-autojoin': [F.main,
+    "if (!params.get('net') && params.get('room') && params.get('host') === null) {",
+    'if (false) {', 'lan'],
   'no-override': [F.net, '`--ip-address-space-overrides=${ip}:${HTTPS_PORT}=public`', "'--hide-scrollbars'", 'https'],
-  'form-on-https': [F.lobby, "  if (!ours && secureOrigin()) {", '  if (false) {', 'https'],
-  'https-noise': [F.lobby, "  if (!ours && secureOrigin()) {",
-    "  if (!ours && secureOrigin()) {\n    console.error('deliberate noise');", 'https'],
+  // `form-on-https` and `https-noise` are retired: their subject was the deployed site's
+  // no-controls refusal screen, and `e/net/webrtc-p2p` deleted it along with `secureOrigin()`.
+  // See `https-form-removed` and `console-noise` in tools/scratch/inject-p2p.mjs.
   'no-race-fix': [F.lobby, 'if (r.status === 409 && fromLink && asked) {', 'if (false) {', 'lan'],
   'no-width-gate': [F.main, "if (net && !hudFits() && params.get('narrow') !== 'ok') {", 'if (false) {', 'lan'],
   'provenance-only': [F.lobby, "j?.error === 'taken'", "(j?.error === 'taken' || true)", 'lan'],
