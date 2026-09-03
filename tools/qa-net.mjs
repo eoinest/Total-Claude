@@ -1866,17 +1866,23 @@ if (wanted('ulp')) {
     'one UnitGroupState float64 field moved by a single ULP on one client',
     'the magnitude §1.4 measured for a real libm disagreement. Nothing about the order '
       + 'stream is wrong here — the arithmetic is');
-  if (d) {
-    record('one-ulp-layer', d.layer === 'uf64',
-      'and it is caught on the float64 unit layer, which is why that layer is the detector',
-      `caught on '${d.layer}' at tick ${d.tick}`,
-      'the float32 pool has a quantisation firewall with ~29 bits of headroom; '
-        + 'UnitGroupState has none');
-    record('one-ulp-attributed', d.units.length >= 1 && d.units.length <= 4,
-      'and attributed to the regiment it happened to, not to the whole field',
-      `${d.units.length} unit(s): ${d.units.join(', ')} — ${d.note}`,
-      'per-unit digests are hashed from a fresh state each, so a one-unit fault names one unit');
-  }
+  /*
+   * Recorded whether or not the fault was caught, for the reason `faultArm` gives at length:
+   * a check that is skipped when it fails takes the denominator with it. These two were the
+   * last conditional pair in the file — a run where `one-ulp` went red reported 87 checks where
+   * a green one reports 89, so the totals of two runs could not be compared. Measured on
+   * exactly that: run A 89/89, run B 80/87, and two of the seven "missing" checks were these.
+   */
+  record('one-ulp-layer', !!d && d.layer === 'uf64',
+    'and it is caught on the float64 unit layer, which is why that layer is the detector',
+    d ? `caught on '${d.layer}' at tick ${d.tick}` : 'nothing was caught, so no layer was named',
+    'the float32 pool has a quantisation firewall with ~29 bits of headroom; '
+      + 'UnitGroupState has none');
+  record('one-ulp-attributed', !!d && d.units.length >= 1 && d.units.length <= 4,
+    'and attributed to the regiment it happened to, not to the whole field',
+    d ? `${d.units.length} unit(s): ${d.units.join(', ')} — ${d.note}`
+      : 'nothing was caught, so nothing was attributed',
+    'per-unit digests are hashed from a fresh state each, so a one-unit fault names one unit');
 }
 
 // ---------------------------------------------------------------------------
