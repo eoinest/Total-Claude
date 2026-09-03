@@ -129,7 +129,8 @@ import { bootThroughMenu, driveMenu, ensureServer, waitForServer } from './lib/m
  * the same functions, and the run below is the check on that.
  */
 import {
-  drivers, INSTALL, lobbyFace, logDiff, markDisagreement, openAdvanced, readBoth,
+  driveMenuOrExplain, drivers, INSTALL, lobbyFace, logDiff, markDisagreement, openAdvanced,
+  readBoth,
 } from './lib/net-drive.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -1867,7 +1868,9 @@ if (wanted('lobby')) {
       + 'what this arm ticks');
 
   await host.click('#tc-begin');
-  await driveMenu(host, { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' });
+  await driveMenuOrExplain(host, driveMenu,
+    { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' },
+    'lobby host after CHOOSE THE BATTLE');
 
   const guest = await newPage(chromeGuest);
   await guest.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
@@ -2278,7 +2281,9 @@ if (wanted('lan')) {
       + 'claimed — the ordering is the entire fix');
 
   await hostPage.click('#tc-begin');
-  await driveMenu(hostPage, { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' });
+  await driveMenuOrExplain(hostPage, driveMenu,
+    { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' },
+    'lan host after CHOOSE THE BATTLE');
 
   const guestPage = await newPage(chromeGuest);
   /*
@@ -2706,24 +2711,37 @@ if (wanted('dev')) {
     await shot(page, 'dev-01-lobby');
     measured.dev = { origin: face.origin, face, errs: page.__errs.slice(0, 4) };
 
+    /*
+     * **Rewritten 2 Sep 2026: the *field* claim survives and the *refusal* claim is inverted.**
+     *
+     * What this pair asserted was that a dev server with no relay beside it names no address and
+     * disables both buttons, and then says so and names `npm run host`. The first half is still
+     * exactly the claim — never a guessed address, which is the whole subject of §11 — and it is
+     * kept including the negative on `ws://` in the rendered text.
+     *
+     * The second half is now false, and it is false because the product got better: a peer
+     * connection needs no relay, so a battle *can* start from here, and both buttons are live.
+     * Keeping the old assertion would be demanding a refusal the player no longer deserves.
+     */
     record('dev-server-offers-no-relay-address',
       face.metaRelay === null && face.metaLan === null && face.relayValue === ''
-        && !face.relayShown && !face.relayReaches && !/wss?:\/\//.test(face.text)
-        && face.createDisabled === true,
+        && !face.relayShown && !face.relayReaches && !/wss?:\/\//.test(face.text),
       'a dev server with no relay beside it puts no address on the screen and none in the field',
       `${face.origin}: the field holds ${JSON.stringify(face.relayValue)} and is `
         + `${face.relayShown ? 'ON SCREEN' : 'behind the disclosure'}; the sheet reads: `
         + face.text.slice(0, 130),
       'it used to read ws://localhost:5959 here — well-formed, plausible, and nothing behind it');
 
-    record('dev-server-names-the-command-that-works',
-      face.blockedShown && /no relay behind this page/i.test(face.blockedText)
-        && /npm run host/.test(face.blockedText)
-        && /serving the game and nothing else/i.test(face.blockedText),
-      'it says so where the player is looking, and names the one command that fixes it',
-      face.blockedShown ? face.blockedText.slice(0, 230)
-        : 'nothing on the panel says why a battle cannot start from here',
-      'a refusal that does not name the thing that would work is only half honest');
+    record('dev-server-can-still-open-a-room',
+      face.createDisabled === false && face.joinDisabled === true
+        && face.blockedShown && /introduction services/i.test(face.blockedText)
+        && !/npm run/.test(face.blockedText),
+      'and a battle can start from it anyway, with no address and no command to run',
+      `CREATE ${face.createDisabled ? 'disabled' : 'enabled'}, JOIN `
+        + `${face.joinDisabled ? 'disabled until a code is typed' : 'ENABLED WITH NO CODE'}; `
+        + `the panel reads: ${face.blockedText.slice(0, 170)}`,
+      'this used to be a refusal naming a shell command, which is a dead end for anybody who '
+        + 'has no checkout — and is now unnecessary, because a peer connection needs no relay');
 
     /*
      * And the capability, exercised rather than asserted.
@@ -2842,22 +2860,32 @@ if (wanted('static')) {
     record('static-origin-offers-no-relay-address',
       offMachine && face.metaRelay === null && face.metaLan === null
         && face.relayValue === '' && !face.relayShown && !face.relayReaches
-        && !/wss?:\/\//.test(face.text) && face.createDisabled === true,
-      'an origin that has said nothing about itself gets no address, no field on screen, and '
-        + 'no button that would fail',
+        && !/wss?:\/\//.test(face.text),
+      'an origin that has said nothing about itself gets no address and no field on screen',
       `${face.origin} (asserted off-loopback: ${offMachine}), no tc-lan and no tc-relay in the `
         + `document; the field holds ${JSON.stringify(face.relayValue)}`,
       'the deployed site got this half right already — empty and honest — while still asking '
         + 'the player to fill a form field in');
 
-    record('static-origin-keeps-the-sentence-that-was-right',
-      face.blockedShown && /static upload with no server in it/.test(face.blockedText)
-        && /npm run host/.test(face.blockedText)
-        && !/stop this server/i.test(face.blockedText),
-      'and it still says what this page *is*, which is what explains why no typing will help',
+    /*
+     * **This is the check whose subject changed most, and the new one is the better claim.**
+     *
+     * It asserted that the page still says what it *is* — "a static upload with no server in it"
+     * — because that sentence was what explained why no typing would help. There is nothing left
+     * for it to explain: this origin shape is the deployed site's, and the deployed site plays
+     * now. What matters instead is that nothing on the screen tells a stranger with no checkout
+     * to run a shell command, which was §12.6's finding and is the part worth keeping.
+     */
+    record('static-origin-names-no-command-a-stranger-cannot-run',
+      face.blockedShown && !/npm run/.test(face.blockedText)
+        && !/stop this server/i.test(face.blockedText)
+        && /introduction services/i.test(face.blockedText)
+        && face.createDisabled === false,
+      'and it explains the introduction rather than printing a shell command at a stranger',
       face.blockedShown ? face.blockedText.slice(0, 230)
-        : 'nothing on the panel says why a battle cannot start from here',
-      'telling somebody on a static host to stop their server names a process they do not have');
+        : 'nothing on the panel says how the two of you will be introduced',
+      'a button that dead-ends under a command the reader has nothing to run it in was §12.6\'s '
+        + 'finding; the dead end is gone and the rule against the command is kept');
 
     record('static-origin-lobby-console', page.__errs.length === 0,
       'and nothing was probed, so the deployed site logs no network error on a lobby visit',
@@ -2920,18 +2948,32 @@ if (wanted('ghost')) {
     const want = `ws://127.0.0.1:${GHOST_RELAY}`;
     measured.ghost = { declared: face.metaRelay, want, face, errs: page.__errs.slice(0, 4) };
 
+    /*
+     * **The probe still runs and is still not believed. What changed is the consequence.**
+     *
+     * This asserted that both buttons go dead, because without a relay there was no battle. There
+     * is one now, so the honest response to a service that is not answering is a *fallback and a
+     * sentence* rather than a closed door — and the check is stronger for it: it asserts that the
+     * server's claim is contradicted **by name**, that the address is quoted, **and** that the
+     * player is told what will be used instead and left able to press the button.
+     *
+     * The arm's reason for existing is untouched: without it `relayAnswers()` could return true
+     * unconditionally and `dev`, `static` and `lan` would all still be green.
+     */
     record('ghost-relay-is-probed-and-not-believed',
       face.metaRelay === String(GHOST_RELAY) && face.relayValue === want
         && face.blockedShown && face.blockedText.includes(want)
         && /said it had started a relay there/.test(face.blockedText)
-        && face.createDisabled === true && face.joinDisabled === true,
+        && /introduced over the internet instead/i.test(face.blockedText)
+        && face.createDisabled === false,
       'a relay the server advertised and did not start is caught before the player presses '
-        + 'anything, and named as the server\'s claim rather than the player\'s mistake',
+        + 'anything, named as the server\'s claim rather than the player\'s mistake, and '
+        + 'replaced rather than fatal',
       `the document says tc-relay=${face.metaRelay}, the field holds ${JSON.stringify(face.relayValue)}, `
         + `CREATE disabled=${face.createDisabled}; the panel says: ${face.blockedText.slice(0, 190)
           || '(nothing — the lobby believed the tag)'}`,
-      'without this arm relayAnswers() could return true unconditionally and dev, static and '
-        + 'lan would all still be green');
+      'it used to grey both buttons out, because without a relay there was no battle; there is '
+        + 'one now, so a dead introduction service costs a fallback and nothing else');
 
     const thrown = page.__errs.filter((e) => e.startsWith('pageerror'));
     record('ghost-relay-no-pageerror', thrown.length === 0,

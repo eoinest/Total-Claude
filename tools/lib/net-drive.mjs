@@ -199,6 +199,42 @@ export const openAdvanced = async (page) => {
 };
 
 /**
+ * Drive the menu, and say what the page was showing if it never appeared.
+ *
+ * `driveMenu` opens with a `waitForSelector` on the menu sheet, and a page that went somewhere
+ * else instead produces sixty seconds of silence and then a `TimeoutError` naming a locator. That
+ * is the failure shape this repository complains about most often, and it cost a whole `qa-net`
+ * run: the `lan` arm died at `driveMenu` after CHOOSE THE BATTLE, the eight arms after it never
+ * ran, and the log said nothing about *what was on the screen* — which turned out to be the one
+ * thing needed.
+ *
+ * `main.ts` has several screens that are not the menu and are correct outcomes: a notice from
+ * `netFailed`, the too-narrow refusal, the lobby itself. Naming which one appeared turns a
+ * locator into a diagnosis.
+ */
+export async function driveMenuOrExplain(page, driveMenu, opts, tag) {
+  try {
+    return await driveMenu(page, opts);
+  } catch (e) {
+    const seen = await page.evaluate(() => ({
+      url: location.href,
+      h1: (document.querySelector('h1')?.textContent ?? '').trim(),
+      sheet: (document.querySelector('.tc-sheet')?.innerText ?? '').replace(/\s+/g, ' ').trim(),
+      load: (document.querySelector('#load-text')?.textContent ?? '').trim(),
+      menu: !!document.querySelector('.menu'),
+      ready: window.__game?.ready === true,
+    })).catch(() => null);
+    const errs = (page.__errs ?? []).slice(0, 3).join(' | ');
+    throw new Error(`${tag}: the menu never appeared — ${e.message.split('\n')[0]}\n`
+      + `  url    ${seen?.url ?? '(unreadable)'}\n`
+      + `  screen ${seen?.h1 ? `"${seen.h1}"` : '(no h1)'} menu=${seen?.menu} ready=${seen?.ready}`
+      + ` loading="${seen?.load ?? ''}"\n`
+      + `  sheet  ${(seen?.sheet ?? '').slice(0, 260)}\n`
+      + `  errors ${errs || '(none)'}`);
+  }
+}
+
+/**
  * Are these two clients at the same tick of the same battle?
  *
  * Returns `null` when they are, and the term that failed when they are not — because a

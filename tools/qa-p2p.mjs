@@ -77,7 +77,8 @@ import { spawnOwned } from './lib/process-registry.mjs';
 import { lanAddress } from './lib/lan-address.mjs';
 import { bootThroughMenu, driveMenu } from './lib/menu-boot.mjs';
 import {
-  drivers, INSTALL, lobbyFace, logDiff, markDisagreement, openAdvanced, readBoth,
+  driveMenuOrExplain, drivers, INSTALL, lobbyFace, logDiff, markDisagreement, openAdvanced,
+  readBoth,
 } from './lib/net-drive.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -1466,7 +1467,9 @@ if (wanted('lobby') && chrome) {
    * it had built itself would be testing the driver.
    */
   await hostPage.click('#tc-begin');
-  await driveMenu(hostPage, { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' });
+  await driveMenuOrExplain(hostPage, driveMenu,
+    { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' },
+    'lobby host after CHOOSE THE BATTLE');
   await guestPage.click('#tc-join');
   let joined = false;
   try {
