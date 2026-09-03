@@ -367,9 +367,39 @@ async function bootPeers(hostBrowser, guestBrowser, base, {
   await guest.waitForFunction(() => window.__game?.ready === true, null, { timeout: BOOT_MS });
   await host.evaluate(INSTALL);
   await guest.evaluate(INSTALL);
-  for (const p of [host, guest]) {
-    await p.waitForFunction(
-      () => ['deploy', 'battle'].includes(window.__net()?.phase), null, { timeout: 120000 });
+  /*
+   * The handshake, and **what both sides think if it does not complete**.
+   *
+   * A bare `waitForFunction` on the phase produces two minutes of silence and then a locator,
+   * which is the failure shape this repository complains about most and which cost this arm a run:
+   * the first battle passed every check, the second timed out here, and the log said nothing about
+   * *why* — not whether the channel had opened, not whether either side had announced, not whether
+   * the pairing had been refused. Every one of those is a different fix.
+   *
+   * `driveMenuOrExplain` is the same idea one step earlier, and it has now paid for itself twice.
+   */
+  try {
+    for (const p of [host, guest]) {
+      await p.waitForFunction(
+        () => ['deploy', 'battle'].includes(window.__net()?.phase), null, { timeout: 150000 });
+    }
+  } catch (e) {
+    const ask = async (p, tag) => {
+      const n = await p.evaluate(() => window.__net?.() ?? null).catch(() => null);
+      const d = await p.evaluate(() => window.__peer?.() ?? null).catch(() => null);
+      const pr = d?.peerRoom ?? {};
+      return `${tag}: phase=${n?.phase ?? '?'} slot=${n?.slot ?? '?'} peer=${n?.peer ?? '?'} `
+        + `ended='${n?.ended ?? ''}' msg="${String(n?.message ?? '').slice(0, 110)}" | `
+        + `channel=${d?.channel ?? '?'} conn=${d?.connection ?? '?'} ice=${d?.ice ?? '?'} `
+        + `open@${d?.openedMs ?? '?'}ms cands=${JSON.stringify(d?.candidateTypes ?? [])} `
+        + `selected=${JSON.stringify(d?.selected ?? null)} dropped="${
+          String(d?.dropped ?? '').slice(0, 90)}" | `
+        + `room.phase=${pr.phase ?? '?'} hello=${pr.helloGot ?? '?'} `
+        + `committed=${JSON.stringify(pr.committed ?? null)} `
+        + `errs=[${newErrors(p.__errs).slice(0, 2).join(' | ')}]`;
+    };
+    throw new Error(`${map}/${scenario} room ${room}: neither side left the lobby phase — `
+      + `${e.message.split('\n')[0]}\n  ${await ask(host, 'host')}\n  ${await ask(guest, 'guest')}`);
   }
   // Read off the *challenger*: what it is standing in arrived over the data channel in `setup`,
   // because the challenger never sees a menu. Recording the argument would prove nothing.
