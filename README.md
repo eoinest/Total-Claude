@@ -111,9 +111,15 @@ that room**. Nothing installed, no terminal, no address for either of you to typ
 
 The battle runs **straight between the two browsers** — every order goes machine to machine with
 nothing in between. To set that up, one short message has to pass each way, and that goes through
-free public introduction services: three at once, so one being down costs nothing, and they see a
-hashed topic and encrypted text rather than your orders. Once the battle starts they are not used
-again. `docs/MULTIPLAYER.md` §13.2 is the whole evaluation, including the two options that lost.
+free public introduction services: three at once, so one being down costs nothing. **Your orders
+never go near them**, and once the battle starts they are not used again.
+
+**Send the link or the square and that introduction is private** — the key is sixteen random bytes
+inside the link, in the part of a URL that is never sent to any server. **Read the five characters
+out instead and it is not**: the two of you still meet, but somebody watching those public
+services could read the addresses your two computers use to find each other. The game is unaffected
+either way. `docs/MULTIPLAYER.md` §13.2 is the whole evaluation and §13.11 is the review that
+corrected it.
 
 **When it will not work.** There is no relay to fall back on, by choice, so two networks that
 refuse a direct connection are a match that cannot be played. Expect roughly 78-82% of arbitrary

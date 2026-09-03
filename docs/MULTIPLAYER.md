@@ -3515,17 +3515,31 @@ the symptom is an immediate close with no error text anywhere.
 shared and that nothing sensitive should go over them; Mosquitto's terms are *"please don't publish
 anything sensitive, anybody could be listening."* That is taken at face value:
 
-- The topic is `tc/` + eight bytes of SHA-256 over a namespaced string, not the code. So the
-  traffic is not indexed under anything a person said out loud, and it cannot collide with another
-  application's topics on a shared broker.
-- The payload is AES-GCM under a key derived from the room code with HKDF-SHA256. A broker
-  operator, or anyone subscribed to `#`, sees an opaque topic and ciphertext.
-- **And it is not secret from somebody who has the code.** Five characters from a 32-character
-  alphabet is 33.5 million, which is minutes of offline work, so a determined eavesdropper who
-  wants *your* room can find it. What they get is the IP addresses in your ICE candidates and the
-  ability to join your game — both of which are already true of anyone you read the code out to.
-  The game itself never touches a broker: orders go over DTLS-encrypted SCTP straight between the
-  two peers.
+> **Rewritten 3 September 2026 after a review. The first version of these three bullets was
+> wrong in the direction that flatters the design, and §13.11 has the measurement.** In short: the
+> topic is an unsalted hash of the code, which makes it an **index** and not a mask — the whole
+> 33.5-million-entry table builds in 26 seconds — so a key derived from the code protects nothing
+> from anybody watching. The key now comes from the invite link's URL fragment, which no server is
+> ever sent.
+
+- The topic is `tc/` + eight bytes of SHA-256 of the room code. It stops a collision with another
+  application's topics and it stops the five characters appearing verbatim on a shared broker.
+  **It is not secrecy and must never be counted as any**: it is a public index, reversible in
+  constant time from a table anybody can build in under a minute.
+- The payload is AES-GCM under a key derived with HKDF-SHA256 from **sixteen random bytes carried
+  in the invite link's `#k=` fragment**. A fragment is never transmitted to a server, so the key
+  material is not on the broker, not at the origin serving the page, and not in any log on the
+  path. A broker operator, or anyone subscribed to `#`, sees a topic they can reverse and
+  ciphertext they cannot open.
+- **Read the code aloud instead and the introduction is not private, and the screen says so.**
+  With no link there is no secret, so the envelope falls back to a key derived from the code —
+  which the paragraph above makes readable by anyone watching. What that exposes is the IP
+  addresses in the two ICE candidate lists and the ability to take the guest slot. It is kept
+  because two people on a telephone must still be able to meet; what is *not* kept is the claim
+  that it is private. `NetLobby`'s open-room screen states which of the two the player is in.
+- The game itself never touches a broker either way: orders go over DTLS-encrypted SCTP straight
+  between the two peers. This was a privacy defect in the introduction and never a game-integrity
+  one, and the proportion is worth keeping right.
 
 **The failure mode, plainly.** All three brokers unreachable means **new matches cannot be
 introduced**: `MqttSignal.open` rejects and the screen names the three hosts it tried. A match
@@ -4125,6 +4139,142 @@ asking about explicitly.
   `--fault=ulp` is on the relay, `params-no-knobs-by-default` asserts that nothing the product
   builds turns one on, and `testKnobs` is the single place to audit. It is still a larger test
   surface than a relay flag, and that is the cost of the thing being configured living in a tab.
+
+### 13.11 What a hostile review found, and it was right about all of it
+
+A reviewer went over this branch on 3 September 2026. They verified `tsc`, `lint`, all three
+determinism arms independently against a baseline byte-identical to `main`, the 33 browser-free
+`qa-p2p` checks, and that an injection goes red and reverts clean. Then they found the following,
+and none of it is a matter of taste.
+
+#### The key was not brute-forced. It was indexed.
+
+**`topicFor` is an unsalted, unkeyed SHA-256 of the room code alone.** §13.2 described that as a
+mask. It is an *index*. There are 33,554,432 codes; the reviewer built the whole topic → code
+table in **26 seconds on one core in 0.44 GB**, reproducing this gate's own published value
+(`ABCDE → tc/59fae572237a70d4`). `signal.ts` already conceded that subscribing `tc/#` on the
+public brokers works. So: subscribe, reverse each observed topic in **O(1)**, run one HKDF over
+the recovered code — the salt and info were constants — and decrypt. They did it end to end on a
+synthetic offer and recovered the IP address in it.
+
+The consequences, all confirmed rather than argued: a passive observer could **enumerate active
+rooms in bulk and in real time**; could read **both players' home IP addresses** out of the
+`srflx` candidates for every match; and could **take the guest slot**, because `PeerLink` says
+*"the first wins"* and possession of the code was the entire authentication.
+
+The old text framed this as *targeted* — *"a determined eavesdropper who wants your room"*,
+*"minutes of offline work"*. It is bulk and it is passive, and the difference is the whole point.
+Worse, `NetLobby` told the player *"They see an unreadable code and encrypted text, never your
+orders"* — said, on screen, to the person whose home IP address it is.
+
+**The fix is sixteen random bytes in the invite link's URL fragment.** A fragment is never
+transmitted to any server, by specification, so the material that opens the envelope never enters
+the square the envelope crosses — not the broker, not the page's own origin, not an access log
+anywhere on the path. `makeSecret` mints it, `#k=` carries it on the link and inside the QR
+square, `linkSecret` reads it, and `keyFor(code, secret)` derives from it. Per-room ephemeral keys
+would not have helped and the reason is worth stating: there is no channel to carry one over
+except the channel being protected. The fragment *is* that channel.
+
+The five characters go back to being what they always were: **a rendezvous name**. Two people who
+read a code down a telephone still meet, still sealed under the code key — and that is not
+private, so the screen says so instead of promising the opposite. The three sentences on the
+open-room screen are now: send the link or the square and the introduction is private, because
+the key is in the part of it no server is sent; if they type the five characters instead you
+still meet, but somebody watching those public services could read the addresses your two
+computers use to find each other; **either way your orders never go through them.** The last of
+those is the part of the old copy that was true, and the proportion matters — this was a privacy
+defect in the introduction and never a game-integrity one.
+
+**And the host now says nothing at all until somebody knocks.** `OFFER_REPEAT_MS` republished the
+sealed offer — a list of ICE candidates — every three seconds until answered, unbounded.
+`SIGNAL_LINGER_MS` looks like it bounds that and does not: it starts at `dc.onopen`, which is the
+moment the exposure stops mattering. So a host waiting for a friend to pick up the phone was
+publishing their public IP address to three public brokers on a timer for as long as they waited.
+The offer is still *created* eagerly, which is what the original fix was actually about — it is
+what starts ICE gathering — and is now published only in reply to a knock. The `quiet` arm watches
+the channel from a third seat and requires **zero** frames while a real host sits alone in a real
+open room; measured 0 in 12 s, and `offer-on-a-timer-again` turns it red.
+
+That change also makes the key negotiation possible: the host cannot know which key to seal an
+offer under until a challenger has said whether it holds a link secret, and the knock is where it
+says so.
+
+#### A false sentence propping up a green gate
+
+§13.10 said *"each arm starts its own servers and browsers, so the halves are not a weaker claim
+than the whole."* `tools/qa-p2p.mjs` creates `chrome`, `chromeGuest`, `vite` and `sigRelay`
+**once** — there are two `launchBrowser` calls in the file — so splitting the run hands the second
+half brand-new browser processes, which is precisely the variable the split fails to control for.
+The sentence is deleted. The claim is the full run in one process, and it is below.
+
+The same review corrected my reading of my own data. I wrote that three failed runs died at
+progressively *later* arms; they died at arms **8, then 6, then 5**, which is progressively
+**earlier** — consistent with a machine getting worse underneath and inconsistent with a per-run
+leak. They then hunted the leak anyway and largely exonerated the gate: eight consecutive
+8,632-man battles on one reused browser left file descriptors flat (+2), processes flat (9 → 9)
+and iteration 7 timed identically to iteration 0. RSS climbs about 16 MB per battle and is never
+released by `page.close()` — roughly 300 MB across a run, currently benign, written down here so
+it is not rediscovered. And they reproduced the mechanism I had guessed at: **the owner sitting
+down at the keyboard** demotes the gate's browsers to the efficiency cores and quadruples frame
+time, 5.4 s to 21.5 s to boot a battle, recovering the moment they stop.
+
+#### The thirty-second grace was unreachable in the only case it was for
+
+`checkStalled` is `maxLagTurns (300) × turnMs (100)` = exactly 30 s, but it fires only when the
+peer is **beating yet not simulating**. A main-thread hitch stops the `PUMP_MS` heartbeat *and*
+the commits together, so `LINK_SILENT_S = 6` always fired first. Under a relay six seconds is
+defensible — the thing that went quiet is a dedicated process whose whole job is to send. Between
+two peers it is the other player's laptop, and the reviewer's own probe is the argument: merely
+sitting down at the keyboard quadrupled frame time. A background app, a thermal event or a video
+call does the same to a player. §4.5 makes ending a match unrecoverable, so the cost of being
+wrong is asymmetric: waiting twenty-four seconds longer costs a frozen picture, ending early costs
+the battle.
+
+`Link.silentFloorS` decouples the two and `PeerLink` sets 30. **Raising it immediately exposed two
+real bugs that the wrong sentence had been hiding**, which is the best argument for the change:
+
+- **`peerMovedAt` was never reset when the battle phase began.** It is refreshed by an inbound
+  commit and `checkStalled` runs only in the battle phase, so with `?deploy=0` there are no deploy
+  commits at all and the timestamp was still the one `open()` set at `dc.onopen`. The countdown ran
+  while the other browser was building an 8,632-man army — exactly the window in which nothing can
+  be committed. Measured: a guest that had committed battle turn 1 ended the match `abandoned`
+  against a host that had committed nothing, *"their page is answering but their battle has
+  stopped"*, which was true and was about a battle that had not started.
+- **`--p2pfault=drop` removed the first op of a turn**, and the gate fires several move orders on
+  one selection, every one of them setting the same regiment's destination. Dropping the first is
+  last-write-wins and spends the single-shot budget on nothing: two runs caught the fork at tick 90
+  and a third reported *"fault fired 1 time(s), 38 checkpoints compared to tick 1110"*. It drops
+  the last now, which is the correction `swap` has carried since the relay pass for the same reason.
+
+#### The smaller three
+
+- **`pagehide` was the only exit wired.** `freeze` joins it, because a tab Chromium *discards* is
+  as gone as a closed one and produced `linkLost` — the exact wrong accusation the listener exists
+  to remove. **`visibilitychange` was asked for and is deliberately not wired**, which is the one
+  place this pass disagrees with the review: `hidden` fires every time somebody switches tab or
+  locks their phone for a moment, and resigning the match there would be a worse failure than the
+  one being fixed and a far commoner one. `freeze` is always preceded by `hidden`, so the discard
+  case is covered without it. A lost network still gives `linkLost`, correctly — nothing sends a
+  goodbye because nothing can.
+- **The failure-rate range was an overreach at the top.** The sources bracket it at **78% and
+  82.3%** (callstats.io's 22% needing a relay; appear.in's 17.7%), and 80–90% put a number above
+  every primary source in front of the owner. Corrected in four places. Both of the cautions §13.6
+  raises about the literature were checked by the reviewer and are themselves correct.
+- **The baseline note said 3,074 where the pin is 3,072.** Stale prose in a historical segment, not
+  a stale pin; the note is an append-only log so a correction is appended rather than the history
+  rewritten.
+
+#### The gate after all of it
+
+| | Result |
+|---|---|
+| `npx tsc --noEmit` | 0 errors |
+| `npm run lint` | 3/3 |
+| **`node tools/qa-p2p.mjs`, one process, no `--only`** | **75/75**, nine minutes, load 7.6 rising to 21.1 |
+| `node tools/qa-net.mjs` | see below |
+| determinism ×3 | see below |
+| `inject-p2p.mjs --all-fast` | see below |
+
 
 ---
 

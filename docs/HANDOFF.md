@@ -3565,6 +3565,33 @@ gates catch it at tick 60 attributed to unit 0. Three sentences elsewhere (§1.4
 **Two implementations of one guarantee are a better instrument than either of them.**
 
 
+### The one thing to read before touching `signal.ts`
+
+**The room code is a rendezvous name and nothing else. The key comes from the invite link's
+`#k=` fragment.** A review on 3 September 2026 measured what the previous arrangement was worth:
+`topicFor` is an unsalted SHA-256 of the code, so the full 33,554,432-entry topic → code table
+builds in **26 seconds on one core**, any observed topic reverses in O(1), and the key was derived
+from that same code with a constant salt. Subscribing `tc/#` on the public brokers is allowed and
+works. So a passive observer could enumerate live rooms in bulk, read **both players' home IP
+addresses** out of the ICE candidates, and take the guest slot — no brute force anywhere in it.
+
+A URL fragment is never transmitted to any server, which is the entire mechanism: `makeSecret`
+mints 16 bytes, `#k=` carries them on the link and inside the QR, `linkSecret` reads them, and
+`keyFor(code, secret)` derives the AES key. Two people who read the code aloud have no secret,
+still meet, and are **told on screen that the introduction is not private** — that sentence is not
+decoration, it is the thing that makes the fallback honest, and `docs/MULTIPLAYER.md` §13.11 is
+the record.
+
+Three rules follow, and breaking any of them puts the defect back:
+
+1. **Nothing derived from the room code may be treated as secret.** The topic is a public index.
+2. **The secret may only ever be read from the fragment.** `linkSecret` rejects `?k=` on purpose:
+   a query parameter is exactly the thing that reaches a server and a log.
+   `secret-from-the-query-too` is the injection.
+3. **A host publishes nothing until somebody knocks.** The old standing offer put a list of ICE
+   candidates on three public brokers every three seconds, unbounded, for as long as somebody
+   waited for a friend to answer. The `quiet` arm requires zero frames from a host sitting alone.
+
 ### The honest limit
 
 **No TURN, by decision.** Roughly 78-82% of arbitrary pairings connect — the sources bracket it
@@ -3572,7 +3599,10 @@ at 78% and 82.3% and nothing above that is supported for *arbitrary* pairings; b
 home internet does better, both on one wifi always works, and **a network that blocks outbound UDP
 cannot play at all** — that is the ~9 points of callstats.io's 22% that needed TCP, and nothing
 recovers it. §13.6 has the sources. The product says which side the block is on and what to try,
-in four sentences, and stops. `qa-p2p`'s `nodirect` arm makes that path red on purpose with
+in four sentences, and stops. The peer silence floor is **30 s** (`Link.silentFloorS`) and not
+the relay's 6: between two peers the thing that goes quiet is the other player's laptop, and a
+review measured the owner merely sitting down at the keyboard quadrupling this machine's frame
+time. `qa-p2p`'s `nodirect` arm makes that path red on purpose with
 `?p2pcand=relay`, which offers **no candidates at all** — there is no TURN, so there are no relay
 candidates — and therefore cannot connect on any network, which is also the honest likeness of a
 network that blocks outbound UDP. Whether this router hairpins is asked on every run and
