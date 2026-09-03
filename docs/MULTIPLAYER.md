@@ -3377,6 +3377,12 @@ The production build is four files, gzipped: the hashed entry `main-*.js` (260 k
 chunks it modulepreloads (`PostFX-*.js` 479 kB, `clips-*.js` 67 kB) and `main-*.css` (13 kB).
 821 kB, and the fifth request is the document.
 
+**Repeated on the finished branch, with the tool starting `npm run host` itself** rather than
+being pointed at a server somebody else had started — the same four rows came back 6,833 /
+351 ms and 6,831 / 346 ms, 24,311,224 B against 840,881 B, so the pair above is the product and
+not the day. That second pair is also the check on `--dev`: it reproduces the *old* numbers
+exactly, which is the claim that flag makes.
+
 **Read the throttled row, not the unthrottled one.** Both numbers are taken over
 `192.168.1.77`, which is this machine's own en0 address — and traffic from a machine to its own
 address is short-circuited in the kernel and never crosses the interface. So the unthrottled
