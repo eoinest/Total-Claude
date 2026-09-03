@@ -65,7 +65,6 @@
  *     node tools/qa-p2p.mjs --only=battle --shots=/tmp/p2p
  *     node tools/qa-p2p.mjs --all                          # adds `broker`, which uses the internet
  */
-import { spawn } from 'node:child_process';
 import { execFileSync } from 'node:child_process';
 import { request as httpRequest } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
@@ -74,6 +73,7 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { launchBrowser, startVite } from './lib/browser-budget.mjs';
+import { spawnOwned } from './lib/process-registry.mjs';
 import { lanAddress } from './lib/lan-address.mjs';
 import { bootThroughMenu, driveMenu } from './lib/menu-boot.mjs';
 import {
@@ -182,23 +182,52 @@ process.on('SIGTERM', () => die('terminated'));
 process.on('uncaughtException', (e) => die(`uncaught: ${e?.stack ?? e}`));
 process.on('unhandledRejection', (e) => die(`unhandled rejection: ${e?.stack ?? e}`));
 
-/** Start a relay and wait for it to answer. Its `/health` body, not a 200. */
+/**
+ * Start a relay and wait for it to answer. Its `/health` body, not a 200.
+ *
+ * Through `spawnOwned` rather than a bare `spawn`, which is three things the house rule is for
+ * and one of them has actually happened on this machine. A guard process anchored to *this
+ * agent*, so a relay outlives neither the harness nor the agent that started it — `--parent=` is
+ * kept as well, because two independent watches of the same fact is the point and a SIGKILLed
+ * guard still leaves the runner's own poll. A registry entry naming the owner, the worktree and
+ * the branch, so `node tools/browsers.mjs sweep` can say whose a stray listener is instead of
+ * inferring. And a tree kill rather than a group kill.
+ *
+ * `tools/qa-net.mjs` still uses a bare `spawn` here and predates the rule; the two are not
+ * merged because that file's `startRelay` carries a retry and a `--host=0.0.0.0` case this one
+ * does not need, and merging them under a networking change is how a gate's baseline moves.
+ */
 async function startRelay(port, extra = []) {
-  const p = spawn('node', [path.join(ROOT, 'tools', 'relay.mjs'), `--port=${port}`,
-    `--parent=${process.pid}`, '--quiet', ...extra],
-  { cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'] });
+  const job = spawnOwned(process.execPath,
+    [path.join(ROOT, 'tools', 'relay.mjs'), `--port=${port}`,
+      `--parent=${process.pid}`, '--quiet', ...extra],
+    {
+      cwd: ROOT,
+      root: ROOT,
+      port,
+      label: `relay:${port}`,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      meta: { kind: 'relay', gate: 'qa-p2p' },
+    });
   let stderr = '';
-  p.stderr.on('data', (d) => { stderr += String(d); });
-  const stop = () => { try { p.kill('SIGTERM'); } catch { /* already gone */ } };
+  // The handle's `child` is the *guard*, and the guard runs the relay with its stderr inherited,
+  // so this is the relay's own output. `startVite` reads its vite the same way.
+  job.child.stderr?.on('data', (d) => { stderr += String(d); });
+  let dead = false;
+  const stop = () => {
+    if (dead) return;
+    dead = true;
+    try { job.kill({ graceMs: 800 }); } catch { /* already gone */ }
+  };
   cleanups.push(stop);
   for (let i = 0; i < 60; i++) {
     await sleep(120);
     const body = await fetch(`http://127.0.0.1:${port}/health`)
       .then((r) => r.text()).catch(() => '');
     if (body.startsWith('relay ok')) {
-      return { base: `ws://127.0.0.1:${port}`, http: `http://127.0.0.1:${port}`, proc: p, stop };
+      return { base: `ws://127.0.0.1:${port}`, http: `http://127.0.0.1:${port}`, job, stop };
     }
-    if (p.exitCode !== null) break;
+    if (job.killed) break;
   }
   stop();
   throw new Error(`relay did not start on ${port}${stderr ? `: ${stderr.trim()}` : ''}`);
