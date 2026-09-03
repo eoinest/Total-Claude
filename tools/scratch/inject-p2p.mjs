@@ -139,6 +139,12 @@ const FAULTS = {
     '    if (!this.sealable()) {',
     '    if (false) {',
     'seal', 'seal-refuses-a-public-broker-unsealed'],
+  // The bug qa-net's lan arm found: a null key is the plaintext case, so guarding `send` on it
+  // drops every message on exactly the origin that needs the plaintext path.
+  'key-as-readiness-flag': [F.sig,
+    "    if (this.ws?.readyState !== 1) return;\n    void seal(this.key, m)",
+    "    if (!this.key || this.ws?.readyState !== 1) return;\n    void seal(this.key, m)",
+    'lan-via-qa-net', 'qa-net --only=lan: lan-the-link-is-the-whole-invitation'],
   'plaintext-unmarked': [F.sig,
     "  if (!key) return `0${b64(utf8(json))}`;",
     '  if (!key) return b64(utf8(json));',
@@ -270,6 +276,14 @@ if (argv.includes('--list') || argv.length === 0) {
   process.exit(0);
 }
 
+/*
+ * One entry names an arm of a *different* gate, because the check it breaks lives there:
+ * `lan-the-link-is-the-whole-invitation` is `qa-net`'s and is the only thing that exercises a
+ * plain-http LAN origin end to end. Applying it here and running the other gate by hand is
+ * honest; pretending it is a `qa-p2p` arm would not be.
+ */
+const CROSS_GATE = { 'lan-via-qa-net': 'node tools/qa-net.mjs --only=lan' };
+
 const run = async (name) => {
   const fault = FAULTS[name];
   if (!fault) {
@@ -285,6 +299,12 @@ const run = async (name) => {
   }
   writeFileSync(file, orig.replace(from, to));
   console.log(`\n=== ${name} -> ${rel}, expecting ${claim} to go red ===`);
+  if (CROSS_GATE[arm]) {
+    console.log(`this fault belongs to another gate. Run it now, then press Ctrl-C:\n  ${
+      CROSS_GATE[arm]}\nthe file will be restored on exit.`);
+    process.on('SIGINT', () => { writeFileSync(file, orig); process.exit(1); });
+    await new Promise(() => {});
+  }
   const code = await new Promise((r) => {
     const p = spawn('node', [path.join(ROOT, 'tools/qa-p2p.mjs'), `--only=${arm}`],
       { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });

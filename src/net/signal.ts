@@ -566,8 +566,16 @@ export class MqttSignal implements SignalChannel {
     this.onMessage(m);
   }
 
+  /**
+   * Guarded on having a *topic*, not on having a key. See `WsSignal.send` for what the second
+   * one cost.
+   *
+   * It cannot bite here — `open` refuses outright on an origin that cannot seal, so a live
+   * `MqttSignal` always has a key — and it is changed anyway, because the two channels reading
+   * differently about the same thing is how the next person concludes the key is a readiness flag.
+   */
   send(m: SignalMsg): void {
-    if (!this.key) return;
+    if (!this.topic) return;
     void seal(this.key, m).then((payload) => {
       for (const s of this.socks) s.publish(payload);
     });
@@ -625,7 +633,8 @@ export class WsSignal implements SignalChannel {
      * `describe()` in the lobby deliberately says nothing at all about that case.
      */
     if (!this.key) {
-      console.warn(`[net] ${location.origin} is not a secure page, so the browser gives it no `
+      const where = typeof location === 'undefined' ? 'this page' : location.origin;
+      console.warn(`[net] ${where} is not a secure page, so the browser gives it no `
         + 'encryption. The introduction through ' + this.url + ' will be sent as plain text. '
         + 'It stays on this network, and it carries an offer and an answer rather than any part '
         + 'of the battle.');
@@ -675,8 +684,24 @@ export class WsSignal implements SignalChannel {
     });
   }
 
+  /**
+   * **`this.key` is not a readiness flag, and treating it as one silently unplugged the LAN
+   * path.**
+   *
+   * This read `if (!this.key || this.ws?.readyState !== 1) return;`, which is correct on every
+   * origin that can seal and drops **every message** on the one that cannot — because a null key
+   * *is* the plaintext case. The symptom was as far from the cause as it could be: the host
+   * published its standing offer every three seconds into nothing, the challenger knocked for its
+   * whole budget, and the screen said *"nobody answered in room 95J57"* about a host that was
+   * sitting on the same channel with an offer ready. `qa-net`'s `lan` arm is what found it, and
+   * `tools/scratch/icepair.mjs --host=lan` is what cleared ICE of suspicion first: 3 of 3
+   * connected from the non-secure origin in 90-161 ms.
+   *
+   * So the readiness question is asked of the socket, which is the thing that has an answer, and
+   * whether there is a key is `seal`'s business and nobody else's.
+   */
   send(m: SignalMsg): void {
-    if (!this.key || this.ws?.readyState !== 1) return;
+    if (this.ws?.readyState !== 1) return;
     void seal(this.key, m).then((p) => {
       if (this.ws?.readyState === 1) this.ws.send(p);
     });

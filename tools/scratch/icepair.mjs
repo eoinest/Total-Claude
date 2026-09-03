@@ -26,6 +26,14 @@ const PORT = Number(arg('port', 5953));
 const TRIALS = Number(arg('trials', 5));
 const MODE = arg('mode', 'stun');
 const CHANNEL = arg('channel', 'chromium');
+/*
+ * `--host=lan` serves and loads from the LAN address instead of loopback, which is the one
+ * question `tools/scratch/securectx.mjs` left open: it showed `RTCPeerConnection` *constructs* on
+ * a non-secure origin and never asked whether a connection *completes* there. `npm run host`
+ * serves exactly that origin, so the answer decides whether the LAN path can be peer to peer at
+ * all.
+ */
+const HOSTMODE = arg('host', 'loopback');
 
 /** A mailbox per (room, slot). `GET` drains, `POST` appends. Nothing clever. */
 const boxes = new Map();
@@ -157,12 +165,15 @@ const PEER = async ({ base, room, slot, urls, ms }) => {
 const STUN = ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'];
 const urls = MODE === 'none' ? [] : STUN;
 
-await new Promise((ok, no) => { server.on('error', no); server.listen(PORT, '127.0.0.1', ok); });
-const base = `http://127.0.0.1:${PORT}`;
+const { lanAddress } = await import('../lib/lan-address.mjs');
+const bind = HOSTMODE === 'lan' ? '0.0.0.0' : '127.0.0.1';
+const hostName = HOSTMODE === 'lan' ? (lanAddress().ip || '127.0.0.1') : '127.0.0.1';
+await new Promise((ok, no) => { server.on('error', no); server.listen(PORT, bind, ok); });
+const base = `http://${hostName}:${PORT}`;
 const args = ['--disable-features=WebRtcHideLocalIpsWithMdns'];
 const a = await launchBrowser({ label: 'scratch/icepair-a', port: PORT, channel: CHANNEL, args });
 const b = await launchBrowser({ label: 'scratch/icepair-b', channel: CHANNEL, args });
-console.log(`mode=${MODE} channel=${CHANNEL} trials=${TRIALS}`);
+console.log(`mode=${MODE} channel=${CHANNEL} trials=${TRIALS} origin=${base}`);
 let good = 0;
 const times = [];
 try {
