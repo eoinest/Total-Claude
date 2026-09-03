@@ -786,6 +786,25 @@ export class PeerRoom {
         if (this.sides[0].ready && this.sides[1].ready) {
           this.phase = 'battle';
           this.nextBeat = nowMs + this.opts.turnMs;
+          /*
+           * **The stall clock starts here, and starting it anywhere else abandons matches that
+           * had not begun.**
+           *
+           * `peerMovedAt` is refreshed by an inbound *commit*, and `checkStalled` only runs in
+           * the battle phase — so with `?deploy=0` there are no deploy commits at all and the
+           * timestamp was still the one `open()` set when the data channel came up. The
+           * countdown therefore ran while the other player's browser was building an 8,632-man
+           * army, which is exactly the period when nothing can be committed and takes longer
+           * than the thirty-second limit on a loaded machine. Measured 3 Sep 2026: a guest that
+           * had committed battle turn 1 ended the match `abandoned` against a host that had
+           * committed nothing yet, *"their page is answering but their battle has stopped"* —
+           * true, and about a battle that had not started.
+           *
+           * It surfaced when the peer silence floor was raised to 30 s, because until then
+           * `linkLost` at 6 s was reaching most of these first with a *worse* sentence. Fixing
+           * the accusation is what exposed the thing being accused.
+           */
+          this.peerMovedAt = nowMs;
         }
         continue;
       }
@@ -844,8 +863,20 @@ export class PeerRoom {
     // A fault that changed nothing is not a fault and must not spend the single-shot budget —
     // `Room.emit` has the same guard and the same reason: an arm that passes by proving nothing.
     const bent = ((): PeerCommit | null => {
+      /*
+       * The **last** op, not the first, and it is the same correction `swap` below already
+       * carries for the same reason.
+       *
+       * The gate fires several move orders on one selection inside one turn, and every one of
+       * them sets the same regiment's destination — so dropping the *first* is last-write-wins
+       * and changes nothing at all, while still spending the single-shot budget. Measured: two
+       * runs of the `desync` arm caught the fork at tick 90 and a third reported *"fault fired 1
+       * time(s) … 38 checkpoints compared to tick 1110"*, which is a fault that fired and proved
+       * nothing. Dropping the last op removes the order that actually took effect, so the
+       * regiment ends somewhere else and the divergence is real every time.
+       */
       if (f.kind === 'drop') {
-        return m.ops.length ? { ...m, ops: m.ops.slice(1), i0: m.i0 + 1 } : null;
+        return m.ops.length ? { ...m, ops: m.ops.slice(0, -1) } : null;
       }
       if (f.kind === 'dup') {
         return m.ops.length ? { ...m, ops: [m.ops[0], ...m.ops] } : null;
