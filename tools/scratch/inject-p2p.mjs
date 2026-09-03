@@ -218,10 +218,16 @@ const FAULTS = {
     "    return 'Your two networks would not let the game connect directly. '",
     "    return '';\n    return 'Your two networks would not let the game connect directly. '",
     'nodirect', 'nodirect-says-so-and-stops'],
+  // The arm's second row exists because the two causes are different sentences. Collapse them
+  // and the "with STUN off" page is told the block is on the path, which is the opposite.
+  'one-cause-fits-all': [F.peer,
+    '      + (sawPublic',
+    '      + (true || sawPublic',
+    'nodirect', 'nodirect-names-the-right-cause (the diagnosis half)'],
   'no-advice': [F.peer,
     "      + 'pretending. What works: both of you on ordinary home internet, or both of you on the '\n      + 'same wifi — which connects without asking anybody. If either of you is on a work or '\n      + 'university network, or a VPN, that is the likeliest cause.';",
     "      + 'pretending.';",
-    'nodirect', 'nodirect-names-what-to-try'],
+    'nodirect', 'nodirect-names-the-right-cause (the advice half)'],
   'shifted-turn-tick': [F.room,
     "        k: 'turn', ph: 'battle', n: next, t: turnTick(next), ops: this.sorted([...a, ...b]),",
     "        k: 'turn', ph: 'battle', n: next, t: turnTick(next) + 1, ops: this.sorted([...a, ...b]),",

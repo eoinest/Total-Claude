@@ -1152,23 +1152,31 @@ if (wanted('lag') && chrome) {
     '?p2plag= holds each outbound frame on the real data channel; ordering is preserved');
   /*
    * The claim is that latency is *paid in latency*, so the check has to be able to see the
-   * latency arriving.
+   * latency arriving — and the discriminator is the **difference between the rows**, not an
+   * absolute figure.
    *
-   * The first version asserted `worstDelay[60] >= worstDelay[0]`, which is true when the delay
-   * knob does nothing at all — 4 >= 4 — so a `sendDelayMs` that was silently ignored would have
-   * left it green. `?p2plag=60` is one way each, so a measured order round trip has to clear
-   * about 120 ms; 90 is the floor with room for a turn boundary either side. The
-   * `delay-ignored` fault in `tools/scratch/inject-p2p.mjs` is what proves this can fail.
+   * Two versions were wrong. `worstDelay[60] >= worstDelay[0]` is true when the knob does nothing
+   * at all (4 >= 4), so an ignored `sendDelayMs` would have left it green. An absolute floor of
+   * 90 ms does no work either: at *zero* added latency the measured order round trip is already
+   * about 200 ms, because the input delay is two turns by design (`DEFAULT_DELAY_TURNS`) and that
+   * is what `rttMs` measures.
+   *
+   * What `?p2plag=60` actually adds to a round trip is **one** wire crossing — the peer's commit,
+   * which is the frame this client is waiting for; its own commit is filed locally and is not
+   * delayed. So expect about +60 ms, and 30 is half of that with room for a turn boundary. The
+   * `delay-ignored` fault is what proves this can fail.
    */
+  const added = rows[1].meanRtt - rows[0].meanRtt;
   record('lag-costs-latency-not-orders',
-    rows[1].meanRtt >= 90 && rows[1].meanRtt > rows[0].meanRtt
-    && rows.every((r) => r.events > 0),
+    added >= 30 && rows[0].meanRtt >= 50 && rows.every((r) => r.events > 0),
     'and the cost of latency is measurable delay, never a lost command',
     `measured order round trip ${rows[0].meanRtt} ms at 0 ms one way against `
-    + `${rows[1].meanRtt} ms at 60 ms — the 120 ms the knob adds, arriving; `
+    + `${rows[1].meanRtt} ms at 60 ms — ${added} ms added, against the one wire crossing of `
+    + 'about 60 ms the knob puts in the path; '
     + `worst input delay ${rows[0].worstDelay} against ${rows[1].worstDelay} ticks; `
     + `stalled ${rows[0].stalledMs} ms and ${rows[1].stalledMs} ms`,
-    'a check that only asked for >= would stay green if the delay were ignored');
+    'the 200 ms at zero latency is the two turns of input delay the design schedules, so an '
+    + 'absolute floor would not discriminate — the difference between the rows is the claim');
 }
 
 // ---------------------------------------------------------------------------
@@ -1706,49 +1714,91 @@ if (wanted('https') && chrome) {
 if (wanted('nodirect') && chrome) {
   console.log('\n=== nodirect: when a direct path is refused, say so and stop ===');
   /*
-   * `?p2pcand=srflx` throws away every host candidate before it is offered, so the only path
-   * left is out to the public address and back in — the *hairpin*, which most home routers
-   * refuse. Measured on this network before anything was built (`tools/scratch/icecheck.mjs`):
-   * srflx-to-srflx between two peers behind this NAT goes to `failed`, every time.
+   * **Three rows, and only two of them are assertions.**
    *
-   * That makes this a real red path rather than a simulated one: the connection genuinely
-   * cannot be made, and the check is on what the product *says* about it.
+   * The first draft used `?p2pcand=srflx` — throw away host candidates and leave only the
+   * hairpin out to the public address and back, which most home routers refuse. That is a
+   * faithful likeness of two peers behind one NAT, and it is the wrong *basis for a check*:
+   * whether it fails is a fact about this router. A check whose red depends on somebody's
+   * network equipment is a check that will go green somewhere else and be believed.
+   *
+   * So the two assertions use `?p2pcand=relay`, which offers **no candidates at all** — there
+   * is no TURN, so there are no relay candidates to offer — and therefore cannot connect on any
+   * network. That is also the honest likeness of the failure that matters most: a network that
+   * blocks UDP outbound produces exactly this, no usable candidate and no path, and §13.6 says
+   * it is 100% fatal rather than a percentage.
+   *
+   * The two rows differ in whether STUN answered, because `noDirectPath` says two different
+   * things and both have to be right. With STUN, this machine *did* learn its own public address,
+   * so the block is the path between the two — the symmetric-NAT sentence. With `?p2pstun=0` it
+   * never learned it, which on a real network means something local is eating UDP — and that one
+   * is fixable by the person reading the message, which is why the two are not merged.
+   *
+   * The third row is a **measurement and not a check**: does this network hairpin? It is the
+   * number the report needs for "two peers behind the same NAT", and it is reported without an
+   * assertion because the answer is the router's and not the product's.
    */
-  const room = nextRoom();
-  const sig = SIG();
-  const q = `room=${room}&sig=${encodeURIComponent(sig)}&p2pcand=srflx&deploy=0&autoplay=1`
-    + '&quality=medium';
-  const h = await newPage(chrome);
-  const g = await newPage(chromeGuest);
-  await h.goto(`${base}/?${q}&host=1&menu=0`, { waitUntil: 'domcontentloaded' });
-  await sleep(1000);
-  await g.goto(`${base}/?${q}&host=0&menu=0`, { waitUntil: 'domcontentloaded' });
-  const t0 = Date.now();
-  let notice = null;
-  for (let i = 0; i < 120 && !notice; i++) {
-    await sleep(1000);
-    notice = await g.evaluate(() => {
-      const sheet = document.querySelector('.tc-sheet');
-      const ready = window.__game?.ready === true;
-      const txt = (sheet?.innerText ?? '').replace(/\s+/g, ' ').trim();
-      return txt && !ready ? { txt, h1: document.querySelector('h1')?.textContent ?? '' } : null;
-    }).catch(() => null);
-  }
-  const took = Math.round((Date.now() - t0) / 1000);
-  measured.nodirect = { took, notice };
+  const notice = async (tag, extraQ, ms = 90000) => {
+    const room = nextRoom();
+    const q = `room=${room}&sig=${encodeURIComponent(SIG())}&deploy=0&autoplay=1`
+      + `&quality=medium&menu=0${extraQ}`;
+    const h = await newPage(chrome);
+    const g = await newPage(chromeGuest);
+    await h.goto(`${base}/?${q}&host=1`, { waitUntil: 'domcontentloaded' });
+    await sleep(900);
+    await g.goto(`${base}/?${q}&host=0`, { waitUntil: 'domcontentloaded' });
+    const t0 = Date.now();
+    let seen = null;
+    let connected = false;
+    while (Date.now() - t0 < ms && !seen && !connected) {
+      await sleep(1000);
+      const state = await g.evaluate(() => {
+        const sheet = document.querySelector('.tc-sheet');
+        return {
+          ready: window.__game?.ready === true,
+          h1: document.querySelector('h1')?.textContent ?? '',
+          txt: (sheet?.innerText ?? '').replace(/\s+/g, ' ').trim(),
+        };
+      }).catch(() => null);
+      if (!state) continue;
+      if (state.ready) { connected = true; break; }
+      if (state.txt && state.h1) seen = state;
+    }
+    const took = Math.round((Date.now() - t0) / 1000);
+    for (const p of [h, g]) await p.close();
+    return { tag, took, connected, notice: seen };
+  };
+
+  const blocked = await notice('no-candidates-with-stun', '&p2pcand=relay');
+  const blindfold = await notice('no-candidates-no-stun', '&p2pcand=relay&p2pstun=0');
+  const hairpin = await notice('srflx-only', '&p2pcand=srflx');
+  measured.nodirect = { blocked, blindfold, hairpin };
+
   record('nodirect-says-so-and-stops',
-    !!notice && took < 100
-    && /network|connect|direct/i.test(notice.txt)
-    && /wifi|home internet|firewall|VPN/i.test(notice.txt),
+    !!blocked.notice && !blocked.connected && blocked.took < 80
+    && /network|connect|direct/i.test(blocked.notice.txt),
     'two networks that refuse a direct path produce a sentence and a stop, never a hang',
-    notice ? `after ${took} s: "${notice.h1}" — ${notice.txt.slice(0, 260)}`
-      : `nothing on screen after ${took} s, which is the hang this check exists to forbid`,
-    'there is no TURN by decision, so this is the failure the product owes an explanation for');
-  record('nodirect-names-what-to-try',
-    !!notice && /same wifi|home internet/i.test(notice.txt),
-    'and it names something the player can actually do about it',
-    notice ? notice.txt.slice(-220) : 'no notice');
-  for (const p of [h, g]) await p.close();
+    blocked.notice
+      ? `after ${blocked.took} s: "${blocked.notice.h1}" — ${blocked.notice.txt.slice(0, 230)}`
+      : `nothing on screen after ${blocked.took} s`
+        + `${blocked.connected ? ', and it connected — the fixture did not block anything' : ''}`,
+    'no candidates are offered at all, which is what a UDP-blocking network produces and is the '
+    + 'one case §13.6 says is 100% fatal rather than a percentage');
+  record('nodirect-names-the-right-cause',
+    !!blocked.notice && !!blindfold.notice
+    && /path between them/i.test(blocked.notice.txt)
+    && /address-discovery|blocking/i.test(blindfold.notice.txt)
+    && /same wifi|home internet/i.test(blocked.notice.txt),
+    'and it distinguishes a block on this side from a block on the path, and names what to try',
+    blocked.notice && blindfold.notice
+      ? `with STUN answering: "${blocked.notice.txt.slice(-190)}"; with STUN off: `
+        + `"${blindfold.notice.txt.slice(0, 190)}"`
+      : `with STUN ${blocked.notice ? 'got' : 'no'} notice, without ${blindfold.notice ? 'got' : 'no'} notice`,
+    'the first is fixable by the person reading it and the second usually is not, which is the '
+    + 'difference between an instruction and an apology');
+  console.log(`\n  measurement, not a check — does this network hairpin? `
+    + `srflx-only ${hairpin.connected ? 'CONNECTED' : 'refused'} after ${hairpin.took} s. `
+    + 'That is the shape of two peers behind one NAT, and the answer is the router\'s.');
 }
 
 // ---------------------------------------------------------------------------
