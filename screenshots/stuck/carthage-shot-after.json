@@ -1,0 +1,53 @@
+{
+  "battle": "map=carthage&scenario=assault",
+  "url": "map=carthage&scenario=assault",
+  "arms": {
+    "occupancy": {
+      "t": 200,
+      "seconds": 200,
+      "sampleEvery": 1,
+      "living": 2700,
+      "everInShell": 68,
+      "everInSolid": 64,
+      "manTicksInShell": 411,
+      "manTicksInSolid": 326,
+      "heldFor": {
+        "ge5s": 0,
+        "ge15s": 0,
+        "ge30s": 0,
+        "ge60s": 0,
+        "ge120s": 0
+      },
+      "medianHeldSec": 0,
+      "maxHeldSec": 0,
+      "byState": {},
+      "byKind": {},
+      "byOrder": {},
+      "worst": [],
+      "EPS": 0.02,
+      "RADIUS": 0.42,
+      "errs": [],
+      "shot": {
+        "inMasonryNow": 0,
+        "cluster": 0,
+        "cam": [
+          41.34,
+          572.18,
+          0.5,
+          0.7854
+        ],
+        "files": [
+          {
+            "file": "screenshots/stuck/carthage-after.png",
+            "camera": [
+              41.34,
+              572.18,
+              0.5,
+              0.7854
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,850 @@
+{
+  "battle": "map=campus-martius&scenario=assault",
+  "url": "map=campus-martius&scenario=assault",
+  "arms": {
+    "census": {
+      "head": {
+        "men": 3072,
+        "units": 32,
+        "solids": 1121
+      },
+      "samples": [
+        {
+          "t": 30,
+          "windowTicks": 60,
+          "living": 3006,
+          "commanded": 234,
+          "stuck": 0,
+          "abandoned": 0,
+          "orbiting": 80,
+          "inSolid": 0,
+          "inShell": 0,
+          "clear": 0,
+          "byKind": {},
+          "solidDisagree": 0,
+          "exNotCommanded": 1779,
+          "exExcused": 0,
+          "exArrived": 0,
+          "exMoving": 234,
+          "exQueued": 0,
+          "exElevated": 993,
+          "stuckFighting": 0,
+          "worst": [],
+          "marked": null,
+          "T": {
+            "WINDOW": 60,
+            "CREEP": 0.2,
+            "PROGRESS": 0.3,
+            "GOAL_EPS": 2,
+            "QUEUE_R": 1,
+            "UNIT_MOVED": 5,
+            "RADIUS": 0.42
+          }
+        },
+        {
+          "t": 60,
+          "windowTicks": 60,
+          "living": 2866,
+          "commanded": 63,
+          "stuck": 0,
+          "abandoned": 0,
+          "orbiting": 42,
+          "inSolid": 0,
+          "inShell": 0,
+          "clear": 0,
+          "byKind": {},
+          "solidDisagree": 0,
+          "exNotCommanded": 1810,
+          "exExcused": 11,
+          "exArrived": 0,
+          "exMoving": 52,
+          "exQueued": 0,
+          "exElevated": 993,
+          "stuckFighting": 0,
+          "worst": [],
+          "marked": null,
+          "T": {
+            "WINDOW": 60,
+            "CREEP": 0.2,
+            "PROGRESS": 0.3,
+            "GOAL_EPS": 2,
+            "QUEUE_R": 1,
+            "UNIT_MOVED": 5,
+            "RADIUS": 0.42
+          }
+        },
+        {
+          "t": 90,
+          "windowTicks": 60,
+          "living": 2698,
+          "commanded": 206,
+          "stuck": 2,
+          "abandoned": 0,
+          "orbiting": 87,
+          "inSolid": 0,
+          "inShell": 0,
+          "clear": 2,
+          "byKind": {},
+          "solidDisagree": 2,
+          "exNotCommanded": 1646,
+          "exExcused": 14,
+          "exArrived": 0,
+          "exMoving": 190,
+          "exQueued": 0,
+          "exElevated": 846,
+          "stuckFighting": 0,
+          "worst": [
+            {
+              "i": 847,
+              "x": 37.21,
+              "z": 540.22,
+              "y": 13.2,
+              "unit": 10,
+              "type": "legio-cohort",
+              "order": 1,
+              "toGoal": 541.5,
+              "moved": 0,
+              "unitMoved": 0.3,
+              "inSolid": false,
+              "inShell": false,
+              "kind": null,
+              "box": -1,
+              "raster": true
+            },
+            {
+              "i": 848,
+              "x": 36.59,
+              "z": 540.15,
+              "y": 13.2,
+              "unit": 10,
+              "type": "legio-cohort",
+              "order": 1,
+              "toGoal": 541.38,
+              "moved": 0,
+              "unitMoved": 0.3,
+              "inSolid": false,
+              "inShell": false,
+              "kind": null,
+              "box": -1,
+              "raster": true
+            }
+          ],
+          "marked": null,
+          "T": {
+            "WINDOW": 60,
+            "CREEP": 0.2,
+            "PROGRESS": 0.3,
+            "GOAL_EPS": 2,
+            "QUEUE_R": 1,
+            "UNIT_MOVED": 5,
+            "RADIUS": 0.42
+          }
+        },
+        {
+          "t": 120,
+          "windowTicks": 60,
+          "living": 2577,
+          "commanded": 207,
+          "stuck": 6,
+          "abandoned": 0,
+          "orbiting": 77,
+          "inSolid": 0,
+          "inShell": 0,
+          "clear": 6,
+          "byKind": {},
+          "solidDisagree": 5,
+          "exNotCommanded": 1672,
+          "exExcused": 0,
+          "exArrived": 48,
+          "exMoving": 152,
+          "exQueued": 1,
+          "exElevated": 698,
+          "stuckFighting": 0,
+          "worst": [
+            {
+              "i": 846,
+              "x": 39.87,
+              "z": 540.52,
+              "y": 13.2,
+              "unit": 10,
+              "type": "legio-cohort",
+              "order": 1,
+              "toGoal": 541.99,
+              "moved": 0,
+              "unitMoved": 0.1,
+              "inSolid": false,
+              "inShell": false,
+              "kind": null,
+              "box": -1,
+              "raster": true
+            },
+            {
+              "i": 847,
+              "x": 38.28,
+              "z": 540.34,
+              "y": 13.2,
+              "unit": 10,
+              "type": "legio-cohort",
+              "order": 1,
+              "toGoal": 541.69,
+              "moved": 0,
+              "unitMoved": 0.1,
+              "inSolid": false,
+              "inShell": false,
+              "kind": null,
+              "box": -1,
+              "raster": true
+            },
+            {
+              "i": 848,
+              "x": 37.52,
+              "z": 540.25,
+              "y": 13.2,
+              "unit": 10,
+              "type": "legio-cohort",
+              "order": 1,
+              "toGoal": 541.55,
+              "moved": 0,
+              "unitMoved": 0.1,
+              "inSolid": false,
+              "inShell": false,
+              "kind": null,
+              "box": -1,
+              "raster": true
+            },
+            {
+              "i": 855,
+              "x": 36.71,
+              "z": 540.17,
+              "y": 13.2,
+              "unit": 10,
+              "type": "legio-cohort",
+              "order": 1,
+              "toGoal": 541.41,
+              "moved": 0.171,
+              "unitMoved": 0.1,
+              "inSolid": false,
+              "inShell": false,
+              "kind": null,
+              "box": -1,
+              "raster": true
+            },
+            {
+              "i": 876,
+              "x": 35.71,
+              "z": 540.06,
+              "y": 13.2,
+              "unit": 10,
+              "type": "legio-cohort",
+              "order": 1,
+              "toGoal": 541.24,
+              "moved": 0.087,
+              "unitMoved": 0.1,
+              "inSolid": false,
+              "inShell": false,
+              "kind": null,
+              "box": -1,
+              "raster": false
+            },
+            {
+              "i": 920,
+              "x": 34.63,
+              "z": 537.39,
+              "y": 13.2,
+              "unit": 10,
+              "type": "legio-cohort",
+              "order": 1,
+              "toGoal": 538.51,
+              "moved": 0.134,
+              "unitMoved": 0.1,
+              "inSolid": false,
+              "inShell": false,
+              "kind": null,
+              "box": -1,
+              "raster": true
+            }
+          ],
+          "marked": null,
+          "T": {
+            "WINDOW": 60,
+            "CREEP": 0.2,
+            "PROGRESS": 0.3,
+            "GOAL_EPS": 2,
+            "QUEUE_R": 1,
+            "UNIT_MOVED": 5,
+            "RADIUS": 0.42
+          }
+        },
+        {
+          "t": 160,
+          "windowTicks": 60,
+          "living": 2557,
+          "commanded": 28,
+          "stuck": 0,
+          "abandoned": 0,
+          "orbiting": 6,
+          "inSolid": 0,
+          "inShell": 0,
+          "clear": 0,
+          "byKind": {},
+          "solidDisagree": 0,
+          "exNotCommanded": 1852,
+          "exExcused": 0,
+          "exArrived": 0,
+          "exMoving": 28,
+          "exQueued": 0,
+          "exElevated": 677,
+          "stuckFighting": 0,
+          "worst": [],
+          "marked": null,
+          "T": {
+            "WINDOW": 60,
+            "CREEP": 0.2,
+            "PROGRESS": 0.3,
+            "GOAL_EPS": 2,
+            "QUEUE_R": 1,
+            "UNIT_MOVED": 5,
+            "RADIUS": 0.42
+          }
+        },
+        {
+          "t": 200,
+          "windowTicks": 60,
+          "living": 2518,
+          "commanded": 29,
+          "stuck": 0,
+          "abandoned": 0,
+          "orbiting": 0,
+          "inSolid": 0,
+          "inShell": 0,
+          "clear": 0,
+          "byKind": {},
+          "solidDisagree": 0,
+          "exNotCommanded": 1802,
+          "exExcused": 0,
+          "exArrived": 29,
+          "exMoving": 0,
+          "exQueued": 0,
+          "exElevated": 687,
+          "stuckFighting": 0,
+          "worst": [],
+          "marked": null,
+          "T": {
+            "WINDOW": 60,
+            "CREEP": 0.2,
+            "PROGRESS": 0.3,
+            "GOAL_EPS": 2,
+            "QUEUE_R": 1,
+            "UNIT_MOVED": 5,
+            "RADIUS": 0.42
+          }
+        }
+      ],
+      "errs": []
+    },
+    "occupancy": {
+      "t": 200,
+      "seconds": 200,
+      "sampleEvery": 1,
+      "living": 2518,
+      "everInShell": 17,
+      "everInSolid": 0,
+      "manTicksInShell": 27,
+      "manTicksInSolid": 0,
+      "heldFor": {
+        "ge5s": 0,
+        "ge15s": 0,
+        "ge30s": 0,
+        "ge60s": 0,
+        "ge120s": 0
+      },
+      "medianHeldSec": 0,
+      "maxHeldSec": 0,
+      "byState": {},
+      "byKind": {},
+      "byOrder": {},
+      "worst": [],
+      "EPS": 0.02,
+      "RADIUS": 0.42,
+      "errs": []
+    },
+    "controls": {
+      "geometry": {
+        "target": {
+          "pts": [
+            {
+              "x": 1226.6412548268104,
+              "z": 1282.1759060858556
+            },
+            {
+              "x": 1229.614361298349,
+              "z": 1281.7751094929358
+            },
+            {
+              "x": 1232.5874677698873,
+              "z": 1281.374312900016
+            },
+            {
+              "x": 1235.560574241426,
+              "z": 1280.9735163070961
+            },
+            {
+              "x": 1238.5336807129643,
+              "z": 1280.5727197141764
+            },
+            {
+              "x": 1241.5067871845029,
+              "z": 1280.1719231212567
+            },
+            {
+              "x": 1244.4798936560412,
+              "z": 1279.771126528337
+            },
+            {
+              "x": 1247.4530001275798,
+              "z": 1279.3703299354172
+            },
+            {
+              "x": 1250.4261065991182,
+              "z": 1278.9695333424975
+            },
+            {
+              "x": 1253.3992130706567,
+              "z": 1278.5687367495777
+            },
+            {
+              "x": 1256.372319542195,
+              "z": 1278.167940156658
+            },
+            {
+              "x": 1259.3454260137337,
+              "z": 1277.7671435637383
+            },
+            {
+              "x": 1262.318532485272,
+              "z": 1277.3663469708183
+            },
+            {
+              "x": 1265.2916389568106,
+              "z": 1276.9655503778986
+            },
+            {
+              "x": 1268.264745428349,
+              "z": 1276.5647537849788
+            },
+            {
+              "x": 1271.2378518998876,
+              "z": 1276.1639571920591
+            },
+            {
+              "x": 1274.210958371426,
+              "z": 1275.7631605991394
+            },
+            {
+              "x": 1277.1840648429645,
+              "z": 1275.3623640062197
+            },
+            {
+              "x": 1280.1571713145029,
+              "z": 1274.9615674133
+            },
+            {
+              "x": 1283.1302777860415,
+              "z": 1274.5607708203802
+            },
+            {
+              "x": 1286.1033842575798,
+              "z": 1274.1599742274605
+            },
+            {
+              "x": 1289.0764907291184,
+              "z": 1273.7591776345405
+            },
+            {
+              "x": 1292.0495972006568,
+              "z": 1273.3583810416208
+            },
+            {
+              "x": 1295.0227036721953,
+              "z": 1272.957584448701
+            }
+          ],
+          "topY": 10000,
+          "box": 223,
+          "kind": "building",
+          "hw": 36.50194000672121,
+          "hd": 14.40560309944896,
+          "rot": -0.13399951743446256,
+          "cx": 1258.9207669221958,
+          "cz": 1263.3893848825342,
+          "long": 36.50194000672121,
+          "short": 14.40560309944896,
+          "depth": 0.1
+        },
+        "shellPt": {
+          "pts": [
+            {
+              "x": 1226.674654542887,
+              "z": 1282.4236649584839
+            },
+            {
+              "x": 1229.6477610144257,
+              "z": 1282.0228683655641
+            },
+            {
+              "x": 1232.620867485964,
+              "z": 1281.6220717726444
+            },
+            {
+              "x": 1235.5939739575026,
+              "z": 1281.2212751797244
+            },
+            {
+              "x": 1238.567080429041,
+              "z": 1280.8204785868047
+            },
+            {
+              "x": 1241.5401869005796,
+              "z": 1280.419681993885
+            },
+            {
+              "x": 1244.513293372118,
+              "z": 1280.0188854009652
+            },
+            {
+              "x": 1247.4863998436565,
+              "z": 1279.6180888080455
+            },
+            {
+              "x": 1250.4595063151949,
+              "z": 1279.2172922151258
+            },
+            {
+              "x": 1253.4326127867334,
+              "z": 1278.816495622206
+            },
+            {
+              "x": 1256.4057192582718,
+              "z": 1278.4156990292863
+            },
+            {
+              "x": 1259.3788257298104,
+              "z": 1278.0149024363666
+            },
+            {
+              "x": 1262.3519322013487,
+              "z": 1277.6141058434466
+            },
+            {
+              "x": 1265.3250386728873,
+              "z": 1277.213309250527
+            },
+            {
+              "x": 1268.2981451444257,
+              "z": 1276.8125126576072
+            },
+            {
+              "x": 1271.2712516159643,
+              "z": 1276.4117160646874
+            },
+            {
+              "x": 1274.2443580875026,
+              "z": 1276.0109194717677
+            },
+            {
+              "x": 1277.2174645590412,
+              "z": 1275.610122878848
+            },
+            {
+              "x": 1280.1905710305796,
+              "z": 1275.2093262859282
+            },
+            {
+              "x": 1283.1636775021182,
+              "z": 1274.8085296930085
+            },
+            {
+              "x": 1286.1367839736565,
+              "z": 1274.4077331000888
+            },
+            {
+              "x": 1289.109890445195,
+              "z": 1274.0069365071688
+            },
+            {
+              "x": 1292.0829969167335,
+              "z": 1273.606139914249
+            },
+            {
+              "x": 1295.056103388272,
+              "z": 1273.2053433213293
+            }
+          ],
+          "topY": 10000,
+          "box": 223,
+          "kind": "building",
+          "hw": 36.50194000672121,
+          "hd": 14.40560309944896,
+          "rot": -0.13399951743446256,
+          "cx": 1258.9207669221958,
+          "cz": 1263.3893848825342,
+          "long": 36.50194000672121,
+          "short": 14.40560309944896,
+          "depth": -0.15
+        },
+        "solids": 1121
+      },
+      "null": {
+        "stuck": 0,
+        "inSolid": 0,
+        "inShell": 0,
+        "clear": 0,
+        "injected": {
+          "n": 24,
+          "stuck": 0,
+          "inSolid": 0,
+          "inShell": 0,
+          "clear": 0,
+          "fellOutAt": {
+            "moving": 24
+          }
+        },
+        "exExcused": 0,
+        "exQueued": 0,
+        "exArrived": 0,
+        "exNotCommanded": 1681,
+        "orbiting": 234,
+        "unit": 25,
+        "unitOrder": 1,
+        "k": 24,
+        "sample": []
+      },
+      "wedge": {
+        "stuck": 24,
+        "inSolid": 0,
+        "inShell": 0,
+        "clear": 24,
+        "injected": {
+          "n": 24,
+          "stuck": 24,
+          "inSolid": 0,
+          "inShell": 0,
+          "clear": 24,
+          "fellOutAt": {}
+        },
+        "exExcused": 0,
+        "exQueued": 0,
+        "exArrived": 0,
+        "exNotCommanded": 1611,
+        "orbiting": 83,
+        "unit": 25,
+        "unitOrder": 1,
+        "k": 24,
+        "sample": [
+          {
+            "i": 1965,
+            "x": 1295.02,
+            "z": 1273.48,
+            "y": 77.89,
+            "unit": 25,
+            "type": "juthungi-warband",
+            "order": 1,
+            "toGoal": 1530.88,
+            "moved": 0,
+            "unitMoved": 13.4,
+            "inSolid": false,
+            "inShell": false,
+            "kind": null,
+            "box": -1,
+            "raster": true
+          },
+          {
+            "i": 1964,
+            "x": 1292.04,
+            "z": 1273.89,
+            "y": 77.86,
+            "unit": 25,
+            "type": "juthungi-warband",
+            "order": 1,
+            "toGoal": 1529.41,
+            "moved": 0,
+            "unitMoved": 13.4,
+            "inSolid": false,
+            "inShell": false,
+            "kind": null,
+            "box": -1,
+            "raster": true
+          },
+          {
+            "i": 1963,
+            "x": 1289.07,
+            "z": 1274.29,
+            "y": 77.85,
+            "unit": 25,
+            "type": "juthungi-warband",
+            "order": 1,
+            "toGoal": 1527.94,
+            "moved": 0,
+            "unitMoved": 13.4,
+            "inSolid": false,
+            "inShell": false,
+            "kind": null,
+            "box": -1,
+            "raster": true
+          }
+        ]
+      },
+      "shell": {
+        "stuck": 24,
+        "inSolid": 0,
+        "inShell": 0,
+        "clear": 24,
+        "injected": {
+          "n": 24,
+          "stuck": 24,
+          "inSolid": 0,
+          "inShell": 0,
+          "clear": 24,
+          "fellOutAt": {}
+        },
+        "exExcused": 0,
+        "exQueued": 0,
+        "exArrived": 0,
+        "exNotCommanded": 1560,
+        "orbiting": 84,
+        "unit": 25,
+        "unitOrder": 1,
+        "k": 24,
+        "sample": [
+          {
+            "i": 1965,
+            "x": 1294.98,
+            "z": 1273.49,
+            "y": 77.89,
+            "unit": 25,
+            "type": "juthungi-warband",
+            "order": 1,
+            "toGoal": 1530.85,
+            "moved": 0,
+            "unitMoved": 13.3,
+            "inSolid": false,
+            "inShell": false,
+            "kind": null,
+            "box": -1,
+            "raster": true
+          },
+          {
+            "i": 1964,
+            "x": 1292.01,
+            "z": 1273.89,
+            "y": 77.86,
+            "unit": 25,
+            "type": "juthungi-warband",
+            "order": 1,
+            "toGoal": 1529.39,
+            "moved": 0,
+            "unitMoved": 13.3,
+            "inSolid": false,
+            "inShell": false,
+            "kind": null,
+            "box": -1,
+            "raster": true
+          },
+          {
+            "i": 1963,
+            "x": 1289.04,
+            "z": 1274.29,
+            "y": 77.85,
+            "unit": 25,
+            "type": "juthungi-warband",
+            "order": 1,
+            "toGoal": 1527.92,
+            "moved": 0,
+            "unitMoved": 13.3,
+            "inSolid": false,
+            "inShell": false,
+            "kind": null,
+            "box": -1,
+            "raster": true
+          }
+        ]
+      },
+      "displace": {
+        "stuck": 0,
+        "inSolid": 0,
+        "inShell": 0,
+        "clear": 0,
+        "injected": {
+          "n": 24,
+          "stuck": 0,
+          "inSolid": 0,
+          "inShell": 0,
+          "clear": 0,
+          "fellOutAt": {
+            "moving": 24
+          }
+        },
+        "exExcused": 0,
+        "exQueued": 0,
+        "exArrived": 27,
+        "exNotCommanded": 1492,
+        "orbiting": 73,
+        "unit": 25,
+        "unitOrder": 1,
+        "k": 24,
+        "sample": []
+      },
+      "melee": {
+        "stuck": 0,
+        "inSolid": 0,
+        "inShell": 0,
+        "clear": 0,
+        "injected": {
+          "n": 24,
+          "stuck": 0,
+          "inSolid": 0,
+          "inShell": 0,
+          "clear": 0,
+          "fellOutAt": {
+            "excused": 24
+          }
+        },
+        "exExcused": 33,
+        "exQueued": 0,
+        "exArrived": 5,
+        "exNotCommanded": 1480,
+        "orbiting": 72,
+        "unit": 25,
+        "unitOrder": 1,
+        "k": 24,
+        "sample": []
+      },
+      "hold": {
+        "stuck": 0,
+        "inSolid": 0,
+        "inShell": 0,
+        "clear": 0,
+        "injected": {
+          "n": 24,
+          "stuck": 0,
+          "inSolid": 0,
+          "inShell": 0,
+          "clear": 0,
+          "fellOutAt": {
+            "notCommanded": 24
+          }
+        },
+        "exExcused": 6,
+        "exQueued": 0,
+        "exArrived": 0,
+        "exNotCommanded": 1705,
+        "orbiting": 16,
+        "unit": 25,
+        "unitOrder": 0,
+        "k": 24,
+        "sample": []
+      },
+      "errs": []
+    }
+  }
+}
