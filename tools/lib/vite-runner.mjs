@@ -82,7 +82,8 @@
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { isLoopbackHost, lanAddress, mdnsName } from './lan-address.mjs';
+import { isLoopbackHost, mdnsName } from './lan-address.mjs';
+import { lanPlaqueFor, relayPlaqueFor } from './server-plaques.mjs';
 
 const args = new Map(
   process.argv.slice(2)
@@ -170,6 +171,13 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
  */
 const treeIdentity = () => ({
   tc: 'vite-runner',
+  /*
+   * Stated rather than inferred, now that there are two runners. `probeTree` defaults a missing
+   * `mode` to `dev` so an older listener still reads correctly, and `startVite` refuses a
+   * listener whose mode is not the one asked for — from this machine a dev server and a static
+   * one on the same port are both "something that answers", and they serve different bytes.
+   */
+  mode: 'dev',
   root: ROOT,
   pid: process.pid,
   port: PORT,
@@ -179,55 +187,18 @@ const treeIdentity = () => ({
 });
 
 /**
- * The LAN plaque. `null` on a loopback bind, which is what makes its absence meaningful.
+ * The LAN plaque, and the relay port, from `./server-plaques.mjs`.
  *
- * `relayUrl` is only stated when a relay port was given. A page that gets `relayPort: null`
- * must not go on to invent `ws://<lan>:5959` — it would be guessing at a process nobody
- * started, which is the exact shape of the wrong answer the lobby's `defaultRelay()` used to
- * give on the deployed site, and which `relayPlaque()` below now removes the last excuse for.
+ * They used to be spelled out here. They are shared now because `npm run host` has a second
+ * backend — `tools/lib/static-runner.mjs`, which serves the production build — and it has to
+ * write character-for-character the same two tags. Two copies of "the same" derivation is how
+ * the Bonjour name came to be wrong in two files at once; see the header of that file.
+ *
+ * Both are still `null` in exactly the cases they were: no plaque on a loopback bind or on a
+ * machine with no LAN interface, and no relay tag when no relay port was given.
  */
-const lanPlaque = () => {
-  if (!LAN_BIND) return null;
-  const pick = lanAddress({ prefer: LAN_PREFER });
-  if (!pick) return null;
-  return {
-    tc: 'host-lan',
-    lan: pick.ip,
-    iface: pick.iface,
-    mdns: MDNS,
-    gamePort: PORT,
-    gameUrl: `http://${pick.ip}:${PORT}/`,
-    relayPort: RELAY_PORT || null,
-    relayUrl: RELAY_PORT ? `ws://${pick.ip}:${RELAY_PORT}` : null,
-  };
-};
-
-/**
- * `<meta name="tc-relay">` — the relay this server was started beside, stated not guessed.
- *
- * The plaque above answers "what address does the *other* machine use", and it can only exist
- * on a LAN bind. This answers something smaller and more basic, and it holds on every bind:
- * **a relay was started with this server, on this port.**
- *
- * It exists because the lobby used to answer that question by guessing
- * `ws://<whatever host served this page>:5959` and putting the answer in a form field at the
- * player's eye level. The guess is right under `npm run host` and points at nothing under
- * `npm run dev` — and from inside the page the two documents were identical, so what the second
- * player got was a correct-looking address with no process behind it. Worse than an empty one.
- * The server knows which of the two it is while it is writing the document, so it says.
- *
- * Deliberately just the port, as a string. The host part is `location.hostname`: whatever name
- * the browser used to reach *this* server reaches the relay beside it too, so a page served at
- * `192.168.0.238:5958` composes `ws://192.168.0.238:5959` and one served at `127.0.0.1:5958`
- * composes loopback, and both are true at the same time. Putting a single absolute URL here
- * would have to pick one of them and be wrong in the other browser tab.
- *
- * **A page must still check.** This says a relay was *asked for*, not that one is listening:
- * `tools/host-lan.mjs` spawns the two halves as separate processes and either can die on its
- * own. `src/ui/NetLobby.ts` probes the relay's `/health` before it believes this, and says so
- * by name when the probe comes back empty.
- */
-const relayPlaque = () => (RELAY_PORT ? String(RELAY_PORT) : null);
+const lanPlaque = () => lanPlaqueFor({ host: HOST, port: PORT, relayPort: RELAY_PORT, prefer: LAN_PREFER });
+const relayPlaque = () => relayPlaqueFor(RELAY_PORT);
 
 try {
   server = await createServer({
@@ -307,6 +278,7 @@ process.stdout.write(
     port: PORT,
     base: `http://127.0.0.1:${PORT}`,
     host: HOST,
+    mode: 'dev',
     lan: lanPlaque(),
     pid: process.pid,
     root: ROOT,

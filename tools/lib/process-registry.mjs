@@ -720,7 +720,7 @@ export const procCensus = ({ table = null } = {}) => {
       const ty = rec.command.match(/--type=(\S+)/);
       if (ty) browserKids.push({ ...rec, type: ty[1] });
       else browsers.push({ ...rec, type: 'browser' });
-    } else if (/vite-runner\.mjs|node_modules\/\.bin\/vite|bin\/vite\.js|npm exec vite/.test(rec.command)) {
+    } else if (/(?:vite|static)-runner\.mjs|node_modules\/\.bin\/vite|bin\/vite\.js|npm exec vite/.test(rec.command)) {
       const p = rec.command.match(/--port[= ](\d+)/);
       const port = p ? Number(p[1]) : null;
       (port === 5173 ? ownerVites : vites).push({ ...rec, port });

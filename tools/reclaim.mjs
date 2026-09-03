@@ -525,7 +525,7 @@ const scanServers = ({ live }) => {
   const ownedPids = new Set(slots.flatMap((s) => [s.rec?.pid, s.rec?.vitePid]).filter(Boolean));
   const out = [];
   for (const c of live.cmdlines) {
-    const isVite = /vite-runner\.mjs|node_modules\/\.bin\/vite|bin\/vite\.js|npm exec vite/.test(c.cmd);
+    const isVite = /(?:vite|static)-runner\.mjs|node_modules\/\.bin\/vite|bin\/vite\.js|npm exec vite/.test(c.cmd);
     if (!isVite) continue;
     const port = Number(c.cmd.match(/--port[= ](\d+)/)?.[1]) || null;
     const protections = [];

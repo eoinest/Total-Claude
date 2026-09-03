@@ -3341,3 +3341,211 @@ path no engine boots at all. It is recorded rather than repaired because it is a
 question with no bearing on the simulation or on this branch, and because guessing at it blind is
 how a render pass becomes a determinism incident. It wants its own pass, on the engine the owner's
 likeliest second device runs.
+
+---
+
+## 13. The guest's first five seconds — 2 September 2026, `e/net/host-serves-the-build`
+
+The owner ran `npm run host`, a friend on another laptop opened the link, and reported:
+*"takes wayyyy too long to load. it should be instant or as close as possible."*
+
+He was right, and the reason is one line of history rather than anything in the netcode.
+`tools/host-lan.mjs` has served the **Vite dev server** since §10 built it, because that was the
+server that already existed and already knew how to bind a LAN address. The person who typed the
+command could never feel the cost: his browser is on loopback, warm, and holds every transform
+from the last run. The guest is the only reader of that decision, and the guest pays all of it,
+once, cold.
+
+### 13.1 What the guest was actually being sent
+
+Measured with `tools/qa-hostload.mjs`, from a second Chromium over `192.168.1.77`, cache cleared
+through CDP, timed from `goto` to the screen with a button on it — the lobby sheet for `?mp=1`,
+the front door for `/`. Three reps, median.
+
+| | dev server (before) | production build (after) |
+|---|---|---|
+| lobby, 30 Mbit/s Wi-Fi | **6,828 ms** | **350 ms** |
+| menu, 30 Mbit/s Wi-Fi | **6,832 ms** | **345 ms** |
+| lobby, unthrottled | 215 ms | 96 ms |
+| menu, unthrottled | 213 ms | 95 ms |
+| bytes on the wire, cold | **23.19 MB / 194 requests** | **821 kB / 6 requests** |
+| returning guest, Wi-Fi | 1,318 ms, 24,057 B, 194 conditional requests | **81 ms, 495 B, 4 of 6 from cache without asking** |
+
+23.19 MB, of which 17.02 MB is 184 separate `/src/*.ts` fetches transformed on demand and
+6.17 MB is Vite's eight pre-bundled dependency files — 5.61 MB of that one `three.module.js`.
+The production build is four files, gzipped: the hashed entry `main-*.js` (260 kB), the two
+chunks it modulepreloads (`PostFX-*.js` 479 kB, `clips-*.js` 67 kB) and `main-*.css` (13 kB).
+821 kB, and the fifth request is the document.
+
+**Repeated on the finished branch, with the tool starting `npm run host` itself** rather than
+being pointed at a server somebody else had started — the same four rows came back 6,833 /
+351 ms and 6,831 / 346 ms, 24,311,224 B against 840,881 B, so the pair above is the product and
+not the day. That second pair is also the check on `--dev`: it reproduces the *old* numbers
+exactly, which is the claim that flag makes.
+
+**Read the throttled row, not the unthrottled one.** Both numbers are taken over
+`192.168.1.77`, which is this machine's own en0 address — and traffic from a machine to its own
+address is short-circuited in the kernel and never crosses the interface. So the unthrottled
+column is a same-machine number that flatters any payload, and it is kept only as a control. The
+30 Mbit/s / 20 ms profile is the model of the friend on the sofa, and it is the one that moved by
+a factor of **19.5**.
+
+### 13.2 What `npm run host` does now
+
+Serve `dist/`, and build it first if the source has moved.
+
+  - **`tools/lib/static-runner.mjs`** is the server: MIME by extension, brotli and gzip
+    negotiated and memoised, byte ranges on the identity representation, and `Cache-Control` in
+    three tiers — `immutable` for a year on `/bundle/` (Rollup content-hashes it), an hour with
+    an ETag on `/assets/` (the optimiser rewrites the same filenames, so an immutable year there
+    would pin a guest to the textures they first saw), and `no-cache` on HTML, which means
+    *revalidate every time* and is the mechanism by which a rebuild becomes visible.
+  - **`tools/lib/dist-build.mjs`** decides whether `dist/` is current, by the newest mtime **and
+    the entry count** across `src/`, `public/`, both HTML entries, `vite.config.ts`,
+    `tsconfig.json`, `package.json` and `tools/optimize-assets.mjs`. The count is not redundant:
+    a deleted file leaves the newest mtime untouched, and a build that still ships a module the
+    source no longer has is exactly the stale serve this exists to prevent. The walk is 439
+    entries and 50 ms cold, 6 ms warm, so it happens on every start rather than being trusted to
+    a flag.
+  - It is `vite build` + `optimize-assets`, **not `npm run build`**. That script is
+    `lint && tsc --noEmit && vite build && optimize-assets`, and the first two are gates on the
+    repository. A lint rule about a detached spawn in an unrelated tool must not be the reason
+    two people cannot play a game. `npm run build` is unchanged and remains the gate.
+  - **`--dev` keeps the old path exactly**, for working on the game rather than playing it, and
+    the asymmetry is the point: somebody who wants HMR knows to ask for it, and somebody handing
+    a link to a friend will not think to. `--rebuild` forces a build; `--no-build` refuses to run
+    one and says out loud that what it is serving is stale.
+  - The terminal block now names which of the two is behind the URL, because the host is the one
+    person who cannot feel the difference.
+
+Both servers go through the **same `startVite()`** in `tools/lib/browser-budget.mjs`, with
+`mode: 'static'` selecting the runner. That is deliberate rather than convenient: the port-theft
+refusal, the `/__tc/tree` identity check, `spawnOwned`'s guard and registry entry and the cleanup
+that survives a SIGKILL are the accumulated answer to two orphan incidents and a stolen port, and
+a static server that opened its own listener beside all of that would have had none of it.
+
+### 13.3 The tag that a static server would have silently dropped
+
+`<meta name="tc-relay">` is written by `vite-runner.mjs`'s `transformIndexHtml`. A plain file
+server handing `dist/index.html` off the disk has no such hook — and `resolveRelay()` in
+`src/ui/NetLobby.ts` ranks four sources and refuses to guess (§11.2), so with the tag gone the
+server drops out of the ranking, every join falls through to "nothing", and the lobby shows the
+deployed site's honest refusal on a machine that has a relay running two ports away. It would
+have looked like a lobby regression and been a serving regression, which is the worst kind of
+misattribution this gate can produce.
+
+So both tags are injected into the built HTML, from **one** `tools/lib/server-plaques.mjs` that
+both runners import. Two spellings of the same fact is how `Mac.attlocal.net.local` came to be
+wrong in two files at once (§10.3); `lanPlaqueFor` and `relayPlaqueFor` are now the only
+spelling. `tools/qa-net.mjs` asserts the result over the wire, in two new checks in the `lan`
+arm: `lan-serves-the-production-build` and `lan-built-document-keeps-both-plaques`.
+
+One thing had to be *removed* on the way out. `vite.config.ts` injects
+`<script defer src="/_vercel/insights/script.js">` at build time; on Vercel that file exists, on
+the LAN it does not, and Chromium writes *"Failed to load resource: 404"* into the console
+unsuppressably for it. Four console-cleanliness checks would have gone red on an analytics beacon
+for a service the LAN has never heard of. The tag is stripped rather than answered with a stub: a
+request that is never made is cheaper than one answered emptily.
+
+### 13.4 Three things measured on the way past, two of them not fixed
+
+**A battle load is a different problem, and the dev server was much worse at it than the page
+load.** `qa-hostload --battle` boots `campus-martius/assault` and counts what crosses the wire:
+
+| | dev server | production build |
+|---|---|---|
+| total | **124.03 MB / 241 requests** | **8.98 MB / 54 requests** |
+| `/assets/textures` | **95.46 MB** over 42 files | 2.97 MB over 42 files |
+| `/assets/hdri` | 5.20 MB | 5.20 MB |
+| `/assets/manifest.json` | 187 kB over **3** requests | 6 kB over 3 requests |
+| `/src` + Vite deps | 23.19 MB | — |
+
+The named worst: `dry-grass/normal.jpg` at **5.91 MB** where the build ships a 76 kB WebP,
+`meadow-grass/normal.jpg` at 5.77 MB against 84 kB, `dirt-gravel/normal.jpg` at 5.68 MB against
+68 kB, `meadow-grass/albedo.jpg` at 4.55 MB against 346 kB. `src/terrain/groundTextures.ts`
+halves every one of these to 1024 (normals to 512) at load time with `createImageBitmap`, so on
+the dev path the guest downloaded four times the pixels and the page threw three of them away.
+And on the dev path a *returning* guest re-downloaded **112.12 MB** of it, because Vite's dev
+middleware answers `no-cache` on `public/` and the browser re-fetched rather than revalidated.
+Fixed by serving the build.
+
+**The HDRI is the one asset the build does not help with, and it is now 58 % of a battle load.**
+`midday-partly-cloudy-2k.hdr` is 5.20 MB on the wire on **both** paths:
+`tools/optimize-assets.mjs` copies HDRIs verbatim, correctly, because re-encoding Radiance RGBE
+to any 8-bit format destroys the >1.0 radiance that makes it a light source rather than a
+picture. Not fixed here, and the options are named rather than taken: gzip gets it to 3.62 MB and
+brotli to 3.30 MB (measured), which is real but costs CPU on a file `RGBELoader` cannot stream
+incrementally anyway; a 1K equirectangular source would be a straight halving and
+`PMREMGenerator` reduces it to a handful of mip faces regardless, so the visible cost is
+plausibly nil — but that is a rendering change with a look to verify, and it does not belong
+under a serving change.
+
+**Brotli is never used over plain HTTP, and this was worth finding out.** The server negotiates
+`br` before `gzip` and the measurement came back `[gzip]` on every chunk. Chromium — and Firefox
+— only advertise `br` on a secure context, so on `http://192.168.1.77:5958` the offer is
+`gzip, deflate` and nothing else. The brotli path is kept because it is correct and cheap and
+would be used the moment any of this is served over TLS or through the tunnel in `net/worker.ts`;
+it is simply not what is carrying the 821 kB today. `main-*.js` is 789 kB raw, 260 kB gzip,
+250 kB brotli — so the unreachable 4 % is not what this change was buying.
+
+**Nothing waits on an asset it could load later, on the page-load path.** The lobby and the front
+door fetch **zero** bytes under `/assets/` — first contentful paint is 92 ms throttled, on the
+loading splash that is already in the HTML, and the menu is up 250 ms later. The four-chunk
+critical path is `main` (260 kB gz), `PostFX` (479 kB gz), `clips` (67 kB gz) and the CSS
+(13 kB gz). `PostFX-*.js` is the largest and its name is misleading: it is the **three.js
+library** chunk — `WebGLRenderer`, `BufferGeometry`, `InstancedMesh`, no `EffectComposer` in it
+at all — which Rollup happened to name after one of its members. It is not deferrable and there
+is nothing to move off the critical path there.
+
+### 13.5 What is still not done
+
+  - **No second machine was in this measurement.** Everything above is a second *browser* over
+    the LAN IP, throttled to model Wi-Fi. That is the right instrument for a payload and it is
+    not the firewall and it is not a real radio; §10.4's two-machine procedure is still the only
+    thing that proves the last hop.
+  - **The HDRI**, as above: 5.20 MB, 58 % of a battle load, unchanged by the build.
+  - **`/assets/manifest.json` is fetched three times per battle load**, and the HTTP cache
+    cannot help because all three are in flight before any of them has answered. There are four
+    readers of that file and they do not share: `src/core/Assets.ts` memoises the promise —
+    correctly — and `src/render/SkySystem.ts`, `src/terrain/groundTextures.ts` and
+    `src/city/materials.ts` each call `fetch` on their own. Gzip has made it cheap (6 kB here
+    against the dev path's 187 kB), so what is left is three round trips rather than three
+    downloads; routing the other three through `Assets` would remove two of them. Not done
+    here, because it is a change to four `src/` modules under a serving pass.
+  - **A stamp written by another checkout is not detected.** `dist/.tc-build.json` records the
+    source fingerprint the build saw, so source that has moved since is caught — but a `dist/`
+    left behind by a different branch with a stamp of its own would be called current. Under
+    `--no-build` that is the caller's stated choice; without it, the first source edit on the new
+    branch triggers the rebuild that fixes it.
+
+### 13.6 The gate as run
+
+On this machine, with the owner hosting his own `npm run host` on 5958 throughout and other
+agents' work in the browser budget beside it — load average 10 to 99 across the window.
+
+| | result |
+|---|---|
+| `node tools/qa-net.mjs` | **91/91**, no reds |
+| `npx tsc --noEmit` | clean |
+| `npm run lint` | **3/3**, and `DETACHED_OK` still has its six entries |
+| `qa-determinism` (bare) | ✓ 7 checkpoints, **8,632** soldiers, 35 units, identical at 4 tiers |
+| `qa-determinism --battle='map=campus-martius&scenario=assault'` | ✓ 7 checkpoints, **3,072** soldiers, 32 units |
+| `qa-determinism --battle='map=carthage&scenario=assault'` | ✓ 7 checkpoints, **3,440** soldiers, 34 units |
+
+91 rather than 89 because this pass adds two: `lan-serves-the-production-build` and
+`lan-built-document-keeps-both-plaques`. The `lan` arm also exercises the build-on-demand path
+without being asked to — its evidence line reads *"host-lan reports served=static (built in
+4.7s)"*, because the source had moved since the last build and the command said so and fixed it.
+
+**`same-battle` was green in this run, and that is a data point rather than a fix.** §12.8
+records it red in four of five runs at `ad94279` and after, with `checkpoints-agreed` green and
+byte-identical order logs beside it — an instrument that cannot bring two wall-clocked browsers
+to a common tick, not a simulation that disagrees. Nothing in this pass touches that, and one
+green run does not move the distribution. If it is red on the next run, it is still that.
+
+**What this branch could plausibly have broken, and what covers it.** Every arm that drives
+`npm run host` now measures a *different server* than it did last week, so the whole `lan` arm —
+sixteen checks about the lobby, the invite link, the QR photographed off the screen and read by
+Vision, the guest-scanned-first race and the phone refusal — is the regression test for the
+change, and it is the reason the two new checks assert the served document rather than a timing. `dev`, `static`, `ghost`,
+`norelay` and `https` are unaffected by construction: none of them goes through `host-lan.mjs`.

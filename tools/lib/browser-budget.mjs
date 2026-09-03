@@ -834,10 +834,25 @@ export async function launchBrowser({
  * machine next door, and silently handing back the wrong one is how a host ends up reading out
  * a URL nobody else can open. `relayPort` and `lan` are passed through to the runner and only
  * do anything on a LAN bind; see `/__tc/lan` there.
+ *
+ * ## `mode`, and why the second server comes through this door too
+ *
+ * `mode: 'static'` spawns `tools/lib/static-runner.mjs` instead — the production build, served
+ * to the machine next door, which is what `npm run host` gives a guest now. Everything around
+ * it is identical and that is the entire reason it is a parameter rather than a second
+ * function: the port-theft refusal, the tree identity check, `spawnOwned`'s guard and registry
+ * entry, the slot's throttle, the `TC_VITE_READY` handshake and the cleanup on exit are the
+ * accumulated answer to two orphan incidents and a stolen port, and a static server that opened
+ * its own listener beside all of that would have none of it.
+ *
+ * A reused listener is checked against `mode` as well as against `root`. From this machine a
+ * dev server and a static one on the same port are both "something that answers"; they serve
+ * different bytes, and a harness that asked for one and silently measured the other would be
+ * the port-5901 incident with a new cause.
  */
 export async function startVite({
   port, root = REPO_ROOT, cacheDir, label = 'vite', slot = null, timeoutMs = 120_000,
-  host = '127.0.0.1', relayPort = 0, lan = '',
+  host = '127.0.0.1', relayPort = 0, lan = '', mode = 'dev', dist = '',
 } = {}) {
   const base = `http://127.0.0.1:${port}`;
   const wantLan = !(host === 'localhost' || host === '127.0.0.1' || host === '::1' || /^127\./.test(host));
@@ -849,6 +864,13 @@ export async function startVite({
         + `  serving: ${existing.tree.root} (pid ${existing.tree.pid})\n`
         + `  wanted:  ${root}\n`
         + '  Reusing it would measure that branch under this branch\'s name. Pick another port.'
+      );
+    }
+    if (existing.tree && (existing.tree.mode ?? 'dev') !== mode) {
+      throw new Error(
+        `startVite: a ${existing.tree.mode ?? 'dev'} server is already on ${port}, and a `
+        + `${mode} one was asked for.\n`
+        + '  They serve different bytes from the same address. Stop that one, or pick another port.'
       );
     }
     if (wantLan && existing.tree?.host !== host) {
@@ -865,10 +887,11 @@ export async function startVite({
       if (process.env.TC_STRICT_TREE === '1') throw new Error(`${msg}\n  TC_STRICT_TREE=1 is set, so this is a refusal.`);
       process.stderr.write(`!! ${msg}\n!! Confirm by headcount, or restart it. TC_STRICT_TREE=1 makes this fatal.\n`);
     }
-    return { base, server: null, started: false, pid: existing.tree?.pid ?? null, lan: null, close: async () => {} };
+    return { base, server: null, started: false, pid: existing.tree?.pid ?? null, lan: null,
+      mode: existing.tree?.mode ?? 'dev', close: async () => {} };
   }
 
-  const runner = path.join(LIB_DIR, 'vite-runner.mjs');
+  const runner = path.join(LIB_DIR, mode === 'static' ? 'static-runner.mjs' : 'vite-runner.mjs');
   /*
    * The server goes through `spawnOwned`, which is three changes from the `spawn` this replaces.
    *
@@ -890,12 +913,14 @@ export async function startVite({
     [runner, `--port=${port}`, `--root=${root}`, `--parent=${process.pid}`, `--host=${host}`,
       ...(relayPort ? [`--relay-port=${relayPort}`] : []),
       ...(lan ? [`--lan=${lan}`] : []),
-      ...(cacheDir || process.env.TC_VITE_CACHE_DIR ? [`--cache-dir=${cacheDir || process.env.TC_VITE_CACHE_DIR}`] : [])],
+      ...(mode === 'static' ? (dist ? [`--dist=${dist}`] : [])
+        : (cacheDir || process.env.TC_VITE_CACHE_DIR
+          ? [`--cache-dir=${cacheDir || process.env.TC_VITE_CACHE_DIR}`] : []))],
     {
       cwd: root,
       root,
       port,
-      label: `vite:${port}`,
+      label: `${mode === 'static' ? 'static' : 'vite'}:${port}`,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { TC_NO_HMR: '1' },
       meta: { kind: 'vite', viteRoot: root },
@@ -957,7 +982,7 @@ export async function startVite({
   const vitePid = Number.isFinite(hello?.pid) ? hello.pid : child.pid;
   if (slot?.setVitePid) slot.setVitePid(vitePid);
   return { base, server: child, started: true, pid: vitePid, pgid: child.pid, guardPid: child.pid,
-    entry: job.entry, close, lan: hello?.lan ?? null };
+    entry: job.entry, close, lan: hello?.lan ?? null, mode: hello?.mode ?? 'dev' };
 }
 
 /** Ask a listener what tree it is serving. `up` is whether anything answered at all. */
@@ -976,7 +1001,14 @@ export async function probeTree(base, ms = 1500) {
     const r = await fetch(`${base}/__tc/tree`, { signal: AbortSignal.timeout(1500) });
     if (r.ok) {
       const tree = await r.json();
-      if (tree?.tc === 'vite-runner') return { up: true, tree };
+      /*
+       * Two runners answer here now. `vite-runner` predates `mode` and means `dev`; the
+       * default keeps an older listener's answer readable rather than treating it as a
+       * stranger, which would put every long-lived dev server on the "unidentified" path.
+       */
+      if (tree?.tc === 'vite-runner' || tree?.tc === 'static-runner') {
+        return { up: true, tree: { mode: 'dev', ...tree } };
+      }
     }
   } catch { /* older server */ }
   return { up: true, tree: null };
