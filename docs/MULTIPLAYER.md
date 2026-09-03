@@ -4043,6 +4043,18 @@ asking about explicitly.
   a page beat while refusing to simulate needs a hook that does not exist, and a check with no
   injection behind it is one this file has a standing complaint about. It is written down here
   rather than claimed.
+- **A whole `qa-p2p` run in one process is at the edge of what this machine will carry, and the
+  distribution says so.** On 3 Sep 2026, with two other agents working and the owner playing:
+  three consecutive full runs each died at a *later* arm than the last — `lobby`, then `desync`,
+  then `lag` — every one of them on the same sentence, *"nothing has arrived from the other side
+  in 6.0 s of drawing, against a 0 ms turn"*, raised over a deployment screen. Split in two and
+  run back to back at the same load, the same checks pass: **53/53** for
+  `proto,params,seal,battle,lag,desync` and **18/18** for `leave,lobby,https,nodirect,dup,ab`,
+  at load 6.9-9.7. Each arm starts its own servers and browsers, so the halves are not a weaker
+  claim than the whole — but a run that has already built a dozen 8,632-man battles is measuring
+  a different machine than one that has built none, and **the honest way to read a red late in a
+  long run is to re-run that arm alone before believing it.** `clickOrExplain` exists so that
+  reading is possible at all.
 - **A tab that is merely *slow* is tolerated for six seconds, and this is the limitation to put
   in front of the owner.** `NetSession.linkFault` ends a match when nothing has arrived for
   `max(LINK_SILENT_S, 8 × gapMs)` of **rendered** seconds, and peer to peer the thing that has
