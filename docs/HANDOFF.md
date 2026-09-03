@@ -3495,13 +3495,40 @@ and not the fixture.
   real STUN, host candidates: `chrome-headless-shell` connected **2 times in 17** across four flag
   combinations, every failure sitting in `ice: checking` with no `icecandidateerror` to attribute
   it to. `channel: 'chrome'` connected **4 of 4** in 57-209 ms at load 9.7-12, and
-  `channel: 'chromium'` (new headless, same binary) also connects. `qa-p2p` uses
-  `channel: 'chrome'` and says so by name if it is missing rather than reporting a transport
-  failure.
+  `channel: 'chromium'` (new headless, same binary) also connects — measured again from the
+  *non-secure LAN origin*, which is the one `npm run host` serves: **3 of 3 in 90-161 ms** over
+  host candidates. So `qa-p2p` uses `channel: 'chrome'` and names it by hand if Google Chrome is
+  not installed, rather than reporting a transport failure; and **`qa-net` now uses
+  `channel: 'chromium'`**, because its `lan` arm needs a peer connection too. Same binary means
+  the same libm generation, which is the property §9.5's pairing table rests on, so this changes
+  the headless implementation and nothing the simulation computes.
+
+  `tools/lib/work-budget.mjs`'s `ourBrowserPids` had to be widened in the same change: it matched
+  only `chrome-headless-shell`, so a browser launched through **either** channel was neither
+  demoted while the owner played nor group-killed by the reaper. That is a hole in shared
+  machinery every future `channel:` caller would have fallen into.
 - **mDNS candidate obfuscation has to be off for the harness**
   (`--disable-features=WebRtcHideLocalIpsWithMdns`): nothing here resolves `*.local` candidate
   names, so two browsers never complete a check over host candidates. A player's OS resolves them
   and a player's peer is on another machine; no flag is shipped.
+
+### The four defects a relay cannot have
+
+Read `docs/MULTIPLAYER.md` §13.8bis before changing anything here. Four of the eight defects the
+gate found are the same category — **a relay is a third party that holds state and answers on its
+own thread, and every place this design leaned on that without noticing became a defect**:
+
+1. A host publishes `setup` and `ready` minutes before a challenger exists (`PeerLink.preOpen`).
+2. The offer was created when a knock arrived, so the introduction depended on a main thread that
+   was busy building 8,632 men (the standing offer, `OFFER_REPEAT_MS`).
+3. `WsSignal.send` guarded on the key, and a null key **is** the plaintext case — so on the one
+   origin that needs plaintext it silently dropped every message.
+4. A fault that travels forks nothing, because a peer-to-peer commit goes to both ends of one
+   channel (`PeerFault.localOnly`).
+
+And two of the four product defects were only visible **off loopback**, which is a secure context
+and a LAN address is not. §10.1 recorded the same shape one pass earlier.
+
 
 ### The honest limit
 
