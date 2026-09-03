@@ -137,7 +137,7 @@ yourself. §12.5 says why an address packed into a longer room code would not he
 sits at a fixed 1,062 px whatever the viewport, on a page that cannot scroll sideways, so a
 narrower screen can join a room and then never start the battle. Scanning the square on a phone
 is therefore refused *before* anything connects — the room stays open for a machine that can
-play it, and the phone is handed the code and the link to carry. §12.9.
+play it, and the phone is handed the code and the link to carry. §12.10.
 
 ### Setting up a battle
 

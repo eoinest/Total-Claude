@@ -3155,7 +3155,51 @@ eighty-one reads as a better run than it is, and the total stopped being a numbe
 compare between runs. It is recorded unconditionally now, and red by construction when nothing
 was detected, because neither client can have stopped on a desync that was never declared.
 
-### 12.8 What is still not done, and what still requires the host to send something
+### 12.8 The gate as measured, which is not a single number
+
+A reviewer ran this branch twice and got neither of the numbers reported for it: one run died at
+exit 1 in the `lag` arm with a `page.goto` timeout, the other came back `78/81`. That is a fair
+hit, and the honest reply is not a better number — it is the distribution, with the machine's
+state beside each row.
+
+| Run | Load average | Owner | Result |
+|---|---|---|---|
+| A | ~6 | present, not playing | **89/89** |
+| B | 77-99 | **playing** | 80/87 — `same-battle`, `reordered-pair` ×2, `one-ulp` ×2, `peer-left` ×2 |
+| C | ~35 rising | playing | **died at exit 1**, 30 checks in: `page.click` timeout on `.dest-battle` |
+
+Every red in B is a full-battle arm timing out, and the signatures say so rather than being
+inferred: `peer-left` reported *"nothing has arrived from the relay in 6.1 s of drawing"*, which
+is the machine stalling and not a peer leaving; `same-battle` had the two clients at ticks 2248
+and 2263 with `checkpoints-agreed` **green** and `one-order-log` byte-identical, so the two
+simulations agreed about everything they exchanged and only the instrument that brings them to a
+common tick gave up. Two of B's reds — `one-ulp` and `peer-left` — are in arms this branch never
+touched, and `reordered-pair` passes in isolation (`--only=swap`, 2/2, caught at tick 90 on
+uf64). The 22 checks this branch owns — `qr`, the LAN additions, `https`, the `dev` completion —
+have never gone red except when deliberately injected.
+
+**Attribution, measured rather than asserted.** The same failure class is present at the branch
+base: a run of `ad94279` before any of this work reported `siege-same-battle` red with
+*"they stopped at different ticks: 1359 and 1369"* and `siege-checkpoints-agreed` green — the
+identical signature.
+
+**What was fixed here rather than explained away.** The denominator used to move with the
+result: `record(\`${name}-both\`)` sat inside `if (d)`, and so did `one-ulp-layer` and
+`one-ulp-attributed`, so a run where a fault went uncaught reported a *smaller total*. B's "80/87"
+against A's "89/89" is exactly that arithmetic — seven reds, two of which used to vanish rather
+than count. Every check is recorded unconditionally now, so the denominator is a constant and two
+runs can be compared. That is the part of the reviewer's finding that was a defect rather than a
+machine.
+
+**What is not fixed, and is not this branch's to fix.** These arms drive two full 8,632-man
+battles through a real menu with real mouse events, and they have wall-clock budgets. On a
+machine with the owner playing and the load average at 99 they starve, and the budget's own
+throttle — which correctly demotes agent work to efficiency cores when he is at the keyboard —
+guarantees it. A gate that goes red because the laptop is busy teaches people to ignore it, which
+is this file's own standing complaint about `xengine`. Making these arms load-proof means giving
+them a simulated clock rather than a wall clock, and that is a pass of its own.
+
+### 12.9 What is still not done, and what still requires the host to send something
 
 **The host must still get the square or the line to the guest.** Nothing here is discovery: there
 is no mDNS browse, no broadcast, no "rooms on this network" list. The two people are in the same
@@ -3196,7 +3240,7 @@ it. An empty room costs a `Map` entry and is reaped after ten minutes.
 the two clients settling at different ticks (1359 against 1369) with every checkpoint agreed; it
 failed identically on the branch base before any of this was written.
 
-### 12.9 The screen the square sent people to, and what was measured there
+### 12.10 The screen the square sent people to, and what was measured there
 
 A reviewer scanned the square with a WebKit client at a 390x844 iPhone viewport. It got into the
 room and landed on the deployment plaque with **BEGIN BATTLE at x=824 on a 390-pixel viewport**.

@@ -2581,7 +2581,7 @@ if (wanted('lan')) {
    *
    * The engine is not the variable and this arm does not pretend otherwise: the refusal is
    * keyed on viewport width, so a 390x844 Chromium page exercises the identical path. What
-   * WebKit adds is a rendering defect, measured and named in `docs/MULTIPLAYER.md` §12.9,
+   * WebKit adds is a rendering defect, measured and named in `docs/MULTIPLAYER.md` §12.10,
    * which this arm cannot reach because on this path **no engine boots at all**.
    *
    * Two claims, and the second is the one that matters: the phone is told why, *and the room
