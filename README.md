@@ -128,9 +128,16 @@ square, and `--relay-port=` moves the relay.
 
 **The deployed site cannot host this and never will.** A page served from the internet is not
 allowed to open a connection into a private network — the socket is refused before a packet
-leaves, which is a browser rule and not a limitation of the relay. Its multiplayer screen says so
-and links to a copy you can run yourself. `docs/MULTIPLAYER.md` §12.6 has the measurement, and
-§12.5 says why an address packed into a longer room code would not help.
+leaves, which is a browser rule and not a limitation of the relay. Every engine refuses it;
+Chromium and Safari happen to refuse it for different reasons, and `docs/MULTIPLAYER.md` §12.6
+has both measurements. The site's multiplayer screen says so and links to a copy you can run
+yourself. §12.5 says why an address packed into a longer room code would not help.
+
+**And it needs a window about 1,100 px wide.** The battle HUD has no phone layout: BEGIN BATTLE
+sits at a fixed 1,062 px whatever the viewport, on a page that cannot scroll sideways, so a
+narrower screen can join a room and then never start the battle. Scanning the square on a phone
+is therefore refused *before* anything connects — the room stays open for a machine that can
+play it, and the phone is handed the code and the link to carry. §12.9.
 
 ### Setting up a battle
 

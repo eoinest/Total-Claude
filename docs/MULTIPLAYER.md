@@ -2272,6 +2272,14 @@ uses.**
 
 ### 10.2 The deployed site cannot be part of this, and it is not a matter of degree
 
+> **Amended 2 September 2026 — see §12.6.** The conclusion of this section is correct and has
+> been re-measured. Its *mechanism* is right on WebKit and wrong on Chromium: the second
+> transcript below attributes the refusal to https forbidding a plain socket, and in Chromium 151
+> an https page whose own origin is private opens `ws://192.168.1.77:5959` quite happily. What
+> Chromium refuses is the reach from a *public* address space into a private one, which is the
+> **first** transcript. WebKit has no such carve-out and refuses all three targets as plain mixed
+> content, exactly as written here. Nothing below is deleted; §12.6 has the table for both.
+
 The attractive story is "load the game from `total-claude.vercel.app`, run the relay on your
 LAN". It is blocked by the browser, twice, and both blocks were measured rather than assumed —
 `tools/scratch/https-ws-probe.mjs`, Chromium 151.0.7922.34, the real deployed origin with its
@@ -3031,12 +3039,31 @@ Chromium 151:
 | the same, declared **public** | `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS` | same | `threw SecurityError` |
 | `http://192.168.1.77:5947` | opened | opened | timeout |
 
-The rule is about **address spaces**, not schemes: a document is refused a connection that reaches
-from a more public space into a more private one, and mixed content blocks the rest. The deployed
-site is refused because it is public and the relay is private — which is the *first* of §10.2's
-two transcripts, `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`, and not the second. The conclusion
-of §10.2 is unchanged; its mechanism was wrong, and the fixture that would have been built on the
-old understanding passes for the wrong reason and would keep passing if the premise were false.
+In **Chromium** the rule is about **address spaces**, not schemes: a document is refused a
+connection that reaches from a more public space into a more private one, and mixed content
+blocks the rest. The deployed site is refused because it is public and the relay is private —
+which is the *first* of §10.2's two transcripts, `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`,
+and not the second.
+
+**In WebKit there is no carve-out at all, and this correction over-generalised until a reviewer
+caught it.** Re-measured on the same fixture, the same relay and the same page:
+
+| Page origin | Engine | `ws://192.168.1.77` | `ws://127.0.0.1` | `ws://1.1.1.1` |
+|---|---|---|---|---|
+| `https://192.168.1.77:5972` (private) | WebKit | refused | refused | refused |
+| `https://192.168.1.77:5972` (private) | Chromium 151 | opened | opened | `SecurityError` |
+
+So **§10.2 was not wrong, it was Chromium-wrong**: on Safari its original explanation — plain
+mixed content, the scheme and nothing else — holds exactly as written. That matters more than it
+sounds. The owner is on a Mac and the likeliest guest device is an iPhone, so the engine where
+the old account still holds is the one most likely to be in the room. Every engineering claim
+about the mechanism now names an engine and a version — `README.md`, `src/ui/NetLobby.ts`,
+`tools/host-lan.mjs` and this section all said "a browser" and now do not. The sentence the
+*player* reads is deliberately worded to be true on both, because "this page cannot reach your
+network" is what they need and it is true either way.
+
+The fixture built on the first, over-general understanding passes for the wrong reason and would
+keep passing if the premise were false, which is why the override below exists.
 
 `tools/qa-net.mjs` reproduces it with Chromium's own `--ip-address-space-overrides`, which is what
 the web-platform tests for Local Network Access use: it names one host and one port — the arm's
@@ -3054,49 +3081,79 @@ serving this build over TLS on their own LAN. Nothing here does that, and such a
 no relay behind it either. The alternative to over-refusing in that case is offering a form on the
 deployed site, which is the thing being removed.
 
-### 12.7 The gate: 82 checks, twelve of them new, fifteen injections
+### 12.7 The gate, and the two injections that were not injections
 
-Twelve new checks across four arms, and every one of them was made to go red on purpose:
+Twenty checks are new or reworked across five arms. Every one has a fault that turns it red, and
+`tools/scratch/inject.mjs` holds them by name — `node tools/scratch/inject.mjs <fault>` applies
+one, runs its arm and puts the file back.
 
 | Injection | File | Turns red |
 |---|---|---|
+| the width gate replaced by `if (false)` | `main.ts` | `lan-a-phone-is-turned-away`, `lan-a-phone-does-not-take-the-slot` |
 | one digit changed in the v5-Q block row | `qr.ts` | `qr-every-version`, `qr-decodes` |
-| data placement skips the timing column adjustment | `qr.ts` | `qr-every-version` |
+| `TOTAL_CODEWORDS[8]` 292 → 293 | `qr.ts` | `qr-tables-sum` |
+| the `i === 6` skip removed from the format reservation | `qr.ts` | `qr-function-patterns` |
+| data placement skips the timing-column adjustment | `qr.ts` | `qr-every-version` |
 | `▀` and `▄` swapped in the terminal renderer | `qr.ts` | `qr-terminal-decodes` |
 | default level Q → L | `qr.ts` | `qr-survives-a-thumb` |
 | `QUIET` 4 → 0 | `qr.ts` | `qr-quiet-zone` |
+| the white `<rect>` removed from `qrSvg` | `qr.ts` | `qr-quiet-zone` (rings 4/4/4/4 → 0/0/0/0) |
 | the `create=1` line deleted | `NetLobby.ts` | `lan-create-from-the-link`, and two behind it |
-| `shortLink` forced false | `NetLobby.ts` | `lan-invite-carries-…`, `lan-the-square-decodes-…` |
-| the `?room=` auto-join disabled | `main.ts` | `lan-the-link-is-the-whole-invitation` |
-| the secure-origin branch disabled | `NetLobby.ts` | `https-lobby-refuses-honestly` |
-| `--ip-address-space-overrides` removed | `qa-net.mjs` | `https-blocks-a-lan-socket` |
-| a `console.error` on the refusal screen | `NetLobby.ts` | `https-console` |
-| the on-screen square shrunk to 44 px | `NetLobby.ts` | `lan-the-square-decodes-…`, `lan-the-link-is-…` |
 | the 409 recovery replaced by `if (false)` | `NetLobby.ts` | `lan-guest-first-does-not-lock-the-host` |
+| `shortLink` forced false | `NetLobby.ts` | `lan-invite-carries-…`, `lan-the-square-decodes-…` |
+| the on-screen square shrunk to 44 px | `NetLobby.ts` | `lan-the-square-decodes-…`, `lan-the-link-is-…` |
+| the secure-origin branch disabled | `NetLobby.ts` | `https-lobby-refuses-honestly` |
+| a `console.error` on the refusal screen | `NetLobby.ts` | `https-console` |
 | the relay field's `change` listener renamed | `NetLobby.ts` | `dev-server-completes-a-bare-address` |
+| `--ip-address-space-overrides` removed | `qa-net.mjs` | `https-blocks-a-lan-socket` |
 
-**Three of those found something rather than confirming something**, which is the whole reason
-for running them:
+**Two entries on the previous version of this table were not injections at all, and a reviewer
+proved it by rasterising.** Both are now real, and the way they were fake is worth recording
+because it is the same mistake twice — a check that looked at a *proxy* for the thing:
 
-- **The 409 race was found by writing the injection list, not by writing the feature.** Asking
-  *"what would make `lan-create-from-the-link` go red"* surfaced a case the feature had: `npm run
-  host` mints the room and prints the square before the host's own browser has finished loading,
-  so a guest with a camera can be in the room first — and `/new` then refuses that code with 409,
-  telling the host their own room is in use, with no way forward. The lobby now treats a 409 on a
-  code that arrived in a `create=1` link as the other commander having got there first and goes
-  straight to the open-room screen; a code the *player* typed still gets the refusal, because
-  there it means what it says. Recovering costs exactly one console line — Chromium narrates any
-  4xx `fetch` whatever the caller does with it, the same behaviour §11.2 met with `/__tc/lan` —
-  and that line is charged to the race check by name rather than silently to `lan-console`.
-- **`qr-survives-a-thumb` did not go red** when the shipped level was changed from Q to L, because
-  the check asked for `{ ecc: 'Q' }` instead of taking the default the way a caller does. It now
-  encodes with no level given and reads the level back into its own sentence. A check that names a
-  shipped default has to obtain it like a caller.
-- **Removing the white `<rect>` from `qrSvg` did not go red**, because `.tc-qr` carries
-  `background:#fff` and the div's white is what the screenshot sees. The redundancy is kept — the
-  SVG has to stand on its own if it is ever used anywhere but inside that div — but the honest
-  statement is that the on-screen check is protected by the CSS, and the injection that exercises
-  the rendering path is the 44-pixel one.
+- **`no-white` did nothing.** Removing the white `<rect>` from `qrSvg` left the check green,
+  because nothing in the gate rasterised `qrSvg` at all: every decode went through `qrPng`,
+  which walks the matrix, and the on-screen check screenshots `.tc-qr`, whose *CSS* supplies a
+  white background. The SVG renderer the player looks at had no coverage. And when the SVG was
+  finally rasterised, **decoding still did not discriminate** — flattened onto the panel's
+  `#14100c` a rect-less symbol is black on RGB(20,16,12) and Vision reads it perfectly, because
+  a synthetic image has no noise for two dark greys to get lost in. So the check now measures
+  the property a camera actually needs: threshold the rasterisation and count the clear rings.
+  4/4/4/4 with the rect, 0/0/0/0 without.
+- **`https-blocks-a-lan-socket`'s injection mutates the harness, not the product.** Removing
+  `--ip-address-space-overrides` proves the *fixture* is load-bearing; it does not prove the
+  check would notice a product regression, because the product has no code on that path — the
+  claim is about the browser. It is a Chromium canary and it is now labelled as one rather than
+  counted as coverage.
+
+**Three injections found something rather than confirming it:**
+
+- **The 409 race was found by writing the injection list, not the feature.** `npm run host` mints
+  the room and prints the square before the host's browser has loaded, so a guest with a camera
+  can be in the room first — and `/new` then answered 409 and the host was told their own room
+  was in use. Fixed twice over: the relay now distinguishes `taken` (somebody is waiting, which
+  is the good outcome) from `started` (the room is playing and cannot be re-entered), and the
+  lobby keys on that rather than on where the code came from. The first version gated on
+  *provenance* alone and swallowed both, so a host who pressed Back got a Room open screen with
+  a square pointing at a room nobody could enter. Recovering costs one console line, because
+  Chromium narrates any 4xx `fetch`; it is charged to the race check by name.
+- **`qr-survives-a-thumb` stayed green** when the shipped level was changed from Q to L, because
+  it asked for `{ ecc: 'Q' }` instead of taking the default the way a caller does.
+- **`reordered-pair` was accusing the product of a null fault.** `doubleOrder` clicked
+  `spots[0], spots[1], spots[0]` and `Room.bend` swapped the *first* adjacent same-slot pair, so
+  `0,1,0` became `1,0,0` and both sequences ended at `spots[0]`. Three move orders on one
+  selection in one turn are last-write-wins; exchanging the first two changes nothing at all.
+  `faultsFired: 1, detected: false`, every run — and the arm reported "NOT DETECTED — the two
+  clients diverged and the session said nothing", which was an accusation against a product that
+  had done nothing wrong. The spots are distinct now and `bend` exchanges the **last** pair, so
+  the final order moves and the hashes can see it.
+
+**And a red arm used to shrink the denominator.** `record(\`${name}-both\`)` sat inside
+`if (d) {…}`, so a fault arm that failed its first check silently dropped its second: a run with
+a red `reordered-pair` reported "78/81" where a green one reports 82/82 — three reds out of
+eighty-one reads as a better run than it is, and the total stopped being a number anybody could
+compare between runs. It is recorded unconditionally now, and red by construction when nothing
+was detected, because neither client can have stopped on a desync that was never declared.
 
 ### 12.8 What is still not done, and what still requires the host to send something
 
@@ -3105,12 +3162,23 @@ is no mDNS browse, no broadcast, no "rooms on this network" list. The two people
 room, or on the phone, and one of them shows the other a screen. That is the product, and this
 pass makes that moment cost nothing rather than removing it.
 
-**A phone that scans the square gets the game on a phone.** The QR is genuinely the shortest path
-for a tablet or a phone as the second commander; for a second *laptop*, which is the likelier
-case, the thing that does the work is the 36-character URL, and somebody still has to read it out
-or send it. Both are provided and the screen offers both.
+**A phone that scans the square cannot play, and is now told so.** The sentence that used to be
+here said the QR was "genuinely the shortest path for a tablet or a phone as the second
+commander". **That was false, and it was the sentence the whole feature rested on** — §12.9 is
+the measurement and the repair. The square's real job is to carry the room to a *machine that
+can run the game*, and for a second laptop the thing that does the work is the 36-character URL,
+which somebody still has to read out or send.
 
-**The terminal square is proved as an image, not as a photograph.** `halfBlocksToPixels`
+**The terminal square does not scan in most terminals, and the command now says which.**
+Measured over 90 combinations of font, size and line spacing: **85 failed to decode.** The
+symbol is drawn with U+2588 and its half-block relatives, and most macOS monospace fonts — SF
+Mono, which is Terminal.app's default, among them — leave a gap of up to 16% between tiled block
+glyphs, which breaks the module grid. It scans in terminals that draw block elements
+geometrically rather than from the font: iTerm2, kitty, Ghostty, WezTerm and VS Code. So the
+join URL is printed **above** the square and named as the thing to rely on, the square is
+printed **last** (see below), and the command prints the list of terminals that work.
+
+**And the square is proved as an image, not as a photograph.** `halfBlocksToPixels`
 reconstructs what the terminal paints — two pixel rows a character row, foreground over
 background — and Vision reads that. It cannot speak for one particular terminal's font, cell
 aspect ratio or colour handling. The colours are stated in 24-bit escapes rather than inherited,
@@ -3127,3 +3195,70 @@ it. An empty room costs a `Map` entry and is reaped after ten minutes.
 **One arm of the pre-existing gate is red and is not this branch's.** `siege-same-battle` reports
 the two clients settling at different ticks (1359 against 1369) with every checkpoint agreed; it
 failed identically on the branch base before any of this was written.
+
+### 12.9 The screen the square sent people to, and what was measured there
+
+A reviewer scanned the square with a WebKit client at a 390x844 iPhone viewport. It got into the
+room and landed on the deployment plaque with **BEGIN BATTLE at x=824 on a 390-pixel viewport**.
+Then two things were true at once, and the second is why this was the P0 of the whole branch:
+
+1. that player could never start the battle, and
+2. **the room was spent.** The phone held slot 1, so the real second laptop arriving afterwards
+   was refused with "already has a challenger". One person's dead end had become both people's,
+   and the only screen that said anything about it was the one nobody could read.
+
+**Measured before repairing, and it is worse than a phone problem.** `tools/scratch/hud-width.mjs`
+booted the deployment phase at fourteen viewport widths in Chromium and WebKit and read
+`.dep-begin`'s own rectangle back:
+
+| viewport | `begin.right` | fits | | viewport | `begin.right` | fits |
+|---|---|---|---|---|---|---|
+| 390 | 1042 | no | | 1024 | 1061 | no |
+| 640 | 1049 | no | | 1060 | 1062 | no |
+| 768 | 1053 | no | | **1070** | 1062 | **yes** |
+| 900 | 1057 | no | | 1280 | 1231 | yes |
+
+`.dep-head` is a flex row of `flex: 0 0 auto` items, so the plaque has a **fixed content width of
+about 1,062 px** and simply overflows anything narrower — and `documentElement.scrollWidth`
+equalled `innerWidth` at every one of those widths, so the button is not below the fold, it is
+*unreachable*. That is the same shape as `.tc-lobby`'s own fault 2, one screen later in the same
+flow. There is no `@media` rule anywhere in `hud.css`. So this is not "phones cannot play"; it is
+"anything under about 1,065 px cannot finish deploying", which is every iPad in portrait and a
+laptop with the window at half width. Chromium and WebKit agree to within a pixel.
+
+**What was built.** `HUD_MIN_WIDTH = 1100` — 1,065 measured, plus margin, because the plaque's
+width depends on the tally string and the army it is counting — and a refusal placed **above
+`new NetLink` in `src/main.ts`**. The position is the fix: nothing is connected, no slot is
+claimed, the room stays open, and the phone is handed the code and the link at 40 px with a copy
+button, which is the most useful thing a phone can do here. `?narrow=ok` overrides, and it is
+deliberately a URL to type rather than a button to press: a button is one thumb away on the
+device that must not press it. The wording splits on `(pointer: coarse)` — "open this on a
+laptop" against "widen this window".
+
+Two checks, and the second is the one that matters: `lan-a-phone-is-turned-away` reads the notice
+off a 390x844 touch page and asserts no engine booted, and `lan-a-phone-does-not-take-the-slot`
+reads `occupied` off the relay and requires **0**. With the gate removed the second reports
+*"room GG5ZV reports 1 occupant(s) after the phone visited"*, which is the harm in one line.
+
+**A phone HUD is not in this branch and should not be.** Giving `hud.css` a small-screen layout
+is a pass of its own, touching the plaque, the unit cards, the order palette and every gesture;
+doing it under a networking change would be the third thing this file warns about. The honest
+interim is a product that declines what it cannot finish. **Single-player at the same width is
+equally unplayable and is untouched** — it is pre-existing, it strands nobody but the person
+doing it, and it is not this pass's to fix. That is a real gap and it is named here rather than
+left for the next person to find.
+
+**And a WebKit rendering defect, found on the way and not fixed here.** Every WebKit run at every
+viewport logged, every frame:
+
+```
+WebGL: INVALID_OPERATION: glDrawElements: Feedback loop formed between Framebuffer and active Texture
+```
+
+Chromium logs nothing. A feedback loop is a texture bound as a framebuffer attachment and sampled
+in the same draw — a real bug in a render pass, not a warning. It is invisible to the gate because
+no arm has ever run a WebKit *client*, and the arm added here cannot see it either: on the refusal
+path no engine boots at all. It is recorded rather than repaired because it is a rendering
+question with no bearing on the simulation or on this branch, and because guessing at it blind is
+how a render pass becomes a determinism incident. It wants its own pass, on the engine the owner's
+likeliest second device runs.
