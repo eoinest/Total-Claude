@@ -3411,6 +3411,25 @@ So the thing that was impossible is possible, and it is the thing the owner aske
 place and has never had: **two strangers open `https://total-claude.vercel.app`, one clicks Create
 and reads out five characters, the other types them, and they play.**
 
+**Measured end to end**, by `tools/qa-p2p.mjs --only=https`, which is deliberately built to be as
+close a likeness of the deployed site as this machine can hold: `vite build`, the resulting
+`dist/` served **statically** over TLS on the LAN address — no dev server, no proxy, no HMR
+socket, which is what a static upload with no server in it actually is — and that origin declared
+**public** to the browser. Two pages, two browsers:
+
+| | |
+|---|---|
+| origin | `https://192.168.1.77:5963`, declared public |
+| introduced by | `wss://192.168.1.77:5963/signal/<CODE>`, same origin |
+| data channel | open after **1,943 ms**, `host → host`, pair round trip **0 ms** |
+| agreement | **15 checkpoints, to tick 420, no layer ever differed** (`uf64`, `uctl`, pool, `alive`) |
+| the control, same page, same run | `ws://192.168.1.77:5965/room/…` → *"Mixed Content: … attempted to connect to the insecure WebSocket endpoint … Insecure access is deprecated"* |
+
+That last row is as much the point of the arm as the others: **the rule that made a relay
+impossible from this origin is still in force, unchanged, from the same page in the same run.**
+So the difference is the transport and not the fixture — which is what a reviewer should demand,
+and what §12.6's own fixture was built to be able to say.
+
 ### 13.2 The signalling decision, and the three things it was weighed against
 
 WebRTC cannot bootstrap itself. Two peers must swap an SDP offer, an SDP answer and some ICE
@@ -3749,10 +3768,13 @@ between two peers, and two pages read a fifth of a second apart are two pages se
 — measured while writing this, host at 853 and guest at 854 with every exchanged checkpoint
 agreeing. That is exactly why `same-battle` is red in four runs of five (§12.8). So the primary
 comparison is `NetSession.checkpoints()`: each client's own `stateHashes` computed locally at ticks
-30, 60, 90 …, intersected by tick and compared bit for bit on all four layers — **twenty-eight
-agreements across a battle rather than one, at ticks neither page chose.** The settled tick is
-still read and still reported, as a measurement rather than a pass/fail, because a number that
-reproduces four times in five is a number that teaches people to ignore a gate.
+30, 60, 90 …, intersected by tick and compared bit for bit on all four layers — **fifteen
+agreements in the fourteen-second `https` arm and about twenty-six in a twenty-six-second battle
+arm, at ticks neither page chose, rather than one at a tick the harness raced for.** The *number*
+of shared checkpoints is itself asserted, because "they agreed at every tick they both reached" is
+vacuous when that number is zero. The settled tick is still read and still reported, as a
+measurement rather than a pass/fail, because a number that reproduces four times in five is a
+number that teaches people to ignore a gate.
 
 **Two facts about this machine that had to be measured first**, both recorded because
 undocumented they turn into "the new transport is flaky":
@@ -3768,6 +3790,36 @@ and Chromium's mDNS candidate obfuscation has to be off for the harness
 `*.local` candidate names and two browsers therefore never complete a check over host candidates.
 A player's OS resolves mDNS perfectly well and a player's peer is on another machine; no flag is
 shipped and `PeerLink` never looks at a candidate's address.
+
+**Every check has a named fault that turns it red, and running them found five checks that could
+not fail.** `tools/scratch/inject-p2p.mjs` holds 42; `--list` prints each with the check it is
+supposed to break and `--all-fast` runs the 24 whose arm needs no browser. On the first sweep 17
+of 22 went red and **five stayed green** — and every one of those five was a defect in the
+instrument rather than a bad fault:
+
+| Check | Why it could not fail | Fixed by |
+|---|---|---|
+| `seal-round-trip` | the arm had its **own copy** of the key derivation, so it compared `seal`/`unseal` against a key the *harness* derived — and stayed green with `keyFor` deliberately changed to ignore the room code entirely | `keyFor` exported; the arm calls the product's function |
+| `proto-sorted-by-slot-seq` | alternating slots frame by frame put every turn's ops in **one** slot, and one slot's ops sort identically by `(slot, seq)` and by `seq` alone | both players order on the same frame, and the count of turns carrying both is part of the check |
+| `proto-phase-flip-agrees` | both peers pressed BEGIN on the same frame, so a flip driven off a peer's *own* flag agreed by coincidence | the two are staggered by fifteen frames |
+| `params-transport-table` | no row had `?net=` and `?sig=` in one URL, so the table said nothing about precedence | two rows do |
+| `lag-costs-latency-not-orders` | it asked for `>=`, which is true when the delay knob does nothing at all | it requires the 120 ms to arrive in the measured round trip |
+
+Three more faults had **no teeth** and were rewritten, and the reason is a property of the design
+rather than an oversight: the survivor of a departure has two independent ways of learning the
+same thing, so `bye` handled as `nothing()` still leaves `dc.onclose`, and `peerGone` without
+`phase = 'over'` still ends the session through `NetSession.onEnd`. Redundancy is right, and it
+means a fault has to remove the *specific* path a check is about.
+
+And the discipline caught one thing that was a **product** defect rather than an instrument one,
+which is the best argument for keeping it. `--p2pfault=ulp` on both peers perturbs the same field
+of the same unit by the same amount, so the two battles stay bit-identical. A relay makes a
+divergence by sending the bent packet *to one slot*; a peer-to-peer commit goes to both ends of
+one channel, so there is no canonical stream for one side to diverge from. The desync arm as first
+written would have injected a fault, fired it, and correctly found nothing. `PeerFault.localOnly`
+is the fix, and both properties are asserted rather than assumed: the four **published** faults
+must leave the two op streams *identical*, and the two **local** faults must make them *differ*.
+
 
 ### 13.9 What is still not done
 
