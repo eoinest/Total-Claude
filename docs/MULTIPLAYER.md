@@ -3369,11 +3369,13 @@ the front door for `/`. Three reps, median.
 | lobby, unthrottled | 215 ms | 96 ms |
 | menu, unthrottled | 213 ms | 95 ms |
 | bytes on the wire, cold | **23.19 MB / 194 requests** | **821 kB / 6 requests** |
-| returning guest, Wi-Fi | 1,318 ms, 23 kB, 194 conditional requests | **81 ms, 0 bytes, 4 from cache without asking** |
+| returning guest, Wi-Fi | 1,318 ms, 24,057 B, 194 conditional requests | **81 ms, 495 B, 4 of 6 from cache without asking** |
 
 23.19 MB, of which 17.02 MB is 184 separate `/src/*.ts` fetches transformed on demand and
-6.17 MB is Vite's pre-bundled `three.module.js`. The production build is one hashed entry and
-three chunks, gzipped: 821 kB.
+6.17 MB is Vite's eight pre-bundled dependency files — 5.61 MB of that one `three.module.js`.
+The production build is four files, gzipped: the hashed entry `main-*.js` (260 kB), the two
+chunks it modulepreloads (`PostFX-*.js` 479 kB, `clips-*.js` 67 kB) and `main-*.css` (13 kB).
+821 kB, and the fifth request is the document.
 
 **Read the throttled row, not the unthrottled one.** Both numbers are taken over
 `192.168.1.77`, which is this machine's own en0 address — and traffic from a machine to its own
@@ -3449,6 +3451,7 @@ load.** `qa-hostload --battle` boots `campus-martius/assault` and counts what cr
 | total | **124.03 MB / 241 requests** | **8.98 MB / 54 requests** |
 | `/assets/textures` | **95.46 MB** over 42 files | 2.97 MB over 42 files |
 | `/assets/hdri` | 5.20 MB | 5.20 MB |
+| `/assets/manifest.json` | 187 kB over **3** requests | 6 kB over 3 requests |
 | `/src` + Vite deps | 23.19 MB | — |
 
 The named worst: `dry-grass/normal.jpg` at **5.91 MB** where the build ships a 76 kB WebP,
@@ -3495,8 +3498,48 @@ is nothing to move off the critical path there.
     not the firewall and it is not a real radio; §10.4's two-machine procedure is still the only
     thing that proves the last hop.
   - **The HDRI**, as above: 5.20 MB, 58 % of a battle load, unchanged by the build.
+  - **`/assets/manifest.json` is fetched three times per battle load**, and the HTTP cache
+    cannot help because all three are in flight before any of them has answered. There are four
+    readers of that file and they do not share: `src/core/Assets.ts` memoises the promise —
+    correctly — and `src/render/SkySystem.ts`, `src/terrain/groundTextures.ts` and
+    `src/city/materials.ts` each call `fetch` on their own. Gzip has made it cheap (6 kB here
+    against the dev path's 187 kB), so what is left is three round trips rather than three
+    downloads; routing the other three through `Assets` would remove two of them. Not done
+    here, because it is a change to four `src/` modules under a serving pass.
   - **A stamp written by another checkout is not detected.** `dist/.tc-build.json` records the
     source fingerprint the build saw, so source that has moved since is caught — but a `dist/`
     left behind by a different branch with a stamp of its own would be called current. Under
     `--no-build` that is the caller's stated choice; without it, the first source edit on the new
     branch triggers the rebuild that fixes it.
+
+### 13.6 The gate as run
+
+On this machine, with the owner hosting his own `npm run host` on 5958 throughout and other
+agents' work in the browser budget beside it — load average 10 to 99 across the window.
+
+| | result |
+|---|---|
+| `node tools/qa-net.mjs` | **91/91**, no reds |
+| `npx tsc --noEmit` | clean |
+| `npm run lint` | **3/3**, and `DETACHED_OK` still has its six entries |
+| `qa-determinism` (bare) | ✓ 7 checkpoints, **8,632** soldiers, 35 units, identical at 4 tiers |
+| `qa-determinism --battle='map=campus-martius&scenario=assault'` | ✓ 7 checkpoints, **3,072** soldiers, 32 units |
+| `qa-determinism --battle='map=carthage&scenario=assault'` | ✓ 7 checkpoints, **3,440** soldiers, 34 units |
+
+91 rather than 89 because this pass adds two: `lan-serves-the-production-build` and
+`lan-built-document-keeps-both-plaques`. The `lan` arm also exercises the build-on-demand path
+without being asked to — its evidence line reads *"host-lan reports served=static (built in
+4.7s)"*, because the source had moved since the last build and the command said so and fixed it.
+
+**`same-battle` was green in this run, and that is a data point rather than a fix.** §12.8
+records it red in four of five runs at `ad94279` and after, with `checkpoints-agreed` green and
+byte-identical order logs beside it — an instrument that cannot bring two wall-clocked browsers
+to a common tick, not a simulation that disagrees. Nothing in this pass touches that, and one
+green run does not move the distribution. If it is red on the next run, it is still that.
+
+**What this branch could plausibly have broken, and what covers it.** Every arm that drives
+`npm run host` now measures a *different server* than it did last week, so the whole `lan` arm —
+sixteen checks about the lobby, the invite link, the QR photographed off the screen and read by
+Vision, the guest-scanned-first race and the phone refusal — is the regression test for the
+change, and it is the reason the two new checks assert the served document rather than a timing. `dev`, `static`, `ghost`,
+`norelay` and `https` are unaffected by construction: none of them goes through `host-lan.mjs`.
