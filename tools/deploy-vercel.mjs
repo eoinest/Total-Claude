@@ -64,12 +64,24 @@ console.log(`• deploying as ${me.user.username} (${me.user.email}) — persona
 // Collect and hash every file in the output directory.
 // ---------------------------------------------------------------------------
 
+/**
+ * `dist/.tc-build.json` is the one file in here that is not the site.
+ *
+ * `tools/lib/dist-build.mjs` writes it so `npm run host` can tell whether the build it is about
+ * to serve is older than the source — a local question, answered locally. Uploading it would put
+ * this machine's build time and node version on a public URL for no reason, and would make the
+ * deployment's file count differ from the build's for a file nothing fetches.
+ */
+const NOT_THE_SITE = new Set(['.tc-build.json']);
+
 async function walk(dir, base = dir) {
   const out = [];
   for (const e of await readdir(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) out.push(...(await walk(p, base)));
-    else out.push({ abs: p, rel: path.relative(base, p).split(path.sep).join('/') });
+    else if (!(dir === base && NOT_THE_SITE.has(e.name))) {
+      out.push({ abs: p, rel: path.relative(base, p).split(path.sep).join('/') });
+    }
   }
   return out;
 }

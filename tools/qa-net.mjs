@@ -1999,6 +1999,13 @@ if (wanted('lan')) {
     .then((r) => r.text()).catch((e) => `${e.name}: ${e.message}`);
   const plaque = await fetch(`${lanBase}/__tc/lan`, { signal: AbortSignal.timeout(8000) })
     .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  /*
+   * The document itself, over the wire, because what changed in this pass is *which server*
+   * answers here and the lobby checks below cannot see the difference. Both servers render the
+   * same game; only one of them makes the guest fetch it a module at a time.
+   */
+  const doc = await fetch(`${lanBase}/`, { signal: AbortSignal.timeout(8000) })
+    .then((r) => (r.ok ? r.text() : '')).catch(() => '');
   const privateV4 = /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(lan.lan ?? '');
   measured.lan = { said: lan.lan, iface: lan.iface, game, health, plaque, ports: [lan.gamePort, lan.relayPort] };
   record('lan-one-command-serves-both-halves',
@@ -2008,6 +2015,54 @@ if (wanted('lan')) {
       + `relay ${lan.relayPort} answered '${String(health).trim().slice(0, 40)}', `
       + `/__tc/lan names ${plaque?.relayUrl ?? 'no relay'}`,
     'both defaults were 127.0.0.1, so the documented way to play a two-player game was playable by one');
+
+  /*
+   * The guest gets the build, not the source. Measured, because "faster" is not a check.
+   *
+   * This command served the Vite dev server until this pass, and the only person who could not
+   * feel that was the person who typed it: the host's browser is on loopback and warm, and the
+   * guest's fetches `<script src="/@vite/client">` and then 194 requests totalling 23.2 MB —
+   * 6.8 s to the lobby on a 30 Mbit/s Wi-Fi profile, against 0.35 s and 821 kB for the built
+   * bundle. `tools/qa-hostload.mjs` is the instrument and has both numbers.
+   *
+   * The assertion is on the document rather than on a timing, because a timing on this machine
+   * measures the kernel's loopback short-circuit rather than a network. What is checkable here
+   * is which of the two documents came back, and it is checkable exactly.
+   */
+  const devClient = /\/@vite\/client/.test(doc);
+  const bundled = /<script type="module"[^>]*src="\/bundle\/[^"]+\.js"/.test(doc);
+  measured.lan.served = { served: lan.served, build: lan.build, devClient, bundled };
+  record('lan-serves-the-production-build',
+    lan.served === 'static' && bundled && !devClient,
+    '`npm run host` hands the guest the built bundle, not two hundred source modules',
+    `host-lan reports served=${lan.served} (${lan.build?.rebuilt
+      ? `built in ${(lan.build.ms / 1000).toFixed(1)}s` : lan.build?.reason ?? 'no build record'})`
+      + `; the document ${bundled ? 'names a /bundle/ entry' : 'names no /bundle/ entry'} and `
+      + `${devClient ? 'STILL loads /@vite/client' : 'does not load /@vite/client'}`,
+    'the owner\'s friend on the other laptop said it "takes wayyyy too long to load", and he '
+      + 'was describing 23.2 MB of on-demand TypeScript');
+
+  /*
+   * And the tag survived the change of server, which is the thing a static server silently
+   * loses.
+   *
+   * `<meta name="tc-relay">` is written by `vite-runner.mjs`'s `transformIndexHtml`, and a
+   * plain file server serving `dist/index.html` off the disk would have no such hook. Every
+   * lobby check below would then be measuring the *deployed site's* honest refusal — no
+   * address, no Create button — on a machine that has a relay running beside it. It would look
+   * like a lobby regression and it would be a serving regression, which is the worst kind of
+   * misattribution this gate can produce. `static-runner.mjs` injects it from the same
+   * `server-plaques.mjs` the dev path uses; this asserts the result over the wire.
+   */
+  const relayTag = doc.match(/<meta name="tc-relay" content="([^"]*)">/)?.[1] ?? null;
+  const lanTag = /<meta name="tc-lan" content="/.test(doc);
+  record('lan-built-document-keeps-both-plaques',
+    relayTag === String(lan.relayPort) && lanTag,
+    'the two meta tags the lobby reads are in the *built* document too, naming this relay',
+    `tc-relay reads ${JSON.stringify(relayTag)} against a relay on ${lan.relayPort}; `
+      + `tc-lan is ${lanTag ? 'present' : 'MISSING'}`,
+    'NetLobby ranks four sources and refuses to guess, so a server that forgets these tags '
+      + 'breaks every join while serving every byte correctly');
 
   /*
    * If the address does not answer there is nothing to drive a browser at, and the five checks

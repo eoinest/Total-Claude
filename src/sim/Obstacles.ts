@@ -434,7 +434,7 @@ export class ObstacleField {
     // Already standing in it before the step: dig out first, then take no further step.
     const inside = this.solidAt(ox, oz, y, radius);
     if (inside >= 0) {
-      this.escape(inside, ox, oz, out);
+      this.escape(inside, ox, oz, radius, out);
       out.hit = true;
       out.blockedX = true;
       out.blockedZ = true;
@@ -466,8 +466,47 @@ export class ObstacleField {
   /**
    * Shortest way out of box `i` from (x,z), capped at `MAX_PUSH` so a man who finds
    * himself deep inside a block walks out over a second rather than teleporting.
+   *
+   * ## `radius`, and the trap that existed until it was passed in
+   *
+   * **This has to escape the same box `solidAt` tested, and for eleven months it escaped a
+   * different one.** `resolve` asks `solidAt(ox, oz, y, radius)`, which inflates every box by
+   * the man's own body; `escape` then measured the depth to the face of the box *without* the
+   * radius. The two are the same object only for a man past the true face, and the gap
+   * between them is a 0.42 m shell around every solid on the map that a man could enter and
+   * could not leave:
+   *
+   *   - A man at `hw + 0.30` is *inside* as far as `solidAt` is concerned, and `du` came out
+   *     **negative** (`hw - |u| = -0.30`), so the push was `-0.25` — back **toward** the
+   *     stone, landing him at `hw + 0.05`.
+   *   - At `hw + 0.05` the next tick computed `du + 0.05 = 0`, so the push was **nothing**,
+   *     and `resolve` returns `blockedX = blockedZ = true` with the requested step discarded.
+   *     He was pinned five centimetres off the masonry for the rest of the battle.
+   *   - He could not walk out either. At 1.5 m/s a tick moves 0.05 m, so every destination he
+   *     could reach was still inside the inflated box, which sends `resolve` down the
+   *     "already inside" branch again before it ever considers a slide.
+   *   - And `resolveCrowding` could not push him out: both of its masonry guards decline a
+   *     shove whose destination is `blocked`, which the whole shell is.
+   *
+   * So all three mechanisms that can move a man agreed to leave him there, and the one that
+   * put him there was this function: a man dug out of a genuine penetration was deposited at
+   * `+0.05` — inside the shell — which is to say **`escape` was the trap's own supply**.
+   *
+   * Measured before the fix, over 200 s: Carthage **110 men frozen against masonry for 30 s
+   * or more, 73 of them for the full run** (median hold 199.7 s of a 200 s battle); Rome 45
+   * and 15. Of the 168 men trapped across both maps, **164 were in the shell and 4 inside a
+   * true solid** — the fault is almost entirely this arithmetic and almost not at all
+   * genuine penetration. `tools/probe-stuck.mjs --only=controls` reproduces it in isolation:
+   * 24 men placed 0.15 m outside a real wall face are all 24 still there four seconds later,
+   * and 24 men placed 0.1 m *inside* the same face are, four seconds later, all 24 in the
+   * shell — dug out of the wall and into the trap, in one tick, by this function.
+   *
+   * The repair is to give it the radius, which makes both callers measure one box. Note it
+   * is deliberately added to **both** axes before the comparison, so which face a man leaves
+   * by is unchanged for anyone genuinely inside; only the distance travelled grows, by
+   * exactly the amount needed to clear his own body.
    */
-  private escape(i: number, x: number, z: number, out: Resolved): void {
+  private escape(i: number, x: number, z: number, radius: number, out: Resolved): void {
     const o = this.items[i];
     const c = this.cos[i];
     const s = this.sin[i];
@@ -475,9 +514,11 @@ export class ObstacleField {
     const dz = z - o.z;
     const u = dx * c + dz * s;
     const v = -dx * s + dz * c;
-    // Distance to each of the four faces, in the box's own frame.
-    const du = o.hw - Math.abs(u);
-    const dv = o.hd - Math.abs(v);
+    // Distance to each of the four faces of the box **as `solidAt` sees it**, which is
+    // inflated by the man's own radius. Positive: he is inside that inflated face by this
+    // much, and this much is what it takes to get out from under it.
+    const du = o.hw + radius - Math.abs(u);
+    const dv = o.hd + radius - Math.abs(v);
     let pu = 0;
     let pv = 0;
     if (du < dv) pu = (u >= 0 ? 1 : -1) * Math.min(du + 0.05, MAX_PUSH);

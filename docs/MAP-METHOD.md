@@ -400,6 +400,47 @@ Distilled from §3. Short, and each one traceable to an entry that paid for it.
    open gulf under a third of a platform is not a quay. **Test: can the thing under test widen
    its own licence by editing itself? If yes, you have written a comment.**
 
+39. **A predicate with a tolerance, and the repair that clears it, must be computed from the
+   same shape — or the band between the two shapes is an absorbing state.** `ObstacleField`
+   asks `solidAt(x, z, y, radius)`, which inflates every box by the man's own body; `escape`,
+   whose whole job is to satisfy that predicate, measured the depth out of the **un-inflated**
+   box. Between the two faces is a 0.42 m shell in which the test says *inside* and the repair
+   computes a push of zero or of the wrong sign, and `resolve` then returns
+   `blockedX = blockedZ = true`. A man who entered that shell could not be dug out of it, could
+   not walk out of it — a tick's step is 0.05 m, so every destination he could reach was still
+   inside the inflated box and `resolve` took the "already inside" branch before it ever
+   considered a slide — and could not be shoved out of it, because both of `resolveCrowding`'s
+   masonry guards decline a shove whose destination is `blocked`, which the whole shell is. All
+   three mechanisms that can move a man agreed to leave him there. **And the repair was the
+   trap's own supply:** `escape` deposited every man it dug out of a genuine penetration at
+   0.05 m past the true face, which is inside the shell, so the one function that could rescue
+   a man was also the only one reliably delivering men into the state it could not rescue them
+   from. Measured before the fix: **168 men trapped across the two walled maps, of which 164
+   were in the shell and 4 inside a true solid** — the fault was almost entirely this
+   arithmetic and almost not at all penetration, which is why every previous instrument, all of
+   which counted penetration, read near zero and was right. **Two tests, both cheap: does the
+   acting function take the same tolerance argument the testing function took; and is there any
+   input for which the test is true and the action is a no-op?** If the second has an answer,
+   that value is a trap and something will find it.
+
+40. **When a fault is permanent, an instantaneous census counts arrivals and not victims,
+   because the qualifying predicate decays with the fault's own duration.** The first draft of
+   `probe-stuck` sampled a two-second window at six checkpoints and reported **2 to 5** stuck
+   men on Rome and **37 to 55** on Carthage. Run as an occupancy over the same 200 s — longest
+   motionless-in-masonry run per man — the answers were **45** and **110**, with the median
+   Carthaginian victim held for **199.7 s of a 200 s battle**. The gap is not noise and it is
+   not the window length: the predicate requires the man's unit to hold a *movement order*, and
+   a unit whose men are trapped is eventually wiped, re-tasked, or gives up and reverts to
+   `Hold` — so the longer a man is trapped the more likely he is to have stopped qualifying.
+   **The very persistence of the fault removes its victims from the denominator**, and the
+   instantaneous number converges on the rate at which new men fall in rather than on how many
+   are down there. Both readings are needed and they bracket the truth from opposite sides: the
+   strict one has few false positives and cannot see the standing population, the loose one
+   sees the population and admits every man who is merely standing still. So: **for anything
+   that might be permanent, measure a hold time per subject and gate its distribution, not a
+   count per tick.** A duration also distinguishes the trap from the jostle, which no
+   instantaneous count can.
+
 ---
 
 ## 2. The priors going in
@@ -2920,6 +2961,181 @@ Each of the five breaks one input to the gate and never `src/`: the sign of a ya
 a percentile, the provenance the scene carries, and the two membership lists. G13b and G22 going
 red beside them is the mirror injection reaching further than its own `hits` claims, which is
 worth knowing and is why the banner prints both lists.
+
+### 2 September 2026 — "units getting stuck into the walls": 168 men, four lines of arithmetic, and a detector that had to be caught lying twice
+
+Two owner reports a minute apart, from real play, neither of them a measurement:
+
+> *"a lot of units getting stuck into the walls or buildings. typically happens during navigation
+> but they get trapped"*
+> *"lots of issues with soldiers walking up stairs to get onto and off of the walls."*
+
+**What we expected.** The brief's prior, and mine on reading the code, was that the fault would be
+*penetration* — men pushed inside colliders by neighbours, or pathing into them — and that the work
+would be choosing between four or five plausible mechanisms. Every existing instrument in the tree
+measures penetration: `probe-nav`'s headline is *"man-ticks spent inside masonry"*, and
+`Obstacles.ts`'s own header opens with 165,909 of them.
+
+**The prior was wrong, and its wrongness is why the bug survived.** Of the 168 men found trapped
+across the two walled maps, **4 were inside a solid and 164 were not.** They stood in the 0.42 m
+shell *outside* the stone, where `solidAt` answers "inside" because it inflates every box by the
+man's radius. Every instrument that counted penetration was reporting a true number and missing the
+whole fault. `manTicksInSolid` on Carthage is **326 before the fix and 326 after** — untouched,
+because penetration was never the problem.
+
+#### The mechanism
+
+`resolve` asks `solidAt(ox, oz, y, radius)`. `escape`, whose only job is to satisfy that predicate,
+measured the depth out of the **un-inflated** box. For a man in the shell `du = hw − |u|` is
+*negative*, so the push is toward the stone and lands him at `hw + 0.05`; next tick `du + 0.05` is
+exactly zero and the push is nothing. `resolve` returns `blockedX = blockedZ = true` with the step
+discarded, so:
+
+- he cannot be dug out — the digger computes zero;
+- he cannot walk out — a tick is 0.05 m at a walk, so every destination he can reach is still inside
+  the inflated box, and `resolve` takes the "already inside" branch before it ever considers a slide;
+- he cannot be shoved out — both masonry guards in `resolveCrowding` decline a shove whose
+  destination is `blocked`, and the whole shell is.
+
+All three mechanisms that can move a man agreed to leave him there. **And the repair was the trap's
+own supply:** `escape` deposits every man it digs out of a genuine penetration at 0.05 m past the
+true face, which is inside the shell. The one function that could free a man was the only one
+reliably delivering men into the state it could not free them from. That is now §1 rule 39.
+
+The fix is four lines: `escape` takes `radius`, and measures `hw + radius` / `hd + radius`. Added to
+**both** axes before the comparison, so which face a man leaves by is unchanged for anyone genuinely
+inside; only the distance grows, by exactly his own body.
+
+#### The numbers — `tools/probe-stuck.mjs`, 200 s, unattended, before → after
+
+| | field battle | Rome | Carthage |
+|---|---|---|---|
+| men frozen in masonry ≥ 5 s | 0 → 0 | **48 → 0** | **112 → 0** |
+| ≥ 30 s | 0 → 0 | **45 → 0** | **110 → 0** |
+| ≥ 120 s | 0 → 0 | **15 → 0** | **73 → 0** |
+| median hold | – | 67.6 s | **199.7 s of a 200 s battle** |
+| man-ticks in the shell | 0 → 0 | 113,706 → **27** | 529,803 → **411** |
+| man-ticks inside a true solid | 0 → 0 | 0 → 0 | 326 → 326 |
+
+![Carthage before](images/stuck/carthage-before.jpg)
+![Carthage after](images/stuck/carthage-after.jpg)
+
+*Carthage, same camera, same tick (t+200), before and after. A file of men standing inside the
+wall of a harbour warehouse; then none. `docs/images/stuck/` also holds the Rome pair, and the
+JSON behind every figure here is in `screenshots/stuck/`.*
+
+Carthage is **2.4× worse by count and 3× worse by duration** than Rome, and is the only map with men
+inside true solids. The coordinator's prior — Rome's fabric was rebuilt recently, Carthage's was not,
+so a difference is evidence — held. It is also concentrated: **79 of Carthage's 113 trapped men stood
+in one 20 m circle**, against a warehouse block in the harbour quarter, and `byKind` is 93 building /
+14 wall / 5 tower. It is the *fabric*, not the curtain.
+
+#### Two defects in the detector, both found by its own controls
+
+This is the part worth the next person's time. The controls are six injections on the real battle:
+the harness teleports 24 real men once, and never touches the probe's thresholds or reference data.
+
+1. **`shell` reported 0 of 24, all falling out at `closing`.** The predicate excused a man whose
+   distance to his goal had fallen by 0.3 m even when he had not moved a centimetre — and his goal is
+   his slot in a formation that is still marching, so **when the cohort walks past a trapped man the
+   goal closes on him.** That is precisely the owner's case, and the exclusion silenced it. A man who
+   has not moved has not progressed, whatever the goal did.
+2. **`wedge` and `shell` reported 1 of 24, 23 falling out at `queued`.** The injection dropped 24 men
+   into a 0.6 m circle, so each had 23 friendlies inside the 1 m queue radius and the arm measured the
+   queue exclusion instead of the trap. Men wedged against a wall are strung out along it; the control
+   has to be too. Rule 28 — a handwritten case tidier than the production input is testing a different
+   function — arriving in the *injection* rather than in the code under test.
+
+Both read as "no fault found" and both were the instrument. A third, milder one: writing `u.order = 1`
+to make a unit "commanded" is overwritten by `updateUnitOrder` on the next tick, so every arm fell out
+at `notCommanded`; an order has to be *issued* on the bus the player's mouse uses.
+
+After the repairs: `wedge` 24/24 and `shell` 24/24 FIRE; `null`, `displace`, `melee`, `hold` 0/24. And
+`wedge`'s men are reported **in the shell**, not in the solid they were placed in — the mechanism
+demonstrating itself in one line of output. **The same controls grade the fix:** after the change,
+`wedge` 0/24 and `shell` 0/24, all 24 falling out at `moving`.
+
+#### The count that must not be instantaneous — §1 rule 40
+
+The first draft sampled a 2 s window at six checkpoints: **2–5** stuck on Rome, **37–55** on Carthage.
+The occupancy measure over the same 200 s: **45** and **110**. The gap is not the window. The predicate
+requires a *movement order*, and a unit whose men are trapped is eventually wiped, re-tasked, or reverts
+to `Hold` — so the longer a man is trapped the less likely he is to still qualify. **The persistence of
+the fault removes its victims from the denominator.** Both readings shipped; they bracket the truth from
+opposite sides.
+
+#### Determinism — the onset of the drift is the proof the diff is confined
+
+`default` runs on the campus-martius map and therefore *has* 1,121 solids, so "the field battle has no
+city" is not the argument. The argument is measured: its men accumulate **0 man-ticks in masonry over
+200 s**, so `escape` is never reached — and its **21 hashes are unchanged at all seven checkpoints,
+including t+400**. Rome first touches stone between t+30 and t+90 and is **unchanged at t+0 and t+30**,
+drifting from t+90. Carthage has 37 men in the shell by t+30 and drifts there on `uf64` **with `uctl`
+byte-identical** — positions moved, no control-flow decision changed yet — then on control flow from
+t+90.
+
+Each map drifts exactly when its own men first reach stone, and each onset was predicted from an
+independent measurement *before* the gate was run. `same default / CHANGED campus-martius / CHANGED
+carthage`, verified by comparing the parsed baseline blocks rather than by reading a diff. A-vs-B replay
+identical and all four tiers identical on all three battles.
+
+#### The stairs, counted separately — and the fix reached them
+
+Getting **onto** a wall and getting **off** it were counted separately. The instrument had to be repaired
+twice again first: aiming at "the nearest station" picked run 0 on Rome, which has no flight, so the arm
+reported a refusal true of one station rather than of the manoeuvre; and "the biggest unit standing on
+grass" picked a *besieger*, whom `interceptOrders` correctly routes to `escalade` rather than to the
+defenders' stairs. Both produced `started=0, plan=null` — the least informative output possible, because
+it cannot distinguish a broken staircase from a probe that never gave an order. Listening for
+`orderRefused` is what turned "nothing happened" into a reason.
+
+The stable number is **reachability**, a property of the map rather than of the destination the probe
+chose. `sendToWall` refuses when no flight's head can walk to the destination run, and `sendToGround`
+consults the same function from the other end — so a run with no flight is a stretch of parapet that can
+neither be manned nor left. It did not move across the fix, as expected:
+
+| | Rome | Carthage |
+|---|---|---|
+| flights published by the city / accepted by `Siege` | 14 / 14 | 13 / 13 |
+| runs, and runs no flight can reach | 34, **1** | 40, **3** |
+| stations that can neither be reached nor left | 20 of 1,035 (1.9 %) | **90 of 1,830 (4.9 %)** |
+| flight head vs the walkway it serves, > 0.5 m out | 0 of 14 | 0 of 13 |
+
+**Descent works on both maps, before and after: 100 % of the cohort on the ground inside 105 s.** The
+ascent was the broken half, and the shell trap turns out to be a large part of it — the flights are
+registered as their own `kind: 'wall'` boxes, so men queueing at the foot of a staircase were being
+pinned in that box's own shell. Rome is a like-for-like comparison (same plan `Ascend`, same stair 30,
+same destination station 20 both runs): **men on the parapet at 300 s went 70 of 145 to 92 of 147, and
+men who ever set foot on a flight 82 to 102.**
+
+**Carthage's ascent is not comparable across the fix and the honest answer is to say so.** The battle
+diverged, and on the after run the cohort the probe's predicate selected was routed through a *breach*
+(`plan.goal = Storm`, `stair = −1`) rather than up a flight, so the 1-of-65 before and 50-of-51 after
+are two different manoeuvres and the pair means nothing. What can be said is that the static
+reachability census above did not move, and that the before figure — 31 men set foot on a flight and 30
+came off it again without arriving — is a real 3 % completion rate that nobody has yet explained.
+
+#### Found and not fixed
+
+- **Carthage's ascent completion rate**, above, and the 3 runs / 90 stations on Carthage that no flight
+  can reach in either direction. Not diagnosed further: it is a separate mechanism in `Siege`'s crossing
+  queue, and this pass had already moved the simulation once.
+- **A "stuck but nowhere near masonry" population with nothing to do with this bug.** The detector's
+  `clear` bucket reads up to 196 men on the *field battle*, which has zero masonry contact, so it is
+  pre-existing and independent — cavalry and other cohorts holding an `AttackUnit` order with a goal
+  543 m away and an anchor that has not moved at all. Its count moved on Carthage (2 → 61 at t+200)
+  because the battle diverged, not because of anything in `escape`. This pass neither caused it nor
+  fixed it; it is now visible and separable for the first time.
+- **`solidDisagree`**: the oriented-box set and `CitySystem.blocksMovement` disagree about where a stuck
+  man is standing on up to 10 men per checkpoint on Carthage and 0 on Rome. Small, but it is rule 11's
+  two producers, and it is now counted on every run.
+- **`Siege` emits repeated `descend/noStair` refusals for the same unit every few ticks** on Rome (units
+  12 and 13), which is the re-planning loop `WallDoctrine`'s own comment predicts. Untouched.
+- **The separation solver's sub-centimetre hole.** `resolveCrowding` applies any shove under 0.01 m
+  without consulting the masonry at all, so a man in a dense crowd can be walked into a solid a
+  millimetre at a time by eight neighbours. That is how men entered the shell in the first place. It is
+  now harmless, because `escape` gets them out again on the next tick, so it was left alone rather than
+  spending a second behaviour change on the same pass — but it is still a hole and it is still there.
 
 <!-- Append new entries above this line. -->
 
