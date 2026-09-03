@@ -104,6 +104,75 @@ export async function halfBlocksToPng(text, opts = {}) {
 }
 
 /**
+ * Rasterise `qrSvg`'s actual output, flattened onto a background colour.
+ *
+ * Nothing in the gate rendered the SVG at all until a reviewer pointed it out: every decode
+ * check went through `qrPng`, which walks the matrix directly, so `qrSvg` — the renderer the
+ * *player* actually looks at — had no coverage and its `no-white` injection was consequently
+ * fake. Removing its white `<rect>` still decoded, because `.tc-qr` supplies a white background
+ * in CSS and the element screenshot sees that.
+ *
+ * `background` defaults to the lobby panel's own `#14100c`, which is what the SVG would sit on
+ * if the CSS ever stopped covering for it. Flattening rather than compositing on white is the
+ * whole point: it asks whether the symbol can stand on its own.
+ */
+export async function svgRings(svg, { background = '#14100c', width = 512, modules = 41 } = {}) {
+  const { default: sharp } = await import('sharp');
+  const raw = await sharp(Buffer.from(svg), { density: 384 })
+    .resize({ width, height: width, fit: 'fill' })
+    .flatten({ background })
+    .greyscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const bm = { data: Uint8Array.from(raw.data).map((v) => (v >= 128 ? 255 : 0)), width, height: width };
+  return quietRings(bm, width / modules);
+}
+
+/**
+ * Rasterise `qrSvg`'s actual output, flattened onto a background colour.
+ *
+ * Nothing in the gate rendered the SVG at all until a reviewer pointed it out: every decode
+ * check went through `qrPng`, which walks the matrix directly, so `qrSvg` — the renderer the
+ * *player* actually looks at — had no coverage and its `no-white` injection was consequently
+ * fake. Removing its white `<rect>` still decoded, because `.tc-qr` supplies a white background
+ * in CSS and the element screenshot sees that.
+ *
+ * **And decoding is not the discriminator either**, which is the second thing that had to be
+ * measured rather than assumed: flattened onto the panel's `#14100c`, a rect-less symbol is
+ * black on RGB(20,16,12) and Vision reads it perfectly, because a synthetic image has no noise
+ * for two dark greys to get lost in. A real screen and a real camera are not that kind. So the
+ * property asserted is the one that actually has to hold — **the symbol supplies its own light
+ * field** — and `svgRings` measures it: threshold the rasterisation and count the clear rings.
+ * With the rect, four. Without it, zero.
+ */
+export async function svgToPng(svg, { background = '#14100c', width = 512 } = {}) {
+  const { default: sharp } = await import('sharp');
+  return sharp(Buffer.from(svg), { density: 384 })
+    .resize({ width, height: width, fit: 'fill' })
+    .flatten({ background })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
+
+/**
+ * How many whole rings of light modules surround the symbol in a rendered bitmap.
+ *
+ * Measured off the pixels, not computed from `QUIET`. The check that used this constant on both
+ * sides of its own comparison was `f(QUIET) === f(QUIET)` and would have passed at zero.
+ */
+export function quietRings(bm, scale = 1) {
+  const light = (x, y) => bm.data[y * bm.width + x] !== 0;
+  const rowClear = (y) => { for (let x = 0; x < bm.width; x++) if (!light(x, y)) return false; return true; };
+  const colClear = (x) => { for (let y = 0; y < bm.height; y++) if (!light(x, y)) return false; return true; };
+  let top = 0; while (top < bm.height && rowClear(top)) top++;
+  let bottom = 0; while (bottom < bm.height && rowClear(bm.height - 1 - bottom)) bottom++;
+  let left = 0; while (left < bm.width && colClear(left)) left++;
+  let right = 0; while (right < bm.width && colClear(bm.width - 1 - right)) right++;
+  const m = (px) => Math.floor(px / scale);
+  return { top: m(top), bottom: m(bottom), left: m(left), right: m(right) };
+}
+
+/**
  * Decode QR symbols out of PNG files, with Vision.
  *
  * Returns `Map<file, string[]>`. A file Vision cannot read comes back as an empty array rather

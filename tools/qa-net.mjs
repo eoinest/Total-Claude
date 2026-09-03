@@ -542,18 +542,22 @@ if (SHOT_DIR) await mkdir(SHOT_DIR, { recursive: true });
  *
  * ## What was measured, and why the arm could not work without it
  *
- * The deployed site's refusal is **not** a mixed-content refusal, and this pass found that out
- * the hard way by building the fixture and watching it pass when it should not have. Measured
- * here on Chromium 151, from an https page whose own origin is a private address:
+ * The deployed site's refusal is **not** a mixed-content refusal *in Chromium*, and this pass
+ * found that out the hard way by building the fixture and watching it pass when it should not
+ * have. It is one in WebKit, where the original §10.2 explanation holds exactly as written —
+ * so what follows is a statement about Chromium 151 and is labelled as one. Measured here from
+ * an https page whose own origin is a private address:
  *
  *     ws://192.168.1.77:5968   opened
  *     ws://127.0.0.1:5968      opened
  *     ws://1.1.1.1:81          threw SecurityError  (Mixed Content)
  *
- * So an https page **can** open a plain socket to a private address, as long as the page itself
- * came from one. The rule Chromium applies is about *address spaces*: a document is refused a
- * connection that reaches from a more public space into a more private one, and mixed content
- * blocks the rest. `total-claude.vercel.app` is public and the relay is private, which is the
+ * So in Chromium an https page **can** open a plain socket to a private address, as long as the
+ * page itself came from one. The rule Chromium applies is about *address spaces*: a document is
+ * refused a connection that reaches from a more public space into a more private one, and mixed
+ * content blocks the rest. **WebKit does not have that carve-out** — the same three targets all
+ * come back refused, loopback included — so this override is what makes the fixture faithful to
+ * Chromium, and WebKit would have needed no help. The engine matters and the arm says so. `total-claude.vercel.app` is public and the relay is private, which is the
  * one combination that is refused — `tools/host-lan.mjs`'s docstring records the same error
  * from the live site, `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`.
  *
@@ -960,7 +964,13 @@ async function doubleOrder(page, i) {
    * and the arm passes by never having fired. Three clicks inside 75 ms cannot all straddle
    * one boundary, so at least two of them share a turn whatever the phase of the relay's clock.
    */
-  for (const p of [spots[0], spots[1], spots[0]]) {
+  /*
+   * Three *distinct* spots. The third used to be `spots[0]` again, which made the sequence
+   * `0,1,0`; combined with a swap of the first adjacent pair that produced `1,0,0`, and both
+   * orderings ended at `spots[0]`. Distinct destinations mean the exchange is visible in the
+   * final state whichever pair `Room.bend` takes.
+   */
+  for (const p of [spots[0], spots[1], spots[2] ?? spots[0]]) {
     await page.mouse.move(p.x, p.y);
     await page.mouse.down({ button: 'right' });
     await sleep(25);
@@ -1155,8 +1165,10 @@ const relayStatus = async (relay) =>
  */
 if (wanted('qr')) {
   console.log('\n=== the square, decoded by Vision rather than by us ===');
-  const { capacityBytes, qrEncode, qrHalfBlocks, qrSvg, QUIET } = await import('../src/net/qr.ts');
-  const { decodeQr, halfBlocksToPixels, halfBlocksToPng, qrPng } = await import('./lib/qr-image.mjs');
+  const { blockPlan, capacityBytes, qrEncode, qrHalfBlocks, qrSvg, QUIET, TOTAL_CODEWORDS }
+    = await import('../src/net/qr.ts');
+  const { decodeQr, halfBlocksToPixels, halfBlocksToPng, qrPng, quietRings, svgRings, svgToPng }
+    = await import('./lib/qr-image.mjs');
   /*
    * Two directories, because they hold two different kinds of thing. `work` takes the forty
    * grid symbols, which are an intermediate nobody looks at; `dir` takes the handful a person
@@ -1312,20 +1324,106 @@ if (wanted('qr')) {
    */
   const qq = qrEncode(payloads[0][1]);
   const term = halfBlocksToPixels(qrHalfBlocks(qq), { scale: 1 });
-  const svg = qrSvg(qq);
-  const wantSide = qq.size + QUIET * 2;
-  const svgBox = /viewBox="0 0 (\d+) (\d+)"/.exec(svg);
-  const termOk = term.width === wantSide && term.height >= wantSide;
-  const svgOk = !!svgBox && Number(svgBox[1]) === wantSide && Number(svgBox[2]) === wantSide;
+  const termRings = quietRings(term, 1);
+  /*
+   * Counted off the pixels, on both renderings, and the previous version of this check could
+   * not have failed.
+   *
+   * It read `term.width === qq.size + QUIET * 2` — a constant on both sides of its own
+   * comparison — while its sentence claimed to measure "off the rendering and not off the
+   * constant". Set `QUIET` to 0 and the expectation moved with it; the only conjunct doing any
+   * work was `QUIET === 4`, which is an assertion about a literal. `quietRings` walks in from
+   * each edge counting whole rows and columns of light, so it measures what a scanner has to
+   * find and it goes red at zero because there is then nothing to count.
+   */
+  const svgMarkup = qrSvg(qq);
+  const svgFile = path.join(dir, 'qr-svg-on-panel.png');
+  await writeFile(svgFile, await svgToPng(svgMarkup));
+  const sRings = await svgRings(svgMarkup, { modules: qq.size + QUIET * 2 });
+  const svgRead = ((await decodeQr([svgFile])).get(svgFile) ?? [])[0] ?? null;
+  const minRing = Math.min(termRings.top, termRings.bottom, termRings.left, termRings.right);
+  const minSvg = Math.min(sRings.top, sRings.bottom, sRings.left, sRings.right);
+  measured.qr.quiet = { termRings, svgRings: sRings, svgDecoded: svgRead };
+  record('qr-quiet-zone', minRing >= 4 && minSvg >= 4 && svgRead === payloads[0][1],
+    'both renderings supply their own light field — at least four clear rings, counted off '
+      + 'the pixels, with the SVG rasterised onto the panel\'s own dark background rather '
+      + 'than onto the white its CSS happens to sit on',
+    `terminal rings ${termRings.top}/${termRings.right}/${termRings.bottom}/${termRings.left}; `
+      + `svg on #14100c rings ${sRings.top}/${sRings.right}/${sRings.bottom}/${sRings.left}, `
+      + `decoded ${JSON.stringify(svgRead)}`,
+    'decoding alone does not discriminate here and that was measured too: flattened onto the '
+      + 'panel colour a rect-less symbol is black on RGB(20,16,12) and Vision still reads it, '
+      + 'because a synthetic image has no noise for two dark greys to get lost in. The rings '
+      + 'are the property a camera actually needs');
+
+  /*
+   * The arithmetic the block table has to satisfy, and the docstring that promised it.
+   *
+   * `src/net/qr.ts` named this check in prose a day before it existed. It is cheap and it fails
+   * differently from `qr-every-version`: the round trip catches a digit that breaks a symbol,
+   * this catches one that breaks the identity `ec * blocks + data === total`, and a pair of
+   * mistakes that agreed with each other would have to survive both.
+   */
+  const sumBad = [];
+  for (let v = 1; v <= 10; v++) {
+    for (const ecc of ['L', 'M', 'Q', 'H']) {
+      const [ec, g1, d1, g2, d2] = blockPlan(v, ecc);
+      const total = ec * (g1 + g2) + g1 * d1 + g2 * d2;
+      if (total !== TOTAL_CODEWORDS[v - 1]) {
+        sumBad.push(`v${v}${ecc}: ${total} against ${TOTAL_CODEWORDS[v - 1]}`);
+      }
+    }
+  }
+  record('qr-tables-sum', sumBad.length === 0 && TOTAL_CODEWORDS.length === 10,
+    'every one of the forty block-table rows adds up to the codeword count its version is '
+      + 'defined to hold',
+    sumBad.length ? sumBad.slice(0, 4).join('; ')
+      : `40 rows against ${TOTAL_CODEWORDS[0]}…${TOTAL_CODEWORDS[9]} codewords, all exact`,
+    'promised by qr.ts\'s docstring before it was written, which is a false claim in a file '
+      + 'whose whole subject is not making them');
+
+  /*
+   * The function patterns, walked. This is the check that would have caught the two modules
+   * `drawFunctions` was clearing and `drawFormat` never restored.
+   */
+  const fnBad = [];
+  for (const v of [1, 2, 5, 7, 10]) {
+    const q = qrEncode('x', { minVersion: v });
+    for (let i = 8; i < q.size - 8; i++) {
+      if (q.dark(i, 6) !== (i % 2 === 0)) fnBad.push(`v${v} timing row at x=${i}`);
+      if (q.dark(6, i) !== (i % 2 === 0)) fnBad.push(`v${v} timing column at y=${i}`);
+    }
+    if (!q.dark(8, q.size - 8)) fnBad.push(`v${v} dark module at (8,${q.size - 8})`);
+    for (const [fx, fy] of [[0, 0], [q.size - 7, 0], [0, q.size - 7]]) {
+      for (let dy = 0; dy < 7; dy++) {
+        for (let dx = 0; dx < 7; dx++) {
+          const d = Math.max(Math.abs(dx - 3), Math.abs(dy - 3));
+          if (q.dark(fx + dx, fy + dy) !== (d !== 2)) fnBad.push(`v${v} finder at ${fx + dx},${fy + dy}`);
+        }
+      }
+    }
+  }
+  record('qr-function-patterns', fnBad.length === 0,
+    'the timing runs alternate over their whole length, the three finders are exact and the '
+      + 'always-dark module is dark, across five versions',
+    fnBad.length ? `${fnBad.length} wrong: ${fnBad.slice(0, 4).join('; ')}`
+      : 'versions 1, 2, 5, 7 and 10 — every function module as the specification draws it',
+    'the format-information reservation used to clear (8,6) and (6,8), which are timing '
+      + 'modules, and drawFormat never wrote them back: two modules light where the spec says '
+      + 'dark, in every symbol, costing 71 decodes against 70 over 216 degraded trials — which '
+      + 'is to say nothing measurable, which is exactly why prose could not be the check');
+
   const cols = qq.size + QUIET * 2;
-  measured.qr.quiet = { symbol: qq.size, want: wantSide, term: [term.width, term.height], svg: svgBox?.slice(1) ?? null };
-  record('qr-quiet-zone', termOk && svgOk && QUIET === 4,
-    'both renderings carry the four-module quiet zone the specification requires, measured '
-      + 'off the rendering and not off the constant',
-    `symbol ${qq.size}, terminal ${term.width}x${term.height}, `
-      + `svg viewBox ${svgBox ? `${svgBox[1]}x${svgBox[2]}` : 'missing'}, want ${wantSide}`,
-    `and it fits a terminal: v${qq.version}, ${cols} columns by ${Math.ceil(cols / 2)} rows of `
-      + 'half blocks, against the 80x24 a default window gives you');
+  const rowsOut = Math.ceil(cols / 2);
+  /*
+   * The symbol's own footprint. Whether the *command* leaves it on screen is a different claim
+   * with different evidence, and it is `lan-square-stays-on-screen`, which reads the line counts
+   * `tools/host-lan.mjs` reports about its own output.
+   */
+  record('qr-fits-a-terminal', cols <= 80 && rowsOut <= 22,
+    'the square itself fits inside an 80x24 window with room for a line under it',
+    `v${qq.version}: ${cols} columns by ${rowsOut} rows of half blocks, quiet zone included`,
+    'the long ?net= form is version 7 and 53 columns, which is why the short form exists');
 }
 
 // ---------------------------------------------------------------------------
@@ -1720,11 +1818,24 @@ async function faultArm(name, kind, port, what, why, opts = {}) {
       + `last agreed tick ${d.lastAgreedTick}; ${d.note}`
       : 'NOT DETECTED — the two clients diverged and the session said nothing',
     why);
-  if (d) {
-    record(`${name}-both`, (seen?.ended ?? '') === 'desync' && (ng?.ended ?? '') === 'desync',
-      'and both clients stopped, rather than one of them playing on alone',
-      `host ended '${seen?.ended}', guest ended '${ng?.ended}'`);
-  }
+  /*
+   * Recorded unconditionally, and that is a fix to the gate's arithmetic rather than a style.
+   *
+   * It used to be `if (d) { record(...) }`, so a fault arm that failed its first check silently
+   * dropped its second — and the **denominator moved with the result**. A run with a red
+   * `reordered-pair` reported "78/81" where a green one reports "82/82": three reds out of
+   * eighty-one reads as a better run than it is, and the total is no longer a constant a person
+   * can compare between runs. A check that cannot be counted when it fails is not a check.
+   *
+   * With nothing detected the claim is false by construction — neither client can have stopped
+   * on a desync that was never declared — so it is red, and it says which of the two facts is
+   * missing rather than repeating the first check's sentence.
+   */
+  record(`${name}-both`, !!d && (seen?.ended ?? '') === 'desync' && (ng?.ended ?? '') === 'desync',
+    'and both clients stopped, rather than one of them playing on alone',
+    d ? `host ended '${seen?.ended ?? 'not ended'}', guest ended '${ng?.ended ?? 'not ended'}'`
+      : 'no desync was declared, so there was nothing for either client to stop on',
+    d ? '' : 'red because the check above is: this one cannot be true while that one is false');
   await host.close(); await guest.close();
   relay.stop();
   return d;
@@ -2300,6 +2411,26 @@ if (wanted('lan')) {
    * The invite is read off the screen and handed to the second client verbatim. Nothing in this
    * half of the arm builds a URL — that is the claim.
    */
+  /*
+   * The square is still on screen when the command has finished printing.
+   *
+   * Read off the counts `tools/host-lan.mjs` reports about its own output rather than off a
+   * terminal, because `--json` prints no square and a gate cannot own a tty. It printed 55
+   * lines with **22 after the last row of the symbol**, so on an 80x24 window the thing the
+   * other machine is meant to photograph had scrolled off the top by the time the command
+   * settled. The square is now the last thing printed.
+   */
+  const { qrEncode: encodeHere } = await import('../src/net/qr.ts');
+  const qrRows = Math.ceil((encodeHere(lan.joinUrl ?? 'x').size + 8) / 2);
+  measured.lan.layout = { lines: lan.lines, after: lan.linesAfterQr, rows: qrRows };
+  record('lan-square-stays-on-screen',
+    lan.qr === true && Number.isInteger(lan.linesAfterQr)
+      && qrRows + lan.linesAfterQr <= 24,
+    'the command prints the square last, so it survives an 80x24 window',
+    `${lan.lines} lines in all, ${lan.linesAfterQr} of them after the last row of a `
+      + `${qrRows}-row symbol — ${qrRows + lan.linesAfterQr} of the 24 a default window has`,
+    'a symbol that fits and has scrolled off the top is not a symbol that fits');
+
   const roomB = lan.room;
   /*
    * The guest scanned first, which is a real race and used to lock the host out of their own room.
@@ -2433,6 +2564,72 @@ if (wanted('lan')) {
     'a rendered QR that does not decode is the exact shape of check this repository has '
       + 'shipped before — so this reads it back rather than asserting that an <svg> appeared');
 
+  /*
+   * A phone scans the square, and is turned away without spending the room.
+   *
+   * This is the failure the whole feature had until a reviewer ran it: a client at an iPhone
+   * viewport followed the square, connected, **took slot 1**, and landed on a deployment plaque
+   * whose BEGIN BATTLE sat 434 px off the right edge of a page that cannot scroll. Neither
+   * commander could then play — the phone could not start the battle and the real second
+   * laptop was refused with "already has a challenger".
+   *
+   * The engine is not the variable and this arm does not pretend otherwise: the refusal is
+   * keyed on viewport width, so a 390x844 Chromium page exercises the identical path. What
+   * WebKit adds is a rendering defect, measured and named in `docs/MULTIPLAYER.md` §12.9,
+   * which this arm cannot reach because on this path **no engine boots at all**.
+   *
+   * Two claims, and the second is the one that matters: the phone is told why, *and the room
+   * is untouched*. `occupied` is read off the relay, and the real guest joining afterwards is
+   * the same assertion made a second way — if the phone had taken the slot,
+   * `lan-the-link-is-the-whole-invitation` below would fail too.
+   */
+  const phone = await chromeGuest.newPage({
+    viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true,
+  });
+  const phoneErrs = [];
+  phone.on('pageerror', (e) => phoneErrs.push(`pageerror: ${e.message}`));
+  phone.on('console', (m) => { if (m.type() === 'error') phoneErrs.push(`console.error: ${m.text()}`); });
+  await phone.goto(scanned ?? invite, { waitUntil: 'domcontentloaded' });
+  await phone.waitForSelector('.tc-lobby h1', { timeout: 60000 }).catch(() => { /* read below */ });
+  await sleep(1200);
+  const phoneFace = await phone.evaluate(() => ({
+    title: (document.querySelector('.tc-lobby h1')?.textContent ?? '').trim(),
+    text: (document.querySelector('.tc-sheet')?.innerText ?? '').replace(/\s+/g, ' ').trim(),
+    code: (document.querySelector('#tc-notice-code')?.textContent ?? '').trim(),
+    link: (document.querySelector('#tc-notice-link')?.textContent ?? '').trim(),
+    canCopy: !!document.querySelector('#tc-notice-copy'),
+    booted: typeof window.__game !== 'undefined',
+    coarse: matchMedia('(pointer: coarse)').matches,
+    vw: innerWidth,
+  })).catch(() => null);
+  await shot(phone, 'lan-08-phone-turned-away');
+  const afterPhone = await relayStatus({ http: `http://${lan.lan}:${lan.relayPort}` });
+  const phoneRoom = (afterPhone?.rooms ?? []).find((r) => r.code === roomB);
+  await phone.close();
+  measured.lan.phone = { face: phoneFace, occupied: phoneRoom?.occupied ?? null, errs: phoneErrs };
+  record('lan-a-phone-is-turned-away',
+    !!phoneFace && /too narrow/i.test(phoneFace.title) && phoneFace.booted === false
+      && phoneFace.code === roomB && phoneFace.link.includes(`room=${roomB}`)
+      && phoneFace.canCopy && phoneErrs.length === 0,
+    'a client too narrow to reach BEGIN BATTLE is told so, and handed the code and the link to '
+      + 'carry to a machine that can play',
+    phoneFace
+      ? `${phoneFace.vw}px, coarse pointer ${phoneFace.coarse}: "${phoneFace.title}" — `
+        + `code ${phoneFace.code || '(none)'}, link ${phoneFace.link || '(none)'}, `
+        + `copy button ${phoneFace.canCopy}, engine booted ${phoneFace.booted}, `
+        + `${phoneErrs.length} console line(s)`
+      : 'the page never showed a lobby sheet at all',
+    'the HUD has no @media rule anywhere and BEGIN BATTLE is at a fixed 1062 px whatever the '
+      + 'viewport, with scrollWidth equal to innerWidth — so it is unreachable, not merely '
+      + 'off-screen. Refusing is the honest interim; a phone HUD is a pass of its own');
+  record('lan-a-phone-does-not-take-the-slot', phoneRoom?.occupied === 0,
+    'and the room it declined is still empty, so the second commander can still have it',
+    phoneRoom
+      ? `room ${roomB} reports ${phoneRoom.occupied} occupant(s) after the phone visited`
+      : `room ${roomB} is not on the relay at all`,
+    'the refusal is above `new NetLink` in main.ts, so no socket is opened and no slot is '
+      + 'claimed — the ordering is the entire fix');
+
   await hostPage.click('#tc-begin');
   await driveMenu(hostPage, { map: 'campus-martius', scenario: 'field', tier: 'high', size: 'small' });
 
@@ -2490,6 +2687,40 @@ if (wanted('lan')) {
       + 'test: `?room=` alone resolves the relay out of the document and joins');
 
   /*
+   * And the room, once it is playing, cannot be reopened as though it were still waiting.
+   *
+   * The other half of the 409 repair, and the case a reviewer found by driving a `Room` to its
+   * battle phase: the first version keyed on *provenance* — "the code came from a `create=1`
+   * link" — and so swallowed both of the relay's 409s. A host who pressed Back, or reopened the
+   * `create=1` URL out of history or a restored tab, was handed a Room open screen with a code,
+   * a link and a square for a room that was already playing and could never be entered again.
+   * The relay now says which refusal it is (`taken` against `started`) and the lobby reads that.
+   *
+   * Run last, because it needs a room that is genuinely past the lobby, and the battle above is
+   * one.
+   */
+  const replay = await newPage(chrome);
+  await replay.goto(lan.hostUrl, { waitUntil: 'domcontentloaded' });
+  await replay.waitForSelector('.tc-lobby', { timeout: 30000 }).catch(() => { /* read below */ });
+  await sleep(2500);
+  const replayFace = await replay.evaluate(() => ({
+    reopened: !!document.querySelector('#tc-code'),
+    note: (document.querySelector('#tc-note')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+  })).catch(() => null);
+  await shot(replay, 'lan-09-room-already-playing');
+  await replay.close();
+  measured.lan.reopen = replayFace;
+  record('lan-a-playing-room-is-not-reopened',
+    !!replayFace && replayFace.reopened === false && /phase|cannot be re-entered/i.test(replayFace.note),
+    'reopening the host link after the battle has started says the room is playing, rather '
+      + 'than showing a room-open screen for a room nobody can enter',
+    replayFace
+      ? `#tc-code present: ${replayFace.reopened}; the sheet says "${replayFace.note.slice(0, 120)}"`
+      : 'the page never rendered a lobby sheet',
+    'gating the 409 on where the code came from swallowed this; gating it on which refusal the '
+      + 'relay sent does not');
+
+  /*
    * The honesty check, and the reason it is in this arm rather than the lobby one.
    *
    * `base` is the run's ordinary dev server: `127.0.0.1`, no LAN bind, no `/__tc/lan`. Nothing
@@ -2541,8 +2772,11 @@ if (wanted('lan')) {
  *
  * `total-claude.vercel.app` is public and served over https, and multiplayer on this branch is
  * two machines on one private network. A secure page may not open an insecure connection to a
- * private address: the `WebSocket` constructor throws before a packet exists, and there is no
- * flag on the visitor's side that changes it. So the deployed site's multiplayer screen can
+ * private address. **How** it is refused depends on the engine, and both refusals are real:
+ * Chromium 151 blocks the reach from a public address space into a private one
+ * (`ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`), and WebKit blocks it as plain mixed content
+ * with no address-space carve-out at all — measured, all three targets, in §12.6's table.
+ * There is no flag on the visitor's side that changes either. So the deployed site's multiplayer screen can
  * *never* start a battle, and what it said until this pass was `npm run host` — a shell command,
  * printed at a stranger with no checkout, under a form field they could type into for ever.
  *

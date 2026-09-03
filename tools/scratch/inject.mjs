@@ -25,7 +25,10 @@ const FAULTS = {
   'ecc-level': [F.qr, "const ecc = opts.ecc ?? 'Q';", "const ecc = opts.ecc ?? 'L';", 'qr'],
   'quiet-zone': [F.qr, 'export const QUIET = 4;', 'export const QUIET = 0;', 'qr'],
   'tiny-qr': [F.lobby, 'width:200px;height:200px;padding:0;background:#fff;', 'width:44px;height:44px;padding:0;background:#fff;', 'lan'],
-  'no-white': [F.qr, '`<rect width="${n}" height="${n}" fill="#fff"/>`', "''", 'lan'],
+  'no-white': [F.qr, '`<rect width="${n}" height="${n}" fill="#fff"/>`', "''", 'qr'],
+  'timing-clobber': [F.qr, '    if (i === 6) continue;\n', '', 'qr'],
+  'block-sum': [F.qr, 'export const TOTAL_CODEWORDS = [26, 44, 70, 100, 134, 172, 196, 242, 292, 346];',
+    'export const TOTAL_CODEWORDS = [26, 44, 70, 100, 134, 172, 196, 242, 293, 346];', 'qr'],
   'no-autocreate': [F.lobby, "if (params.get('create') === '1' && validCode(room.value.trim().toUpperCase())) create(true);", '', 'lan'],
   'long-invite': [F.lobby, 'const shortLink = declared !== null && declared === addr;', 'const shortLink = false;', 'lan'],
   'no-autojoin': [F.main, "if (!params.get('net') && params.get('room')) {", 'if (false) {', 'lan'],
@@ -34,6 +37,8 @@ const FAULTS = {
   'https-noise': [F.lobby, "  if (!ours && secureOrigin()) {",
     "  if (!ours && secureOrigin()) {\n    console.error('deliberate noise');", 'https'],
   'no-race-fix': [F.lobby, 'if (r.status === 409 && fromLink && asked) {', 'if (false) {', 'lan'],
+  'no-width-gate': [F.main, "if (net && !hudFits() && params.get('narrow') !== 'ok') {", 'if (false) {', 'lan'],
+  'provenance-only': [F.lobby, "j?.error === 'taken'", "(j?.error === 'taken' || true)", 'lan'],
   'no-completion': [F.lobby, "  relay.addEventListener('change', () => {", "  relay.addEventListener('never', () => {", 'dev'],
 };
 
