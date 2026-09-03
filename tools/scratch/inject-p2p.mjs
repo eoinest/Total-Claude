@@ -320,7 +320,8 @@ const FAULTS = {
   'duplicate-offer-unguarded': [F.peer,
     "          if (this.want === 'host' || this.haveRemote || this.claimed) return;\n          this.claim();",
     "          if (this.want === 'host' || this.haveRemote) return;\n          this.claim();",
-    'dup', 'dup-signalling-survived and dup-battle-still-agrees'],
+    'dup', 'dup-signalling-survived and dup-battle-still-agrees (both, through the arm\'s '
+      + 'caught boot: with the guard gone the two peers never leave the lobby at all)'],
   'shifted-turn-tick': [F.room,
     "        k: 'turn', ph: 'battle', n: next, t: turnTick(next), ops: this.sorted([...a, ...b]),",
     "        k: 'turn', ph: 'battle', n: next, t: turnTick(next) + 1, ops: this.sorted([...a, ...b]),",

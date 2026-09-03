@@ -2228,37 +2228,65 @@ if (wanted('dup') && chrome) {
    * on the *product surviving it*: with every frame doubled, two peers connect and play one
    * battle that agrees. `duplicate-offer-unguarded` in `inject-p2p.mjs` puts the bug back.
    */
-  const m = await bootPeers(chrome, chromeGuest, base, {
-    sig: SIG(), deploy: false, autoplay: 1, extra: '&p2pdup=1&quality=medium',
-  });
-  await sleep(14000);
-  const ca = await m.host.evaluate(() => window.__checks());
-  const cb = await m.guest.evaluate(() => window.__checks());
-  const cmp = compareChecks(ca ?? [], cb ?? []);
-  const both = await readBoth(m.host, m.guest);
-  measured.dup = {
-    common: cmp.common, highest: cmp.highest, bad: cmp.bad,
-    host: { phase: both.a.net?.phase, ended: both.a.net?.ended, msg: both.a.net?.message },
-    guest: { phase: both.b.net?.phase, ended: both.b.net?.ended, msg: both.b.net?.message },
-  };
-  record('dup-signalling-survived',
-    both.a.net?.ended === '' && both.b.net?.ended === ''
-    && both.a.net?.phase === 'battle' && both.b.net?.phase === 'battle',
-    'every signalling message delivered twice, and neither peer is broken by its own duplicate',
-    `host phase '${both.a.net?.phase}' ended '${both.a.net?.ended}'`
-    + `${both.a.net?.ended ? ` — ${String(both.a.net?.message).slice(0, 120)}` : ''}; `
-    + `guest phase '${both.b.net?.phase}' ended '${both.b.net?.ended}'`
-    + `${both.b.net?.ended ? ` — ${String(both.b.net?.message).slice(0, 120)}` : ''}`,
-    'the failure this replaces reported linkLost on a pair whose data channel was already open, '
-    + 'which is the worst kind of wrong sentence: it blames the network for a bug in the page');
-  record('dup-battle-still-agrees',
-    cmp.common >= 4 && cmp.bad === null,
-    'and the battle underneath is the same battle on both sides',
-    `${cmp.common} checkpoints in common, highest tick ${cmp.highest}`
-    + `${cmp.bad ? ` — ${cmp.bad}` : ', no layer ever differed'}`,
-    'a duplicate on the introduction must not reach the simulation, and the only way to say so '
-    + 'is to hash the simulation');
-  for (const pg of [m.host, m.guest]) await pg.close();
+  /*
+   * Caught, because **the failure this arm is about kills the boot** rather than the battle.
+   *
+   * `duplicate-offer-unguarded` reproduces it exactly: `bootPeers` throws *"neither side left
+   * the lobby phase"* after 150 s and the arm never reaches a `record`. A fault that takes the
+   * arm down is proof that it bites, but it is not a red *check*, and a gate whose denominator
+   * moves with the result is the arithmetic `faultArm` in `qa-net` had to be corrected for. So
+   * the boot failure is caught and recorded under the check it belongs to.
+   */
+  let m = null;
+  let bootErr = '';
+  try {
+    m = await bootPeers(chrome, chromeGuest, base, {
+      sig: SIG(), deploy: false, autoplay: 1, extra: '&p2pdup=1&quality=medium',
+    });
+  } catch (e) {
+    bootErr = e instanceof Error ? e.message : String(e);
+  }
+  if (!m) {
+    record('dup-signalling-survived', false,
+      'every signalling message delivered twice, and neither peer is broken by its own duplicate',
+      `the two peers never connected at all: ${bootErr.slice(0, 400)}`,
+      'the failure this replaces reported linkLost on a pair whose data channel was already '
+      + 'open, which is the worst kind of wrong sentence: it blames the network for a bug in '
+      + 'the page');
+    record('dup-battle-still-agrees', false,
+      'and the battle underneath is the same battle on both sides',
+      'there was no battle to compare, because the introduction did not survive the duplicate');
+  }
+  if (m) {
+    await sleep(14000);
+    const ca = await m.host.evaluate(() => window.__checks());
+    const cb = await m.guest.evaluate(() => window.__checks());
+    const cmp = compareChecks(ca ?? [], cb ?? []);
+    const both = await readBoth(m.host, m.guest);
+    measured.dup = {
+      common: cmp.common, highest: cmp.highest, bad: cmp.bad,
+      host: { phase: both.a.net?.phase, ended: both.a.net?.ended, msg: both.a.net?.message },
+      guest: { phase: both.b.net?.phase, ended: both.b.net?.ended, msg: both.b.net?.message },
+    };
+    record('dup-signalling-survived',
+      both.a.net?.ended === '' && both.b.net?.ended === ''
+      && both.a.net?.phase === 'battle' && both.b.net?.phase === 'battle',
+      'every signalling message delivered twice, and neither peer is broken by its own duplicate',
+      `host phase '${both.a.net?.phase}' ended '${both.a.net?.ended}'`
+      + `${both.a.net?.ended ? ` — ${String(both.a.net?.message).slice(0, 120)}` : ''}; `
+      + `guest phase '${both.b.net?.phase}' ended '${both.b.net?.ended}'`
+      + `${both.b.net?.ended ? ` — ${String(both.b.net?.message).slice(0, 120)}` : ''}`,
+      'the failure this replaces reported linkLost on a pair whose data channel was already open, '
+      + 'which is the worst kind of wrong sentence: it blames the network for a bug in the page');
+    record('dup-battle-still-agrees',
+      cmp.common >= 4 && cmp.bad === null,
+      'and the battle underneath is the same battle on both sides',
+      `${cmp.common} checkpoints in common, highest tick ${cmp.highest}`
+      + `${cmp.bad ? ` — ${cmp.bad}` : ', no layer ever differed'}`,
+      'a duplicate on the introduction must not reach the simulation, and the only way to say so '
+      + 'is to hash the simulation');
+    for (const pg of [m.host, m.guest]) await pg.close();
+  }
 }
 
 // ---------------------------------------------------------------------------
