@@ -3745,6 +3745,7 @@ They are queued in `PeerLink` and flushed by `setRemoteDescription` and by nothi
 | **The deployed site's multiplayer screen** | A page with **no controls on it at all** and four sentences explaining that multiplayer runs on your own network and cannot be played from there, plus a link to the repository (§12.6). | A room code, a Create and a Join, and one sentence saying who will introduce the two of you. |
 | **The relay** | Compulsory. Without one there was no battle, so an origin with no relay behind it got a refusal. | One disclosure click away, unticked, and it still carries a whole battle exactly as it did. `?net=` means what it always meant and every existing invite link still works. |
 | **When it cannot connect** | n/a — it could not be attempted. | Four sentences naming what happened, which side the block is on, and what to try. Never a hang. |
+| **When the other player closes their tab** | The relay saw the socket go and named `peerLeft` at once. | The same sentence, in **503 ms**, and the battle halts on the tick it stood on — but only because the leaver now says goodbye on the way out (`pagehide` → `bye`). Without that the survivor waited six seconds for the silence detector and was told *"the connection is gone"*, which blames the wire for somebody shutting a tab. §13.9 no. 10. |
 
 The lobby's own field changed subject rather than disappearing: it was a **relay address** and it
 is now an **introduction service**, where empty is a complete answer and the default. A named
