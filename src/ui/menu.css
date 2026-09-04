@@ -51,14 +51,189 @@
 .menu.in { opacity: 1; }
 .menu.out { opacity: 0; pointer-events: none; }
 
+/* ==========================================================================
+   The backdrop: real frames of this game, with a camera on them
+   ==========================================================================
+
+   `.menu-bg` is the one empty div `public/press/manifest.json` names as the mount point,
+   and `MenuBackdrop` fills it. It keeps the old gradient as its floor, so the screen is
+   never black: that gradient is what a visitor sees for the ~150 ms before the first plate
+   decodes, and it is the whole of what they see on a machine that has refused motion and on
+   a build where `public/press/` is missing.
+
+   Every moving property here is `transform` or `opacity`, which the compositor animates on
+   its own thread. Nothing in this block can reach the main thread, which is the point: the
+   menu stays as responsive with the picture behind it as it was without.
+
+   The two moves are composed across nested elements rather than reconciled in script.
+   `.bd-travel` carries the vantage — where in the frame the camera is and how close — and
+   eases between them on navigation. `.bd-drift` carries the ambient wander that never stops.
+   Multiplying them in the compositor is free; doing it in JavaScript would be a rAF loop. */
+
 .menu-bg {
   position: absolute;
   inset: 0;
+  overflow: hidden;
   background:
     radial-gradient(120% 90% at 50% 0%, rgba(58, 40, 22, 0.55), transparent 70%),
     linear-gradient(180deg, #0a0906 0%, #12100b 45%, #070604 100%);
 }
 
+.bd-slot {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  /* Long, because this is the fade between two battlefields and a fast one reads as a cut.
+     `ease` rather than `linear` so the outgoing frame lets go slowly. */
+  transition: opacity 900ms ease;
+}
+
+.bd-slot.on { opacity: 1; }
+
+/*
+ * The vantage. `--bd-z` is an over-scale above 1, so there is always frame outside the
+ * viewport for the camera to move into; `--bd-x`/`--bd-y` slide the point being looked at
+ * to the centre.
+ *
+ * 1.8 s and a long-tailed ease is the "slow, deliberate, never distracting" the brief asked
+ * for. It is deliberately slower than any UI transition in this project — the option buttons
+ * are 140 ms — because this is a camera and those are controls.
+ */
+.bd-travel {
+  position: absolute;
+  inset: 0;
+  --bd-x: 0%;
+  --bd-y: 0%;
+  --bd-z: 1.2;
+  transform: translate3d(var(--bd-x), var(--bd-y), 0) scale(var(--bd-z));
+  transition: transform 1800ms cubic-bezier(0.22, 0.61, 0.24, 1);
+  will-change: transform;
+}
+
+/*
+ * The wander underneath it: 64 s end to end, ±1.6 % of the frame. Slow enough that it is felt
+ * rather than watched, which is the difference between a menu and a screensaver.
+ *
+ * ## Why every scale here is as small as it is, and must not be reduced further
+ *
+ * Each of these numbers is the *minimum* that keeps the frame's edge off screen, not a taste.
+ * A `translate` of `t` on a viewport-sized layer opens a gap of `t` at the opposite edge unless
+ * the layer is scaled by at least `1 + 2t`. So ±1.6 % of drift needs 1.032 and gets 1.035, and
+ * `.bd-travel`'s vantages need 1.24 (the setup screen's −12 % of vertical) and 1.16 (the front
+ * door's +8 %) against the 1.42 and 1.18 they are given.
+ *
+ * That matters because the scales multiply, and what they multiply is *resolution*. A 1,440-wide
+ * plate on a 1,600 px window is already at 1.235 to satisfy `object-fit: cover`; the front door
+ * then reaches 1.235 x 1.18 x 1.06 = 1.55, which is where the softness in a full-size screenshot
+ * comes from. The two ways to buy it back are both worse: the 1,920 rendition is 470 kB for a
+ * picture behind a scrim, and a smaller vantage offset is less travel, which is the feature.
+ * So the scales are held at the geometric minimum and the softness is accepted — and anyone
+ * lowering them to sharpen the frame will find an edge sliding into view instead.
+ */
+.bd-drift {
+  position: absolute;
+  inset: 0;
+  animation: bd-drift 64s ease-in-out infinite alternate;
+}
+
+@keyframes bd-drift {
+  from { transform: translate3d(-1.6%, 0.9%, 0) scale(1.035); }
+  to { transform: translate3d(1.6%, -0.9%, 0) scale(1.06); }
+}
+
+.bd-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/*
+ * The scrim, at the frame's own measured alpha.
+ *
+ * `--bd-scrim` is written per frame by `scrimUnderSheet` in `MenuBackdrop.ts`, which derives
+ * it from `scrimForGold` in `public/press/manifest.json` — the smallest black alpha at which
+ * #d9b25f type clears 4.5:1 against the 95th percentile luminance of the region a centred
+ * sheet covers. The manifest's own values run 0 to 0.65 and are measured for type laid
+ * *directly* on a frame; what lands here is that minus what the sheet is worth, so 0 to 0.35.
+ * The derivation and its arithmetic are in that function.
+ *
+ * It is per frame rather than one house value because the frames disagree by a factor of ten:
+ * a single number would either wash out `press-rome-cavalry`, which needs none, or leave type
+ * unreadable on `press-rome-city`, which the manifest warns *looks* like the calm one and
+ * measures joint worst. The gradient on top is separate and is art direction: it darkens the
+ * bottom, where the footer and BEGIN BATTLE sit, and the top, where the wordmark does.
+ */
+.bd-scrim {
+  position: absolute;
+  inset: 0;
+  --bd-scrim: 0.35;
+  background:
+    linear-gradient(180deg, rgba(4, 3, 2, 0.55) 0%, transparent 26%, transparent 58%, rgba(4, 3, 2, 0.72) 100%),
+    linear-gradient(90deg, rgba(4, 3, 2, 0.38) 0%, transparent 46%),
+    rgba(4, 3, 2, var(--bd-scrim));
+  transition: background-color 900ms ease;
+}
+
+/*
+ * Grain over the scrim, 3.5 % of one tiny tile.
+ *
+ * It earns its place twice: the visual rubric asks for it, and it dithers the banding a
+ * lossy 88 kB WebP leaves in a clear sky, which is the one artefact visible at this size.
+ * A 96 px tile repeated is one small texture upload; a full-screen SVG filter is not.
+ */
+.bd-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='96' height='96' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/*
+ * The two refusals, in CSS so that they cannot come back through a code path that forgot.
+ *
+ * `bd-still-only` is set by `MenuBackdrop.afford()` — a machine that could not composite an
+ * idle menu at better than 20 ms a frame, or one that has declared `saveData`, a 2G link or
+ * a viewport too narrow to play in. `bd-parked` is a hidden tab. Both stop every animation
+ * and every transition; neither takes the picture away, because a still frame of this game
+ * is still the best thing that has ever been behind this menu.
+ */
+.menu-bg.bd-still-only .bd-drift,
+.menu-bg.bd-parked .bd-drift { animation: none; }
+
+.menu-bg.bd-still-only .bd-travel,
+.menu-bg.bd-parked .bd-travel { transition: none; }
+
+.menu-bg.bd-still-only .bd-slot { transition-duration: 240ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* A crossfade is not motion — nothing travels across the retina — and the alternative, a
+     hard cut between two full-bleed frames, is a flash, which is worse for this audience. */
+  .bd-drift { animation: none; }
+  .bd-travel { transition: none; }
+  .bd-slot { transition-duration: 240ms; }
+}
+
+/*
+ * The sheet, thinned so the picture behind it is worth having.
+ *
+ * `--panel-bg` is 94-97 % opaque, which is right for a HUD panel over a battle the player
+ * needs to keep seeing, and wrong for a menu whose whole point is now what is behind it: at
+ * 97 % the backdrop is a rumour. This is the same two-stop gradient at 80-88 %, over a blur.
+ *
+ * The blur is what makes that safe rather than merely darker. `public/press/manifest.json`
+ * measures `scrimForGold` — the black alpha at which gold type clears 4.5:1 — against the
+ * *95th percentile* luminance of the region the sheet covers, i.e. against the brightest
+ * speck in it. A 16 px blur is a low-pass filter over exactly that statistic: it pulls the
+ * p95 down towards the mean before the scrim is asked to do anything. The scrim is still
+ * applied at the frame's own measured value on top, so the two are belt and braces.
+ *
+ * `backdrop-filter` is GPU work over a large surface, so it is spent only where the machine
+ * has already been measured able to afford motion — see `.bd-still-only` below, which takes
+ * the blur away and puts the opacity back.
+ */
 .menu-sheet {
   position: relative;
   width: min(1180px, 94vw);
@@ -66,10 +241,29 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 1.6rem 1.9rem 1.4rem;
-  background: var(--panel-bg);
+  background: linear-gradient(180deg, rgba(30, 24, 17, 0.8), rgba(14, 11, 8, 0.88));
+  backdrop-filter: blur(16px) saturate(0.86);
+  -webkit-backdrop-filter: blur(16px) saturate(0.86);
   border: var(--panel-edge);
   border-radius: 3px;
   box-shadow: var(--shadow-deep);
+}
+
+/*
+ * No blur to spend, so buy the contrast with opacity instead.
+ *
+ * This is the same trade the rest of the degrade path makes: the screen keeps every fact and
+ * loses only the finish. `:has()` is avoided — the class is on `.menu-bg`, which is a sibling
+ * of the sheets, so the rule is written from the shared `.menu` root.
+ */
+.menu:has(.menu-bg.bd-still-only) .menu-sheet {
+  background: var(--panel-bg);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@supports not (backdrop-filter: blur(2px)) {
+  .menu-sheet { background: var(--panel-bg); }
 }
 
 /* Thin gold rule inside the frame, as the HUD panels have. */
@@ -125,11 +319,14 @@
   display: flex;
   align-items: center;
   gap: 1.4rem;
-  padding: 0.95rem 0;
+  /* 0.95rem before. The five sub-labels and two blurbs that came out of these rows were most
+     of what made BEGIN BATTLE sit below the fold on a 1000 px-tall window; this is the rest
+     of it. Measured at 1600x1000, the whole setup screen now ends above the fold. */
+  padding: 0.72rem 0;
   border-bottom: 1px solid rgba(217, 178, 95, 0.14);
 }
 
-.menu-lab { flex: 0 0 13rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.menu-lab { flex: 0 0 11rem; display: flex; flex-direction: column; gap: 0.15rem; }
 .lab-main { font-size: 0.92rem; letter-spacing: 0.11em; color: var(--gold); }
 .lab-sub {
   font-family: var(--num);
@@ -137,6 +334,17 @@
   color: var(--travertine);
   opacity: 0.55;
 }
+
+/*
+ * A row explains itself only when there is something to explain.
+ *
+ * Two rows keep a sub-label and both of them are now *reasons* rather than descriptions: the
+ * enemy row says why a storm gives no choice of enemy, and the battle-size row says why a
+ * storm ignores it. The element stays in the DOM so `refresh` has somewhere to write; this is
+ * what stops the empty one leaving a 0.72 rem hole under every heading that has nothing to add.
+ */
+.lab-sub:empty { display: none; }
+.scen-blurb:empty { display: none; }
 
 .menu-opts { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 
@@ -187,9 +395,10 @@
 
 .menu-opts.small button {
   min-width: 0;
-  padding: 0.3rem 0.62rem;
+  padding: 0.28rem 0.52rem;
   text-transform: capitalize;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
+  white-space: nowrap;
 }
 
 /* --- armies --- */
@@ -280,7 +489,7 @@
 }
 
 .ustep button:hover:not(:disabled) { border-color: var(--gold); color: var(--gold-bright); }
-.ustep button:disabled { opacity: 0.26; cursor: default; }
+.ustep button:disabled { opacity: 0.34; cursor: default; }
 
 .ucount {
   min-width: 1.5rem;
@@ -309,18 +518,27 @@
 
 /* --- clamp warning --- */
 
+/*
+ * One line per note now rather than a paragraph, so this is a strip and not a box.
+ *
+ * `cursor: help` is the only thing on the screen that says the evidence is still there: both
+ * notes carry the measurement they used to print — the pool arithmetic, and the four
+ * frame-cost figures — on the title attribute.
+ */
 .menu-warn {
-  margin: 0.7rem 0 0;
-  padding: 0.55rem 0.8rem;
+  margin: 0.6rem 0 0;
+  padding: 0.42rem 0.7rem;
   border: 1px solid rgba(227, 182, 76, 0.45);
   border-left: 3px solid var(--warn);
   border-radius: 2px;
   background: rgba(227, 182, 76, 0.09);
   font-family: var(--num);
   font-size: 0.75rem;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--parchment);
 }
+
+.menu-warn p { cursor: help; }
 
 .menu-warn b { color: var(--warn); }
 .menu-warn[hidden] { display: none; }
@@ -338,14 +556,39 @@
 
 /* --- conditions --- */
 
-.cond-row { align-items: flex-start; }
+/*
+ * Four conditions on one line instead of a 2x2 block.
+ *
+ * They are the least-touched controls on the screen — a player sets the hour once and the seed
+ * almost never — and they were occupying two rows' worth of height directly above BEGIN
+ * BATTLE, which is the worst place on this screen to spend it. `auto` columns rather than
+ * `1fr` so the hour slider takes the slack and the three short ones stay their own size.
+ *
+ * They are deliberately NOT collapsed behind a disclosure, tempting as that was.
+ * `[data-tier]` and `[data-size]` are clicked by twenty-one tools through
+ * `tools/lib/menu-boot.mjs`, and Playwright's actionability check waits thirty seconds on a
+ * control that is present, enabled and not visible before it throws. Hiding these would have
+ * turned one menu tidy-up into a repository-wide harness failure with a thirty-second fuse.
+ */
+.cond-row { align-items: center; }
 
 .cond-grid {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.55rem 1.4rem;
+  grid-template-columns: minmax(7.5rem, 1.1fr) auto auto auto;
+  align-items: center;
+  gap: 0.4rem 1.1rem;
 }
+
+/*
+ * The four difficulties and the four tiers stay on one line each.
+ *
+ * They wrapped — Legendary alone on a second row — and the 26 px that cost was the whole of
+ * why BEGIN BATTLE was still clipped at 1600x1000 after everything else had come out. A
+ * primary action the player has to scroll to find is the single worst thing this screen did,
+ * and it is worth a `nowrap` to fix.
+ */
+.cond .menu-opts.small { flex-wrap: nowrap; }
 
 .cond {
   display: flex;
@@ -359,7 +602,7 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  flex: 0 0 7.2rem;
+  flex: 0 0 auto;
   opacity: 0.8;
 }
 
@@ -410,7 +653,7 @@
   display: flex;
   align-items: center;
   gap: 0.7rem;
-  padding-top: 1rem;
+  padding-top: 0.8rem;
 }
 
 .foot-spacer { flex: 1; }
@@ -447,9 +690,14 @@
 .menu-foot .begin:active { filter: brightness(0.94); }
 
 /* Stack the armies once two columns of unit rows stop fitting side by side. */
+@media (max-width: 1180px) {
+  /* Four conditions on one line needs the width for it. Below this they go back to a column,
+     a little before the point where two orders of battle stop fitting side by side. */
+  .cond-grid { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 900px) {
   .menu-armies { grid-template-columns: 1fr; }
-  .cond-grid { grid-template-columns: 1fr; }
   .menu-row { flex-direction: column; align-items: stretch; gap: 0.6rem; }
   .menu-lab { flex: none; }
 }
@@ -522,7 +770,7 @@
  */
 .scen-opts button.off,
 .scen-opts button.off:hover {
-  opacity: 0.3;
+  opacity: 0.46;
   cursor: not-allowed;
   border-color: var(--gold-dim);
   color: var(--travertine);
@@ -541,16 +789,24 @@
   padding-bottom: 0.85rem;
 }
 
-/* A whole row that does not apply to the chosen battle. Battle size is the only one. */
+/*
+ * A whole row that does not apply to the chosen battle.
+ *
+ * 0.42, not the 0.26 this was. That number was chosen against a 97 %-opaque black sheet; over
+ * a photograph at 80-88 % it stopped being a greyed control and became an invisible one — the
+ * strapline under a disabled Qart-Hadasht was no longer text. The rule this project already
+ * holds itself to is that a disabled control which does not say why is the same bug as no
+ * control at all, and a disabled control nobody can read is a worse version of the same bug.
+ */
 .menu-row.inert .menu-opts button {
-  opacity: 0.26;
+  opacity: 0.42;
   cursor: not-allowed;
 }
 .menu-row.inert .menu-opts button:hover {
   border-color: var(--gold-dim);
   color: var(--travertine);
 }
-.menu-row.inert .lab-main { opacity: 0.5; }
+.menu-row.inert .lab-main { opacity: 0.62; }
 
 @media (max-width: 900px) {
   .scen-blurb { margin-left: 0; }
@@ -572,19 +828,24 @@
 .menu.at-home .menu-setup { display: none; }
 .menu.at-setup .menu-home { display: none; }
 
-/* Narrower than the setup sheet, which needs 1180 px for two orders of battle side by side.
-   Three plaques and a title do not, and stretching them to that width would leave a line of
-   body copy 90 characters long. */
+/*
+ * Narrower again — 620 px, from 760.
+ *
+ * It held four plaques carrying a sentence each and now holds two, one of which has no
+ * sentence at all, so the widest thing in it is the wordmark. A card sized for copy that is no
+ * longer there is a card with a hole in it, and on a full-bleed photograph the hole is the
+ * first thing you see.
+ */
 .menu-home {
-  width: min(760px, 94vw);
-  padding: 1.9rem 2rem 1.5rem;
+  width: min(620px, 94vw);
+  padding: 2rem 2.1rem 1.6rem;
 }
 
 .home-head {
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding-bottom: 1rem;
+  padding-bottom: 1.05rem;
   border-bottom: 1px solid var(--gold-dim);
 }
 
@@ -621,7 +882,7 @@
   align-items: center;
   gap: 1rem;
   width: 100%;
-  padding: 0.85rem 1rem;
+  padding: 0.95rem 1.05rem;
   background: linear-gradient(180deg, rgba(72, 56, 34, 0.5), rgba(30, 23, 15, 0.7));
   border: 1px solid var(--gold-dim);
   border-radius: 2px;
@@ -707,43 +968,36 @@
 
 /* --- the second rank: trailer, changelog --- */
 
+/*
+ * The second rank: four names on one line, with their sentences on `title`.
+ *
+ * It was two names and two sentences; the documentation and the model viewer came down here
+ * from full plaques. Four short labels fit one line at 620 px and read as what they are — a
+ * footer of links, subordinate to the two things above them, which is the hierarchy the front
+ * door was missing when four plaques competed for the same eye.
+ */
 .home-foot {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem 1.6rem;
+  gap: 0.4rem 1.5rem;
   align-items: baseline;
-  margin-top: 0.7rem;
+  margin-top: 0.9rem;
   padding-top: 0.95rem;
   border-top: 1px solid rgba(217, 178, 95, 0.14);
 }
 
 .aside {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
   min-width: 0;
   text-decoration: none;
-  color: var(--travertine);
-}
-
-.aside b {
-  flex: 0 0 auto;
   font-family: var(--num);
-  font-size: 0.79rem;
-  font-weight: 600;
-  letter-spacing: 0.07em;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
   color: var(--gold);
+  opacity: 0.72;
+  transition: opacity 0.14s, color 0.14s;
 }
 
-.aside i {
-  font-family: var(--num);
-  font-style: normal;
-  font-size: 0.72rem;
-  opacity: 0.48;
-}
-
-.aside:hover b { color: var(--gold-bright); }
-.aside:hover i { opacity: 0.76; }
+.aside:hover { opacity: 1; color: var(--gold-bright); }
 
 /* --- back to the front door, on the setup screen --- */
 

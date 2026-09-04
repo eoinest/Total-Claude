@@ -14,6 +14,16 @@
       ]
     },
     {
+      "$comment": "The menu backdrop. NOT immutable: tools/make-brand.mjs rewrites press-rome-line-1440.webp over press-rome-line-1440.webp, so a year would pin a visitor to whatever frames they first saw. A day, with a month of stale-while-revalidate, means a returning player pays nothing and a re-shot set reaches them within a day. Without a rule here these fall to Vercel's default and a returning visitor revalidates 236 kB on every load. Carried over from the superseded e/ui/cinematic-menu branch, which reached the same conclusion about its own plates.",
+      "source": "/press/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400, stale-while-revalidate=2592000"
+        }
+      ]
+    },
+    {
       "source": "/(.*)\\.(js|css|wasm)",
       "headers": [
         {
