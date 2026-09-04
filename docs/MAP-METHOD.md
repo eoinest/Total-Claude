@@ -3137,6 +3137,109 @@ came off it again without arriving — is a real 3 % completion rate that nobody
   now harmless, because `escape` gets them out again on the next tick, so it was left alone rather than
   spending a second behaviour change on the same pass — but it is still a hole and it is still there.
 
+### Phase — "the formation box is too large for the wall", measured (3 Sep 2026, `e/sim/rampart-fit`)
+
+**What we expected.** The owner's report is a clear geometric diagnosis: *"soldiers get stuck on the
+walls because their formation boxes are too large for a wall … its the edge of the wall so they get
+stuck on top of the wall … it should not go over the edge of the wall, it should not clip into the
+wall."* The prediction going in was that a player-ordered formation is laid out by the ordinary
+formation solver while standing on a rampart, so its slots fall off the walkway or inside the
+masonry, and the men assigned to them can never arrive. The brief's own hypothesis was that
+`Siege`'s garrison machinery does not reach a player order.
+
+**What happened. Both halves of the prediction are wrong, and the fault is real.**
+
+*The machinery does reach player orders.* `Siege.interceptOrders` takes plain `move` orders off the
+same bus the mouse uses and rewrites them into `sendToWall` / `moveAlongWall` / `escalade`. A unit on
+a rampart is never in a formation: `steerSoldiers` hands it to `steerToSlots` and `Siege` writes
+every man's world slot off the stonework. **Measured with `tools/probe-rampart.mjs` on both maps:
+zero slots off the walkable strip and zero to three inside masonry, on every garrison, on both
+circuits, at rest and under order.** The reported mechanism does not occur.
+
+*The symptom is real and the cause is one line of arithmetic.* `Siege.layOutOnWall` sizes a garrison
+as `files = min(ceil(n / ranks), runLen)` and `seats = files * ranks`, then seats man `k` at
+`seat = k % seats`. When the roster exceeds the seats the run can hold, **two men are given the
+identical `(station, rank)` and therefore, through `slotAt`, the identical world point.**
+`SLOT_ARRIVED` is 0.25 m and `resolveCrowding` separates two bodies to 0.84 m, so *neither* man can
+ever be within 0.25 m of that point: `steerToSlots` drives both at a full walk for the rest of the
+battle while the crowd solver pushes them apart and `holdGarrisonsOnTheWalk` pushes them back onto
+the band. That is the churn `slotAt`'s own comment already names as *"what 'they get stuck' looks
+like from the chair"* — the previous pass fixed the **rank** runaway (ranks 0..142) and left the
+**seat** wrap. `layOutOnWall`'s comment claims *"every man still has a distinct rank"*, which is true
+and is not the property that matters: two men with the same `seat` share a station *and* a rank.
+
+The control pair, on Carthage, is the whole finding in two rows — same 150-man `punic-levy`, same
+traverse verb, same 300 s window, differing only in the seat count of the destination:
+
+| destination | stations x ranks = seats | surplus | settles | far from slot at 300 s | men sharing a place |
+|---|---|---|---|---|---|
+| run 19 | 56 x 5 = 280 | 0 | **276 s** | 1 of 150 | **0** |
+| run 7  | 28 x 5 = 140 | 9 | **never** | 141 of 148 | **43**, worst pile 6 |
+
+Shipped, at t = 2 s, with no order given at all: Rome's `ballistarii` u0 is 108 men on a 20-station
+run at 5 ranks = 100 seats, **overflow 8, 4 men on 2 shared points**; Carthage's `punic-levy` u1 is
+150 on 28 stations = 140 seats, **overflow 10, 6 men sharing**. `g.overflow` is recorded and nothing
+reads it.
+
+**And a second finding the frames gave up that no number was looking for.** Both overhead frames show
+the cohort packed into the outer half of the walkway with three metres of bare stone behind it.
+`MAX_WALL_RANKS = 5` and `WALL_RANK_PITCH = 0.72`, so five ranks span 2.88 m — of a **5.70 m**
+Carthaginian band, which takes **eight**. The constant's own comment reasons entirely from Rome:
+*"the clear standing band … from 1.57 m to a measured 2.21-4.06 m — which is four to six ranks …
+the only thing capping it at three was this constant."* It is the identical mistake one map over, and
+it is rule 31 exactly: a constant lifted out of a two-sided thing keeps the side it was lifted from.
+**51 % of Carthage's walkway depth is unusable by construction**, and run 7's 140 seats would be 224.
+Not changed here, and the reason is measured rather than cautious: `files = ceil(n / ranks)`, so
+raising the cap *shortens* the manned frontage — a 150-man garrison at 8 ranks covers 19 stations
+instead of 30. Length before depth is the right model for a wall and it is a different algorithm, not
+a different constant.
+
+**Three instrument defects, all found by controls, all worth writing down.** The predicate went
+through three cuts:
+
+1. **Against the man's own feet.** A Carthaginian cohort 877 m from its destination, standing on the
+   Byrsa, read **96 of 96 slots "over a drop"** because the hill it was on is forty metres above the
+   wall it was walking to. Nothing about where a man happens to be standing belongs in a judgement
+   about a slot.
+2. **Against the highest surface the block's own slots touch, with a 0.9 m threshold.** Fired
+   **13 of 160** on the negative control — a cohort ordered to stand exactly where it was already
+   standing — because Rome's terrain has metres of relief across a cohort's own frontage. A height
+   rule cannot separate the Caelian from a parapet at any threshold.
+3. **A membership.** `built` is true where `CitySystem.walkableTopAt` stands more than a kerb above
+   the terrain; the block is on the works if a strict majority of its slots are; a slot off the works
+   under a block that is on them is `offEdge`. Terrain cannot trip it and a march cannot trip it.
+
+And the `intoWall` control had to move from an *order* to a *teleport*, because the sim defeated it by
+working: aimed at the curtain's centreline, `holdShortOfSolid` pushed the anchor a body clear of the
+face and the block settled on clean ground with zero slots in stone. **A control that the code under
+test defeats by behaving correctly is not a control.** Final state: `stayPut` and `openField` quiet
+(0 of 160; 0 of 12 units), `intoWall` 60 in stone / 99 of 160 bad, `onWalk` 27 off the edge with
+`spanY` 13.86 m on a 3.12 m band.
+
+**Reproduced independently, and it did not move:** Rome 20 of 1,035 stations and Carthage **90 of
+1,830** that no flight of steps can reach in either direction — the same figures the escape-shell pass
+recorded, from a different instrument that walks `walkDistance` from every stair's wall end.
+
+#### Found and not fixed
+
+- **The seat wrap itself.** The correct repair is that a body of men too long for its run continues
+  onto the runs the walk joins to, which is what a garrison physically does — but a station on another
+  run is on the far side of a tower, and `standingStation` clamps to `runBounds(slot)` precisely
+  because crossing that boundary without routing the man through the link is the 3.62 m teleport this
+  file already carries a note about. That is the crossing queue, not the layout, and it is a bigger
+  change than the evidence here licenses at the end of a pass.
+- **`MAX_WALL_RANKS` against Carthage**, above. The constant is wrong; the one-line change to it is
+  also wrong, for a measured reason.
+- **Rome's ascent completion.** Ordered from the ground onto a reachable parapet, a 160-man cohort put
+  **98 men on the walk and left 59 standing on the grass for the remaining four minutes**, being shot.
+  That is the same 92-of-147-at-300 s the escape-shell pass recorded and left; this pass reproduces it
+  and also leaves it.
+- **Slots tangent to a tower.** One to three slots per garrison read `inStone` against a 0.42 m body.
+  `STATION_CLEAR` is 0.55 m and `slotAt` then adds up to 0.21 m of along-wall jitter *outside* that
+  clearance, so a man can be jittered to 0.34 m from a tower face with a 0.42 m body. Rule 39's shape
+  again — the clearance and the thing that spends it are computed from different shapes — but eight
+  centimetres, on about fifteen men across two maps.
+
 <!-- Append new entries above this line. -->
 
 38. **A cleanup that matches nothing may not have run at all, and the shell will not say so.**
