@@ -133,12 +133,18 @@
 /*
  * The scrim, at the frame's own measured alpha.
  *
- * `--bd-scrim` is `scrimForGold` out of `public/press/manifest.json`: the smallest black
- * alpha at which #d9b25f type clears 4.5:1 against the 95th percentile luminance of the
- * region a centred sheet covers. It ranges 0 to 0.65 across the nine frames, so a single
- * house value would either wash out `press-rome-cavalry` or leave type unreadable on
- * `press-rome-city`. The gradient on top of it is separate and is art direction: it darkens
- * the bottom, where the footer and BEGIN BATTLE sit, and the top, where the wordmark does.
+ * `--bd-scrim` is written per frame by `scrimUnderSheet` in `MenuBackdrop.ts`, which derives
+ * it from `scrimForGold` in `public/press/manifest.json` — the smallest black alpha at which
+ * #d9b25f type clears 4.5:1 against the 95th percentile luminance of the region a centred
+ * sheet covers. The manifest's own values run 0 to 0.65 and are measured for type laid
+ * *directly* on a frame; what lands here is that minus what the sheet is worth, so 0 to 0.35.
+ * The derivation and its arithmetic are in that function.
+ *
+ * It is per frame rather than one house value because the frames disagree by a factor of ten:
+ * a single number would either wash out `press-rome-cavalry`, which needs none, or leave type
+ * unreadable on `press-rome-city`, which the manifest warns *looks* like the calm one and
+ * measures joint worst. The gradient on top is separate and is art direction: it darkens the
+ * bottom, where the footer and BEGIN BATTLE sit, and the top, where the wordmark does.
  */
 .bd-scrim {
   position: absolute;
