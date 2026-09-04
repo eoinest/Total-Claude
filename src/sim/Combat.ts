@@ -95,6 +95,39 @@ const HIT_EVENT_CEILING = 52;
 /** Minimum speed at which a horse's contact counts as a charge impact. */
 const TRAMPLE_SPEED = 3.0;
 /**
+ * Ticks a horseman must be *continuously* without an opponent before his horse is allowed to
+ * hit like a horse again — 75, the fixed 30 Hz times `CONTACT_RELEASE`, so a man is held to
+ * exactly the interval his unit is held to for deciding it has come out of contact.
+ *
+ * ## The bug this number exists for
+ *
+ * `impacted` says "this horseman has already spent his charge impact", and it used to be
+ * cleared the instant he had no target — one tick of it. That reads as "free of an opponent"
+ * and it is not: it is the ordinary churn of a melee, and *the trample manufactures it*. The
+ * impact knocks the victim away at 2.4 m/s and brakes the horse to 0.35 of its speed, so the
+ * pair are out of `KEEP_PAD` within a few ticks, the target is dropped, `impacted` clears,
+ * and the man re-acquires on his next striped tick — eight ticks later — and tramples again.
+ *
+ * Measured on the shipped field battle at `a0908f1`, over four minutes and six squadrons:
+ * **4,432 trample impacts, of which 86.6 % were a repeat by a man who had already trampled**,
+ * at a median gap between one man's impacts of **0.27 s** — which is the eight-tick
+ * acquisition stripe exactly, so the loop is closed by the acquisition rate and nothing else.
+ * One horseman delivered 65 charge impacts in four minutes. 91.6 % of them ran on the
+ * `Math.max(chargeF, 0.35)` floor, i.e. the unit's real charge window had long expired.
+ *
+ * Both halves of the owner's report are that loop. Every impact sets the victim to
+ * `Staggered`, which is the only thing in the game that puts a horse into the `rear` clip, so
+ * a cavalry melee rears **6.2 % of every squadron's horses at any instant** for as long as it
+ * lasts; and every impact multiplies the *attacker's* velocity by 0.35, once every 0.27 s,
+ * which is a charge that cannot get out of first gear.
+ *
+ * A horse hits like a horse when it arrives. After that it is a man on a horse with a sword,
+ * until he has pulled out, turned, and come back — which is what this interval asks him to
+ * prove. Nothing else about the mechanic changes: the first impact of a charge is untouched,
+ * damage, stagger and the 0.35 brake included.
+ */
+const TRAMPLE_REARM_TICKS = 30 * CONTACT_RELEASE;
+/**
  * Share of engagements that become a *matched duel* rather than two men independently
  * swinging at each other's position.
  *
@@ -346,7 +379,12 @@ export class CombatSystem implements Subsystem {
   private swing = new Float32Array(0);
   /** 1 once this swing's blow has been resolved, so it lands exactly once. */
   private swingFired = new Uint8Array(0);
-  /** 1 once a horseman has spent his charge impact on the current opponent. */
+  /**
+   * How many more ticks clear of any opponent a horseman owes before his horse may hit
+   * like a horse again; 0 means the charge impact is armed. Counted down only on ticks he
+   * has no target at all, and reset to the full debt the moment he has one — so it measures
+   * *continuous* freedom from the press, not a stopwatch. See `TRAMPLE_REARM_TICKS`.
+   */
   private impacted = new Uint8Array(0);
   /**
    * Decaying peak speed, tracked for cavalry only. The tick a horse makes contact it
@@ -803,7 +841,7 @@ export class CombatSystem implements Subsystem {
           if (cav && this.impacted[i] === 0) {
             const closing = Math.max(this.approach[i], this.impactSpeed[id]);
             if (closing > TRAMPLE_SPEED) {
-              this.impacted[i] = 1;
+              this.impacted[i] = TRAMPLE_REARM_TICKS;
               this.approach[i] = 0;
               this.cavalryImpact(i, t, u, def, mods, Math.max(chargeF, 0.35), closing);
               if (!p.aliveAt(t) || !p.aliveAt(i)) {
@@ -817,6 +855,9 @@ export class CombatSystem implements Subsystem {
           }
 
           engaged++;
+          // He has somebody in front of him, so whatever clear time he had banked toward
+          // his next charge impact is gone. A man in the press is not running one in.
+          if (cav && this.impacted[i] !== 0) this.impacted[i] = TRAMPLE_REARM_TICKS;
           const tx = p.x[t];
           const tz = p.z[t];
           nx += tx - p.x[i];
@@ -883,8 +924,11 @@ export class CombatSystem implements Subsystem {
         } else {
           this.swing[i] = -1;
           if (this.matchedWith[i] >= 0) this.matchedWith[i] = -1;
-          // Free of an opponent: the next contact can be a fresh charge.
-          this.impacted[i] = 0;
+          // Free of an opponent — but one tick of that is the churn of a melee, not a fresh
+          // run-in, and the trample itself produces it by knocking the victim out of reach.
+          // He pays the whole of `TRAMPLE_REARM_TICKS` clear before his horse counts as
+          // arriving again; the moment he has a target the debt is restored above.
+          if (this.impacted[i] !== 0) this.impacted[i]--;
           if (st === SoldierState.Fighting) {
             p.setState(i, mods.braced ? SoldierState.Bracing : SoldierState.Idle);
           }
@@ -1018,6 +1062,10 @@ export class CombatSystem implements Subsystem {
       if (!p.aliveAt(i)) continue;
       if (this.swing[i] >= 0) this.swing[i] = -1;
       if (p.target[i] >= 0) p.target[i] = -1;
+      // No enemy within `CONTACT_SCAN_RANGE` of the whole unit is as clear of the press as a
+      // man can be, so the charge impact re-arms outright rather than being counted down:
+      // there is no press out here to be clear *of*. See `TRAMPLE_REARM_TICKS`.
+      if (this.impacted[i] !== 0) this.impacted[i] = 0;
       if (p.state[i] === SoldierState.Fighting) p.setState(i, SoldierState.Idle);
       if (p.fatigue[i] > 0) p.fatigue[i] = clamp01(p.fatigue[i] - dt / 34);
     }

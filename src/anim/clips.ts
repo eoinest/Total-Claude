@@ -334,6 +334,16 @@ export const HORSE_GAIT_STRIDE: Float32Array = Float32Array.from(HORSE_GAIT_LADD
 });
 /** Index of the charge carriage; substituted for the top gait when the rider means it. */
 export const HORSE_CHARGE_CLIP = HORSE_CLIP_SET.index(HORSE_CHARGE_NAME);
+/** Index into `HORSE_CLIP_SET.clips` of the rear, the one-shot a checked horse plays. */
+export const HORSE_REAR_CLIP = HORSE_CLIP_SET.index('rear');
+/**
+ * The walk's rung on `HORSE_GAIT_LADDER`.
+ *
+ * Named because the render system needs the walk/trot crossover for something other than
+ * choosing a gait — see `REAR_EDGE` in `UnitRenderSystem` — and a literal `1` there would
+ * be a silent lie the day a rung is inserted.
+ */
+export const HORSE_WALK_RUNG = HORSE_GAIT_NAMES.indexOf('walk');
 /**
  * `Clip` -> index into `HORSE_CLIP_SET.clips`, or -1 when the mount's own speed decides.
  * Positive entries are one-shots (a rear, a fall) and must not be rate-matched.

@@ -10,6 +10,7 @@ import { unitType, isCavalry } from './roster';
 import {
   MAN_CLIP_SET, HORSE_CLIP_SET, FOOT_CLIP_MAP, RIDE_CLIP_MAP,
   HORSE_GAIT_LADDER, HORSE_GAIT_STRIDE, HORSE_CHARGE_CLIP, HORSE_STATE_MAP, HORSE_CHARGE_MASK,
+  HORSE_REAR_CLIP, HORSE_WALK_RUNG,
   FOOT_CLIP_VARIANT_MAP, FOOT_VARIANTS, bakePointTrack, meanPointOverClip,
   TESTUDO_CLIP_MAP, TestudoRole,
 } from '../anim/clips';
@@ -177,6 +178,34 @@ const GAIT_HYST = 0.10;
 
 /** Below this ground speed a mount is standing about rather than walking, metres/second. */
 const GAIT_IDLE_EDGE = 0.45;
+
+/**
+ * Above this ground speed a checked horse keeps its gait instead of rearing, metres/second.
+ * Derived from the same measured strides the gait ladder is built from — it is the walk/trot
+ * crossover — so it cannot drift away from the ladder if a clip is re-baked.
+ *
+ * ## Why a rear needs a speed at all
+ *
+ * `rear` is 26 frames over 1.1 s with `rootSpeed: 0`: the animal goes up on its hocks and
+ * comes down on the same square metre. The simulation puts a rider into `Staggered` and
+ * `HORSE_STATE_MAP` turns that into a rear, but nothing in `Combat` stops the *horse* —
+ * `steerToSlots` goes on driving him at his unit's slot at up to `runSpeed`, and the trample
+ * that staggered him also shoved him at 2.4 m/s. So the animal was reared and translating at
+ * the same time, and a stationary clip on a moving root is a skate.
+ *
+ * Measured on the shipped field battle at `a0908f1`: of 1,135 mount-seconds of `rear`,
+ * **942 — 83 % — were played by a horse travelling faster than a trot.** That is the "strange"
+ * in the owner's "strange flinching", and it is separate from how *often* the rear fires,
+ * which is a simulation fault and fixed in `Combat.TRAMPLE_REARM_TICKS`.
+ *
+ * Above the edge the animal simply keeps its gait; the rider still plays his own staggered
+ * clip, so the blow is still legible on the man. This is render-only — it reads `pool` and
+ * writes nothing the simulation reads — so it cannot make two machines disagree and cannot
+ * make a graphics tier change a battle.
+ */
+const REAR_EDGE = Math.sqrt(
+  HORSE_GAIT_STRIDE[HORSE_WALK_RUNG] * HORSE_GAIT_STRIDE[HORSE_WALK_RUNG + 1]
+);
 
 /**
  * Playback bounds for a mount's gait, in cycles per second.
@@ -1997,7 +2026,18 @@ export class UnitRenderSystem implements Subsystem {
     riderFacts: ClipFacts
   ): void {
     const p = this.battle.pool;
-    const forced = HORSE_STATE_MAP[clip] ?? -1;
+    let forced = HORSE_STATE_MAP[clip] ?? -1;
+    /*
+     * A rear is stationary; a horse that is still travelling keeps its gait. See `REAR_EDGE`.
+     *
+     * Latched on `horseCur`: once the animal has committed to the rear it finishes it even
+     * if it is shoved back up to speed mid-clip. Without the latch a horse hovering either
+     * side of the edge would cut between reared and trotting several times inside one 0.85 s
+     * stagger, which is a worse artefact than the skate it was fixing.
+     */
+    if (forced === HORSE_REAR_CLIP && speed > REAR_EDGE && this.horseCur[i] !== forced) {
+      forced = -1;
+    }
     let want: number;
     let rate: number;
 
