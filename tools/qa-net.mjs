@@ -3,8 +3,8 @@
  * QA: two clients, one relay, one battle — driven through the real menu with a real mouse.
  *
  * Usage: node tools/qa-net.mjs [--port=5937] [--relay=5989] [--json=path] [--shots=dir]
- *                              [--only=proto,battle,siege,lobby,lan,dev,static,badcode,norelay,
- *                                      drop,dup,swap,ulp,late,leave,lag,xengine]
+ *                              [--only=proto,battle,siege,strip,lobby,lan,dev,static,badcode,
+ *                                      norelay,drop,dup,swap,ulp,late,leave,lag,xengine]
  *                              [--lan-port=5938] [--lan-relay=5984]
  *                              [--dev-port=5939] [--static-port=5940]
  *                              [--all] [--seconds=70] [--keep] [--xsize=ultra] [--xticks=1500]
@@ -130,12 +130,12 @@ import { bootThroughMenu, driveMenu, ensureServer, waitForServer } from './lib/m
  */
 import {
   driveMenuOrExplain, drivers, INSTALL, lobbyFace, logDiff, markDisagreement, openAdvanced,
-  readBoth,
+  printStrip, readBoth, readStrip,
 } from './lib/net-drive.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const ARMS = ['proto', 'qr', 'battle', 'siege', 'lobby', 'lan', 'https', 'dev', 'static', 'ghost',
-  'badcode', 'norelay', 'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 'lag', 'xengine'];
+const ARMS = ['proto', 'qr', 'battle', 'siege', 'strip', 'lobby', 'lan', 'https', 'dev', 'static',
+  'ghost', 'badcode', 'norelay', 'drop', 'dup', 'swap', 'ulp', 'late', 'leave', 'lag', 'xengine'];
 /**
  * `xengine` is opt-in, and that is a judgement rather than an omission.
  *
@@ -1631,6 +1631,231 @@ if (wanted('siege')) {
   record('siege-console', a.errs.length === 0 && b.errs.length === 0,
     'neither page raised a console error during the siege',
     [...a.errs, ...b.errs].slice(0, 3).join(' ; ') || 'clean');
+
+  await m.host.close(); await m.guest.close(); relay.stop();
+}
+
+// ---------------------------------------------------------------------------
+// The strip against the plaque
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the session strip is, and whether a deploying player can still press anything.
+ *
+ * The owner's report, playing a relayed match on 1 Sep 2026: *"the You are Rome Slot zero
+ * banner is covers the deployment banner and i cannot customize my troops"*. Two complaints,
+ * and this arm asks them as two questions, because they can have two answers:
+ *
+ * 1. **Do the two rectangles overlap?** `.tc-net` is `position: fixed` in the body at
+ *    `z-index: 60`; `.deploy` is `position: absolute` in `#hud-root` at `z-index: 6`. Nothing
+ *    in the stacking order stops the strip being drawn over the plaque, so the only thing that
+ *    keeps them apart is `NetPanel`'s measurement of `OVERHEAD`, and a measurement taken at the
+ *    wrong instant is indistinguishable from no measurement at all.
+ * 2. **Does a click aimed at a deployment control reach it?** Asked with
+ *    `document.elementFromPoint` at the centre of every one, and then asked again with a real
+ *    `page.mouse.click` at the same coordinate. `elementFromPoint` returning `.tc-net` over
+ *    ADD UNITS *is* the second half of the report, stated as a measurement — an element that
+ *    only looks transparent while eating input is the worse of the two faults, because the
+ *    player has nothing on screen to blame.
+ *
+ * `checkVisibility()` and `elementFromPoint`, never `getBoundingClientRect().height > 0` and
+ * never Playwright's `isVisible()`: both of those report a healthy box for an element inside a
+ * closed `<details>`, a lesson this repository has already paid for once.
+ *
+ * ## At three HUD scales, because one is not a fix
+ *
+ * `.deploy` is `top: 8.2em` against a HUD whose em is `10px * var(--ui-scale)`, and the strip's
+ * `top` is set in px. Those two move at different rates, so a placement that clears the plaque
+ * at 1.0 can sit on it at 1.35 and vice versa. The slider's range is 0.8 to 1.35 and the default
+ * is 1.35 (`DEFAULT_UI_SCALE`), so all three ends of it are measured — and the scale is changed
+ * by dispatching `input` at the product's own `.set-scale` slider, which is the same code path
+ * a player's drag takes, rather than by writing `--ui-scale` from the harness.
+ *
+ * ## Both palette states
+ *
+ * ADD UNITS grows the plaque by a whole roster, which is where "customize my troops" happens
+ * and is the moment the plaque's height changes under a strip that has already been placed.
+ * Measured closed and open at every scale.
+ */
+if (wanted('strip')) {
+  console.log('\n=== the session strip against the deployment plaque ===');
+  // 5994: free in the band. 5988 is `lobby` and `badcode`, 5998 is `siege`, 5995-5997 are the
+  // fault arms and the two session arms, and two arms on one port is how `late` and `leave`
+  // were broken once already.
+  const relay = await startRelay(5994);
+  const m = await bootMatch(relay, { shots: 'strip' });
+  const page = m.host;
+  await page.waitForSelector('.dep-add', { timeout: 30000 });
+  /*
+   * Let both bars finish arriving before anything is measured.
+   *
+   * `.topbar` runs `drop-in` for 0.7 s and `.deploy` runs `dep-in` for 0.42 s, and both animate
+   * `transform`, which `getBoundingClientRect` includes. A reading taken during either is a
+   * reading of a bar still on its way to where it will be — `NetPanel`'s own docstring records
+   * the strip landing at 84 under a bar whose settled bottom is 89 from exactly this. The arm
+   * waits it out, so an overlap it reports is an overlap the player is looking at.
+   */
+  await sleep(1400);
+
+  // The probe itself lives in `tools/lib/net-drive.mjs`, because `qa-p2p` asks the same
+  // question of the peer transport and one instrument is the point of that file.
+  const probe = (lab) => readStrip(page, lab);
+  /** The centre of a control, as the probe saw it, or null. */
+  const centreOf = (p, tag) => {
+    const c = p.controls.find((k) => k.tag === tag);
+    return c && c.onScreen ? { x: c.x, y: c.y } : null;
+  };
+  /**
+   * A real click at a real coordinate, which is the whole point.
+   *
+   * Not `page.click(selector)`: Playwright scrolls the element into view, runs its own
+   * actionability wait and then reports "intercepts pointer events" thirty seconds later.
+   * That is a useful sentence, but it is Playwright's opinion of the DOM rather than the
+   * player's gesture. `page.mouse.click` at the centre the probe measured is the gesture.
+   */
+  const clickAt = async (pt) => {
+    if (!pt) return false;
+    await page.mouse.move(pt.x, pt.y);
+    await sleep(90);
+    await page.mouse.click(pt.x, pt.y);
+    await sleep(420);
+    return true;
+  };
+  const setScale = async (s) => {
+    await page.evaluate((v) => {
+      const el = document.querySelector('.set-scale');
+      if (!el) throw new Error('the HUD scale slider is gone');
+      el.value = String(v);
+      // The product's own listener, so this is the code path a player's drag takes.
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }, s);
+    await sleep(650);
+  };
+
+  const runs = [];
+  const clicks = [];
+  for (const scale of [1.35, 1, 0.8]) {
+    await setScale(scale);
+    const closed = await probe(`scale ${scale}, palette closed`);
+    runs.push(closed);
+    await shot(page, `strip-${String(scale).replace('.', '_')}-closed`);
+
+    // "Customize my troops", as the gesture: press ADD UNITS where it is drawn.
+    const opened = await clickAt(centreOf(closed, 'ADD UNITS'));
+    const open = await probe(`scale ${scale}, palette open`);
+    runs.push(open);
+    await shot(page, `strip-${String(scale).replace('.', '_')}-open`);
+    clicks.push({ scale, gesture: 'ADD UNITS', tried: opened, worked: open.paletteOpen });
+
+    // And one regiment added, at the first row whose `+` is not already at its establishment.
+    const row = open.controls.find((c) => c.tag.startsWith('+ ') && c.visible
+      && !c.disabled && c.onScreen);
+    if (row) {
+      const unit = row.tag.slice(2);
+      const readCount = () => page.evaluate((u) => Number(document
+        .querySelector(`.dep-row[data-unit="${u}"] .dep-count`)?.textContent ?? -1), unit);
+      const before = await readCount();
+      await clickAt({ x: row.x, y: row.y });
+      const after = await readCount();
+      clicks.push({ scale, gesture: `+ ${unit}`, tried: true, worked: after === before + 1,
+        count: `${before} -> ${after}` });
+      // Put it back, so the next scale starts from the army this one did.
+      const minus = (await probe('after +')).controls.find((c) => c.tag === `- ${unit}`);
+      if (minus && minus.onScreen && !minus.disabled) await clickAt({ x: minus.x, y: minus.y });
+    } else {
+      clicks.push({ scale, gesture: '+ (any row)', tried: false, worked: false,
+        note: 'no enabled palette row was on screen' });
+    }
+    // Closed again, so the next scale is measured from the state this one started in.
+    await clickAt(centreOf(await probe('before close'), 'ADD UNITS'));
+  }
+  measured.strip = { runs, clicks };
+
+  for (const r of runs) printStrip(r);
+
+  const missing = runs.filter((r) => !r.strip || !r.deploy || !r.distinct);
+  const overlapped = runs.filter((r) => r.overlap);
+  record('strip-clears-the-plaque',
+    runs.length > 0 && missing.length === 0 && overlapped.length === 0,
+    'the session strip and the deployment plaque never share a pixel, at any HUD scale',
+    missing.length
+      ? `${missing.length} of ${runs.length} readings had no strip, no plaque, or the two `
+        + `resolved to one element: ${missing.map((r) => r.label).join('; ')}`
+      : overlapped.length
+        ? overlapped.map((r) => `${r.label}: strip ${r.strip.top}-${r.strip.bottom} over `
+          + `plaque ${r.deploy.top}-${r.deploy.bottom}`).join('; ')
+        : runs.map((r) => `${r.label}: strip ${r.strip.top}-${r.strip.bottom}, plaque `
+          + `${r.deploy.top}-${r.deploy.bottom}`).join('; '),
+    'measured, not written down: `.deploy` is positioned in em against --ui-scale and the '
+      + "strip's top is in px, so the two move at different rates");
+
+  const eaten = [];
+  const unreachable = [];
+  for (const r of runs) {
+    for (const c of r.controls) {
+      if (!c.visible) continue;
+      if (c.hitIsStrip) eaten.push(`${r.label}: ${c.tag} at ${c.x},${c.y} -> ${c.hit}`);
+      else if (!c.reaches) unreachable.push(`${r.label}: ${c.tag} at ${c.x},${c.y} -> ${c.hit}`);
+    }
+  }
+  const probed = runs.reduce((a, r) => a + r.controls.filter((c) => c.visible).length, 0);
+  record('plaque-controls-hit-test',
+    probed > 0 && eaten.length === 0 && unreachable.length === 0,
+    'elementFromPoint at the centre of every deployment control returns that control',
+    eaten.length
+      ? `the session strip is on top of ${eaten.length} of them - ${eaten.slice(0, 4).join(' ; ')}`
+      : unreachable.length
+        ? `${unreachable.length} are covered by something else - `
+          + `${unreachable.slice(0, 4).join(' ; ')}`
+        : `${probed} control centres across ${runs.length} readings, every one of them its own`,
+    'a strip that only looks transparent while eating input is the worse of the two faults');
+
+  const failedClicks = clicks.filter((c) => !c.worked);
+  record('plaque-takes-a-click', clicks.length > 0 && failedClicks.length === 0,
+    'and a real mouse click at those centres opens the palette and adds a regiment',
+    failedClicks.length
+      ? failedClicks.map((c) => `${c.gesture} at scale ${c.scale} did nothing`
+        + `${c.note ? ` (${c.note})` : ''}${c.count ? ` (${c.count})` : ''}`).join('; ')
+      : clicks.map((c) => `${c.gesture} at ${c.scale}${c.count ? ` ${c.count}` : ''}`).join('; '),
+    'the report was "i cannot customize my troops", so the gesture is the check');
+
+  /*
+   * The one state the six readings above cannot reach, asked of the stylesheet directly.
+   *
+   * `.tc-net.wide` is toggled on by a desync or by any ending that keeps the strip, so it never
+   * appears during a healthy deployment and no amount of measuring the deploy phase can see it.
+   * It used to carry `pointer-events: auto`, which is a 880-px-wide transparent-looking box
+   * placed in front of a battlefield, a card bar and a dispatch the player is still entitled to
+   * click on — `.dep-palette` in `hud.css` records the identical fault eating every right-drag
+   * aimed at the ground beneath it.
+   *
+   * Read by adding the class, asking `getComputedStyle`, and taking it off again inside one
+   * `evaluate`, so no frame is ever painted in the altered state. This is a question about a
+   * CSS rule and is answered by the real stylesheet; nothing about the session is touched.
+   */
+  const pointerRule = await page.evaluate(() => {
+    const s = document.querySelector('.tc-net');
+    if (!s) return null;
+    const had = s.classList.contains('wide');
+    const plain = getComputedStyle(s).pointerEvents;
+    s.classList.add('wide');
+    const wide = getComputedStyle(s).pointerEvents;
+    if (!had) s.classList.remove('wide');
+    return { plain, wide };
+  });
+  measured.stripPointerEvents = pointerRule;
+  record('strip-never-takes-the-pointer',
+    !!pointerRule && pointerRule.plain === 'none' && pointerRule.wide === 'none',
+    'the strip is transparent to the pointer in both of its two states, not just the narrow one',
+    pointerRule
+      ? `.tc-net is pointer-events: ${pointerRule.plain}, .tc-net.wide is ${pointerRule.wide}`
+      : 'there was no .tc-net to ask',
+    'nothing in the strip is interactive — the sheet NetPanel.raise builds is where the '
+      + 'buttons are — so there is nothing to let the pointer in for');
+
+  record('strip-console', page.__errs.length === 0,
+    'and the page raised no console error while the plaque was being worked',
+    page.__errs.slice(0, 3).join(' ; ') || 'clean');
 
   await m.host.close(); await m.guest.close(); relay.stop();
 }

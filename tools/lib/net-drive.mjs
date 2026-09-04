@@ -288,6 +288,122 @@ export function logDiff(a, b) {
   return null;
 }
 
+/**
+ * Where the session strip is, where the deployment plaque is, and what a click at the centre of
+ * each deployment control would actually land on.
+ *
+ * Here rather than in `qa-net`, and for the reason at the top of this file: there are two
+ * netcode gates, the strip is drawn by one `NetPanel` for both of them, and the owner's question
+ * was explicitly *"do this for both transports"*. A relayed strip says ROOM QAQQR and a peer
+ * strip says something else, so the two are worth asking separately — but they are worth asking
+ * with **one** instrument, or the day they disagree nobody will be able to tell whether it was
+ * the product or the two copies of the probe.
+ *
+ * ## Three deliberate choices about what "the player can reach this" means
+ *
+ * - **`checkVisibility()`**, not `getBoundingClientRect().height > 0` and not Playwright's
+ *   `isVisible()`. Both of the latter report a healthy box for an element inside a closed
+ *   `<details>`, which this repository has already been misled by once.
+ * - **`document.elementFromPoint` at the measured centre.** This is the browser's own hit test,
+ *   the same one a click runs, and it is the only reading that can distinguish *covered* from
+ *   *drawn over*: `pointer-events: none` makes an element invisible to it, which is exactly the
+ *   difference between a strip that hides a control and a strip that eats it.
+ * - **`hitIsStrip` walks the strip's subtree.** `elementFromPoint` returns the innermost element,
+ *   which over `.tc-net` is one of its `<span>`s and not `.tc-net` itself; a check that compared
+ *   against the strip node alone would have passed through the whole fault.
+ *
+ * `distinct` is carried for the caller to assert on. A geometry check whose two selectors have
+ * quietly collapsed onto one element compares that element against itself and cannot go red,
+ * and this repository has shipped that shape before.
+ */
+export const STRIP_PROBE = (lab) => {
+  const box = (el) => {
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { top: Math.round(r.top), bottom: Math.round(r.bottom),
+      left: Math.round(r.left), right: Math.round(r.right) };
+  };
+  const name = (el) => {
+    if (!el) return '(nothing)';
+    const c = typeof el.className === 'string'
+      ? el.className.trim().split(/\s+/).filter(Boolean) : [];
+    return el.tagName.toLowerCase() + (el.id ? `#${el.id}` : '')
+      + (c.length ? `.${c.join('.')}` : '');
+  };
+  const strip = document.querySelector('.tc-net');
+  const dep = document.querySelector('.deploy');
+  const sb = box(strip);
+  const db = box(dep);
+  const S = strip ? getComputedStyle(strip) : null;
+  const D = dep ? getComputedStyle(dep) : null;
+  const overlap = !!(sb && db && sb.left < db.right && sb.right > db.left
+    && sb.top < db.bottom && sb.bottom > db.top);
+  const want = [];
+  const add = (el, tag) => { if (el) want.push([tag, el]); };
+  add(dep && dep.querySelector('.dep-add'), 'ADD UNITS');
+  add(dep && dep.querySelector('.dep-remove'), 'REMOVE');
+  add(dep && dep.querySelector('.dep-begin'), 'BEGIN BATTLE');
+  for (const row of dep ? Array.from(dep.querySelectorAll('.dep-row')) : []) {
+    add(row.querySelector('[data-d="1"]'), `+ ${row.dataset.unit}`);
+    add(row.querySelector('[data-d="-1"]'), `- ${row.dataset.unit}`);
+  }
+  const controls = want.map(([tag, el]) => {
+    const r = el.getBoundingClientRect();
+    const x = Math.round(r.left + r.width / 2);
+    const y = Math.round(r.top + r.height / 2);
+    const onScreen = r.width > 0 && r.height > 0
+      && x >= 0 && y >= 0 && x < window.innerWidth && y < window.innerHeight;
+    const hit = onScreen ? document.elementFromPoint(x, y) : null;
+    return {
+      tag, x, y, box: box(el),
+      visible: el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }),
+      disabled: !!el.disabled,
+      onScreen,
+      hit: name(hit),
+      reaches: !!(hit && (hit === el || el.contains(hit))),
+      hitIsStrip: !!(strip && hit && (hit === strip || strip.contains(hit))),
+    };
+  });
+  return {
+    label: lab,
+    scale: getComputedStyle(document.querySelector('.hud'))
+      .getPropertyValue('--ui-scale').trim(),
+    viewport: { w: window.innerWidth, h: window.innerHeight },
+    paletteOpen: !!document.querySelector('.dep-palette')
+      ?.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }),
+    strip: sb && { ...sb, pointerEvents: S.pointerEvents, zIndex: S.zIndex,
+      wide: strip.classList.contains('wide'),
+      text: (strip.innerText ?? '').replace(/\s+/g, ' ').trim() },
+    deploy: db && { ...db, pointerEvents: D.pointerEvents, zIndex: D.zIndex },
+    overlap,
+    controls,
+    distinct: !!(strip && dep && strip !== dep
+      && !strip.contains(dep) && !dep.contains(strip)),
+  };
+};
+
+/** `STRIP_PROBE`, run in a page. */
+export const readStrip = (page, label) => page.evaluate(STRIP_PROBE, label);
+
+/**
+ * One line per reading, in the shape a failing run has to be readable in.
+ *
+ * Printed by both gates, so the relay arm and the peer arm produce comparable output and a
+ * difference between the two transports is visible by eye rather than only in the JSON.
+ */
+export function printStrip(r) {
+  const bad = r.controls.filter((c) => c.visible && !c.reaches);
+  console.log(`  ${String(r.label).padEnd(30)} strip `
+    + `${r.strip ? `${r.strip.top}-${r.strip.bottom}` : 'MISSING'}`
+    + ` (pe ${r.strip?.pointerEvents}, z ${r.strip?.zIndex})  plaque `
+    + `${r.deploy ? `${r.deploy.top}-${r.deploy.bottom}` : 'MISSING'}`
+    + ` (pe ${r.deploy?.pointerEvents}, z ${r.deploy?.zIndex})`
+    + `  overlap ${r.overlap ? 'YES' : 'no'}  unreachable ${bad.length}/${r.controls.length}`);
+  for (const c of bad.slice(0, 4)) {
+    console.log(`      ${c.tag.padEnd(22)} centre ${c.x},${c.y} -> ${c.hit}`);
+  }
+}
+
 /** Both clients' final state, for comparison. */
 export async function readBoth(host, guest) {
   const rd = async (p) => {
