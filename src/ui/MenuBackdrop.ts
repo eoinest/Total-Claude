@@ -73,20 +73,26 @@
  *     enough to have read it. A visitor who clicks BATTLE in three seconds pays for one image.
  *
  * Measured, and it is the only reason any of the above is worth writing down.
- * `node tools/qa-hostload.mjs --reps=3`, twice in one session on the same machine at load
- * 8-9, over `192.168.1.77` with the cache cleared through CDP — the guest, not the host:
+ * `node tools/qa-hostload.mjs --reps=3`, three times in one session on the same machine at
+ * load 8–14, over `192.168.1.77` with the cache cleared through CDP — the guest, not the host.
+ * The third run is the finished tree; the second is this module's first draft, and it is kept
+ * because the pair of them is what shows the run-to-run spread.
  *
- * | the menu page, 30 Mbit/s Wi-Fi | before | after |
- * |---|---:|---:|
- * | first contentful paint | 92 ms | **92 ms** |
- * | time to interactive | 347 ms (347/349/345) | **343 ms** (343/343/343) |
- * | bytes to interactive | 831 kB / 4 requests | 834 kB / 4 requests |
- * | bytes once settled | 834 kB / 5 | 1.15 MB / 8 |
+ * | the menu page, 30 Mbit/s Wi-Fi | before | after | finished |
+ * |---|---:|---:|---:|
+ * | first contentful paint | 92 ms | 92 ms | **92 ms** |
+ * | time to interactive | 347 ms (347/349/345) | 343 ms (343/343/343) | **351 ms** (353/350/351) |
+ * | bytes to interactive | 831 kB / 4 requests | 834 kB / 4 | **834 kB / 4** |
+ * | bytes once settled | 834 kB / 5 | 1.15 MB / 8 | **1.15 MB / 8** |
  *
- * First paint does not move at all and interactive does not move outside its own spread. The
- * 3 kB on the critical path is this module in the bundle, which is 0.8 ms of that link. The
- * 343 kB difference in the settled column is the plates, and every byte of it lands *after*
- * the number in the row above — which is the whole design, stated as a measurement.
+ * **First paint does not move at all.** Interactive reads 347 before and 343 then 351 after,
+ * which is a spread of 8 ms across three runs of the same instrument and is not a difference
+ * this tool can resolve — quoting the 343 alone would have been quoting the flattering run.
+ * The honest claim is the one the design predicts: unchanged.
+ *
+ * The 3 kB on the critical path is this module in the bundle, 0.8 ms of that link. The 343 kB
+ * in the settled row is the plates, and every byte of it lands *after* the interactive number
+ * above it — which is the whole design, stated as a measurement rather than as an intention.
  *
  * ---------------------------------------------------------------------------
  * Motion, and the machines that should not be asked for any
