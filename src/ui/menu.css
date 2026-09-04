@@ -110,8 +110,26 @@
   will-change: transform;
 }
 
-/* The wander underneath it: 64 s end to end, ±1.6 % of the frame. Slow enough that it is
-   felt rather than watched, which is the difference between a menu and a screensaver. */
+/*
+ * The wander underneath it: 64 s end to end, ±1.6 % of the frame. Slow enough that it is felt
+ * rather than watched, which is the difference between a menu and a screensaver.
+ *
+ * ## Why every scale here is as small as it is, and must not be reduced further
+ *
+ * Each of these numbers is the *minimum* that keeps the frame's edge off screen, not a taste.
+ * A `translate` of `t` on a viewport-sized layer opens a gap of `t` at the opposite edge unless
+ * the layer is scaled by at least `1 + 2t`. So ±1.6 % of drift needs 1.032 and gets 1.035, and
+ * `.bd-travel`'s vantages need 1.24 (the setup screen's −12 % of vertical) and 1.16 (the front
+ * door's +8 %) against the 1.42 and 1.18 they are given.
+ *
+ * That matters because the scales multiply, and what they multiply is *resolution*. A 1,440-wide
+ * plate on a 1,600 px window is already at 1.235 to satisfy `object-fit: cover`; the front door
+ * then reaches 1.235 x 1.18 x 1.06 = 1.55, which is where the softness in a full-size screenshot
+ * comes from. The two ways to buy it back are both worse: the 1,920 rendition is 470 kB for a
+ * picture behind a scrim, and a smaller vantage offset is less travel, which is the feature.
+ * So the scales are held at the geometric minimum and the softness is accepted — and anyone
+ * lowering them to sharpen the frame will find an edge sliding into view instead.
+ */
 .bd-drift {
   position: absolute;
   inset: 0;
@@ -119,8 +137,8 @@
 }
 
 @keyframes bd-drift {
-  from { transform: translate3d(-1.6%, 0.9%, 0) scale(1.04); }
-  to { transform: translate3d(1.6%, -0.9%, 0) scale(1.075); }
+  from { transform: translate3d(-1.6%, 0.9%, 0) scale(1.035); }
+  to { transform: translate3d(1.6%, -0.9%, 0) scale(1.06); }
 }
 
 .bd-img {
