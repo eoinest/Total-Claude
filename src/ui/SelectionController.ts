@@ -23,6 +23,9 @@
 
 import type { EngineContext } from '../core/Engine';
 import type { WallRefusal } from '../core/events';
+import { wrapAngle } from '../util/math';
+import { formation, ranksFor } from '../sim/formations';
+import { formationCentroid } from '../sim/reform';
 import { Faction, UnitOrder } from '../sim/types';
 import { el } from './dom';
 import type { HudModel, UnitView } from './model';
@@ -38,6 +41,9 @@ import type { GhostSpec, WorldOverlay } from './WorldOverlay';
 import { WALL_REFUSAL } from './siege';
 
 export type CursorKind = 'default' | 'move' | 'attack' | 'friend' | 'select' | 'wall' | 'refuse';
+
+/** Scratch for `issueAboutFace`'s deployment branch. Read and discarded within one call. */
+const ABOUT_FACE_CENTRE = { x: 0, z: 0 };
 
 /** One phrase per wall order, so the hint and the cursor cannot describe different things. */
 const WALL_HINT: Record<'ascend' | 'traverse' | 'descend' | 'storm', string> = {
@@ -557,6 +563,58 @@ export class SelectionController {
     for (const id of this.model.selection.slice()) if (dep.remove(id)) n++;
     if (n > 0) this.clear(ctx);
     return n;
+  }
+
+  /**
+   * About face. The block keeps its ground and every man in it turns round.
+   *
+   * ## Why this had to exist as a verb
+   *
+   * There was no way for a player to set a facing at all without also setting a
+   * *destination*. Every facing this UI has ever produced rides on a `move` or `attackMove`
+   * built by `buildGhosts` — a short right-click faces the unit at the click, a right-drag
+   * faces it along the perpendicular of the dragged line — and both carry an `x` and a `z`.
+   * The `facing` order kind existed, was quantised through the replay, crossed the wire and
+   * was handled by `BattleSystem`, and the only thing in the tree that ever sent one was the
+   * AI (`src/ai/Orders.ts`).
+   *
+   * So "there is no way for a unit to about face" was exactly and literally true, and a
+   * player who wanted one had to right-click behind his own men — which is an order to *go*
+   * there. That is the first half of the report; `src/sim/reform.ts` is the second.
+   *
+   * One order per unit, because each has its own heading and a shared order carries one
+   * angle. `wrapAngle` because `targetFacing` is compared against `u.facing` with
+   * `angleDelta` and both are kept in [-PI, PI).
+   */
+  issueAboutFace(ctx: EngineContext): void {
+    const views = this.model.selectedViews.filter((v) => !v.routing);
+    if (!views.length) return;
+    const dep = this.deployment;
+    for (const v of views) {
+      const facing = wrapAngle(v.unit.facing + Math.PI);
+      if (dep?.active) {
+        // The clock is stopped during deployment, so no order would ever be applied. Place
+        // the unit instead — at the anchor that leaves its footprint where it is, which is
+        // the same arithmetic `BattleSystem.pivotAboutCentre` does in play, off the same
+        // helper, so the two cannot drift apart.
+        const u = v.unit;
+        const slots = u.members.length;
+        const f = formation(u.formationId);
+        formationCentroid(f, slots, u.width, ranksFor(slots, u.width),
+          u.spacingX, u.spacingZ, ABOUT_FACE_CENTRE);
+        const c0 = Math.cos(u.facing);
+        const s0 = Math.sin(u.facing);
+        const c1 = Math.cos(facing);
+        const s1 = Math.sin(facing);
+        const ox = ABOUT_FACE_CENTRE.x;
+        const oz = ABOUT_FACE_CENTRE.z;
+        const dx = (ox * c0 + oz * s0) - (ox * c1 + oz * s1);
+        const dz = (-ox * s0 + oz * c0) - (-ox * s1 + oz * c1);
+        dep.place(v.id, u.x + dx, u.z + dz, facing, u.width);
+        continue;
+      }
+      this.send(ctx, { unitIds: [v.id], kind: 'facing', facing });
+    }
   }
 
   issueAbility(id: string, ctx: EngineContext): void {
@@ -1769,6 +1827,10 @@ export class SelectionController {
         this.send(ctx, { unitIds: ids, kind: 'gait', running: this.runByDefault });
       }
     }
+    // U for the U-turn. Q, E and the WASD block belong to the camera, and every other letter
+    // this HUD has is spoken for — see `SettingsPanel.KEYS`, which is the legend this must
+    // stay in step with.
+    if (input.keyPressed('KeyU')) this.issueAboutFace(ctx);
     if (input.keyPressed('Tab')) this.cycle(ctx);
     if (this.deployment?.active
       && (input.keyPressed('Delete') || input.keyPressed('Backspace'))) {
