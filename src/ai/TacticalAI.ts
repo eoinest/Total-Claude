@@ -1,6 +1,7 @@
 import type { EngineContext, Subsystem } from '../core/Engine';
 import type { BattleSystem } from '../sim/BattleSystem';
 import { ALL_FACTIONS, Faction, UnitOrder, type UnitGroupState, type UnitTypeDef } from '../sim/types';
+import { ridesElephant } from '../units/kit';
 import { angleDelta } from '../util/math';
 import type { Rng } from '../util/rand';
 import { AIWorld, isLineUnit, type UnitInfo } from './AIWorld';
@@ -657,6 +658,19 @@ const CavalryCycle: Behaviour = {
           return;
         }
         const d = distToEnemy(c, t);
+        /*
+         * 90 m, and an elephant-specific trigger was tried here and **rejected by the
+         * measurement**, which is worth a note because the arithmetic argument for it is
+         * seductive. `charge` lasts 12 s; a horse at 8.2 m/s crosses 90 m inside that and an
+         * elephant at 4.6 m/s cannot, so the ability "must" have expired before the animal
+         * arrived. It has not: instrumenting `mods.charge` at every `chargeFactor` call on the
+         * shipped Punic battle records a peak of **1.40** — the ability's own multiplier —
+         * with 601 of 843 live calls carrying it. What actually holds the charge down is the
+         * *speed* term: the animals arrive at about 2.9 m/s against `chargeSpeed` 6.2, so
+         * `clamp(impactSpeed / chargeSpeed, 0.2, 1.25)` is 0.47 and no trigger distance can
+         * change that. See `UnitGroupState.charging` for the reason the anchor never reaches
+         * `chargeSpeed` at all.
+         */
         if (d < 90) self.orders.ability(c.u, 'charge', CD_CHARGE);
         if (d < 60 && c.def.abilities.includes('warcry')) self.orders.ability(c.u, 'warcry', CD_WARCRY);
         self.orders.attack(c.u, t);
@@ -666,6 +680,50 @@ const CavalryCycle: Behaviour = {
         }
         break;
       }
+      /**
+       * In the melee — and, for everything on a horse, on a four-second clock.
+       *
+       * **An elephant is exempt, and that exemption is a bug fix rather than a preference.**
+       *
+       * `war-elephants` is classed `heavy-cavalry` because the *simulation* wants the animal
+       * pushed, damaged and killed like a mount (see `appearance.mount` in `sim/types.ts`), so
+       * it arrives here and inherits the withdraw below. Measured on the shipped Punic field
+       * battle at `4364c00`, that is what the whole unit is worth:
+       *
+       *   - the squadron charges home at t+107.7 s and the brain flips to `stuck`;
+       *   - `patience` is `CAV_STUCK_TICKS * (1.4 - cavalryDiscipline)` = about **4 seconds**,
+       *     so at t+111.7 s it flips to `withdraw`;
+       *   - `withdraw` recomputes its destination from the unit's own *moving* anchor every
+       *     think, so each one clears `MOVE_EPS` and issues a fresh order: **six `move` orders
+       *     in 2.7 s** for one squadron and eleven in 7.5 s for the other, against **zero**
+       *     orders for the Gallic warband standing beside them in the same window;
+       *   - every one of those sets `orderGrace = ORDER_GRACE` and `contactLock = false`
+       *     (`BattleSystem.applyOrder`), and `steerToSlots` then strips `p.target` from every
+       *     man of the unit that is `Fighting` and puts him back into a locomotion clip.
+       *
+       * The result is not that the animals fight badly. It is that **they never fight**. Over
+       * 46 s of contact the two squadrons held `contactLock` for 2.9 % of unit-ticks; of the
+       * 253 times a living opponent was taken off an animal, **252 happened while the unit was
+       * disengaging** and one for every other reason in the tree combined; an animal held an
+       * opponent for a median of two ticks. Thirty-two animals threw **five** melee blows and
+       * killed **nobody**, and 17 of 20 deaths were of an animal that had never landed one.
+       * `tools/scratch/ele-diag.mjs`, `ele-why.mjs`, `ele-why2.mjs` and `ele-why3.mjs` are the
+       * four passes that narrowed that down, and the last one is the proof.
+       *
+       * The comment above is right about a horse and exactly inverted for an elephant. A
+       * squadron of horse that stays in a melee is sixty men doing an infantryman's job badly;
+       * an elephant *is* the infantryman's job — `roster.ts` spends a paragraph on the animal
+       * standing in front of a line that cannot hold it — and its way out of a fight is
+       * already written and already famous. It is `discipline: 0.55`, the lowest in the game
+       * bar the fanatics: the unit leaves when it **breaks**, ploughing back through its own
+       * army, and that is the drawback the player is meant to own. Withdrawing tidily on a
+       * four-second timer deletes the upside and the downside together.
+       *
+       * So the elephant stays `stuck` until it is not `inContact` or until it routs. Nothing
+       * else changes: `hunt` and `charge` are unaltered, and a unit that is not an elephant
+       * takes the identical branch it always did — which is why the three pinned determinism
+       * battles, none of which fields an elephant, are byte-identical across this change.
+       */
       case 'stuck': {
         const t = brain.cavTargetId;
         const mem = c.w.perceived(c.u.faction, t);
@@ -677,7 +735,7 @@ const CavalryCycle: Behaviour = {
         if (!c.info.inContact) {
           brain.cavPhase = 'hunt';
           brain.cavPhaseSince = tick;
-        } else if (stuckFor > patience || worth < 0.7) {
+        } else if (!ridesElephant(c.def) && (stuckFor > patience || worth < 0.7)) {
           brain.cavPhase = 'withdraw';
           brain.cavPhaseSince = tick;
         } else if (mem) {

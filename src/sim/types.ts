@@ -257,6 +257,22 @@ export interface UnitTypeDef {
   attackRate: number;
   /** Reach in metres — spears out-range swords. */
   reach: number;
+  /**
+   * Hit points of one pool entry. Absent means 100, which is every man in the game.
+   *
+   * **This exists because one pool entry is not always one man.** `strength` is a count of
+   * *entries*, and for almost everything an entry is a soldier — so `BattleSystem.spawnUnit`
+   * wrote a flat 100 and nothing had ever needed otherwise. `war-elephants` breaks that: its
+   * own comment in `roster.ts` opens with "eight animals, not eight men" and says an entry is
+   * "the beast, its mahout and the three men in the tower", and it was then given a
+   * legionary's hit points. Four pila killed one.
+   *
+   * So this is not a buff knob bolted to the side of the roster; it is the second half of a
+   * statement the roster already makes. Anything that is one entry and more than one life
+   * says so here, and everything else keeps the 100 it always had — which is why no battle
+   * without such a unit in it changes by a bit.
+   */
+  hitPoints?: number;
 
   // ---- Missiles ----
   missile?: {
