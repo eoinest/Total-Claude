@@ -5,6 +5,7 @@ import {
   BASE_SPACING_X, BASE_SPACING_Z, closestPointOnSegment, formation, frontSegment, makeSegment,
   ranksFor, segmentDistance,
 } from './formations';
+import { assignSlots, formationCentroid } from './reform';
 import { unitType, isCavalry } from '../units/roster';
 import { ridesElephant } from '../units/kit';
 import type { TerrainSystem } from '../terrain/TerrainSystem';
@@ -598,6 +599,71 @@ const MELEE_FOOTING_SPEED = 0.45;
 const SLOT_ARRIVED = 0.4;
 
 /**
+ * Radians of heading change after which a unit re-solves which man holds which slot.
+ *
+ * See `src/sim/reform.ts` for what the re-solve is and why it exists. This is how often it
+ * happens, and both directions are a real cost.
+ *
+ * **Too coarse and the men chase.** The lattice rotates between re-solves, so a man's target
+ * runs away from him at the block's edge speed and he walks after it. At 0.35 rad — the value
+ * this started at — a 180-degree order on a 24 m line still moved the median man 7 m.
+ *
+ * **Too fine and it is a sort per unit per tick.** The standing wheel is 0.6 rad/s, so 0.02
+ * rad is every tick, and re-solving eight thousand men every tick to service the two units
+ * that are actually turning is the shape of cost this project has removed twice.
+ *
+ * 0.05 rad is 2.9 degrees, which is one re-solve every 2.5 ticks of a standing wheel and
+ * never more than one file of lateral drift at the flank of the widest formation in the
+ * game. The cost is bounded by the number of units *turning*, which is normally zero.
+ */
+const REFORM_ANGLE = 0.05;
+
+/**
+ * How fast a man who is standing still turns to face the way his unit does, radians a second,
+ * before his own variation.
+ *
+ * ## The bug this exists for
+ *
+ * `integrate` wrote `p.facing[i]` in exactly one place, guarded by `speed > 0.22`: **a man
+ * who was not walking never changed the way he was pointing.** So the only way a body of men
+ * could come to face a new direction was for every one of them to walk somewhere, and where
+ * they ended up pointing was whatever bearing they happened to arrive on.
+ *
+ * Measured before this existed (`tools/probe-aboutface.mjs`): a legionary cohort ordered to
+ * about-face had its *unit* heading exactly right — 0.0 degrees off the order — and its
+ * *men* a median of **75.6 degrees off it**, thirty seconds later, having walked 20 m each to
+ * get there. Sixty cavalry: 108.3 degrees. That is the second half of "they would not turn
+ * around to face", and no amount of work on where a man walks could have fixed it, because
+ * the man was never asked to turn.
+ *
+ * ## Why it is per man
+ *
+ * A thousand men turning at one rate to one bearing on one tick is precisely the coherent
+ * motion the dressing work in `FormationDef.dress` was done to remove — "they all sway left
+ * and right magically along some sort of function". So the rate is scaled per man from his
+ * own stable hash, and the bearing he settles on carries a dressing error scaled by his
+ * formation's own `dress`, which keeps a testudo crisp (+-0.9 degrees) and lets a battle
+ * line look dressed by eye (+-4.3 degrees) without a second constant to keep in step.
+ *
+ * 2.6 rad/s with +-35% is an about-face in a little over a second at the median, which is
+ * about right for a man who is standing still and has been told to turn round, and slow
+ * enough that the turn is legible rather than a pop.
+ */
+const STAND_TURN_RATE = 2.6;
+/** Peak-to-peak fraction of `STAND_TURN_RATE` taken from the man's own hash. */
+const STAND_TURN_SPREAD = 0.7;
+/**
+ * Radians of remaining turn below which a standing unit is *not* treated as turning.
+ *
+ * One degree. `turningInPlace` freezes a unit's men where they stand, so the one thing it
+ * must never do is latch: a unit sitting on its ordered bearing with a bearing that moves by
+ * rounding would otherwise never dress onto its slots again. Everything a player or the AI
+ * would call a turn is orders of magnitude above this — the AI's own facing deadband is
+ * 0.26 rad — and everything below it is arithmetic.
+ */
+const TURN_HOLD_MIN = 0.0175;
+
+/**
  * The footprint of a fallen war elephant, as a capsule on the ground.
  *
  * A live animal is about 4.2 m nose to tail and 2.0 m across the body. Lying on its side
@@ -744,6 +810,7 @@ export class BattleSystem implements Subsystem {
     this.orderGrace = new Float32Array(256);
     this.breakingOff = new Uint8Array(256);
     this.press = new Float32Array(cap);
+    this.standFacing = new Float32Array(cap);
     this.sepUsed = new Float32Array(cap);
     // 0.42 is `resolveCrowding`'s own default body radius, written here so the array is
     // valid before the first tick even if nothing is in a packed formation.
@@ -1344,6 +1411,11 @@ export class BattleSystem implements Subsystem {
     u.width = f.width(u.alive || u.initialStrength);
     u.spacingX = this.baseSpacingX(def) * f.spacingXMul;
     u.spacingZ = this.baseSpacingZ(def) * f.spacingZMul;
+    // A new lattice on the same ground: who holds which place in it has to be decided
+    // again, or a cohort ordered into testudo walks the shape rather than closing into it.
+    // The formation id is a string and does not belong in `maybeReform`'s numeric mark, so
+    // the mark is cleared here instead and the next tick solves.
+    this.reformShape[u.id] = NaN;
   }
 
   // -------------------------------------------------------------------------
@@ -1400,6 +1472,34 @@ export class BattleSystem implements Subsystem {
    */
   private frontGaps = new Float32Array(64).fill(Infinity);
   private frontEnemies = new Int32Array(64).fill(-1);
+  /**
+   * The heading, and the shape, this unit's slot assignment was last solved against.
+   *
+   * Two marks rather than one because a formation re-solves for two different reasons and
+   * they have nothing to do with each other: the block turned (`reformFacing`), or the block
+   * changed shape under it (`reformShape` — width, formation and the size of the slot
+   * lattice). `NaN` means "never solved", which is the state every unit is born in and which
+   * forces exactly one no-op solve on its first tick.
+   */
+  private reformFacing = new Float32Array(64).fill(NaN);
+  private reformShape = new Float64Array(64).fill(NaN);
+  /**
+   * 1 while this unit is turning on the spot, and its men should hold their ground.
+   *
+   * **Face first, then re-form**, which is the owner's spec in four words. A body of men
+   * told to turn round does not march anywhere: it turns, and only then dresses back onto
+   * the shape.
+   *
+   * Without this the lattice sweeps through the whole arc and every man chases his own slot
+   * around it. The slots' *intermediate* positions are not a shape anybody ordered — a
+   * 29-wide block half way through a turn is a 29-wide block at 47 degrees, and the man
+   * whose place it is has to walk sideways to it and then walk back — so the whole of that
+   * motion is work done toward a configuration that was never the destination. Measured with
+   * the men following it: a 160-man cohort ordered to about-face walked a median of 5.49 m
+   * and took 15.9 s to settle, having finished exactly where it began. Holding them still
+   * for the 1.2 s the turn takes costs nothing and removes all of it.
+   */
+  private turningInPlace = new Uint8Array(64);
   /** The direction a broken unit committed to running in. Zero when it is not routing. */
   private routDirX = new Float32Array(64);
   private routDirZ = new Float32Array(64);
@@ -1491,6 +1591,15 @@ export class BattleSystem implements Subsystem {
     const e = new Int32Array(size).fill(-1);
     e.set(this.frontEnemies);
     this.frontEnemies = e;
+    const rf = new Float32Array(size).fill(NaN);
+    rf.set(this.reformFacing);
+    this.reformFacing = rf;
+    const rs = new Float64Array(size).fill(NaN);
+    rs.set(this.reformShape);
+    this.reformShape = rs;
+    const tip = new Uint8Array(size);
+    tip.set(this.turningInPlace);
+    this.turningInPlace = tip;
     const rx = new Float32Array(size);
     rx.set(this.routDirX);
     this.routDirX = rx;
@@ -2018,6 +2127,10 @@ export class BattleSystem implements Subsystem {
     // that stops a formation advancing, and the advance lives in this function. Combat
     // mirrors it onto the shared blackboard and adds the blows-are-landing case.
     this.growUnitScratch(u.id + 1);
+    // Cleared here and set in exactly one place — the standing wheel at the bottom — so a
+    // unit that starts moving, breaks into a fight or routs cannot be left holding station
+    // because of a turn it was part way through.
+    this.turningInPlace[u.id] = 0;
     const near = routing ? { dist: Infinity, id: -1 } : this.nearestEnemyFront(u);
     this.frontGaps[u.id] = near.dist;
     this.frontEnemies[u.id] = near.id;
@@ -2232,12 +2345,46 @@ export class BattleSystem implements Subsystem {
     this.checkStall(u, moving, headingAlign, beforeX, beforeZ, distToTarget);
 
     if (distToTarget <= 0.35) {
-      // A formation standing still wheels *slowly* — 0.6 rad/s is a 180-degree about-face
-      // in five seconds, which is about right for several hundred men and, more to the
-      // point, bounds how badly a jittery facing order can read. At 1.5 rad/s a unit whose
-      // ordered facing flipped between two threats span on the spot at 86 degrees a second
-      // for the whole battle; that was measured at 2,578 degrees over thirty seconds.
-      u.facing = turnToward(u.facing, u.targetFacing, dt * 0.6);
+      /*
+       * A formation standing still turns as fast as its men do, and no faster.
+       *
+       * This was 0.6 rad/s — a 180-degree about-face in five seconds — and the reason given
+       * was that several hundred men take time to wheel, and that a slow rate bounds how
+       * badly a jittery facing order can read (at 1.5 rad/s a unit whose ordered facing
+       * flipped between two threats span on the spot at 86 degrees a second for a whole
+       * battle; 2,578 degrees over thirty seconds, measured).
+       *
+       * The first half of that was true of the code and not of the world. A body of men
+       * turning on the spot was *implemented* as the slot lattice sweeping through five
+       * seconds of arc with every man chasing his own slot around it, so a slow rate was
+       * the only thing keeping the sweep survivable. It is not implemented that way any
+       * more: `pivotAboutCentre` keeps the ground, `maybeReform` keeps each man on the slot
+       * nearest him, and `STAND_TURN_RATE` turns his head. What is left for the block's own
+       * heading to represent is the men's heading, so it should move at the men's rate.
+       *
+       * Measured (`tools/probe-aboutface.mjs`), a 160-man cohort ordered to about-face with
+       * everything else in this branch already in place: at 0.6 rad/s the median man walked
+       * **9.61 m**, because the lattice was five seconds away from where it was going and he
+       * followed it the whole way. The rate is not a detail of presentation; it is how long
+       * the men spend chasing a shape that has not arrived.
+       *
+       * The second half of the old rationale survives intact. This is still a rate limit,
+       * and a facing order that flips every tick still cannot spin a unit faster than a man
+       * can turn his own body — which is the bound that actually means something, because
+       * the unit's heading is now a claim about which way its men are looking.
+       */
+      const was = u.facing;
+      const toGo = Math.abs(wrapAngle(u.targetFacing - was));
+      u.facing = turnToward(u.facing, u.targetFacing, dt * STAND_TURN_RATE);
+      if (u.facing !== was) {
+        // A body of men turning on the spot pivots about itself, not about the middle of
+        // its own front rank. See `pivotAboutCentre`.
+        this.pivotAboutCentre(u, was);
+        // And its men hold their ground while it does. See `turningInPlace`. The threshold
+        // is one degree, so a unit that has arrived on its bearing and is being nudged by
+        // rounding is never frozen; anything a player or the AI would call a turn is.
+        if (toGo > TURN_HOLD_MIN) this.turningInPlace[u.id] = 1;
+      }
     }
 
     // Fatigue: running and fighting drain, standing still recovers.
@@ -2723,6 +2870,97 @@ export class BattleSystem implements Subsystem {
     }
   }
 
+  /**
+   * Re-decide which man holds which slot, when the shape has moved out from under them.
+   *
+   * `src/sim/reform.ts` has the argument and the measurements; this is the trigger. Two
+   * things can invalidate an assignment and they are unrelated: the block turned, or the
+   * block changed shape (a new formation, a new frontage, or men lost so the lattice is a
+   * different size). Neither is common, so the normal cost of this is two compares per unit
+   * per tick and nothing else.
+   *
+   * ## Three units it deliberately does not touch
+   *
+   * **A unit in contact.** A man in melee is bounded to `MELEE_FOOTING` of his dressed slot,
+   * so moving his slot moves him — and re-labelling a fighting line mid-fight would drag men
+   * across a seam they are holding. The marks are *not* updated in that case, on purpose, so
+   * the moment the unit breaks off it re-forms once against everything that changed while it
+   * was busy, which is the same minimal-travel solve it would have made all along.
+   *
+   * **A unit the elevation owner has.** Its men are not in a formation in any sense this
+   * code understands — `Siege` writes their world slots off the stonework — and the caller
+   * has already sent them to `steerToSlots`.
+   *
+   * **A battery.** `UnitRenderSystem` reads `p.slot` to decide which engine a man crews and
+   * where he stands at it, so renumbering a battery would have crews swapping machines. One
+   * pool slot is a crewman at a station, not a place in a rank, and this has nothing useful
+   * to say about it.
+   */
+  private maybeReform(u: UnitGroupState, def: UnitTypeDef, sinF: number, cosF: number): void {
+    if (def.unitClass === 'artillery') return;
+    const id = u.id;
+    this.growUnitScratch(id + 1);
+    // Width and lattice size, packed. Both are small integers, so the sum is exact and a
+    // change in either is a change in the number. A change of *formation* comes in through
+    // `setFormation`, which clears the mark: the id is a string and does not belong here.
+    const shape = u.width * 65536 + u.members.length;
+    const turned = !(Math.abs(wrapAngle(u.facing - this.reformFacing[id])) < REFORM_ANGLE);
+    if (!turned && this.reformShape[id] === shape) return;
+    // Not while the block is still turning, and not while it is fighting. Both leave the
+    // marks alone on purpose, so the solve happens once, on the tick the reason to wait
+    // goes away, against the frame the shape has actually settled on. Re-solving *during*
+    // a turn is worse than not re-solving at all: the intermediate frames of a rotating
+    // block sort a 29-wide line into 24 rows of 6, and a man handed a place in that is
+    // handed a place on the far side of his own unit for a third of a second.
+    if (u.contactLock || this.turningInPlace[id] === 1) return;
+    this.reformFacing[id] = u.facing;
+    this.reformShape[id] = shape;
+    assignSlots(this.pool, u.members, formation(u.formationId), u.x, u.z, cosF, sinF,
+      u.width, ranksFor(u.members.length, u.width), u.spacingX, u.spacingZ);
+  }
+
+  /**
+   * Turn a standing formation about its own centre rather than about its anchor.
+   *
+   * `formation.offset` puts rank 0 at `z = 0` and every rank behind it at negative z, so
+   * `u.x, u.z` is the **middle of the front rank**. Rotating the lattice about that point
+   * swings the whole body around it: measured before this existed, a 160-man cohort ordered
+   * to stand still and face the other way finished with its centroid **4.75 m** from where
+   * it started and its along-facing extent moved from -5.21..0.10 to -0.16..5.28 — the slab,
+   * forward by its own depth, having been told only to turn round.
+   *
+   * The owner's spec is that "the block keeps its footprint", so the anchor is moved along
+   * the arc that keeps the lattice's own centre where it is. `targetX/targetZ` and the hold
+   * point go with it, because the unit has not been told to be anywhere else and leaving
+   * them behind would make it walk back to a destination it never left.
+   *
+   * The front rank ends up where the rear rank was. That is the point: the front rank
+   * becomes the rear rank by *facing*, and no man has to march to make it true.
+   */
+  private pivotAboutCentre(u: UnitGroupState, was: number): void {
+    const slots = u.members.length;
+    if (slots < 2) return;
+    const f = formation(u.formationId);
+    formationCentroid(f, slots, u.width, ranksFor(slots, u.width), u.spacingX, u.spacingZ, SCRATCH);
+    if (SCRATCH.x === 0 && SCRATCH.z === 0) return;
+    const s0 = Math.sin(was);
+    const c0 = Math.cos(was);
+    const s1 = Math.sin(u.facing);
+    const c1 = Math.cos(u.facing);
+    // The lattice centre in the world, before and after, must be the same point.
+    const dx = (SCRATCH.x * c0 + SCRATCH.z * s0) - (SCRATCH.x * c1 + SCRATCH.z * s1);
+    const dz = (-SCRATCH.x * s0 + SCRATCH.z * c0) - (-SCRATCH.x * s1 + SCRATCH.z * c1);
+    u.x += dx;
+    u.z += dz;
+    u.targetX += dx;
+    u.targetZ += dz;
+    this.growUnitScratch(u.id + 1);
+    if (this.holdSet[u.id]) {
+      this.holdX[u.id] += dx;
+      this.holdZ[u.id] += dz;
+    }
+  }
+
   /** Drive each soldier toward his formation slot. */
   private steerSoldiers(dt: number): void {
     const p = this.pool;
@@ -2749,6 +2987,14 @@ export class BattleSystem implements Subsystem {
 
       const s = Math.sin(u.facing);
       const c = Math.cos(u.facing);
+      // Who holds which slot, before anybody is steered at one. See `maybeReform`.
+      this.maybeReform(u, def, s, c);
+      // How far off his unit's heading this man dresses when he is standing still. Scaled
+      // by the formation's own `dress`, so the one knob that says how geometric a shape is
+      // allowed to be says it about bearings too: +-4.3 degrees for a line, +-0.9 for a
+      // testudo. Without a per-man term a thousand men turn as one object, which is the
+      // coherent motion `dress` exists to remove.
+      const bearingSpread = f.dress * 0.5;
       // A formation in contact is a press, not a parade. Men behind the fighting line
       // close up into it, which is the only thing that fills the hole a dead
       // front-ranker leaves: on slot-seeking alone the second rank stays 1 m back, out
@@ -2764,10 +3010,21 @@ export class BattleSystem implements Subsystem {
       // Fighting men follow their slot while the unit is breaking contact — either inside
       // the post-order window, or because its orders are actively taking it away.
       const disengaging = this.orderGrace[u.id] > 0 || this.breakingOff[u.id] === 1;
+      const turning = this.turningInPlace[u.id] === 1;
 
       for (const i of u.members) {
         const st = p.state[i] as SoldierState;
         if (st === SoldierState.Dead || st === SoldierState.Dying) continue;
+        this.standFacing[i] = u.facing + (hash01(i, 0x3f19) - 0.5) * bearingSpread;
+        if (turning && st !== SoldierState.Fighting) {
+          // Face first, then re-form. He is not going anywhere until the block has finished
+          // turning — `integrate` is turning his body, `maybeReform` will hand him the slot
+          // he is already standing on when the turn lands, and walking in the meantime is
+          // walking toward a place the shape has not decided on yet. See `turningInPlace`.
+          p.vx[i] = damp(p.vx[i], 0, 11, dt);
+          p.vz[i] = damp(p.vz[i], 0, 11, dt);
+          continue;
+        }
         if (st === SoldierState.Fighting && disengaging) {
           // Break off: drop the opponent and let the state machine pick a locomotion clip,
           // so the man visibly turns and walks out instead of swinging at nothing.
@@ -2964,6 +3221,11 @@ export class BattleSystem implements Subsystem {
     for (const i of u.members) {
       const st = p.state[i] as SoldierState;
       if (st === SoldierState.Dead || st === SoldierState.Dying) continue;
+      // A siege-owned man's standing bearing is the one the stonework gave him, not his
+      // unit's. Written here so `integrate` has a single rule for every man on the field;
+      // the man who is actually *on* the structure keeps today's behaviour exactly, because
+      // `integrate` only reads this for men with `elevated` clear.
+      this.standFacing[i] = this.slotFacing[i];
       const maxSpeed = flee > 0 && owner !== null && !owner.manOnStructure(i) ? flee : walk;
       const accel = maxSpeed * 5.5;
       if (st === SoldierState.Fighting) {
@@ -3366,6 +3628,15 @@ export class BattleSystem implements Subsystem {
    * the order `damage` was called in, which is deterministic, so the pass is too.
    */
   private readonly carcasses: number[] = [];
+  /**
+   * The bearing this man holds while he is standing still, radians.
+   *
+   * His unit's heading plus his own dressing error, written once a tick by `steerSoldiers`
+   * and read by `integrate`. An array rather than a lookup because `integrate` walks the
+   * pool and not the order of battle, and resolving a unit per man per tick is the single
+   * most expensive shape of thing in this file — see `unitOfSoldier`.
+   */
+  private standFacing!: Float32Array;
   /** Metres this man has closed up into the press, forward of his formation slot. */
   private press!: Float32Array;
   /** Metres of crowd separation already spent on each man this tick. */
@@ -3500,6 +3771,28 @@ export class BattleSystem implements Subsystem {
       if (speed > 0.22 && st !== SoldierState.Fighting) {
         const want = Math.atan2(p.vx[i], p.vz[i]);
         p.facing[i] = turnToward(p.facing[i], want, dt * 7.5);
+      } else if (this.elevated[i] === 0
+        && st !== SoldierState.Fighting && st !== SoldierState.Staggered
+        && st !== SoldierState.Dying && st !== SoldierState.Climbing) {
+        /*
+         * And turn on the spot when he is not.
+         *
+         * This branch did not exist, and its absence is half of "they would not turn around
+         * to face". A man's heading was written in one place — the line above — so a man who
+         * was not walking never turned, and a formation could only come to face a new way by
+         * every man in it walking somewhere. Measured on a cohort ordered to about-face and
+         * left for thirty seconds: the *unit* heading was 0.0 degrees off the order and the
+         * men a median of 75.6 degrees off it, having walked 20 m each to get there.
+         *
+         * The rate is per man, from his own stable hash. A thousand men turning at one rate
+         * on one tick is the same coherent motion `FormationDef.dress` exists to remove, and
+         * it would be a new instance of it introduced in the course of fixing another.
+         *
+         * `elevated` is excluded: `steerToSlots` already aims a garrison over its parapet
+         * and two systems turning the same head is a fight neither wins.
+         */
+        const rate = STAND_TURN_RATE * (1 + (hash01(i, 0x6b2d) - 0.5) * STAND_TURN_SPREAD);
+        p.facing[i] = turnToward(p.facing[i], this.standFacing[i], dt * rate);
       }
       // Lean into acceleration for weight.
       const targetLean = clamp(speed * 0.055, 0, 0.16);

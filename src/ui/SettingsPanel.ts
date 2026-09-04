@@ -43,6 +43,11 @@ const KEYS: Array<[string, string]> = [
   ['Z X C V B', 'Formations'],
   ['G T Y', 'Abilities'],
   ['H · R', 'Halt · run toggle'],
+  // The U-turn. Until this existed there was no way to set a facing without also setting a
+  // destination — every facing the HUD produced rode on a move order — so a player who
+  // wanted his men to turn round had to send them somewhere. See
+  // `SelectionController.issueAboutFace`.
+  ['U', 'About face'],
   ['F · Tab · Esc', 'Army · next · clear'],
   ['Alt (hold)', 'Show all unit names'],
   ['Space 1 2 3', 'Pause · 1× · 2× · 4×'],
