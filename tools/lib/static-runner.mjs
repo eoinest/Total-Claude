@@ -138,6 +138,16 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.map': 'application/json; charset=utf-8',
+  /*
+   * `application/manifest+json`, and it has to be here rather than falling through.
+   *
+   * The fallback is `application/octet-stream`, and Chrome *rejects* a `<link rel="manifest">`
+   * served as one — "Manifest: Line: 1, column: 1, Syntax error", in the console, which is the
+   * one place this project cannot afford noise: three `qa-net` arms fail a page that logs a
+   * console error. Vite's dev server and Vercel both know this extension; only this table did
+   * not, so `npm run host` would have been the single server that broke the front door.
+   */
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.svg': 'image/svg+xml; charset=utf-8',
   '.txt': 'text/plain; charset=utf-8',
   '.ico': 'image/x-icon',
