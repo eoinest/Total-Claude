@@ -640,6 +640,36 @@ export const CARTHAGINIAN_UNITS: UnitTypeDef[] = [
     meleeAttack: 44, meleeDamage: 30, apDamage: 20, meleeDefence: 30,
     armour: 50, shieldDefence: 0, chargeBonus: 90, bonusVsCavalry: 20,
     attackRate: 0.5, reach: 2.6,
+    /**
+     * **Four hundred, because this entry is a beast and four men and it had a man's life.**
+     *
+     * `strength: 8` above opens with "eight animals, not eight men" and says an entry is
+     * "the beast, its mahout and the three men in the tower". `BattleSystem.spawnUnit` then
+     * wrote `p.hp[i] = 100` for every entry in the game, so the sentence was true of the
+     * *count* and false of the *creature*: a four-tonne animal carrying five lives had
+     * exactly the hit points of one legionary.
+     *
+     * What that costs is arithmetic rather than opinion. A pilum is 44 damage with 22 of it
+     * armour-piercing; against `armour: 50` (`through` 0.595) in `loose` (`missileTaken`
+     * 0.52) it lands `(44 x 0.595 + 22) x 0.52` = **25 points**. Four pila killed an
+     * elephant, and a legionary carries two — so eight men in the front rank of one cohort
+     * could kill one animal before it reached them, and 6 of the 8 Roman line units carry
+     * pila. Measured on the shipped Punic field battle at `4364c00`: **69 % of all damage
+     * taken by the elephants was missile damage** (2,006 of 2,914) and 9 of their 20 deaths
+     * were missile kills, 7 of those pila thrown at 26 m as the animals arrived. With the
+     * `CavalryCycle` withdraw fixed so the animals stay in the fight rather than walking out
+     * of it, that share rises to 12 of 19 — the longer they live, the more of them the pila
+     * account for, which is the shape of a hit-point problem and not of a melee one.
+     *
+     * 400 rather than 500 is deliberate. Five lives ride on the entry, but the crew are
+     * killed *with* the animal and not in addition to it, so the beast is worth four men and
+     * the mahout is the fifth who does not get counted twice. It is a survivability change
+     * and only that: nothing here makes the animal hit harder, and every counter is
+     * untouched. A pilum still does 25 and a spear unit's `bonusVsCavalry` still arrives
+     * mostly as AP, which `armour` does not stop at any value — 16 pila or about 10 spear
+     * blows still put an elephant down, which is what the screen and the spear wall are for.
+     */
+    hitPoints: 400,
     // The tower crew's javelins. Short-ranged and not many, because the tower is a fighting
     // platform rather than an artillery piece; it exists so the animal is not helpless while
     // it closes.
@@ -654,12 +684,25 @@ export const CARTHAGINIAN_UNITS: UnitTypeDef[] = [
      * 0.55 is the lowest discipline in the game bar the naked fanatics' 0.62, and discipline
      * divides all incoming morale pressure — so an elephant unit takes nearly twice the
      * morale damage a legionary cohort does from the same event and breaks early and easily.
-     * What makes that *dangerous to its own side* rather than merely disappointing is
-     * `mass`: at 4,200 kg against a man's 90, `BattleSystem.resolveCrowding` splits every
-     * separation by inverse mass and does not care whose side anyone is on. A routing
-     * elephant turning about therefore ploughs straight back through the Punic line, shoving
-     * men aside 47:1, and nothing had to be written into the combat code to make it happen.
-     * See the report for the measurement.
+     * What makes that *dangerous to its own side* rather than merely disappointing is that
+     * `BattleSystem.resolveCrowding` splits every separation by weight and does not care
+     * whose side anyone is on, so a routing elephant turning about ploughs back through the
+     * Punic line rather than round it.
+     *
+     * **Corrected 3 Sep 2026 — the ratio in this comment was 47:1 and the code does not say
+     * that.** `resolveCrowding` does not read `mass` at all: it bakes a *class* weight per
+     * soldier at spawn, `mounted ? 5 : fighting ? 3 : 1`, because "resolving the unit and
+     * then its type for both members of every neighbour pair was the single most expensive
+     * thing in the tick". So the split against a walking man is **5:1**, not 4200:90, and
+     * `mass` is read by `Combat.shovePower` and the `linesClashed` intensity instead — the
+     * formation-level shoving match, where an elephant's 4,200 kg genuinely does dominate.
+     *
+     * And the drawback is smaller in practice than either number suggests, measured rather
+     * than asserted: on the shipped Punic field battle at `4364c00`, of **1,262** Carthaginian
+     * deaths after the first elephant squadron broke, **3** were within 6 m of a living
+     * routing animal. The reason is not the ratio — it is that the animals were nearly all
+     * dead by the time they broke. This is a drawback that only becomes real once the unit
+     * survives long enough to run, which is what `hitPoints` above is for.
      */
     morale: 50, discipline: 0.55,
     /**

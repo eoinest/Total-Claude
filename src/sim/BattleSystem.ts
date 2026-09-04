@@ -1124,6 +1124,7 @@ export class BattleSystem implements Subsystem {
     const rng = this.rng.fork(`unit${u.id}`);
     const mounted = isCavalry(def);
     const elephant = ridesElephant(def);
+    const entryHp = def.hitPoints ?? 100;
     // Where it was deployed counts as where it was told to stand, so a unit that is never
     // given an order still has a point to measure its self-initiated drift against.
     this.growUnitScratch(u.id + 1);
@@ -1155,9 +1156,11 @@ export class BattleSystem implements Subsystem {
       p.rank[i] = Math.min(255, Math.floor(s / width));
       p.file[i] = Math.min(255, s % width);
 
-      // One hit point per man; damage accumulates until a blow finishes him.
-      p.maxHp[i] = 100;
-      p.hp[i] = 100;
+      // One hit point per man; damage accumulates until a blow finishes him. A pool entry
+      // that is not a man says how many lives it is worth — see `UnitTypeDef.hitPoints`;
+      // absent is 100 and that is every unit in the game bar the elephants.
+      p.maxHp[i] = entryHp;
+      p.hp[i] = entryHp;
       p.state[i] = SoldierState.Idle;
       p.stateTime[i] = rng.range(0, 3);
       p.target[i] = -1;

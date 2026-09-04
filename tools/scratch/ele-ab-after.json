@@ -1,0 +1,1609 @@
+{
+  "phase": "other",
+  "animals": 32,
+  "headcount": 8428,
+  "deaths": [
+    {
+      "i": 8091,
+      "t": 119.43,
+      "by": "melee",
+      "killer": "legio-cohort",
+      "nearestEnemy": 0.6,
+      "hadSwung": true,
+      "unitAlive": 16,
+      "unitOrder": 3
+    },
+    {
+      "i": 8090,
+      "t": 125.8,
+      "by": "melee",
+      "killer": "legio-cohort",
+      "nearestEnemy": 0.6,
+      "hadSwung": true,
+      "unitAlive": 15,
+      "unitOrder": 3
+    },
+    {
+      "i": 8093,
+      "t": 128.73,
+      "by": "melee",
+      "killer": "legio-cohort",
+      "nearestEnemy": 1.1,
+      "hadSwung": true,
+      "unitAlive": 14,
+      "unitOrder": 3
+    },
+    {
+      "i": 8079,
+      "t": 140.3,
+      "by": "missile",
+      "killer": "legio-cohort",
+      "nearestEnemy": 5.9,
+      "hadSwung": false,
+      "unitAlive": 16,
+      "unitOrder": 5
+    },
+    {
+      "i": 8092,
+      "t": 141.03,
+      "by": "melee",
+      "killer": "legio-cohort",
+      "nearestEnemy": 1,
+      "hadSwung": true,
+      "unitAlive": 13,
+      "unitOrder": 3
+    },
+    {
+      "i": 8087,
+      "t": 272.17,
+      "by": "melee",
+      "killer": "praetorian-cohort",
+      "nearestEnemy": 1.3,
+      "hadSwung": true,
+      "unitAlive": 15,
+      "unitOrder": 3
+    },
+    {
+      "i": 8089,
+      "t": 332.6,
+      "by": "missile",
+      "killer": "scorpio",
+      "nearestEnemy": 10.2,
+      "hadSwung": true,
+      "unitAlive": 12,
+      "unitOrder": 3
+    }
+  ],
+  "routs": [
+    {
+      "t": 136.77,
+      "id": 31,
+      "alive": 16,
+      "morale": 5.5
+    },
+    {
+      "t": 155.23,
+      "id": 32,
+      "alive": 12,
+      "morale": 6
+    },
+    {
+      "t": 273.83,
+      "id": 31,
+      "alive": 14,
+      "morale": 6
+    },
+    {
+      "t": 333.27,
+      "id": 32,
+      "alive": 11,
+      "morale": 5.9
+    }
+  ],
+  "series": [
+    {
+      "t": 2.5,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 4.8,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 7,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 9.3,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 11.7,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 13.8,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 16.2,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 18.3,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 20.6,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 23,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 25.3,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 27.4,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 29.7,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 31.9,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 34.2,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 36.4,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 38.7,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 40.9,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 43.2,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 45.4,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 47.7,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 52.3,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 49.9,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 54.9,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 52.2,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 58.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 54.4,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 60.3,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 56.7,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 60.9,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 58.9,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 60.9,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 61.2,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 60.9,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 63.4,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 60.9,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 65.7,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 60.9,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 67.9,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 55.7,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 70.2,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4656
+    },
+    {
+      "t": 72.4,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4652
+    },
+    {
+      "t": 74.7,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4632
+    },
+    {
+      "t": 76.9,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3772,
+      "punic": 4625
+    },
+    {
+      "t": 79.2,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3771,
+      "punic": 4607
+    },
+    {
+      "t": 81.4,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3771,
+      "punic": 4559
+    },
+    {
+      "t": 83.7,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3771,
+      "punic": 4522
+    },
+    {
+      "t": 85.9,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3769,
+      "punic": 4494
+    },
+    {
+      "t": 88.2,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3765,
+      "punic": 4490
+    },
+    {
+      "t": 90.4,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3765,
+      "punic": 4459
+    },
+    {
+      "t": 92.7,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3765,
+      "punic": 4427
+    },
+    {
+      "t": 94.9,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 49.4,
+      "eleRouting": 0,
+      "rome": 3765,
+      "punic": 4418
+    },
+    {
+      "t": 97.2,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50,
+      "eleRouting": 0,
+      "rome": 3765,
+      "punic": 4376
+    },
+    {
+      "t": 99.4,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.3,
+      "eleRouting": 0,
+      "rome": 3760,
+      "punic": 4334
+    },
+    {
+      "t": 101.7,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3760,
+      "punic": 4334
+    },
+    {
+      "t": 103.9,
+      "eleAlive": 32,
+      "eleKills": 0,
+      "eleMorale": 50.4,
+      "eleRouting": 0,
+      "rome": 3760,
+      "punic": 4334
+    },
+    {
+      "t": 132.5,
+      "eleAlive": 29,
+      "eleKills": 6,
+      "eleMorale": 23.9,
+      "eleRouting": 0,
+      "rome": 3704,
+      "punic": 3798
+    },
+    {
+      "t": 134.7,
+      "eleAlive": 29,
+      "eleKills": 6,
+      "eleMorale": 19.4,
+      "eleRouting": 0,
+      "rome": 3704,
+      "punic": 3786
+    },
+    {
+      "t": 137,
+      "eleAlive": 29,
+      "eleKills": 7,
+      "eleMorale": 13.5,
+      "eleRouting": 1,
+      "rome": 3702,
+      "punic": 3779
+    },
+    {
+      "t": 139.4,
+      "eleAlive": 29,
+      "eleKills": 8,
+      "eleMorale": 9.7,
+      "eleRouting": 1,
+      "rome": 3692,
+      "punic": 3763
+    },
+    {
+      "t": 141.7,
+      "eleAlive": 27,
+      "eleKills": 11,
+      "eleMorale": 8.6,
+      "eleRouting": 1,
+      "rome": 3684,
+      "punic": 3726
+    },
+    {
+      "t": 144,
+      "eleAlive": 27,
+      "eleKills": 11,
+      "eleMorale": 7.5,
+      "eleRouting": 1,
+      "rome": 3682,
+      "punic": 3698
+    },
+    {
+      "t": 146.3,
+      "eleAlive": 27,
+      "eleKills": 13,
+      "eleMorale": 5.9,
+      "eleRouting": 1,
+      "rome": 3678,
+      "punic": 3681
+    },
+    {
+      "t": 148.4,
+      "eleAlive": 27,
+      "eleKills": 13,
+      "eleMorale": 5,
+      "eleRouting": 1,
+      "rome": 3673,
+      "punic": 3663
+    },
+    {
+      "t": 150.9,
+      "eleAlive": 27,
+      "eleKills": 14,
+      "eleMorale": 4.3,
+      "eleRouting": 1,
+      "rome": 3665,
+      "punic": 3636
+    },
+    {
+      "t": 153.2,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 3.5,
+      "eleRouting": 1,
+      "rome": 3659,
+      "punic": 3614
+    },
+    {
+      "t": 155.3,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 3,
+      "eleRouting": 2,
+      "rome": 3655,
+      "punic": 3592
+    },
+    {
+      "t": 158,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 0.5,
+      "eleRouting": 2,
+      "rome": 3651,
+      "punic": 3576
+    },
+    {
+      "t": 160.1,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 0,
+      "eleRouting": 2,
+      "rome": 3642,
+      "punic": 3566
+    },
+    {
+      "t": 162.4,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 0,
+      "eleRouting": 2,
+      "rome": 3637,
+      "punic": 3557
+    },
+    {
+      "t": 164.7,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 0,
+      "eleRouting": 2,
+      "rome": 3630,
+      "punic": 3550
+    },
+    {
+      "t": 167,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 0,
+      "eleRouting": 2,
+      "rome": 3620,
+      "punic": 3539
+    },
+    {
+      "t": 169.1,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 0,
+      "eleRouting": 2,
+      "rome": 3615,
+      "punic": 3532
+    },
+    {
+      "t": 171.6,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 0,
+      "eleRouting": 2,
+      "rome": 3612,
+      "punic": 3527
+    },
+    {
+      "t": 173.9,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 0,
+      "eleRouting": 2,
+      "rome": 3612,
+      "punic": 3519
+    },
+    {
+      "t": 176,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 0,
+      "eleRouting": 2,
+      "rome": 3610,
+      "punic": 3514
+    },
+    {
+      "t": 178.4,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 0.2,
+      "eleRouting": 2,
+      "rome": 3607,
+      "punic": 3500
+    },
+    {
+      "t": 180.5,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 0.4,
+      "eleRouting": 2,
+      "rome": 3606,
+      "punic": 3496
+    },
+    {
+      "t": 182.8,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 0.8,
+      "eleRouting": 2,
+      "rome": 3602,
+      "punic": 3492
+    },
+    {
+      "t": 185.2,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 1.2,
+      "eleRouting": 2,
+      "rome": 3599,
+      "punic": 3479
+    },
+    {
+      "t": 187.3,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 4.6,
+      "eleRouting": 2,
+      "rome": 3590,
+      "punic": 3471
+    },
+    {
+      "t": 189.6,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 8.1,
+      "eleRouting": 2,
+      "rome": 3580,
+      "punic": 3463
+    },
+    {
+      "t": 191.8,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 8.1,
+      "eleRouting": 1,
+      "rome": 3573,
+      "punic": 3457
+    },
+    {
+      "t": 194.1,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 7.8,
+      "eleRouting": 1,
+      "rome": 3563,
+      "punic": 3453
+    },
+    {
+      "t": 196.3,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 7.7,
+      "eleRouting": 1,
+      "rome": 3550,
+      "punic": 3446
+    },
+    {
+      "t": 198.6,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 7.8,
+      "eleRouting": 1,
+      "rome": 3541,
+      "punic": 3441
+    },
+    {
+      "t": 200.8,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 8,
+      "eleRouting": 1,
+      "rome": 3535,
+      "punic": 3440
+    },
+    {
+      "t": 203.1,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 8.2,
+      "eleRouting": 1,
+      "rome": 3533,
+      "punic": 3437
+    },
+    {
+      "t": 205.3,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 8.4,
+      "eleRouting": 1,
+      "rome": 3533,
+      "punic": 3437
+    },
+    {
+      "t": 207.6,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 8.7,
+      "eleRouting": 1,
+      "rome": 3529,
+      "punic": 3434
+    },
+    {
+      "t": 209.8,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 9.4,
+      "eleRouting": 1,
+      "rome": 3525,
+      "punic": 3434
+    },
+    {
+      "t": 212.1,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 11.4,
+      "eleRouting": 1,
+      "rome": 3525,
+      "punic": 3434
+    },
+    {
+      "t": 214.3,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 16,
+      "eleRouting": 1,
+      "rome": 3523,
+      "punic": 3434
+    },
+    {
+      "t": 216.6,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 19.1,
+      "eleRouting": 0,
+      "rome": 3521,
+      "punic": 3434
+    },
+    {
+      "t": 218.8,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 19.8,
+      "eleRouting": 0,
+      "rome": 3506,
+      "punic": 3431
+    },
+    {
+      "t": 221.2,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 20.8,
+      "eleRouting": 0,
+      "rome": 3499,
+      "punic": 3428
+    },
+    {
+      "t": 223.5,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 22.4,
+      "eleRouting": 0,
+      "rome": 3494,
+      "punic": 3427
+    },
+    {
+      "t": 225.8,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 23.9,
+      "eleRouting": 0,
+      "rome": 3491,
+      "punic": 3424
+    },
+    {
+      "t": 228.1,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 25.2,
+      "eleRouting": 0,
+      "rome": 3478,
+      "punic": 3421
+    },
+    {
+      "t": 230.4,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 26.4,
+      "eleRouting": 0,
+      "rome": 3465,
+      "punic": 3414
+    },
+    {
+      "t": 232.7,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 27.5,
+      "eleRouting": 0,
+      "rome": 3459,
+      "punic": 3411
+    },
+    {
+      "t": 235.1,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 28.5,
+      "eleRouting": 0,
+      "rome": 3454,
+      "punic": 3410
+    },
+    {
+      "t": 237.2,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 29.3,
+      "eleRouting": 0,
+      "rome": 3444,
+      "punic": 3409
+    },
+    {
+      "t": 239.6,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 30.1,
+      "eleRouting": 0,
+      "rome": 3427,
+      "punic": 3408
+    },
+    {
+      "t": 241.7,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 31,
+      "eleRouting": 0,
+      "rome": 3424,
+      "punic": 3407
+    },
+    {
+      "t": 244,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 31.5,
+      "eleRouting": 0,
+      "rome": 3424,
+      "punic": 3404
+    },
+    {
+      "t": 246.2,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 32.4,
+      "eleRouting": 0,
+      "rome": 3422,
+      "punic": 3403
+    },
+    {
+      "t": 248.5,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 34,
+      "eleRouting": 0,
+      "rome": 3415,
+      "punic": 3402
+    },
+    {
+      "t": 250.7,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 35.1,
+      "eleRouting": 0,
+      "rome": 3407,
+      "punic": 3402
+    },
+    {
+      "t": 253,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 35.8,
+      "eleRouting": 0,
+      "rome": 3407,
+      "punic": 3402
+    },
+    {
+      "t": 255.2,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 36.6,
+      "eleRouting": 0,
+      "rome": 3407,
+      "punic": 3401
+    },
+    {
+      "t": 257.5,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 37.1,
+      "eleRouting": 0,
+      "rome": 3407,
+      "punic": 3400
+    },
+    {
+      "t": 259.7,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 38,
+      "eleRouting": 0,
+      "rome": 3407,
+      "punic": 3400
+    },
+    {
+      "t": 262,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 38.6,
+      "eleRouting": 0,
+      "rome": 3405,
+      "punic": 3398
+    },
+    {
+      "t": 264.2,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 38.7,
+      "eleRouting": 0,
+      "rome": 3402,
+      "punic": 3395
+    },
+    {
+      "t": 266.5,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 33,
+      "eleRouting": 0,
+      "rome": 3402,
+      "punic": 3394
+    },
+    {
+      "t": 268.7,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 30.4,
+      "eleRouting": 0,
+      "rome": 3398,
+      "punic": 3393
+    },
+    {
+      "t": 271.1,
+      "eleAlive": 27,
+      "eleKills": 15,
+      "eleMorale": 27.1,
+      "eleRouting": 0,
+      "rome": 3397,
+      "punic": 3392
+    },
+    {
+      "t": 273.2,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 24.4,
+      "eleRouting": 0,
+      "rome": 3394,
+      "punic": 3389
+    },
+    {
+      "t": 275.7,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 21.2,
+      "eleRouting": 1,
+      "rome": 3391,
+      "punic": 3388
+    },
+    {
+      "t": 277.8,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 20.5,
+      "eleRouting": 1,
+      "rome": 3390,
+      "punic": 3383
+    },
+    {
+      "t": 280.2,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 20.5,
+      "eleRouting": 1,
+      "rome": 3389,
+      "punic": 3382
+    },
+    {
+      "t": 282.3,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 20.5,
+      "eleRouting": 1,
+      "rome": 3389,
+      "punic": 3382
+    },
+    {
+      "t": 285,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 20.5,
+      "eleRouting": 1,
+      "rome": 3389,
+      "punic": 3382
+    },
+    {
+      "t": 287.1,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 22.3,
+      "eleRouting": 1,
+      "rome": 3386,
+      "punic": 3382
+    },
+    {
+      "t": 289.4,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 26.2,
+      "eleRouting": 1,
+      "rome": 3386,
+      "punic": 3380
+    },
+    {
+      "t": 291.6,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 29.2,
+      "eleRouting": 1,
+      "rome": 3385,
+      "punic": 3362
+    },
+    {
+      "t": 294,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 32.1,
+      "eleRouting": 1,
+      "rome": 3385,
+      "punic": 3360
+    },
+    {
+      "t": 296.1,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 33.3,
+      "eleRouting": 1,
+      "rome": 3384,
+      "punic": 3360
+    },
+    {
+      "t": 298.4,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 32.4,
+      "eleRouting": 1,
+      "rome": 3378,
+      "punic": 3356
+    },
+    {
+      "t": 300.6,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 31.6,
+      "eleRouting": 1,
+      "rome": 3372,
+      "punic": 3344
+    },
+    {
+      "t": 302.9,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 30.8,
+      "eleRouting": 1,
+      "rome": 3371,
+      "punic": 3337
+    },
+    {
+      "t": 305.1,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 30,
+      "eleRouting": 1,
+      "rome": 3366,
+      "punic": 3335
+    },
+    {
+      "t": 307.4,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 29.3,
+      "eleRouting": 1,
+      "rome": 3359,
+      "punic": 3333
+    },
+    {
+      "t": 309.6,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 28.6,
+      "eleRouting": 1,
+      "rome": 3356,
+      "punic": 3330
+    },
+    {
+      "t": 311.9,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 28.1,
+      "eleRouting": 1,
+      "rome": 3354,
+      "punic": 3323
+    },
+    {
+      "t": 314.1,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 27.6,
+      "eleRouting": 1,
+      "rome": 3350,
+      "punic": 3276
+    },
+    {
+      "t": 316.5,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 27.2,
+      "eleRouting": 1,
+      "rome": 3346,
+      "punic": 3248
+    },
+    {
+      "t": 318.6,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 26.9,
+      "eleRouting": 1,
+      "rome": 3343,
+      "punic": 3231
+    },
+    {
+      "t": 321.1,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 26.6,
+      "eleRouting": 1,
+      "rome": 3339,
+      "punic": 3221
+    },
+    {
+      "t": 323.2,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 26.2,
+      "eleRouting": 1,
+      "rome": 3338,
+      "punic": 3212
+    },
+    {
+      "t": 325.4,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 25.7,
+      "eleRouting": 1,
+      "rome": 3332,
+      "punic": 3201
+    },
+    {
+      "t": 327.7,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 25.1,
+      "eleRouting": 1,
+      "rome": 3330,
+      "punic": 3192
+    },
+    {
+      "t": 329.9,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 24.3,
+      "eleRouting": 1,
+      "rome": 3327,
+      "punic": 3184
+    },
+    {
+      "t": 332.2,
+      "eleAlive": 26,
+      "eleKills": 15,
+      "eleMorale": 20.7,
+      "eleRouting": 1,
+      "rome": 3320,
+      "punic": 3167
+    },
+    {
+      "t": 334.4,
+      "eleAlive": 25,
+      "eleKills": 15,
+      "eleMorale": 15.9,
+      "eleRouting": 2,
+      "rome": 3315,
+      "punic": 3141
+    },
+    {
+      "t": 336.7,
+      "eleAlive": 25,
+      "eleKills": 15,
+      "eleMorale": 15.8,
+      "eleRouting": 2,
+      "rome": 3311,
+      "punic": 3126
+    },
+    {
+      "t": 338.9,
+      "eleAlive": 25,
+      "eleKills": 15,
+      "eleMorale": 15.8,
+      "eleRouting": 2,
+      "rome": 3310,
+      "punic": 3107
+    },
+    {
+      "t": 341.2,
+      "eleAlive": 25,
+      "eleKills": 15,
+      "eleMorale": 15.8,
+      "eleRouting": 2,
+      "rome": 3309,
+      "punic": 3099
+    },
+    {
+      "t": 343.4,
+      "eleAlive": 25,
+      "eleKills": 15,
+      "eleMorale": 15.8,
+      "eleRouting": 2,
+      "rome": 3306,
+      "punic": 3081
+    },
+    {
+      "t": 345.7,
+      "eleAlive": 25,
+      "eleKills": 15,
+      "eleMorale": 15.8,
+      "eleRouting": 2,
+      "rome": 3303,
+      "punic": 3064
+    },
+    {
+      "t": 347.9,
+      "eleAlive": 25,
+      "eleKills": 15,
+      "eleMorale": 15.8,
+      "eleRouting": 2,
+      "rome": 3302,
+      "punic": 3056
+    },
+    {
+      "t": 350.2,
+      "eleAlive": 25,
+      "eleKills": 15,
+      "eleMorale": 15.8,
+      "eleRouting": 2,
+      "rome": 3296,
+      "punic": 3043
+    },
+    {
+      "t": 352.4,
+      "eleAlive": 25,
+      "eleKills": 15,
+      "eleMorale": 15.8,
+      "eleRouting": 2,
+      "rome": 3294,
+      "punic": 3037
+    },
+    {
+      "t": 354.7,
+      "eleAlive": 25,
+      "eleKills": 15,
+      "eleMorale": 15.8,
+      "eleRouting": 2,
+      "rome": 3290,
+      "punic": 3030
+    },
+    {
+      "t": 357.1,
+      "eleAlive": 25,
+      "eleKills": 15,
+      "eleMorale": 15.8,
+      "eleRouting": 2,
+      "rome": 3290,
+      "punic": 3016
+    }
+  ],
+  "blows": 162,
+  "blowsWithCharge": 7,
+  "swungAnimals": 16,
+  "impacts": 2,
+  "impactKills": 0,
+  "impactDamage": 52.02045440673828,
+  "chargeCalls": 13921,
+  "chargeLive": 1268,
+  "chargeSum": 248.23956723819245,
+  "chargeMax": 0.5632922407119504,
+  "chargeLiveWithAbility": 1026,
+  "modsChargeMax": 1.4,
+  "entryHp": 400,
+  "dmgMelee": 3119.2768757710887,
+  "dmgMissile": 3515.6535852628654,
+  "targetTicks": 10719,
+  "fightingTicks": 10719,
+  "aliveTicks": 305274,
+  "lockedUnitTicks": 1926,
+  "liveUnitTicks": 21406,
+  "punicDeathsAfterFirstRout": 759,
+  "firstEleRoutT": 136.77,
+  "punicDeathsNearRoutingAnimal": 0,
+  "simTime": 357.2,
+  "units": [
+    {
+      "id": 31,
+      "alive": 14,
+      "of": 16,
+      "kills": 0,
+      "morale": 31.5,
+      "order": 5,
+      "destroyed": false
+    },
+    {
+      "id": 32,
+      "alive": 11,
+      "of": 16,
+      "kills": 15,
+      "morale": 0,
+      "order": 5,
+      "destroyed": false
+    }
+  ],
+  "rome": 3290,
+  "punic": 3016,
+  "romeStart": 3772,
+  "punicStart": 4656,
+  "result": null,
+  "label": "after",
+  "errors": [],
+  "plates": [
+    {
+      "file": "after-00.png",
+      "t": 104.2,
+      "alive": 32,
+      "of": 32,
+      "kills": 0,
+      "impacts": 0,
+      "impactKills": 0,
+      "blows": 0,
+      "routing": 0,
+      "x": 432.8,
+      "z": 27.6
+    },
+    {
+      "file": "after-01.png",
+      "t": 106.9,
+      "alive": 32,
+      "of": 32,
+      "kills": 0,
+      "impacts": 0,
+      "impactKills": 0,
+      "blows": 0,
+      "routing": 0,
+      "x": 423.8,
+      "z": 30.3
+    },
+    {
+      "file": "after-02.png",
+      "t": 109.5,
+      "alive": 32,
+      "of": 32,
+      "kills": 0,
+      "impacts": 2,
+      "impactKills": 0,
+      "blows": 0,
+      "routing": 0,
+      "x": 417,
+      "z": 33.2
+    },
+    {
+      "file": "after-03.png",
+      "t": 112.2,
+      "alive": 32,
+      "of": 32,
+      "kills": 0,
+      "impacts": 2,
+      "impactKills": 0,
+      "blows": 3,
+      "routing": 0,
+      "x": 415.7,
+      "z": 33.6
+    },
+    {
+      "file": "after-04.png",
+      "t": 114.97,
+      "alive": 32,
+      "of": 32,
+      "kills": 1,
+      "impacts": 2,
+      "impactKills": 0,
+      "blows": 13,
+      "routing": 0,
+      "x": 414.9,
+      "z": 34.2
+    },
+    {
+      "file": "after-05.png",
+      "t": 117.9,
+      "alive": 32,
+      "of": 32,
+      "kills": 1,
+      "impacts": 2,
+      "impactKills": 0,
+      "blows": 27,
+      "routing": 0,
+      "x": 414.7,
+      "z": 34.3
+    },
+    {
+      "file": "after-06.png",
+      "t": 120.87,
+      "alive": 31,
+      "of": 32,
+      "kills": 4,
+      "impacts": 2,
+      "impactKills": 0,
+      "blows": 41,
+      "routing": 0,
+      "x": 414.8,
+      "z": 34.4
+    },
+    {
+      "file": "after-07.png",
+      "t": 123.87,
+      "alive": 31,
+      "of": 32,
+      "kills": 4,
+      "impacts": 2,
+      "impactKills": 0,
+      "blows": 56,
+      "routing": 0,
+      "x": 414.7,
+      "z": 34.4
+    },
+    {
+      "file": "after-08.png",
+      "t": 126.87,
+      "alive": 30,
+      "of": 32,
+      "kills": 4,
+      "impacts": 2,
+      "impactKills": 0,
+      "blows": 67,
+      "routing": 0,
+      "x": 414.7,
+      "z": 34.7
+    },
+    {
+      "file": "after-09.png",
+      "t": 129.93,
+      "alive": 29,
+      "of": 32,
+      "kills": 6,
+      "impacts": 2,
+      "impactKills": 0,
+      "blows": 81,
+      "routing": 0,
+      "x": 414.6,
+      "z": 34.3
+    }
+  ],
+  "trigger": {
+    "d": 14.134486109157828,
+    "t": 103.93,
+    "unit": 32
+  },
+  "loadAtStart": "30.40 / 23.66 / 26.16",
+  "loadAtEnd": "30.40 / 23.66 / 26.16"
+}

@@ -1,0 +1,186 @@
+{
+  "simTime": 142.2,
+  "ticks": 1382,
+  "orders": [
+    {
+      "t": 107.67,
+      "id": 32,
+      "kind": "attack",
+      "src": "ai",
+      "tgt": 10
+    },
+    {
+      "t": 108.5,
+      "id": 31,
+      "kind": "ability",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 111.67,
+      "id": 32,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 112.33,
+      "id": 32,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 112.67,
+      "id": 32,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 113.33,
+      "id": 32,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 113.67,
+      "id": 32,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 114.33,
+      "id": 32,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 115.03,
+      "id": 32,
+      "kind": "halt",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 121.57,
+      "id": 31,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 122.8,
+      "id": 31,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 123.47,
+      "id": 31,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 124.13,
+      "id": 31,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 125.47,
+      "id": 31,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 126.8,
+      "id": 31,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 127.13,
+      "id": 31,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 127.47,
+      "id": 31,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 127.8,
+      "id": 31,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 128.13,
+      "id": 31,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    },
+    {
+      "t": 129.13,
+      "id": 31,
+      "kind": "move",
+      "src": "ai",
+      "tgt": -1
+    }
+  ],
+  "byKind": {
+    "attack": 1,
+    "ability": 1,
+    "move": 17,
+    "halt": 1
+  },
+  "liveUnitTicks": 2764,
+  "disengagingUnitTicks": 616,
+  "breakingOffTicks": 0,
+  "lockedUnitTicks": 79,
+  "orderGrace": {
+    "n": 2764,
+    "med": 0,
+    "p75": 0,
+    "max": 3.17,
+    "zero": 2151
+  },
+  "animalTicksAlive": 32501,
+  "animalTicksDisengaging": 8028,
+  "targetStrippedWhileDisengaging": 252,
+  "targetStrippedOther": 1,
+  "ctlUnit": 16,
+  "ctlOrders": 0,
+  "ctlLiveUnitTicks": 95,
+  "ctlDisengagingUnitTicks": 15,
+  "units": [
+    {
+      "id": 31,
+      "alive": 11,
+      "kills": 0,
+      "order": 5
+    },
+    {
+      "id": 32,
+      "alive": 1,
+      "kills": 0,
+      "order": 5
+    }
+  ],
+  "errors": []
+}
