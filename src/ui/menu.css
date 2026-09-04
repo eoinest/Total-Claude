@@ -465,7 +465,7 @@
 }
 
 .ustep button:hover:not(:disabled) { border-color: var(--gold); color: var(--gold-bright); }
-.ustep button:disabled { opacity: 0.26; cursor: default; }
+.ustep button:disabled { opacity: 0.34; cursor: default; }
 
 .ucount {
   min-width: 1.5rem;
@@ -746,7 +746,7 @@
  */
 .scen-opts button.off,
 .scen-opts button.off:hover {
-  opacity: 0.3;
+  opacity: 0.46;
   cursor: not-allowed;
   border-color: var(--gold-dim);
   color: var(--travertine);
@@ -765,16 +765,24 @@
   padding-bottom: 0.85rem;
 }
 
-/* A whole row that does not apply to the chosen battle. Battle size is the only one. */
+/*
+ * A whole row that does not apply to the chosen battle.
+ *
+ * 0.42, not the 0.26 this was. That number was chosen against a 97 %-opaque black sheet; over
+ * a photograph at 80-88 % it stopped being a greyed control and became an invisible one — the
+ * strapline under a disabled Qart-Hadasht was no longer text. The rule this project already
+ * holds itself to is that a disabled control which does not say why is the same bug as no
+ * control at all, and a disabled control nobody can read is a worse version of the same bug.
+ */
 .menu-row.inert .menu-opts button {
-  opacity: 0.26;
+  opacity: 0.42;
   cursor: not-allowed;
 }
 .menu-row.inert .menu-opts button:hover {
   border-color: var(--gold-dim);
   color: var(--travertine);
 }
-.menu-row.inert .lab-main { opacity: 0.5; }
+.menu-row.inert .lab-main { opacity: 0.62; }
 
 @media (max-width: 900px) {
   .scen-blurb { margin-left: 0; }

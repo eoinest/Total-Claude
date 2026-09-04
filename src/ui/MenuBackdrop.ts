@@ -66,8 +66,9 @@
  *   - `index.html` references no plate, and this module fetches none until `arm()` is called,
  *     which `MainMenu` does only after the sheet has laid out and faded in. First paint and
  *     time-to-interactive are therefore the same bytes and the same frames as before it existed.
- *   - The first plate is chosen by `srcset`, so a 1,100 px window fetches the 960-wide
- *     rendition — 88.8 kB — rather than the 1,440.
+ *   - The first plate is chosen by `srcset` with a capped `sizes`, so a laptop takes the
+ *     1,440-wide rendition at 236.2 kB, a phone takes the 960 at 88.8 kB, and nothing takes
+ *     the 470 kB 1,920 — see `SIZES`, where a bare `100vw` was measured taking it.
  *   - No second plate is fetched on mount. One arrives when the pointer crosses a battlefield
  *     the player has not chosen, and one more only after they have been on the screen long
  *     enough to have read it. A visitor who clicks BATTLE in three seconds pays for one image.
@@ -153,6 +154,29 @@ const PLATE_FOR: Record<string, string> = {
  */
 const SHEET_IS_WORTH = 0.3;
 const scrimUnderSheet = (p: PressPlate): number => Math.max(0, p.scrimForGold - SHEET_IS_WORTH);
+
+/**
+ * How wide a rendition to ask for, and why it is capped at the middle one.
+ *
+ * A bare `100vw` is the obvious spelling and it was wrong, measured: on a 1,600 px window the
+ * browser correctly resolved 1,600 and took the only rendition at least that wide — the hero's
+ * 1,920, which is **470 kB**. Twice the 1,440 for a picture that is behind a 0.20 scrim, a
+ * 3.5 % grain and, over most of its area, an 84 %-opaque blurred sheet.
+ *
+ * The manifest had already reached this conclusion about its own files: *"only the hero also
+ * has 1920 … the third one buys almost nothing behind a menu."* Capping `sizes` is how that
+ * sentence is enforced rather than merely agreed with. Measured after the change, on the four
+ * arms of `tools/scratch/menu-degrade.mjs`: a 1,600 px window now takes the 1,440 rather than
+ * the 1,920, and nothing takes the 1,920 at all. The 960 is reached only by a viewport of 960
+ * CSS pixels or narrower, which is the honest reading of `sizes` and is a phone rather than
+ * the 1,100 px laptop this file's first draft claimed — a window between 961 and 1,440 needs
+ * more than 960 real pixels and correctly asks for the next one up.
+ *
+ * `(max-width: …) 100vw, 1440px` rather than `min(100vw, 1440px)`: the media-query form has
+ * been understood by every browser that understands `srcset` at all, and `min()` inside
+ * `sizes` is a good deal newer than the oldest Safari this project still renders on.
+ */
+const SIZES = '(max-width: 1440px) 100vw, 1440px';
 
 /** The front door's own frame: the hero, which is the one that says nine thousand men. */
 const DOOR_PLATE = HERO.id;
@@ -345,10 +369,7 @@ export class MenuBackdrop {
       const prev = this.slots[this.front];
       if (next.id !== want) {
         next.img.srcset = p.srcset;
-        // `sizes` is the viewport, so a 1,100 px window takes the 960-wide rendition and the
-        // 88.8 kB that goes with it. Without it the browser assumes 100vw of a full-width image
-        // and can fetch the 1,440 on a screen that cannot show the difference.
-        next.img.sizes = '100vw';
+        next.img.sizes = SIZES;
         next.img.src = p.src;
         next.id = want;
       }
@@ -392,7 +413,7 @@ export class MenuBackdrop {
     const img = new Image();
     img.decoding = 'async';
     img.setAttribute('fetchpriority', 'low');
-    img.sizes = '100vw';
+    img.sizes = SIZES;
     img.srcset = p.srcset;
     img.src = p.src;
   }
