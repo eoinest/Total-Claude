@@ -255,8 +255,10 @@ export class MenuBackdrop {
     this.thrifty = !!hints.saveData || /(^|-)2g$/.test(hints.effectiveType ?? '');
     this.tooNarrow = window.innerWidth < HUD_MIN_WIDTH;
 
+    // `.menu-bg` is the mount point `public/press/manifest.json` names, and it is the class the
+    // stylesheet already targets — no second class is added here, because a hook that only one
+    // side of the pair knows about is how a stylesheet and a module quietly stop agreeing.
     this.root = host;
-    this.root.classList.add('bd');
     // Wallpaper, announced to nobody. A screen reader that reads out a battlefield before the
     // menu has said anything is worse than silence, and every frame's real `alt` text is on the
     // plate in `pressPlates.ts` for the places that do want it.
@@ -286,6 +288,23 @@ export class MenuBackdrop {
     // Low, and it is the whole cost argument in one attribute: a picture behind a menu must
     // never be scheduled ahead of the modules the menu itself is made of.
     img.setAttribute('fetchpriority', 'low');
+    /*
+     * A plate that will not load leaves the gradient, which is a complete screen.
+     *
+     * `.menu-bg` keeps the radial-and-linear it has always had as its floor, so hiding a broken
+     * image is a full recovery rather than a hole — the menu looks exactly as it did before this
+     * module existed. Without this it is a broken-image glyph in the middle of the front door.
+     *
+     * **It does not silence the console, and it cannot.** A 404 on an `<img>` is logged by the
+     * browser whatever the page does, and three `qa-net` arms assert that this page raises no
+     * console error — the same coupling `index.html` documents at length for the favicon. So the
+     * standing constraint is that `public/press/` must exist wherever this page is served.
+     * `tools/optimize-assets.mjs` re-emits only what the texture manifest lists under
+     * `dist/assets`, which is exactly why these files live at `public/press/` and not under it.
+     */
+    // Not `{ once: true }`: the two slots carry every plate the session shows, so the handler
+    // has to survive to catch a second failure in the same slot.
+    img.addEventListener('error', () => { img.style.display = 'none'; });
     drift.appendChild(img);
     travel.appendChild(drift);
     layer.appendChild(travel);
@@ -368,6 +387,10 @@ export class MenuBackdrop {
       const next = this.slots[nextIdx];
       const prev = this.slots[this.front];
       if (next.id !== want) {
+        // Clear the hide a previous failure may have left on this slot: the two slots are
+        // reused for every plate the session shows, so a 404 on Carthage must not blank the
+        // frame that lands in the same slot afterwards.
+        next.img.style.removeProperty('display');
         next.img.srcset = p.srcset;
         next.img.sizes = SIZES;
         next.img.src = p.src;
