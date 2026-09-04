@@ -21,7 +21,15 @@
  * with the block's centroid 4.75 m from where it started and its along-facing extent moved
  * from -5.21..0.10 to -0.16..5.28 — the whole slab, forward by its own depth. Sixty Roman
  * cavalry: median 27.50 m, 38 of 60 across the block. A real squadron of the shipped field
- * battle, in wedge: **median 85.85 m walked, all 120 across, centroid 85.19 m**.
+ * battle, in wedge, with the two AIs silenced so the order under test is the only order it
+ * has: **median 48.28 m walked, 108 of 120 across, centroid 33.59 m**.
+ *
+ * The same squadron with the AIs left running walked 85.85 m and moved its centroid 85.19 m,
+ * and that figure is written down here because it is the one the *owner* would see and
+ * because it nearly wasted the measurement: the first cut of `--live` did not stop the
+ * generals, so it was watching a unit execute its own attack order and reported 85 m before
+ * and 85 m after. A probe whose subject is being commanded by somebody else is not measuring
+ * the order it issued.
  *
  * That is the owner's first report — "my friend was trying to control the cavalry but they
  * kept running away; they were not routed, but they would not turn around to face" — with
