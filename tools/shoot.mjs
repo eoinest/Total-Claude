@@ -1310,6 +1310,183 @@ const MENU_SHOTS = {
   },
 };
 
+/**
+ * ---------------------------------------------------------------------------
+ * `--set=press` — the frames the site is dressed with.
+ * ---------------------------------------------------------------------------
+ *
+ * The Open Graph card, and the plates that cross-fade behind the menu and the setup screen.
+ * Everything a stranger sees before they have pressed anything.
+ *
+ * **Not a deck, and never one.** These are chosen to flatter — best hour, best moment, best
+ * camera — which is the exact correlation `deck-*` exists to avoid. `familyOf` keeps them out
+ * of `--set=all` for that reason and `FAMILIES` says so.
+ *
+ * Three rules decided the list, and each is a constraint the *destination* imposes rather
+ * than a taste:
+ *
+ *   1. **It has to read at 400 px wide.** A link preview renders about a third of the width
+ *      this is shot at, and a wide plate of 9,000 four-pixel men is noise at that size. So
+ *      every entry has one large subject with a silhouette — a curtain wall, a gatehouse, a
+ *      column of elephants, a rank of shields — and the host is what is *behind* it.
+ *   2. **The menu is gold type on a near-black panel, laid over these.** A frame whose middle
+ *      third is bright sky puts a hard edge behind the sheet. Cameras are pitched so the sky
+ *      is a band at the top rather than half the frame, and `tools/qa-brand.mjs` measures the
+ *      luminance under the panel on every one of them rather than on the one that was looked
+ *      at.
+ *   3. **Nothing repeats.** Both cities, both scenarios, the field battle at Pydna, and hours
+ *      from 08:12 to 16:50. A rotation that shows the same wall from two angles has one
+ *      picture in it.
+ *
+ * The hours are not decoration, and the two wall groups are the reason. Rome's Aurelian
+ * curtain faces north at 41.9N, so its field face is in shade at every hour there is — but a
+ * camera looking south at it is looking *at the sun*, and the first attempt at frames like
+ * these came back as veiled mush measured 3.6 degrees off it (see `r6-ram-gate`). A morning
+ * sun is 55 degrees off the same lens. Carthage is the mirror: §2.2 has map −Z as true west,
+ * so its curtain is a west face and only takes the sun after about 15:00.
+ *
+ * Grouped so the pass is six page loads for sixteen frames — `groupKey` is
+ * `[map, hour, scenario, quality, opponent, weather, seed]`, and a Punic world costs minutes
+ * to build. Every camera here is lifted from a shot in this file that was already proved to
+ * frame its subject rather than the grass beside it; the hours and the seconds are what moved.
+ */
+const PRESS_SHOTS = {
+  // ---- Rome, the assault on the Aurelian Wall. One load, four frames. ------
+  /*
+   * The wide assault frame, and the first cut of it was a photograph of a park.
+   *
+   * It inherited `ab-rome-wall`'s camera — `{ bay: 2, stand: 90, lift: 20, zoom: 0.46 }` — and
+   * came back as the necropolis outside the curtain: cypresses, tombs, the aqueduct, the city
+   * beyond, and not one attacker in frame. The camera was not wrong about where the wall is.
+   * It was wrong about where the *battle* is: at 90 m out and bay +2 the assault is behind the
+   * lens, because the ram is at the gate and the ladder banks are the other way along the
+   * curtain.
+   *
+   * So the focus is the gate itself and the standoff is the camera's, not the focus's. `cam`
+   * rather than `zoom`, because the four lengths are the frame: 200 m back and 70 m up puts
+   * the whole 200 m of glacis between the lens and the wall, which is the ground the assault
+   * is crossing, and a 40-degree lens at that range covers about 145 m of curtain — the
+   * gatehouse and a bay either side of it.
+   */
+  'press-rome-wall': {
+    desc: 'PRESS: the Aurelian Wall from the field, mid-assault — gate, towers, host on the glacis',
+    scenario: 'assault', hour: 9.5, at: 150, weather: 'clear',
+    wall: { bay: 0, gate: true, stand: 0, lift: 0, yaw: 'in', yawAdd: -0.25 },
+    cam: { eye: 70, aim: 12, dist: 200, fov: 40 },
+  },
+  'press-rome-ram': {
+    // t+150: `64dfb88` measured the machine's schedule — at the leaves by t+100, gate open at
+    // t+220. Earlier it is still walking, later the leaves are already down.
+    desc: 'PRESS: the ram at the Porta Flaminia, mid-battery, from outside the gate',
+    scenario: 'assault', hour: 9.5, at: 150, weather: 'clear',
+    wall: { bay: 0, gate: true, stand: 6, lift: 0, yaw: 'in', yawAdd: -0.30 },
+    cam: { eye: 7, aim: 5, dist: 34, fov: 30 },
+  },
+  'press-rome-ladder': {
+    // `escalade-foot-28`'s camera is 32 m out and 13 m up, which is a diagnostic distance: it
+    // proves a queue and shows nothing of the wall it is against. Backed off to 85 m and up to
+    // 34 so the curtain, the ladders on it and the men at their feet are one picture, and out
+    // to t+60 because at t+28 the bank at this bay had not formed on this tree.
+    desc: 'PRESS: ladders against the Aurelian curtain, the storm parties at their feet',
+    scenario: 'assault', hour: 9.5, at: 60, weather: 'clear',
+    wall: { bay: -3, stand: 0, lift: 0, yaw: 'in', yawAdd: -0.35 },
+    cam: { eye: 34, aim: 10, dist: 85, fov: 44 },
+  },
+  'press-rome-parapet': {
+    // `follow: 'contact'`, not a named bay. Where the fighting on a 50-bay circuit actually is
+    // is emergent, and the first cut — the embrasures two bays west of the gate — photographed
+    // an immaculate empty wall-walk at t+96.
+    desc: 'PRESS: the densest fighting of the assault, wherever it has reached the stone',
+    scenario: 'assault', hour: 9.5, at: 150, weather: 'clear',
+    follow: 'contact', zoom: 0.26,
+  },
+
+  // ---- Rome, the field battle, morning. One load, three frames. ------------
+  'press-rome-line': {
+    desc: 'PRESS: the legionary front rank at battle zoom, ranks receding obliquely',
+    hour: 8.6, at: 6, weather: 'clear',
+    follow: 'romanFront', zoom: 0.34,
+  },
+  'press-rome-city': {
+    desc: 'PRESS: the Aurelian circuit along the crest with the city behind it',
+    hour: 8.6, at: 2, weather: 'clear',
+    x: 40, z: 620, zoom: 0.74, yaw: Math.PI * 0.06,
+  },
+  'press-rome-host': {
+    // Closer and later than the first cut (0.36 at t+3), which framed one warband standing
+    // still in the middle of a great deal of grass. At 0.22 the block fills the frame and at
+    // t+45 it is moving.
+    desc: 'PRESS: into the Juthungi mass as it comes on — variety, disorder, painted shields',
+    hour: 8.6, at: 45, weather: 'clear',
+    follow: 'germanFront', zoom: 0.22,
+  },
+
+  // ---- Rome, the field battle, late light. One load, three frames. ---------
+  'press-rome-advance': {
+    // 0.62 is nearly a strategic view: at that zoom a man is four pixels and the frame came
+    // back as a washed-out aerial of field patchwork. 0.40 keeps both lines in shot with the
+    // men still legible as men, which is the whole claim this picture is making.
+    desc: 'PRESS: from behind the Roman line as it goes in, the host beyond it',
+    hour: 16.4, at: 44, weather: 'clear',
+    follow: 'ownLine', zoom: 0.40,
+  },
+  'press-rome-cavalry': {
+    desc: 'PRESS: the equites wedge sweeping the flank in low sun and dust',
+    hour: 16.4, at: 70, weather: 'clear',
+    follow: 'cavalryUnit', zoom: 0.28,
+  },
+  'press-rome-melee': {
+    desc: 'PRESS: inside the melee, close — the hardest thing this renderer does',
+    hour: 16.4, at: 96, weather: 'clear',
+    follow: 'contact', zoom: 0.13,
+  },
+
+  // ---- Carthage, the assault. One load, two frames. ------------------------
+  // 16.5 h: the Punic curtain is a west face and is in its own shade before mid-afternoon.
+  'press-carth-wall': {
+    desc: 'PRESS: the wall of Carthage from the field, Roman escalade against it',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 170, weather: 'clear',
+    wall: { bay: 2, stand: 90, lift: 20, zoom: 0.46, yaw: 'in', yawAdd: -0.55 },
+  },
+  'press-carth-ditch': {
+    // Along the ditch from its outer bank: square-on, a ditch is invisible, which is what a
+    // ditch is for. See `r6-carthage-ditch`, which worked this out over four framings.
+    desc: 'PRESS: along the ditch of Carthage from its outer bank, the curtain above it',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 6, weather: 'clear',
+    wall: { bay: 6, stand: 24, lift: 0, yaw: 'along', yawAdd: -0.40 },
+    cam: { eye: 6, aim: 0, dist: 45, fov: 32 },
+  },
+
+  // ---- Carthage, the field battle. One load, three frames. -----------------
+  'press-carth-elephants': {
+    desc: 'PRESS: the Punic elephant line advancing in front of the centre',
+    map: 'carthage', opponent: 2, hour: 16.8, at: 44, weather: 'clear',
+    follow: 'unitType', unitType: 'war-elephants', zoom: 0.30,
+  },
+  'press-carth-line': {
+    desc: 'PRESS: the Punic front rank — Libyan spears, Iberian scutarii, the city behind',
+    map: 'carthage', opponent: 2, hour: 16.8, at: 6, weather: 'clear',
+    follow: 'enemyFront', zoom: 0.28,
+  },
+  'press-carth-wide': {
+    desc: 'PRESS: the whole field before Carthage, both hosts drawn up',
+    map: 'carthage', opponent: 2, hour: 16.8, at: 4, weather: 'clear',
+    follow: 'ownLine', zoom: 0.62,
+  },
+
+  // ---- Pydna, 168 BC. One load, two frames. -------------------------------
+  'press-pydna-line': {
+    desc: 'PRESS: Pydna in the morning, telephoto along the Roman front rank',
+    map: 'pydna', hour: 8.2, at: 2, weather: 'clear',
+    follow: 'romanFront', zoom: 0.36,
+  },
+  'press-pydna-clash': {
+    desc: 'PRESS: Pydna, the lines meeting on open Macedonian ground',
+    map: 'pydna', hour: 8.2, at: 80, weather: 'clear',
+    follow: 'contact', zoom: 0.26,
+  },
+};
+
 const FAMILIES = {
   deck: 'the pooled blind deck — the only pool a blind round should be built from',
   ab: 'the paired blind instrument, round one. See the block comment above `ab-rome-line`',
@@ -1331,6 +1508,9 @@ const FAMILIES = {
     + "pair, not a deck: see the block comment above 'deploy-opening'",
   menu: 'the front door and where each of its doors goes. Interface, not renderer — every '
     + 'one of these frames is a `ui` shot and none may ever enter a blind deck',
+  press: 'the frames the site is dressed with — the Open Graph card and the plates that '
+    + 'cross-fade behind the menu. Chosen to flatter, so never a deck: see the block comment '
+    + 'above `PRESS_SHOTS`',
 };
 
 /** `field` is the absence of a declared family, and `field` is what `--set=all` means. */
@@ -1384,7 +1564,7 @@ checkFamilies();
  * `Object.assign` on the existing object keeps `SHOTS` one identity, which `familyOf`,
  * `checkFamilies`, `--list` and every set below all read.
  */
-Object.assign(SHOTS, MENU_SHOTS);
+Object.assign(SHOTS, MENU_SHOTS, PRESS_SHOTS);
 
 const SETS = {
   deck: Object.keys(SHOTS).filter((k) => familyOf(k) === 'deck'),
@@ -1399,6 +1579,7 @@ const SETS = {
   ground: Object.keys(SHOTS).filter((k) => familyOf(k) === 'ground'),
   deploy: Object.keys(SHOTS).filter((k) => familyOf(k) === 'deploy'),
   menu: Object.keys(SHOTS).filter((k) => familyOf(k) === 'menu'),
+  press: Object.keys(SHOTS).filter((k) => familyOf(k) === 'press'),
   /** The graded field set, and the default. Everything with no declared family. */
   all: Object.keys(SHOTS).filter((k) => familyOf(k) === 'field'),
   /** Literally everything, for the rare pass that wants it. Never a deck. */

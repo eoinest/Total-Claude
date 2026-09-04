@@ -1,9 +1,11 @@
 # Asset provenance and licensing
 
-Every binary under `public/assets/` is listed here with its author, upstream URL,
+Every binary this project ships is listed here with its author, upstream URL,
 license and SHA-256. Nothing in this directory was extracted from a commercial game,
 and nothing was obtained from a source whose license could not be read directly from
-the publisher.
+the publisher. Everything under `public/assets/` was fetched; everything listed under
+[Generated in this repository](#generated-in-this-repository--no-upstream-no-licence) was
+produced by code in this tree and has no upstream at all.
 
 | | |
 | --- | --- |
@@ -15,6 +17,70 @@ the publisher.
 | Attribution required | No (credited anyway - see [Credits](#credits)) |
 | Machine-readable index | `public/assets/manifest.json` |
 | Reproducible fetcher | `tools/fetch-assets.mjs` |
+
+## Generated in this repository — no upstream, no licence
+
+Everything in this section was **produced by code in this tree**, not downloaded. That is
+deliberate and it is the shortest possible answer to the question the rest of this document
+exists to answer: there is no author to credit, no licence to honour, no URL to re-check, and
+no possibility that a frame was extracted from another game. Anyone who doubts a byte of it can
+delete the files and run the generator.
+
+| | |
+| --- | --- |
+| Generator | `tools/make-brand.mjs` |
+| Frame source | `tools/shoot.mjs --set=press` — this project's own renderer |
+| Verifier | `tools/qa-brand.mjs` (fetches every declared URL off a live server and decodes it) |
+| Licence | None applicable. Original work, generated, part of this repository. |
+| Attribution required | No |
+
+### The mark — `public/favicon*`, `public/icon-*`, `public/apple-touch-icon.png`
+
+An aquila, displayed, drawn as SVG paths in `markSvg()` in `tools/make-brand.mjs` and
+rasterised from there. Gold `#d9b25f` on `#100c09`, both read out of `src/ui/hud.css` so the
+icon cannot drift from the HUD; `tools/qa-brand.mjs`'s `palette` arm fails if they do.
+
+| File | Size | SHA-256 (first 16) |
+| --- | --- | --- |
+| `public/favicon.svg` | 0.8 kB | `691289ee0fa607c3` |
+| `public/favicon.ico` | 2.9 kB | `00fcb95050109aba` |
+| `public/favicon-16.png` | 0.5 kB | `fff638a76c73deff` |
+| `public/favicon-32.png` | 0.9 kB | `a39b09eb686f8d13` |
+| `public/apple-touch-icon.png` | 3.8 kB | `66924e24d54fcea1` |
+| `public/icon-192.png` | 3.5 kB | `25520a40f0388b53` |
+| `public/icon-512.png` | 10.4 kB | `d79cfdfa852f2d61` |
+| `public/site.webmanifest` | 0.6 kB | `587347ae3bdc7fec` |
+
+23.4 kB for the whole icon set.
+
+### The link preview — `public/og/total-claude.jpg`
+
+1200×630, cropped from `press-rome-line` — a real frame of the Campus Martius field battle at
+08:36, rendered at 1920×1080 by `tools/shoot.mjs` — with a scrim and a wordmark composited over
+it by the generator. No stock photography, no mock-up, no text on a gradient.
+
+| File | Size | SHA-256 (first 16) |
+| --- | --- | --- |
+| `public/og/total-claude.jpg` | 207.6 kB | `4a3bfcff0ecc5fd9` |
+
+### The press stills — `public/press/`
+
+Nine frames of this game, two or three WebP renditions each, and
+`public/press/manifest.json` describing every one: which battle, where the camera stood, how
+many men were alive, each rendition's real dimensions and bytes, and a measurement of whether
+gold-on-near-black type stays readable on it. **2.94 MB total**, none of it on the cold load —
+nothing fetches any of it unless something asks. Regenerate with:
+
+```
+node tools/shoot.mjs --set=press --w=1920 --h=1080 --out=screenshots/press
+node tools/make-brand.mjs
+node tools/qa-brand.mjs
+```
+
+The `.png` sources under `screenshots/` are gitignored and are not shipped; the WebP renditions
+in `public/press/` are. Hashes are not listed for these because the set is regenerated as a
+unit and `manifest.json` carries each file's exact byte count, which `tools/qa-brand.mjs`
+checks against the file on the server.
 
 ## Re-fetching
 
