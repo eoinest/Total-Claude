@@ -60,6 +60,7 @@ const FACTION_CLASS: Record<Faction, string> = {
 };
 import { unitType } from '../units/roster';
 import { el, html, icon, setClass, setText } from './dom';
+import { MenuBackdrop } from './MenuBackdrop';
 import { ICON } from './icons';
 
 const TIERS: readonly QualityTier[] = ['low', 'medium', 'high', 'ultra'];
@@ -112,21 +113,30 @@ interface Destination {
 /**
  * The front door, in the order it is offered.
  *
- * Three, and the owner named all three: *"The main menu should have a battle button but also
- * allow you to go to the docs or model viewer."* Battle first and visually loudest, because
- * it is the reason the page is open and every other destination is a detour from it.
+ * **Two plaques, where there were four.** The owner asked for this pass because the menus had
+ * *"often times too many words"*, and the front door was the clearest case: four plaques, each
+ * carrying a sentence, meant a visitor read eighty-three words of prose before they could press
+ * the button they came for. Rome II's own front end — the reference this project is held to —
+ * puts five items on its main menu and gives none of them a sentence; SINGLE PLAYER is two
+ * words and the 3D scene behind it does the rest of the talking. Explanation lives one level
+ * down, on the screen that needs it, which is exactly where Rome II's encyclopaedia puts it.
  *
- * The two external ones are described by what is *in* them rather than by what they are
- * called. "Docs" is a word that tells a visitor nothing about whether it is worth a click;
- * "four volumes — simulation, rendering, siege, tooling" tells them exactly.
+ * So the two things that *are* the game keep their plaques, and the two that are detours —
+ * the documentation and the model viewer — move to the quiet row with the trailer and the
+ * changelog. Nothing became unreachable and nothing lost its explanation: the argument the old
+ * copy made for itself is right, that "Docs" tells a visitor nothing about whether it is worth
+ * a click, and so the sentence survives on `title`. It is one hover away instead of permanently
+ * on screen, which is the difference between prose that carries weight and prose nobody reads.
+ *
+ * Battle keeps no sentence at all. It is the reason the page is open, it is the only oxblood
+ * thing on the screen, and behind it is a photograph of the thing it does.
  */
 const DESTINATIONS: readonly Destination[] = [
   {
     id: 'battle',
     label: 'Battle',
     ic: ICON.swords,
-    sub: 'Choose the battlefield and the engagement, draw up both orders of battle, '
-      + 'set the hour &mdash; then fight it.',
+    sub: '',
   },
   {
     id: 'multiplayer',
@@ -135,59 +145,57 @@ const DESTINATIONS: readonly Destination[] = [
     href: '?mp=1',
     sameTab: true,
     /*
-     * "On one network" is doing real work in this sentence and is not decoration.
+     * Four words, and "one network" is three of them doing real work.
      *
      * This plaque is on the deployed site too, and multiplayer there cannot start: a page from
      * the internet may not open a connection into a private network. The lobby says so in full
      * — see `secureOriginNotice` in `src/ui/NetLobby.ts` — but a visitor should not have to
-     * click to learn the shape of the thing. Four words at the door beat a paragraph behind it.
+     * click to learn the shape of the thing. The old copy made this point in twenty-four words
+     * and the point survives the cut to four, which is the test every sentence on this screen
+     * was put to.
      */
-    sub: 'One battle on two machines on one network, both armies under human command. The '
-      + 'host chooses the ground; the challenger takes the other side.',
-  },
-  {
-    id: 'docs',
-    label: 'Technical documentation',
-    ic: ICON.volumes,
-    href: DOCS_URL,
-    sub: 'Four volumes &mdash; simulation, rendering, siege and tooling &mdash; with the '
-      + 'architecture, Carthage, the release procedure and the visual rubric.',
-  },
-  {
-    id: 'viewer',
-    label: 'Model viewer',
-    ic: ICON.turntable,
-    href: VIEWER_URL,
-    sub: 'Every unit in the roster turned in the light, one mesh at a time, with its '
-      + 'animation and its levels of detail.',
+    sub: 'Two machines, one network',
   },
 ];
 
 /**
- * The second rank: things worth one line and not a plaque.
+ * The second rank: a row of names, with the explanation on hover.
  *
- * **The trailer is here rather than beside Battle, and that is a judgement about hosting.**
- * The four cuts live as GitHub release assets on `r6`, and a release asset is a download and
- * not a stream: the good one — 1080p with sound — is 130 MB, and a button on the front door
- * reading TRAILER promises a play button it cannot deliver. Linked to the release page, with
- * the sizes stated, the click is at least an informed one. If the trailer is ever hosted
- * somewhere that streams it, it has earned a plaque; today it has not.
+ * Four entries now rather than two, because the documentation and the model viewer came down
+ * here. `sub` is no longer drawn — it is the `title`, so the fact that the trailer is a 130 MB
+ * download rather than a stream is still one hover from anybody about to click it, and the
+ * screen is not carrying seventeen words to say so.
  *
- * The changelog is here for the returning player, who has exactly one question the front door
- * can answer: what changed. It is one line and it is honest about being a Markdown file.
+ * **The trailer is not beside Battle, and that is a judgement about hosting.** The four cuts
+ * live as GitHub release assets on `r6`, and a release asset is a download and not a stream: a
+ * button on the front door reading TRAILER promises a play button it cannot deliver.
  */
 const ASIDES: readonly { id: string; label: string; sub: string; href: string }[] = [
+  {
+    id: 'docs',
+    label: 'Documentation',
+    href: DOCS_URL,
+    sub: 'Four volumes \u2014 simulation, rendering, siege and tooling \u2014 with the architecture, '
+      + 'Carthage, the release procedure and the visual rubric.',
+  },
+  {
+    id: 'viewer',
+    label: 'Model viewer',
+    href: VIEWER_URL,
+    sub: 'Every unit in the roster turned in the light, one mesh at a time, with its animation '
+      + 'and its levels of detail.',
+  },
   {
     id: 'trailer',
     label: 'Trailer',
     href: `${REPO}/releases/tag/r6`,
-    sub: 'Four cuts on the r6 release &mdash; 1080p with sound at 130 MB, 720p at 4.7 MB',
+    sub: 'Four cuts on the r6 release \u2014 1080p with sound at 130 MB, 720p at 4.7 MB.',
   },
   {
     id: 'changelog',
     label: 'Changelog',
     href: `${REPO}/blob/main/CHANGELOG.md`,
-    sub: 'Every release that reached production, newest first',
+    sub: 'Every release that reached production, newest first.',
   },
 ];
 
@@ -432,6 +440,15 @@ export class MainMenu {
   private screen: MenuStep;
   /** The front door's plaques, in DOM order, for the arrow-key roving focus. */
   private destEls: HTMLElement[] = [];
+  /**
+   * The picture behind both sheets, and the camera on it.
+   *
+   * Null until `show`, and it fetches nothing until `arm` — which is called two frames after
+   * the sheet has faded in, not before. That ordering is the whole of this pass's compliance
+   * with the cold-load budget: the menu is interactive on exactly the bytes it was interactive
+   * on before, and the backdrop is a thing that happens afterwards.
+   */
+  private backdrop: MenuBackdrop | null = null;
 
   constructor(initial: BattleConfig, params?: URLSearchParams) {
     this.cfg = sanitiseConfig(initial);
@@ -442,11 +459,24 @@ export class MainMenu {
   show(host: HTMLElement): Promise<MenuResult> {
     this.root = el('div', 'menu', host);
     this.build();
+    this.backdrop = new MenuBackdrop(this.q('.menu-bg'));
     this.applyStep();
     this.refresh();
     // Two frames, so the browser has laid the panel out before the transition starts and
         // the fade actually runs instead of being skipped as an initial style.
-    requestAnimationFrame(() => requestAnimationFrame(() => this.root.classList.add('in')));
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      this.root.classList.add('in');
+      /*
+       * The picture is armed here and nowhere earlier.
+       *
+       * By this line the sheet has been built, laid out, painted and told to fade in — a
+       * player can already read it and click BATTLE. Everything the backdrop does after this
+       * is off the critical path by construction rather than by good intentions: the first
+       * plate is a `fetchpriority="low"` image request that starts after first paint and
+       * after time-to-interactive, both of which have already happened.
+       */
+      this.backdrop?.arm(this.screen, this.cfg.map, this.cfg.scenario);
+    }));
     return new Promise<MenuResult>((res) => {
       this.resolve = res;
     });
@@ -467,24 +497,37 @@ export class MainMenu {
    */
   private homeMarkup(): string {
     const dest = (d: Destination): string => {
-      // The arrow-out-of-the-box glyph is the only thing on the plaque that says a click
-      // will leave the game, and a glyph says nothing to a screen reader. `NEW_TAB` is the
-      // same fact in words, clipped out of the visual layout — see `.sr-only` in `menu.css`.
+      // The arrow-out-of-the-box glyph is the only thing on a plaque that says a click will
+      // leave the game, and a glyph says nothing to a screen reader. `NEW_TAB` is the same
+      // fact in words, clipped out of the visual layout — see `.sr-only` in `menu.css`.
       const newTab = !!d.href && !d.sameTab;
+      // An empty `<i>` would still take a line box and open a gap under BATTLE. Battle has no
+      // sentence on purpose, so it gets no element rather than an empty one.
+      const sub = d.sub ? `<i>${d.sub}${newTab ? NEW_TAB : ''}</i>` : '';
       const body = `${icon(d.ic, 'dest-ic')}
-        <span class="dest-txt"><b>${d.label}</b><i>${d.sub}${newTab ? NEW_TAB : ''}</i></span>
+        <span class="dest-txt"><b>${d.label}</b>${sub}</span>
         <span class="dest-go" aria-hidden="true">${newTab ? '&#8599;' : '&rsaquo;'}</span>`;
       return d.href
         ? `<a class="dest dest-${d.id}" data-dest="${d.id}" href="${d.href}"
              ${newTab ? 'target="_blank" rel="noopener"' : ''}>${body}</a>`
         : `<button type="button" class="dest dest-${d.id}" data-dest="${d.id}">${body}</button>`;
     };
+    /*
+     * The strapline says nine thousand men, and that is a deliberate trade of one word.
+     *
+     * It read "The Siege of Rome · 271 AD", which the title bar, the loading screen, the link
+     * preview and the battlefield row all say too. `public/press/manifest.json` looked at this
+     * screen and named the gap: *"Nothing anywhere on the screen says nine thousand men, which
+     * is the only fact about this project that would make a stranger stay."* It is now the one
+     * line under the wordmark, and the three battles it could have listed instead are on the
+     * battlefield row one press away, each with its own date.
+     */
     return `<div class="menu-sheet menu-home">
       <header class="home-head">
         <div class="home-eagle">${EAGLE}</div>
         <div>
           <h1>TOTAL CLAUDE</h1>
-          <h2>The Siege of Rome &middot; 271 AD</h2>
+          <h2>Nine thousand men, simulated one at a time</h2>
         </div>
       </header>
       <nav class="home-dest" aria-label="Main menu">
@@ -492,9 +535,8 @@ export class MainMenu {
       </nav>
       <footer class="home-foot">
         ${ASIDES.map((a) => `
-          <a class="aside" data-aside="${a.id}" href="${a.href}" target="_blank" rel="noopener">
-            <b>${a.label}</b><i>${a.sub}${NEW_TAB}</i>
-          </a>`).join('')}
+          <a class="aside" data-aside="${a.id}" href="${a.href}" target="_blank" rel="noopener"
+             title="${a.sub}">${a.label}${NEW_TAB}</a>`).join('')}
       </footer>
     </div>`;
   }
@@ -526,7 +568,6 @@ export class MainMenu {
          <section class="menu-row map-row">
            <div class="menu-lab">
              <span class="lab-main">Battlefield</span>
-             <span class="lab-sub">Terrain, season and light</span>
            </div>
            <div class="menu-opts map-opts">
              ${MAPS.map((m) => `
@@ -536,12 +577,9 @@ export class MainMenu {
                </button>`).join('')}
            </div>
          </section>
-         <p class="map-blurb" data-map-blurb></p>
-
          <section class="menu-row scen-row">
            <div class="menu-lab">
              <span class="lab-main">Battle</span>
-             <span class="lab-sub">Which engagement is fought</span>
            </div>
            <div class="menu-opts scen-opts">
              ${SCENARIOS.map((s) => `
@@ -554,9 +592,15 @@ export class MainMenu {
          <p class="scen-blurb" data-scen-blurb></p>
 
          <section class="menu-row opp-row">
+           <!--
+             The sub-label is empty and stays in the DOM, which is the pattern this screen now
+             uses everywhere: a row explains itself only when there is something to explain.
+             refresh() writes the reason here when a storm has taken the choice away, and
+             .lab-sub:empty collapses it the rest of the time.
+           -->
            <div class="menu-lab">
              <span class="lab-main">Enemy</span>
-             <span class="lab-sub">Who Rome is fighting</span>
+             <span class="lab-sub"></span>
            </div>
            <div class="menu-opts opp-opts">
              ${OPPONENTS.map((o) => `
@@ -570,7 +614,7 @@ export class MainMenu {
          <section class="menu-row size-row">
            <div class="menu-lab">
              <span class="lab-main">Battle size</span>
-             <span class="lab-sub">Multiplies every unit&rsquo;s establishment</span>
+             <span class="lab-sub"></span>
            </div>
            <div class="menu-opts size-opts">
              ${UNIT_SIZES.map((p) => `
@@ -588,11 +632,10 @@ export class MainMenu {
          <section class="menu-row cond-row">
            <div class="menu-lab">
              <span class="lab-main">Conditions</span>
-             <span class="lab-sub">Time of day, difficulty and detail</span>
            </div>
            <div class="cond-grid">
              <label class="cond">
-               <span>${icon(ICON.sun, 'cond-ic')} Time of day</span>
+               <span>${icon(ICON.sun, 'cond-ic')} Hour</span>
                <input class="tod" type="range" min="4" max="21" step="1" />
                <b class="tod-val"></b>
              </label>
@@ -617,9 +660,20 @@ export class MainMenu {
          </section>
 
          <footer class="menu-foot">
-           <button type="button" class="ghost restore">Historical order of battle</button>
+           <!--
+             Both ghosts lost most of their label and none of their meaning. What they do is
+             not obvious from two words, so what they do is on the title attribute, where a
+             player who wonders can find it and one who does not is not made to read it.
+           -->
+           <button type="button" class="ghost restore"
+                   title="Put both armies back to the order of battle this engagement shipped with">
+             Historical armies
+           </button>
            <span class="foot-spacer"></span>
-           <button type="button" class="ghost share">Copy link to this battle</button>
+           <button type="button" class="ghost share"
+                   title="Copy a link that carries this exact battle — map, armies, hour and seed">
+             Copy link
+           </button>
            <button type="button" class="begin">BEGIN BATTLE</button>
          </footer>
        </div>`
@@ -630,6 +684,14 @@ export class MainMenu {
     for (const b of this.qsa('[data-map]')) {
       const id = b.dataset.map as MapId;
       this.mapBtns.set(id, b);
+      /*
+       * Decode the frame the pointer is on before it is pressed.
+       *
+       * One image, for a battlefield somebody has actually pointed at — not nine because the
+       * menu opened. `pointerenter` rather than `mouseenter` so a touch device that reports a
+       * hover gets it too, and the backdrop refuses the fetch outright under `saveData`.
+       */
+      b.addEventListener('pointerenter', () => this.backdrop?.prefetch(id, this.cfg.scenario));
       b.addEventListener('click', () => {
         if (this.cfg.map === id) return;
         // The hour moves with the map. Each battlefield's default is the light it was
@@ -788,10 +850,20 @@ export class MainMenu {
     });
   }
 
-  /** Paint the current step onto the root. CSS hides the sheet that is not it. */
+  /**
+   * Paint the current step onto the root. CSS hides the sheet that is not it.
+   *
+   * The camera goes with it, and this is the owner's favourite part of the idea: the front
+   * door sits back and high over the legionary line, and pressing BATTLE flies in and down to
+   * the battlefield that is actually selected. On Rome's field battle it is the same frame and
+   * the camera simply travels within it, which is the best of the three moves because nothing
+   * dissolves; on any other choice it is a different frame and the two cross-fade while the
+   * incoming one is still moving.
+   */
   private applyStep(): void {
     setClass(this.root, 'at-home', this.screen === 'home');
     setClass(this.root, 'at-setup', this.screen === 'setup');
+    this.backdrop?.show(this.screen, this.cfg.map, this.cfg.scenario);
   }
 
   /**
@@ -897,8 +969,9 @@ export class MainMenu {
   private opponentBlocked(): string | null {
     if (this.cfg.scenario !== 'assault') return null;
     const map = getMap(this.cfg.map);
-    return `A storm is fought by whoever holds the wall and whoever is outside it, so `
-      + `${map.label} names both sides. Choose the field battle to pick an enemy.`;
+    // 26 words to 12. What a player needs is the fact and the way out; why a storm has no
+    // choice of enemy in it is the argument, and the argument is on the buttons' `title`.
+    return `${map.label} names both sides. Choose the field battle to pick an enemy.`;
   }
 
   /** Why this scenario cannot be chosen right now, or null when it can. */
@@ -958,7 +1031,6 @@ export class MainMenu {
     for (const [id, b] of this.mapBtns) setClass(b, 'on', id === this.cfg.map);
     for (const [id, b] of this.sizeBtns) setClass(b, 'on', id === this.cfg.unitSize);
     const mapDef = getMap(this.cfg.map);
-    setText(this.q('[data-map-blurb]'), `${mapDef.blurb} ${mapDef.site.season}.`);
     // The heading follows the battlefield and the battle, so the screen never claims to be
     // an engagement the player has just navigated away from.
     html(this.q('.menu-head h2'), `${mapDef.subtitle} &middot; ${scDef.label}`);
@@ -966,7 +1038,17 @@ export class MainMenu {
     // The scenario row, and the one pairing that cannot be had. A blocked option is disabled
     // and *says why* on the blurb line rather than being hidden or silently ignored — a
     // greyed button with no reason is the same bug as no button at all.
-    let scenNote = scDef.blurb;
+    /*
+     * The scenario line is now empty unless something needs saying.
+     *
+     * It used to carry `scDef.blurb` at all times — a sentence describing the engagement,
+     * under a row of buttons that name the engagement, over a picture of the engagement. The
+     * two cases it exists for are both *reasons*: this map has no wall to storm, or picking
+     * this map has just taken the storm away. Those stay, because a greyed control that does
+     * not say why is the same bug as no control at all, and `.scen-blurb:empty` collapses the
+     * line the rest of the time so the row does not leave a hole.
+     */
+    let scenNote = '';
     // The sub-labels follow the map: "The Campus Martius" under Field Battle is a lie on
     // Pydna, and "Storming the Aurelian Wall" is one on any city that is not Rome.
     for (const el of this.qsa('[data-scen-sub]')) {
@@ -982,7 +1064,7 @@ export class MainMenu {
       if (why) scenNote = why;
     }
     if (this.droppedAssault) {
-      scenNote = `${mapDef.label} has no wall, so the battle has gone back to the field. ${scDef.blurb}`;
+      scenNote = `${mapDef.label} has no wall. The battle has gone back to the field.`;
     }
     setText(this.q('[data-scen-blurb]'), scenNote);
 
@@ -999,7 +1081,7 @@ export class MainMenu {
       (b as HTMLButtonElement).disabled = oppWhy !== null;
       b.title = oppWhy ?? '';
     }
-    setText(this.q('.opp-row .lab-sub'), oppWhy ?? 'Who Rome is fighting');
+    setText(this.q('.opp-row .lab-sub'), oppWhy ?? '');
 
     for (const [t, b] of this.tierBtns) setClass(b, 'on', t === this.cfg.quality);
     for (const [d, b] of this.diffBtns) setClass(b, 'on', d === this.cfg.difficulty);
@@ -1009,9 +1091,7 @@ export class MainMenu {
     const sizeLive = scaleAppliesTo(sc);
     setClass(this.q('.size-row'), 'inert', !sizeLive);
     for (const [, b] of this.sizeBtns) (b as HTMLButtonElement).disabled = !sizeLive;
-    setText(this.q('.size-row .lab-sub'), sizeLive
-      ? 'Multiplies every unit’s establishment'
-      : 'Not used in a storm — the wall holds what it holds');
+    setText(this.q('.size-row .lab-sub'), sizeLive ? '' : 'The wall holds what it holds');
 
     const tod = this.q<HTMLInputElement>('.tod');
     tod.value = String(this.cfg.timeOfDay);
@@ -1058,31 +1138,56 @@ export class MainMenu {
     // advice was true. It is now false and the pool is one number everywhere, so the note names
     // the engine's own ceiling and points at the two rows that can actually answer it: battle
     // size, and how many units each side fields.
+    /*
+     * Two notes, cut to one line each, with the argument moved to `title`.
+     *
+     * They were 94 and 51 words, in a warning box, above the fold, on a screen a player is
+     * trying to leave. Both were *right* and neither was read. What a player needs on sight is
+     * the number and the lever: the battle is smaller than you asked, here is what to change.
+     * Why the pool is 9,000 places and what a heavy frame costs at four headcounts are the
+     * evidence for the claim, not the claim, and they are one hover away.
+     *
+     * They still stack rather than merge, because they are different problems with different
+     * answers: one is a hard ceiling, the other is advice.
+     */
     const notes: string[] = [];
     if (isScaleClamped(this.cfg)) {
       const asked = unitSizePreset(this.cfg.unitSize);
       const got = fittedUnitScale(this.cfg);
       const wanted = Math.round(asked.scale * baseStrength(this.cfg));
-      notes.push(`<p class="note-clamp">
-        <b>Battle size limited by the engine’s ${fmt(SOLDIER_POOL_CAPACITY)}-place soldier
-        pool.</b> ${asked.label} wants ${fmt(wanted)} men and the pool fits about
-        ${fmt(Math.floor(SOLDIER_POOL_CAPACITY * 0.94))} once the artillery crews are allowed
-        for, so every unit is scaled to &times;${got.toFixed(2)} instead of
-        &times;${asked.scale.toFixed(2)} — ${fmt(grand)} men, all units still present. Field
-        fewer units, or a smaller battle size, for the size you asked for. The Graphics row does
-        not affect this: the detail tier changes how the battle is drawn and never how large it
-        is.</p>`);
+      notes.push(`<p class="note-clamp" title="${asked.label} wants ${fmt(wanted)} men. The pool `
+        + `fits about ${fmt(Math.floor(SOLDIER_POOL_CAPACITY * 0.94))} once the artillery crews `
+        + `are allowed for, so every unit is scaled to x${got.toFixed(2)} instead of `
+        + `x${asked.scale.toFixed(2)}. All units are still present. The Graphics row does not `
+        + `affect this: the detail tier changes how a battle is drawn, never how large it is.">
+        <b>${fmt(grand)} men.</b> ${asked.label} does not fit the
+        ${fmt(SOLDIER_POOL_CAPACITY)}-place pool &mdash; field fewer units, or a smaller
+        battle size.</p>`);
     }
     if (grand > PERF_VALIDATED_MEN) {
-      notes.push(`<p class="note-perf">
-        <b>${fmt(grand)} men is past the ${fmt(PERF_VALIDATED_MEN)} this runs at 60 fps.</b>
-        Measured on an M4 Max at 1920&times;1080, a heavy frame costs 13.4 ms at 8,644 men,
-        16.1 ms at 9,584 and 19.2 ms at 11,255 — so a big melee here will drop under 60 fps.
-        The battle is correct either way; it just will not be smooth.</p>`);
+      notes.push(`<p class="note-perf" title="Measured on an M4 Max at 1920x1080: a heavy frame `
+        + `costs 13.4 ms at 8,644 men, 16.1 ms at 9,584 and 19.2 ms at 11,255. The battle is `
+        + `correct either way; it just will not be smooth.">
+        <b>${fmt(grand)} men.</b> Past the ${fmt(PERF_VALIDATED_MEN)} this holds 60 fps at
+        &mdash; correct, but not smooth.</p>`);
     }
     const warn = this.q('.menu-warn');
     warn.hidden = notes.length === 0;
     html(warn, notes.join(''));
+
+    /*
+     * The picture follows the config, from one writer.
+     *
+     * `refresh` already exists to repaint every derived figure from `this.cfg` for exactly the
+     * reason the backdrop needs too — the values are coupled and a partial update is how a
+     * screen ends up showing one battle and describing another. Putting the camera here rather
+     * than in the four click handlers means the frame behind the menu cannot disagree with the
+     * row that is lit, including on the paths that change the scenario without being clicked:
+     * picking a map with no wall drops the storm, and the backdrop follows it back to the
+     * field. `show` is idempotent — same plate and same vantage set the same two custom
+     * properties and start no transition — so calling it on every repaint costs nothing.
+     */
+    this.backdrop?.show(this.screen, this.cfg.map, this.cfg.scenario);
   }
 
   private async share(): Promise<void> {
@@ -1108,6 +1213,10 @@ export class MainMenu {
     // The interactive counterpart of the call in `resolveConfig`: this is the only path on
     // which the player can have changed the map or the enemy since that ran.
     publishConfig(cfg);
+    // Before the fade, before the resolve, and therefore before `main.ts` constructs the
+    // `Engine`: no decoded 1,440-wide frame is still held and no compositor layer is still
+    // animating while the battle takes the GPU.
+    this.backdrop?.dispose();
     this.root.classList.remove('in');
     this.root.classList.add('out');
     // Let the fade finish before the DOM node goes, but resolve immediately so asset
