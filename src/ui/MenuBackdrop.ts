@@ -64,14 +64,29 @@
  * pass is forbidden from spending it. So **nothing here is on the critical path**:
  *
  *   - `index.html` references no plate, and this module fetches none until `arm()` is called,
- *     which `MainMenu` does only after the sheet has laid out and faded in. First paint and
- *     time-to-interactive are therefore the same bytes and the same frames as before it existed.
+ *     which `MainMenu` does only after the sheet has laid out and faded in.
  *   - The first plate is chosen by `srcset` with a capped `sizes`, so a laptop takes the
  *     1,440-wide rendition at 236.2 kB, a phone takes the 960 at 88.8 kB, and nothing takes
  *     the 470 kB 1,920 — see `SIZES`, where a bare `100vw` was measured taking it.
  *   - No second plate is fetched on mount. One arrives when the pointer crosses a battlefield
  *     the player has not chosen, and one more only after they have been on the screen long
  *     enough to have read it. A visitor who clicks BATTLE in three seconds pays for one image.
+ *
+ * Measured, and it is the only reason any of the above is worth writing down.
+ * `node tools/qa-hostload.mjs --reps=3`, twice in one session on the same machine at load
+ * 8-9, over `192.168.1.77` with the cache cleared through CDP — the guest, not the host:
+ *
+ * | the menu page, 30 Mbit/s Wi-Fi | before | after |
+ * |---|---:|---:|
+ * | first contentful paint | 92 ms | **92 ms** |
+ * | time to interactive | 347 ms (347/349/345) | **343 ms** (343/343/343) |
+ * | bytes to interactive | 831 kB / 4 requests | 834 kB / 4 requests |
+ * | bytes once settled | 834 kB / 5 | 1.15 MB / 8 |
+ *
+ * First paint does not move at all and interactive does not move outside its own spread. The
+ * 3 kB on the critical path is this module in the bundle, which is 0.8 ms of that link. The
+ * 343 kB difference in the settled column is the plates, and every byte of it lands *after*
+ * the number in the row above — which is the whole design, stated as a measurement.
  *
  * ---------------------------------------------------------------------------
  * Motion, and the machines that should not be asked for any
