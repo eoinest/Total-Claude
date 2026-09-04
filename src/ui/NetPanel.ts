@@ -62,6 +62,47 @@ import { FACTION_UI } from './theme';
  * for a containing width — 640 px on a 1280 px page — so three short phrases wrapped into six
  * lines and the strip was twice as tall as it needed to be.
  *
+ * ## Measured once is not measured
+ *
+ * That measurement used to live inside `update`, after the early return that skips a frame
+ * whose `key` has not changed. `key` is `phase|peer|ended|stalls|desync|rtt|turn >> 3`, and in
+ * the **deployment phase every one of those is constant**: the turn clock is held while either
+ * player is still laying an army out, so `turn >> 3` — the term the old comment relied on for
+ * "a rebuild is roughly once a second at worst" — never advances. The strip was therefore
+ * placed exactly once, on the frame the phase became `deploy`, and then held that number for
+ * as long as the two players took to deploy.
+ *
+ * Measured on 3 Sep 2026 at 1280×800, host slot 0, HUD scale at its 1.35 default: the strip
+ * parked at 166–194 under a closed plaque of 111–158, and stayed at 166–194 while
+ *
+ * - ADD UNITS grew the plaque to 111–**239**, putting the strip across the roster's first row —
+ *   `+`/`−` and the count for Legionary Cohort, Praetorian Guard and Urban Cohort all drawn
+ *   under an 85%-opaque background;
+ * - the HUD scale slider moved to 1.0 and then 0.8, shrinking the plaque to 82–118 and 66–95
+ *   while the strip stayed at 166, seventy-one pixels below the bottom of anything.
+ *
+ * That is the owner's report in two sentences: *"the You are Rome Slot zero banner is covers the
+ * deployment banner and i cannot customize my troops"*. The controls under it still took a
+ * click — the strip is `pointer-events: none` — but a stepper you cannot see is a stepper you
+ * do not have.
+ *
+ * So placement is now `place()`, separate from the rebuild, and it is driven by the things that
+ * actually move a bar rather than by a string that describes the session:
+ *
+ * - a `ResizeObserver` on whichever of `OVERHEAD` is on screen, rebound as they come and go —
+ *   this is what catches the palette opening and the scale slider, neither of which changes
+ *   anything `key` can see. Its callback runs after layout and before paint, so the strip is
+ *   already out of the way in the frame that grew the plaque;
+ * - `animationstart` and `animationend`, delegated at the document, filtered to `OVERHEAD` —
+ *   this is what catches the plaque *arriving*, which is the case a `ResizeObserver` cannot be
+ *   bound in time for;
+ * - a `requestAnimationFrame` chase while any of them is still animating, because `drop-in` and
+ *   `dep-in` animate `transform`, `getBoundingClientRect` includes transforms, and a bar
+ *   half-way through its entrance is not where it will be. This is the bounded version of the
+ *   fault the original docstring records: measured once, the strip landed at 84 under a bar
+ *   whose settled bottom is 89;
+ * - `resize`, and the rebuild in `update`, as belts.
+ *
  * Its own styles, like `NetLobby`, and for the same reason: `hud.css` has several agents live
  * in it and this is nine rules.
  */
@@ -76,7 +117,14 @@ const CSS = `
 .tc-net b{color:#e9c877;font-weight:600}
 .tc-net .warn{color:#e0a03c;text-transform:none;letter-spacing:.02em}
 .tc-net .bad{color:#e2564b;text-transform:none;letter-spacing:.02em}
-.tc-net.wide{flex-wrap:wrap;justify-content:center;pointer-events:auto}
+/* Wrapped, and still transparent to the pointer. This rule used to add pointer-events:auto,
+   which put an 880-px-wide box that looks like a caption in front of whatever is beneath it.
+   The two endings that keep the strip are desync and complete, and both leave a battlefield,
+   a card bar and a dispatch under it that the player is still entitled to click on --
+   .dep-palette in hud.css records the identical fault eating every right-drag aimed at the
+   ground. Nothing in this strip is interactive: it is spans of text, and the sheet raise()
+   builds is where the buttons live, so there is nothing to let the pointer in for. */
+.tc-net.wide{flex-wrap:wrap;justify-content:center}
 .tc-over{position:fixed;inset:0;z-index:130;overflow:auto;pointer-events:auto;
   background:radial-gradient(120% 90% at 50% 0%,#241a12dd 0%,#0a0806f2 70%);
   font:400 15px/1.55 ui-serif,Georgia,serif;color:#e8dcc6}
@@ -115,6 +163,24 @@ const CSS = `
  * be rediscovered.
  */
 const OVERHEAD = ['.topbar', '.deploy', '.replay-bar'];
+
+/** The same list as one selector, for the delegated animation listener's `matches`. */
+const OVERHEAD_SEL = OVERHEAD.join(',');
+
+/** Clear space between the lowest of `OVERHEAD` and the top of the strip. */
+const GAP = 8;
+
+/**
+ * How many consecutive frames `place` will chase a bar that is still animating.
+ *
+ * Two seconds at 60 Hz, against a `drop-in` of 0.7 s and a `dep-in` of 0.42 s, so it is loose
+ * enough never to stop early and tight enough to be a bound. It exists because the chase's
+ * exit condition is "no `OVERHEAD` element has a running animation", and an element that one
+ * day grows `animation-iteration-count: infinite` would otherwise pin a `requestAnimationFrame`
+ * loop to the frame rate for the life of the page. A ceiling turns that from a leak into a
+ * misplacement, which is the failure a gate can see.
+ */
+const CHASE_FRAMES = 120;
 
 /**
  * The two endings that keep the strip and get no sheet. Everything else gets one.
@@ -172,6 +238,11 @@ export class NetPanel {
   private sheet: HTMLElement | null = null;
   private sheetShown = false;
   private onKey: ((e: KeyboardEvent) => void) | null = null;
+  /** Whichever of `OVERHEAD` is currently on screen, and being watched for a resize. */
+  private watched = new Map<string, HTMLElement>();
+  private ro: ResizeObserver | null = null;
+  private raf = 0;
+  private chased = 0;
 
   constructor(host: HTMLElement, session: NetSession, ctx: EngineContext | null = null) {
     this.session = session;
@@ -182,6 +253,82 @@ export class NetPanel {
     this.root = document.createElement('div');
     this.root.className = 'tc-net';
     host.append(this.root);
+
+    /*
+     * Three ways of hearing that a bar moved, and none of them is a poll.
+     *
+     * The `ResizeObserver` is the one that matters: `.deploy` changes height when the roster
+     * palette opens and when the HUD scale slider moves, and neither of those changes anything
+     * the session knows about, so nothing in `update`'s `key` can ever notice them. Its
+     * callback runs after layout and before paint, which means the strip has already moved in
+     * the same frame that grew the plaque rather than a frame later.
+     *
+     * It cannot, however, be bound to an element that does not exist yet, and `.deploy` is
+     * attached on `deploymentBegan` — after this constructor runs. The delegated
+     * `animationstart` is what covers that: `dep-in` starts on the frame the plaque is
+     * appended, the event bubbles to the document, `place` finds the new element and observes
+     * it from then on. `animationend` closes the same loop for `drop-in`.
+     *
+     * Nothing here is removed, because nothing removes the panel: `main.ts` builds one per
+     * page and the page ends when the battle does. If that ever changes, these three and the
+     * observer are what a `dispose` has to undo.
+     */
+    if (typeof ResizeObserver === 'function') {
+      this.ro = new ResizeObserver(() => this.place());
+    }
+    window.addEventListener('resize', () => this.place());
+    const onAnim = (e: AnimationEvent): void => {
+      const t = e.target as Element | null;
+      if (t?.matches?.(OVERHEAD_SEL)) this.place();
+    };
+    document.addEventListener('animationstart', onAnim);
+    document.addEventListener('animationend', onAnim);
+    this.place();
+  }
+
+  /**
+   * Park the strip under the lowest of `OVERHEAD`, and bind to whatever it found.
+   *
+   * `chasing` is true only when this call came from the `requestAnimationFrame` below, and it
+   * exists so the frame budget resets whenever a real event asks for a placement.
+   */
+  private place(chasing = false): void {
+    this.chased = chasing ? this.chased + 1 : 0;
+    let want = GAP;
+    let moving = false;
+    for (const sel of OVERHEAD) {
+      const el = document.querySelector(sel) as HTMLElement | null;
+      const was = this.watched.get(sel);
+      if (el !== was) {
+        if (was) this.ro?.unobserve(was);
+        if (el) {
+          this.ro?.observe(el);
+          this.watched.set(sel, el);
+        } else {
+          this.watched.delete(sel);
+        }
+      }
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (r.height > 0 && r.width > 0) want = Math.max(want, Math.round(r.bottom + GAP));
+      /*
+       * `drop-in` and `dep-in` animate `transform`, and `getBoundingClientRect` includes it.
+       * A bar read half-way through its entrance is a bar 0.9em above where it will settle, so
+       * a placement made from that reading overlaps by exactly that much for the rest of the
+       * phase. Chase it to the end rather than measuring it once on the way past.
+       */
+      if (el.getAnimations().some((a) => a.playState === 'running')) moving = true;
+    }
+    if (want !== this.topAt) {
+      this.topAt = want;
+      this.root.style.top = `${want}px`;
+    }
+    if (moving && this.chased < CHASE_FRAMES && this.raf === 0) {
+      this.raf = requestAnimationFrame(() => {
+        this.raf = 0;
+        this.place(true);
+      });
+    }
   }
 
   /** Called from the render loop. Rebuilds only when something a reader would notice moved. */
@@ -194,27 +341,13 @@ export class NetPanel {
     if (key === this.lastKey) return;
     this.lastKey = key;
     /*
-     * Re-measure the bar we are parking under, on every rebuild and never between them.
-     *
-     * `getBoundingClientRect` forces a layout, and this runs inside a render loop that is
-     * already writing to the HUD's DOM every frame — a flush per frame for a number that moves
-     * on a phase change, a resize or a drag of the UI-scale slider would be a real cost for no
-     * information. A rebuild is roughly once a second at worst (`key` carries `turn >> 3`),
-     * which is cheap and, unlike measuring once, survives the fact that **`.topbar` animates
-     * in**: `drop-in` runs for 0.7 s, so the first reading after the HUD appears is of a bar
-     * that has not finished arriving. Measured once, the strip landed at 84 under a bar whose
-     * settled bottom is 89 — a five-pixel overlap that only a gate would ever have caught.
+     * A belt to `place`'s three braces, and cheap because it is gated by the early return
+     * above: a rebuild happens when the session changes, not every frame. The observers do the
+     * real work — see the constructor — but a phase change is exactly the moment a bar appears
+     * or disappears, and asking here costs one `querySelector` per bar on a frame that was
+     * already going to rewrite the strip's innerHTML.
      */
-    let want = 8;
-    for (const sel of OVERHEAD) {
-      const el = document.querySelector(sel) as HTMLElement | null;
-      const r = el?.getBoundingClientRect();
-      if (r && r.height > 0 && r.width > 0) want = Math.max(want, Math.round(r.bottom + 8));
-    }
-    if (want !== this.topAt) {
-      this.topAt = want;
-      this.root.style.top = `${want}px`;
-    }
+    this.place();
 
     const bits: string[] = [
       `<span>Room <b>${s.room}</b></span>`,

@@ -78,7 +78,7 @@ import { lanAddress } from './lib/lan-address.mjs';
 import { bootThroughMenu, driveMenu } from './lib/menu-boot.mjs';
 import {
   driveMenuOrExplain, drivers, INSTALL, lobbyFace, logDiff, markDisagreement, openAdvanced,
-  readBoth,
+  printStrip, readBoth, readStrip,
 } from './lib/net-drive.mjs';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
@@ -1392,6 +1392,66 @@ if (wanted('battle') && chrome) {
     const m = await bootPeers(chrome, chromeGuest, base, {
       sig: SIG(), map, scenario, shots: SHOT_DIR ? tag : null,
     });
+    /*
+     * The session strip against the deployment plaque, on *this* transport.
+     *
+     * `tools/qa-net.mjs`'s `strip` arm asks this at length — three HUD scales, both palette
+     * states, a real click at every control — of a relayed session. The owner's instruction was
+     * to ask it of both transports, on the theory that the strip's content differs between them
+     * and the placement might therefore differ too. It does differ: a relayed strip opens with
+     * ROOM and a room code, a peer strip does not.
+     *
+     * One reading here rather than the whole matrix, because what the two transports share is
+     * `NetPanel`, and `NetPanel` places the strip by measuring `.deploy` — it never reads the
+     * text it is carrying. So this is the check on that claim rather than a second copy of the
+     * relay arm: if the peer strip is ever placed differently from the relayed one, this says
+     * so, and `qa-net` is where the fault is then characterised.
+     *
+     * The first battle only, and read-only bar one palette toggle that is put back: `playMatch`
+     * runs `deployWith` immediately after this, and `deployWith` opens the palette itself.
+     */
+    if (spec === BATTLES[0]) {
+      await m.host.waitForSelector('.dep-add', { timeout: 30000 });
+      // `.topbar` runs `drop-in` for 0.7 s and `.deploy` runs `dep-in` for 0.42 s, and
+      // `getBoundingClientRect` includes the transform both of them animate.
+      await sleep(1400);
+      const closed = await readStrip(m.host, 'p2p, palette closed');
+      const addUnits = closed.controls.find((c) => c.tag === 'ADD UNITS' && c.onScreen);
+      if (addUnits) {
+        await m.host.mouse.click(addUnits.x, addUnits.y);
+        await sleep(450);
+      }
+      const open = await readStrip(m.host, 'p2p, palette open');
+      if (addUnits) {
+        await m.host.mouse.click(addUnits.x, addUnits.y);
+        await sleep(350);
+      }
+      const reads = [closed, open];
+      for (const r of reads) printStrip(r);
+      measured.p2pStrip = reads;
+      const bad = reads.filter((r) => !r.strip || !r.deploy || !r.distinct || r.overlap);
+      const eaten = reads.flatMap((r) => r.controls
+        .filter((c) => c.visible && c.hitIsStrip)
+        .map((c) => `${r.label}: ${c.tag} at ${c.x},${c.y} -> ${c.hit}`));
+      const why = [
+        ...bad.map((r) => `${r.label}: strip `
+          + `${r.strip ? `${r.strip.top}-${r.strip.bottom}` : 'MISSING'} against plaque `
+          + `${r.deploy ? `${r.deploy.top}-${r.deploy.bottom}` : 'MISSING'}`
+          + `${r.distinct ? '' : ' (the two selectors resolved to one element)'}`),
+        ...eaten.slice(0, 3).map((e) => `the strip is on top of ${e}`),
+        ...(open.paletteOpen ? [] : ['ADD UNITS never opened the roster palette']),
+      ];
+      record('p2p-strip-clears-the-plaque', reads.length === 2 && why.length === 0,
+        'a peer session places the strip clear of the plaque, exactly as a relayed one does',
+        why.length
+          ? why.join('; ')
+          : `closed: strip ${closed.strip.top}-${closed.strip.bottom} under plaque `
+            + `${closed.deploy.top}-${closed.deploy.bottom}; open: strip `
+            + `${open.strip.top}-${open.strip.bottom} under plaque `
+            + `${open.deploy.top}-${open.deploy.bottom}; strip reads "${closed.strip.text}"`,
+        'NetPanel measures the plaque and never reads its own text, so the transport should '
+          + 'make no difference — this is the check on that rather than an assumption');
+    }
     const acts = await playMatch(m.host, m.guest, { shots: SHOT_DIR ? tag : null });
     const settled = await settlePeers(m.host, m.guest);
     const both = await readBoth(m.host, m.guest);

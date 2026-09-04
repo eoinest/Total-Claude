@@ -4517,3 +4517,249 @@ sixteen checks about the lobby, the invite link, the QR photographed off the scr
 Vision, the guest-scanned-first race and the phone refusal — is the regression test for the
 change, and it is the reason the two new checks assert the served document rather than a timing. `dev`, `static`, `ghost`,
 `norelay` and `https` are unaffected by construction: none of them goes through `host-lan.mjs`.
+
+---
+
+## 15. The strip over the plaque — 3 September 2026, `e/ui/net-strip-plaque`
+
+The owner played a relayed match and reported: *"the You are Rome Slot zero banner is covers the
+deployment banner and i cannot customize my troops"*.
+
+Two complaints, and they were treated as two bugs with possibly two causes, because they are.
+The first is real and reproduces on the first try. The second has a cause the obvious hypothesis
+gets wrong, and the fix for the first does not by itself close the door the second came through.
+
+### 15.1 What was measured, before anything was changed
+
+`tools/qa-net.mjs --only=strip`, two Chromium clients on one relay, 1280×800, host in slot 0,
+both sitting in the deployment phase. For every reading: `getBoundingClientRect` on `.tc-net` and
+`.deploy`, their computed `pointer-events` and `z-index`, and `document.elementFromPoint` at the
+centre of all fifteen deployment controls — ADD UNITS, REMOVE, BEGIN BATTLE and both steppers of
+all six roster rows.
+
+| HUD scale | palette | strip (px) | plaque (px) | overlap |
+|---|---|---|---|---|
+| 1.35 (default) | closed | 166–194 | 111–158 | no |
+| 1.35 | **open** | **166–194** | **111–239** | **YES** |
+| 1.0 | closed | 166–194 | 82–118 | no |
+| 1.0 | open | 166–194 | 82–152 | no |
+| 0.8 | closed | 166–194 | 66–95 | no |
+| 0.8 | open | 166–194 | 66–122 | no |
+
+**Read the strip column, not the overlap column.** It never changes. One number, 166, held
+across three HUD scales and six palette toggles and roughly forty seconds — the strip was placed
+once and then never moved again for the whole phase. At 0.8 it is floating seventy-one pixels
+below the bottom of anything; at 1.35 with the roster open it is lying across it.
+
+At that one reading the strip covers the `+`, the `−` and the count of the roster's entire first
+row — Legionary Cohort, Praetorian Guard and Urban Cohort, all at y 170–193 against a strip of
+166–194 — behind a background that is `#100c08d9`, i.e. 85% opaque. `screenshots/strip-before/`
+holds the frame; it reads ROOM QAQQR · YOU ARE ROME (SLOT 0) · DEPLOYMENT painted straight
+through the middle of the roster.
+
+**And every one of those fifteen controls hit-tested to itself.** `elementFromPoint` at the
+centre of the six buried steppers returned the `<button>`, not the strip, at every scale and in
+both palette states. The strip is `pointer-events: none` and always was in this state; a click
+aimed at a stepper the player cannot see still lands on it.
+
+### 15.2 The two causes, named separately
+
+**The covering: `NetPanel.update` measured once, because in the deployment phase its rebuild key
+is a constant.** The measurement sat below the early return that skips a frame whose `key` has
+not changed, and `key` is `phase|peer|ended|stalls|desync|rtt|turn >> 3`. The old comment argued
+this was safe because *"a rebuild is roughly once a second at worst (`key` carries `turn >> 3`)"*
+— true in the battle phase, and false in the only phase in which `.deploy` exists at all.
+`status().turn` is `NetSession.readyTurn`, which counts *battle* turns; while the room is in
+`deploy` the relay closes `deployTurn` instead and never touches the battle counter (`Room.tick`,
+the `phase === 'deploy'` branch). So `turn` does not advance, so `key` does not change, so
+`update` returns before it reaches the measurement. Everything that then moves the plaque — the
+roster palette, the HUD-scale slider, a window resize — moves it under a strip that has already
+committed to a number.
+
+**The not-being-able-to-customize: occlusion, not interception.** The leading hypothesis before
+measuring was that `.tc-net.wide`'s `pointer-events: auto` on a `left: 0; right: 0` element was
+swallowing the clicks. Two things are wrong with it. The strip is `width: max-content` with
+`margin-inline: auto`, so it is shrink-to-fit and centred rather than full-bleed — 267–1013 on a
+1280-px page. And `wide` is toggled by `!!desync || !!ended` and by nothing else, so it is never
+on during a healthy deployment; the strip in the reading above is `pointer-events: none`. What
+the player could not do was *see* half the roster, and a stepper you cannot see is a stepper you
+do not have.
+
+That does not make the pointer question moot. `.tc-net.wide` really did opt back into hit
+testing, and the two endings that keep the strip — `desync` and `complete` — both leave a
+battlefield, a card bar and a dispatch underneath it that the player is still entitled to click
+on. `hud.css` records the identical fault costing `.dep-palette` every right-drag aimed at the
+ground under it. It is a live input-eating bug one state away from the one that was reported, so
+it is fixed here too.
+
+### 15.3 The fix
+
+`src/ui/NetPanel.ts`, in two parts.
+
+**Placement moved out of the rebuild into `place()`, driven by what actually moves a bar rather
+than by a string that describes the session.** A `ResizeObserver` on whichever of `OVERHEAD` is
+on screen, rebound as they come and go — this is what catches the palette and the scale slider,
+neither of which changes anything `key` can see, and its callback runs after layout and before
+paint, so the strip is already out of the way in the frame that grew the plaque. `animationstart`
+and `animationend`, delegated at the document and filtered to `OVERHEAD` — this is what catches
+the plaque *arriving*, which is the one case a `ResizeObserver` cannot be bound in time for.
+A `requestAnimationFrame` chase, bounded at 120 frames, while any of them is still animating,
+because `drop-in` and `dep-in` animate `transform` and `getBoundingClientRect` includes it.
+`resize`, and the rebuild in `update`, as belts.
+
+That last one is not hypothetical. The first of the two injections below parked the strip at 154
+when the plaque's settled bottom is 158 — a reading taken 0.9 em up the `dep-in` curve, which is
+the same fault `NetPanel`'s own docstring already records as *"the strip landed at 84 under a bar
+whose settled bottom is 89"*, and it is why the chase exists rather than a single re-measure.
+
+**`.tc-net.wide` no longer sets `pointer-events: auto`.** Nothing in the strip is interactive —
+it is spans of text, and the sheet `NetPanel.raise` builds is where the buttons live — so there
+was nothing to let the pointer in for.
+
+Measured after, same arm, same viewport:
+
+| HUD scale | palette | strip (px) | plaque (px) | gap |
+|---|---|---|---|---|
+| 1.35 | closed | 166–194 | 111–158 | 8 |
+| 1.35 | open | 247–275 | 111–239 | 8 |
+| 1.0 | closed | 126–154 | 82–118 | 8 |
+| 1.0 | open | 160–188 | 82–152 | 8 |
+| 0.8 | closed | 103–131 | 66–95 | 8 |
+| 0.8 | open | 130–158 | 66–122 | 8 |
+
+Every reading is exactly `plaque.bottom + 8`, which is the rule the code claims to follow, at
+every scale and in both states. `screenshots/strip-after/strip-1_35-open.png` is the frame the
+owner asked for: the whole roster legible — Legionary Cohort 6, Praetorian Guard 2, Urban Cohort
+2, Auxiliary Archers 2, Roman Cavalry 3, Scorpion Battery 1 — with the session strip below it.
+
+### 15.4 The checks, and the injections that prove they can fail
+
+The `strip` arm in `tools/qa-net.mjs` adds five, four of which are about the fault and one of
+which (`strip-console`) is the usual hygiene. `tools/qa-p2p.mjs` adds one. The probe they share
+lives in `tools/lib/net-drive.mjs`, because there are two netcode gates and one `NetPanel`, and
+the day the two transports disagree nobody should have to work out which of two copies of the
+instrument was wrong.
+
+- `strip-clears-the-plaque` — the two rectangles share no pixel, at three HUD scales and in both
+  palette states. It carries `distinct` from the probe and fails on it: a geometry check whose
+  two selectors have collapsed onto one element compares that element against itself and cannot
+  go red, and this repository has shipped that shape before.
+- `plaque-controls-hit-test` — `elementFromPoint` at the centre of every deployment control
+  returns that control. `hitIsStrip` walks the strip's *subtree*, because `elementFromPoint`
+  returns the innermost element and over `.tc-net` that is one of its `<span>`s; a check that
+  compared against the strip node alone would have passed straight through the fault.
+- `plaque-takes-a-click` — the owner's actual sentence, as a gesture: a real `page.mouse.click`
+  at those measured centres opens the roster and adds a regiment, at every scale.
+- `strip-never-takes-the-pointer` — `.tc-net` and `.tc-net.wide` are both `pointer-events: none`,
+  asked of the live stylesheet. This is the one state the six readings cannot reach, since `wide`
+  needs a desync or an ending.
+
+Visibility is `checkVisibility()` and reachability is `elementFromPoint`, never
+`getBoundingClientRect().height > 0` and never Playwright's `isVisible()` — both of the latter
+report a healthy box for an element inside a closed `<details>`.
+
+**The bug itself, then two deliberate injections on top of the fix. The first injection is the
+more useful of the two.**
+
+| run | result |
+|---|---|
+| the product as the owner found it, before the fix — not an injection, the bug | `strip-clears-the-plaque` **red** — *"scale 1.35, palette open: strip 166-194 over plaque 111-239"*. The other three green |
+| `pointer-events: auto` on `.tc-net`, plus `place()` returning after its first call | `strip-clears-the-plaque` **red** (154–182 over 111–158), `strip-never-takes-the-pointer` **red**. `plaque-controls-hit-test` **green** |
+| `pointer-events: auto` on `.tc-net`, plus `place()` parking the strip on the plaque's mid-line | all four **red**: *"the session strip is on top of 9 of them — ADD UNITS at 925,135 -> span"*, *"- praetorian-cohort at 386,135 -> div.tc-net"*, *"ADD UNITS at scale 1.35 did nothing"* |
+
+The middle row is the point. A geometry fault and a pointer fault, injected together, and the
+hit-test check stayed green because the strip's bottom edge landed at 182 and the buried
+steppers' centres landed at 182 — so the two checks are measuring different things and neither is
+standing in for the other. That is the shape the owner asked for when he said to treat the
+covering and the not-being-able-to-click as possibly two bugs.
+
+### 15.5 Both transports
+
+The instruction was to measure the relay path and the peer path separately, on the theory that
+the strip's content differs between them and `wide` is content-driven. **Both halves of that
+theory turned out to be wrong, and it took a measurement to say so.** `wide` is toggled by
+`!!desync || !!ended` and by nothing else, so it is not content-driven. And the content does not
+meaningfully differ either: a peer session in the deploy phase reads
+
+> ROOM PPQQR · YOU ARE ROME (SLOT 0) · DEPLOYMENT — THE CLOCK STARTS WHEN BOTH ARE LAID OUT
+
+which is the relayed strip with a different code in it. `NetSession.status().room` is populated
+on both transports; the peer path is introduced by a relay and keeps the code.
+
+`qa-p2p`'s `battle` arm now takes one reading in the deploy phase of each of its three battles
+and records `p2p-strip-clears-the-plaque`. The placement it measures is **identical to the relay
+arm's, to the pixel** — 166–194 closed and 247–275 open, against a plaque of 111–158 and 111–239
+— which is what should happen, because `NetPanel` places the strip by measuring `.deploy` and
+never reads the text it is carrying. Reproduced across three separate runs of the arm. That is
+now a check rather than an assumption: if the peer strip is ever placed differently from the
+relayed one, the peer gate says so, and `qa-net`'s arm is where it then gets characterised.
+
+### 15.6 The gate as run
+
+The owner was playing throughout the first half of this pass, so the browser budget held the cap
+at one or two and demoted both browsers to the efficiency cores repeatedly. That matters, and
+§15.7 is about what it did to two of the gates.
+
+| | result |
+|---|---|
+| `npx tsc --noEmit` | clean |
+| `npm run lint` | **3/3** |
+| `node tools/qa-net.mjs` | **93/96** with the owner playing; all three reds reproduce as green or as a known flake, §15.7 |
+| `node tools/qa-net.mjs --only=lag` | **1/1** re-run on a quiet machine |
+| `node tools/qa-p2p.mjs --only=battle` | **13/13** on a quiet machine |
+| `qa-determinism` (bare) | ✓ 7 checkpoints, **8,632** soldiers, 35 units, identical at 4 tiers |
+| `qa-determinism --battle='map=campus-martius&scenario=assault'` | ✓ 7 checkpoints, **3,072** soldiers, 32 units |
+| `qa-determinism --battle='map=carthage&scenario=assault'` | ✓ 7 checkpoints, **3,440** soldiers, 34 units |
+
+**No determinism pin moved, and that is the load-bearing line in this table.** This is a CSS and
+layout change; the only file under `src/` it touches is `src/ui/NetPanel.ts`, which is a DOM
+overlay outside the simulation and outside the HUD's own update loop. All three pins came back
+`UNCHANGED` on every checkpoint of every layer. If one had moved, something had been changed that
+was not meant to be.
+
+96 rather than 91 because this pass adds five: the four in §15.4 plus `strip-console`.
+
+### 15.7 The three reds, attributed
+
+**`same-battle` and `siege-same-battle`** are one flake in two arms. Both report *"they stopped
+at different ticks"* — 2,115 against 2,125, and 1,365 against 1,370 — with
+`checkpoints-agreed` **green** beside them (the relay's last agreed tick 2,100 against a final
+2,115; 1,380 against 1,365) and byte-identical merged order logs on both clients. That is the
+signature §12.8 already records: an instrument that cannot bring two wall-clocked browsers to a
+common tick, not two simulations that disagree. Attributed, not chased.
+
+**`delay-holds`** is new to this run and is the machine. The arm reports the measured round trip
+at three injected one-way latencies, and the two runs read:
+
+| injected one way | owner playing (9 demotions) | owner away (1 demotion) |
+|---|---|---|
+| 0 ms | **864.2 ms**, 191.5 ticks | **153.0 ms**, 3 ticks |
+| 25 ms | 485.1 ms, 78.83 ticks | 188.7 ms, 4.5 ticks |
+| 60 ms | 346.6 ms, 38 ticks | 198.5 ms, 4.5 ticks |
+| | ✗ red | ✓ **green** |
+
+**In the red run the measured round trip falls as the injected latency rises.** Latency cannot be
+monotonically decreasing in itself, and the worst row is the one with *no* injected latency at
+all, so what was measured there was not latency. On the quiet machine the same arm on the same
+commit is monotonic in the right direction and passes, and the zero-latency row is 5.6× faster.
+
+**The peer gate needed a real control, and the first one was confounded.** `qa-p2p` threw on this
+branch in its second battle (`linkLost` after the data channel took **40,545 ms** to open against
+a documented normal of 57–209 ms), and on a re-run went 11/13 with two `connected-directly` reds
+— one at **131,925 ms** to open, one where `getStats()` returned no selected candidate pair at
+all while the battle beside it was bit-identical. A control at `4364c00` then went 12/12 green,
+which looks damning until you count the demotions: **the base run had zero and both branch runs
+had three and four.** The owner had stopped playing in between. So the control was comparing two
+different machines, not two different commits, and was thrown away.
+
+Re-run on the branch under the same quiet conditions, `qa-p2p --only=battle` goes **13/13**, and
+the quantity that was failing lines up exactly with the control:
+
+| run | commit | demotions | channel open (ms) |
+|---|---|---|---|
+| branch, owner playing | `2076ba1` | 3 | 6,488 · **40,545** (threw) |
+| branch, owner playing | `2076ba1` | 4 | **131,925** · 6,326 · 5,805 |
+| base, owner away | `4364c00` | 0 | 6,161 · 5,927 · 5,729 |
+| branch, owner away | `2076ba1` | 0 | 6,234 · 5,945 · 5,871 |
+
+Same commit, 6.2 s or 131.9 s depending on nothing but whether the owner was at his machine.
