@@ -1345,10 +1345,54 @@ const MENU_SHOTS = {
  * sun is 55 degrees off the same lens. Carthage is the mirror: §2.2 has map −Z as true west,
  * so its curtain is a west face and only takes the sun after about 15:00.
  *
- * Grouped so the pass is six page loads for sixteen frames — `groupKey` is
+ * Grouped so the pass is ten page loads for forty-five frames — `groupKey` is
  * `[map, hour, scenario, quality, opponent, weather, seed]`, and a Punic world costs minutes
  * to build. Every camera here is lifted from a shot in this file that was already proved to
  * frame its subject rather than the grass beside it; the hours and the seconds are what moved.
+ *
+ * ---------------------------------------------------------------------------
+ * Sep 2026: sixteen frames became forty-five, and why the arithmetic changed
+ * ---------------------------------------------------------------------------
+ *
+ * The owner asked for the menu's pictures to be sharper, for there to be more of them, and for
+ * them to be randomised. The third of those is what forced this list to grow rather than
+ * merely to be re-shot: a rotation that draws from nine frames shows a visitor the same
+ * wallpaper twice in a short session, and a rotation that draws from twenty-odd does not.
+ *
+ * Three things were done to this table, in order of how much they cost:
+ *
+ *   1. **Nothing new was invented.** Every one of the twenty-nine added frames lifts a camera
+ *      from elsewhere in this file that has already been looked at and kept — `escalade-foot-28`,
+ *      `ab2-rome-line`, `ab2-rome-cavalry`, `ab2-rome-melee`, `ab2-carth-wall`,
+ *      `ab2-carth-elephants`, `ab2-carth-melee`, `ab2-carth-parapet`, `eyeline-rome-along`,
+ *      `eyeline-rome-tower`, `eyeline-carth-along`, `carth-postern-wide`, `r6-gate-open`,
+ *      `deck-pydna-horizon`, `skyline`, `establishing`. What moved is the hour and the second.
+ *      Each one carries the note from the shot it came from, because those notes are mostly
+ *      records of a framing that failed first, and a lifted camera that loses its reason is a
+ *      camera somebody will "simplify" back to the version that photographed grass.
+ *
+ *   2. **The six frames `tools/make-brand.mjs` cut were repaired rather than deleted.** That
+ *      file's "shot, looked at, and left out" note is a list of specific defects with specific
+ *      remedies in it, and every one has now been applied: `press-rome-ram` moves from 34 m to
+ *      46, `press-rome-ladder` from t+60 to t+34 (the escalade window measured shut at t+45),
+ *      `press-rome-parapet` from t+150 to t+230 (past the ram's own gate-open at t+220),
+ *      `press-rome-advance` and `press-carth-wide` from a zoom scalar to four lengths.
+ *
+ *   3. **Weather, which the shipped nine had none of.** All nine were `clear`. Three new page
+ *      loads carry `overcast` and `rain` — see the block above `press-rome-grey`.
+ *
+ * Ten loads is deliberately more than the six it was. Frames inside a load are close to free
+ * and loads are not, so the shape to aim for is few worlds and many cameras; but a set with no
+ * weather in it and one hour per map is a set with a single look, and that is what the owner
+ * was actually complaining about when he asked for "multiple photos".
+ *
+ * **This is shot at 5120x2880, not 1920x1080.** See `PLATE_WIDTHS` in `tools/make-brand.mjs`
+ * for the whole argument; the short version is that a 2x display paints the backdrop across up
+ * to 5,838 device pixels and `withoutEnlargement` means a rendition can never be wider than
+ * the capture. Shooting at 5120 and topping the ladder out at 2560 also means every shipped
+ * rendition is a downsample of at least 2x, which is supersampling the aliasing away rather
+ * than shipping it — `--dpr` buys the same thing inside the renderer and costs a great deal
+ * more to render.
  */
 const PRESS_SHOTS = {
   // ---- Rome, the assault on the Aurelian Wall. One load, four frames. ------
@@ -1377,18 +1421,28 @@ const PRESS_SHOTS = {
   'press-rome-ram': {
     // t+150: `64dfb88` measured the machine's schedule — at the leaves by t+100, gate open at
     // t+220. Earlier it is still walking, later the leaves are already down.
+    //
+    // 46 m, not 34. `tools/make-brand.mjs` left this out of the shipped set with a specific
+    // remedy: "The gate is the best single piece of modelling in the game and this camera is
+    // 6 m from it, so the frame is two tower drums and a slab of siege tower. Worth
+    // re-shooting from 40 m." The eye goes up with the standoff so the depression holds near
+    // the 9 degrees the original had, rather than turning into a plan of the shed's roof.
     desc: 'PRESS: the ram at the Porta Flaminia, mid-battery, from outside the gate',
     scenario: 'assault', hour: 9.5, at: 150, weather: 'clear',
     wall: { bay: 0, gate: true, stand: 6, lift: 0, yaw: 'in', yawAdd: -0.30 },
-    cam: { eye: 7, aim: 5, dist: 34, fov: 30 },
+    cam: { eye: 12, aim: 5, dist: 46, fov: 34 },
   },
   'press-rome-ladder': {
     // `escalade-foot-28`'s camera is 32 m out and 13 m up, which is a diagnostic distance: it
     // proves a queue and shows nothing of the wall it is against. Backed off to 85 m and up to
-    // 34 so the curtain, the ladders on it and the men at their feet are one picture, and out
-    // to t+60 because at t+28 the bank at this bay had not formed on this tree.
+    // 34 so the curtain, the ladders on it and the men at their feet are one picture.
+    //
+    // t+34, not t+60. This shipped at t+60 and `tools/make-brand.mjs` cut it because it framed
+    // "the curtain with no ladders on it: at t+60 the escalade at bay -3 had either not started
+    // or was over". The escalade family measured the window on this bay directly — nobody at
+    // the foot after t+45 — so t+60 was past the end of it, not before the start.
     desc: 'PRESS: ladders against the Aurelian curtain, the storm parties at their feet',
-    scenario: 'assault', hour: 9.5, at: 60, weather: 'clear',
+    scenario: 'assault', hour: 9.5, at: 34, weather: 'clear',
     wall: { bay: -3, stand: 0, lift: 0, yaw: 'in', yawAdd: -0.35 },
     cam: { eye: 34, aim: 10, dist: 85, fov: 44 },
   },
@@ -1396,9 +1450,64 @@ const PRESS_SHOTS = {
     // `follow: 'contact'`, not a named bay. Where the fighting on a 50-bay circuit actually is
     // is emergent, and the first cut — the embrasures two bays west of the gate — photographed
     // an immaculate empty wall-walk at t+96.
+    //
+    // t+230, not t+150. `tools/make-brand.mjs` left this frame out of the shipped set with the
+    // note that at t+150 `contact` "resolved to open ground: there was no melee anywhere on the
+    // circuit at that second". The ram's own schedule says why — the leaves go at t+220 — so
+    // t+230 is the first second at which there is reliably a fight *inside* the gate as well as
+    // whatever is on the ladders.
     desc: 'PRESS: the densest fighting of the assault, wherever it has reached the stone',
-    scenario: 'assault', hour: 9.5, at: 150, weather: 'clear',
+    scenario: 'assault', hour: 9.5, at: 230, weather: 'clear',
     follow: 'contact', zoom: 0.26,
+  },
+  /*
+   * Five more from the same page load, every camera lifted from a shot that was already
+   * proved. The assault is the subject of the whole product and four frames of it was thin.
+   */
+  'press-rome-gate': {
+    // `r6-gate-open`'s camera verbatim. t+300 is the broken gate with the passage open, which
+    // is the one moment the best-modelled object in the game is doing something.
+    desc: 'PRESS: the Porta Flaminia broken, the passage open through it',
+    scenario: 'assault', hour: 9.5, at: 300, weather: 'clear',
+    wall: { bay: 0, gate: true, stand: 6, lift: 0, yaw: 'in', yawAdd: -0.18 },
+    cam: { eye: 6, aim: 4, dist: 26, fov: 36 },
+  },
+  'press-rome-escalade': {
+    // `escalade-foot-28` verbatim, including its `yaw: 'in'`, which that set arrived at after
+    // `yaw: 'along'` stacked the three rails one behind another and showed one ladder.
+    // t+28 rather than press-rome-ladder's t+60, because the escalade family measured the
+    // queue: a man on a rung at t+13, the bank still thirty deep at t+32, nobody at the foot
+    // after t+45.
+    desc: 'PRESS: the foot of a ladder bank on the Aurelian curtain, the queue thirty deep',
+    scenario: 'assault', hour: 9.5, at: 28, weather: 'clear',
+    wall: { bay: -3, stand: 6, lift: 0, yaw: 'in' },
+    cam: { eye: 13, aim: 2.2, dist: 32, fov: 40 },
+  },
+  'press-rome-walk': {
+    // `eyeline-rome-along` verbatim, at t+150 instead of t+8. The eyeline family shoots at t+8
+    // to photograph the *surface* on an empty wall; this wants the same eye height with the
+    // garrison on it, which is what the middle of an assault has.
+    desc: 'PRESS: eye level on the Aurelian wall-walk, the garrison down the curtain',
+    scenario: 'assault', hour: 9.5, at: 150, weather: 'clear',
+    wall: { bay: 4, stand: 0, lift: 'stand', yaw: 'along', zoom: 0 },
+  },
+  'press-rome-tower': {
+    // `eyeline-rome-tower` verbatim, and its `along: -30` is load-bearing: that family measured
+    // -17.75 (half a bay) as 1600x900 of unlit internal stair and -12 as pure black, because
+    // `yaw: 'along'` looks down +d and both put the eye inside the tower's own footprint.
+    desc: 'PRESS: the walk stepping up into a tower, from a man\'s eye height',
+    scenario: 'assault', hour: 9.5, at: 150, weather: 'clear',
+    wall: { bay: 4, stand: 0, along: -30, lift: 'stand', yaw: 'along', zoom: 0 },
+  },
+  'press-rome-glacis': {
+    // `ab2-rome-wall`'s camera: 9 m up and 60 m out, below the parapet so the masonry is the
+    // subject and the ranks are in front of it. That set records why it is not 16 m — at
+    // sixteen the eye clears a twelve-metre curtain from eighty metres and photographs the
+    // rooftops behind it, which is a picture of the city rather than of the assault on it.
+    desc: 'PRESS: the storm from the glacis, below the parapet — masonry, ladders, ranks',
+    scenario: 'assault', hour: 9.5, at: 150, weather: 'clear',
+    wall: { bay: 2, stand: 10, lift: 0, yaw: 'in', yawAdd: 0.55 },
+    cam: { eye: 9, aim: 6, dist: 60, fov: 26 },
   },
 
   // ---- Rome, the field battle, morning. One load, three frames. ------------
@@ -1412,6 +1521,13 @@ const PRESS_SHOTS = {
     hour: 8.6, at: 2, weather: 'clear',
     x: 40, z: 620, zoom: 0.74, yaw: Math.PI * 0.06,
   },
+  'press-rome-skyline': {
+    // `skyline` verbatim. The only frame in the set with a named building in it — the
+    // Mausoleum, the Pantheon, the theatres — and the deepest look into the city there is.
+    desc: 'PRESS: Rome behind its wall — the Mausoleum, the Pantheon, the theatres',
+    hour: 8.6, at: 2, weather: 'clear',
+    x: -180, z: 780, zoom: 0.80, yaw: Math.PI * 0.05,
+  },
   'press-rome-host': {
     // Closer and later than the first cut (0.36 at t+3), which framed one warband standing
     // still in the middle of a great deal of grass. At 0.22 the block fills the frame and at
@@ -1420,15 +1536,71 @@ const PRESS_SHOTS = {
     hour: 8.6, at: 45, weather: 'clear',
     follow: 'germanFront', zoom: 0.22,
   },
+  'press-rome-helmets': {
+    // `ab2-rome-line`'s camera, and the `yawAdd: 1.2` is the whole of it: measured at ten
+    // degrees off the sun without it, which backlights the front rank and flattens the upper
+    // half of the frame to one cream. The hour cannot fix that — the Roman line faces north on
+    // this map, so its front is away from the sun at every hour there is — so the camera swings.
+    desc: 'PRESS: the legionary front rank from helmet height, telephoto down the line',
+    hour: 8.6, at: 6, weather: 'clear',
+    follow: 'romanFront', yawAdd: 1.2,
+    cam: { eye: 2.05, aim: 1.32, dist: 8, fov: 30 },
+  },
+  'press-rome-march': {
+    // `ab-rome-march` verbatim. The cohorts moving as cohorts, before anything has touched.
+    desc: 'PRESS: the legionary cohorts on the march, before contact',
+    hour: 8.6, at: 40, weather: 'clear',
+    follow: 'romanFront', zoom: 0.22,
+  },
+  'press-rome-dawn': {
+    // `establishing`'s framing, one notch tighter. That shot's own note is the constraint:
+    // at 0.82 a man is five pixels and at 0.55 the 320 m between the armies does not fit, so
+    // the camera photographs the empty ground between them. 0.66 is inside the window and is
+    // the only frame in the set that shows both hosts and the ground they have to cross.
+    desc: 'PRESS: from behind the Roman line at first light, the host across the field',
+    hour: 8.6, at: 1, weather: 'clear',
+    follow: 'ownLine', zoom: 0.66,
+  },
 
-  // ---- Rome, the field battle, late light. One load, three frames. ---------
+  // ---- Rome, the field battle, late light. One load, six frames. -----------
   'press-rome-advance': {
     // 0.62 is nearly a strategic view: at that zoom a man is four pixels and the frame came
-    // back as a washed-out aerial of field patchwork. 0.40 keeps both lines in shot with the
-    // men still legible as men, which is the whole claim this picture is making.
+    // back as a washed-out aerial of field patchwork. 0.40 was retuned to fix that and
+    // `tools/make-brand.mjs` recorded that it was still an aerial, because `ownLine` puts the
+    // eye behind the whole army and at any zoom that fits both hosts it is too far back.
+    //
+    // So this is now `ab2-carth-wide`'s answer applied to Rome: four lengths instead of a zoom
+    // scalar. That shot's note is the reasoning — 280 m rather than 480, because at the longer
+    // standoff the blocks were specks on an empty plain, which is a picture of ground.
     desc: 'PRESS: from behind the Roman line as it goes in, the host beyond it',
     hour: 16.4, at: 44, weather: 'clear',
-    follow: 'ownLine', zoom: 0.40,
+    follow: 'ownLine',
+    cam: { eye: 34, aim: 0, dist: 165, fov: 34 },
+  },
+  'press-rome-horse': {
+    // `ab2-rome-cavalry`'s camera: the lowest eye in the shot table, deliberately below the
+    // riders, which is how a frame looks *up* at its subject given that `RTSCamera.place`
+    // refuses an eye below its own aim.
+    desc: 'PRESS: the equites wing from below the riders, low sun through the dust',
+    hour: 16.4, at: 70, weather: 'clear',
+    follow: 'cavalryUnit',
+    cam: { eye: 1.55, aim: 0.82, dist: 8, fov: 30 },
+  },
+  'press-rome-press': {
+    // `ab2-rome-melee`'s camera, and its measurement is the reason for the height: `contact`
+    // resolves to the densest 40 m cell of a melee eight thousand men deep, so 14 m of standoff
+    // put the nearest man at 0.75 m and 17 m put him at 0.88 — three metres bought thirteen
+    // centimetres. The lever is the lens above the helmets, looking down into it.
+    desc: 'PRESS: down into the melee from a head above the helmets',
+    hour: 16.4, at: 96, weather: 'clear',
+    follow: 'contact',
+    cam: { eye: 2.55, aim: 1.05, dist: 20, fov: 34 },
+  },
+  'press-rome-aftermath': {
+    // `ab-rome-aftermath` verbatim. The one frame in the set that is about the cost.
+    desc: 'PRESS: the field after the break — corpses, routs, dust and blood in low sun',
+    hour: 16.4, at: 200, weather: 'clear',
+    follow: 'corpses', zoom: 0.22,
   },
   'press-rome-cavalry': {
     desc: 'PRESS: the equites wedge sweeping the flank in low sun and dust',
@@ -1456,12 +1628,59 @@ const PRESS_SHOTS = {
     wall: { bay: 6, stand: 24, lift: 0, yaw: 'along', yawAdd: -0.40 },
     cam: { eye: 6, aim: 0, dist: 45, fov: 32 },
   },
+  'press-carth-storm': {
+    // `ab2-carth-wall`'s camera. Its note is the reasoning: 200 m out at 45 m up rather than
+    // 520 at 110, because the far version put the whole city in a strip across the middle of
+    // an empty plain. Depression stays near 11 degrees so the horizon holds its third.
+    desc: 'PRESS: Carthage being stormed, from high above the curtain',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 170, weather: 'clear',
+    wall: { bay: 2, stand: 40, lift: 0, yaw: 'in', yawAdd: -0.35 },
+    cam: { eye: 45, aim: 5, dist: 200, fov: 32 },
+  },
+  'press-carth-postern': {
+    // `carth-postern-wide` verbatim, including its deliberate `eye < aim` — one of only two
+    // frames in the shot table that violate the clamp's constraint on purpose, because a
+    // masonry opening has to be read square on and slightly from below.
+    desc: 'PRESS: the Punic curtain square on a postern, the towers either side of it',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 8, weather: 'clear',
+    wall: { bay: -2, stand: 0, lift: 0, yaw: 'in' },
+    cam: { eye: 3.2, aim: 3.4, dist: 62, fov: 32 },
+  },
+  'press-carth-walk': {
+    // `eyeline-carth-along` verbatim, at t+170 rather than t+8, for the reason
+    // `press-rome-walk` gives: the eyeline family photographs the surface on an empty wall and
+    // this wants the same eye with the garrison standing on it.
+    desc: 'PRESS: eye level on the wall of Carthage, the garrison down the curtain',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 16.5, at: 170, weather: 'clear',
+    wall: { bay: 4, stand: 0, lift: 'stand', yaw: 'along', zoom: 0 },
+  },
 
-  // ---- Carthage, the field battle. One load, three frames. -----------------
+  // ---- Carthage, the field battle. One load, five frames. ------------------
   'press-carth-elephants': {
     desc: 'PRESS: the Punic elephant line advancing in front of the centre',
     map: 'carthage', opponent: 2, hour: 16.8, at: 44, weather: 'clear',
     follow: 'unitType', unitType: 'war-elephants', zoom: 0.30,
+  },
+  'press-carth-tusks': {
+    // `ab2-carth-elephants`'s camera: fourteen metres and an eye at 2.25, which puts the lens
+    // in front of the Punic spears with the animals coming over the top of them. The same
+    // subject as `press-carth-elephants` at a quarter of the standoff, and the owner named
+    // this one — "or perhaps watching an elephant's charge idk".
+    desc: 'PRESS: under the elephants, from in front of the Punic spears',
+    map: 'carthage', opponent: 2, hour: 16.8, at: 44, weather: 'clear',
+    follow: 'unitType', unitType: 'war-elephants',
+    cam: { eye: 2.25, aim: 0.97, dist: 14, fov: 30 },
+  },
+  'press-carth-spears': {
+    // `ab2-carth-melee`'s camera, and the selector is the point of it. `follow: 'contact'` on
+    // Carthage at t+96 resolves to a cavalry clash on a flank — that set came back as a wall of
+    // horses when it wanted infantry — so the unit is named. Five metres, not sixteen: the
+    // standoff that buries a camera in a legionary press leaves it well outside a Punic one,
+    // measured at 11.59 m to the nearest man against 0.88 m on the Roman side.
+    desc: 'PRESS: inside the Libyan spears, the camera almost in the grass',
+    map: 'carthage', opponent: 2, hour: 16.8, at: 110, weather: 'clear',
+    follow: 'unitType', unitType: 'libyan-spearmen',
+    cam: { eye: 1.75, aim: 1.20, dist: 5, fov: 36 },
   },
   'press-carth-line': {
     desc: 'PRESS: the Punic front rank — Libyan spears, Iberian scutarii, the city behind',
@@ -1469,12 +1688,17 @@ const PRESS_SHOTS = {
     follow: 'enemyFront', zoom: 0.28,
   },
   'press-carth-wide': {
+    // `ab2-carth-wide`'s four lengths rather than the 0.62 zoom this shipped with, which
+    // `tools/make-brand.mjs` cut as "a strategic view: washed-out aerial, men four pixels
+    // tall". 180 m and 36 m up is the standoff that set arrived at after 480 m came back as
+    // specks on an empty plain.
     desc: 'PRESS: the whole field before Carthage, both hosts drawn up',
     map: 'carthage', opponent: 2, hour: 16.8, at: 4, weather: 'clear',
-    follow: 'ownLine', zoom: 0.62,
+    follow: 'ownLine',
+    cam: { eye: 36, aim: 0, dist: 180, fov: 34 },
   },
 
-  // ---- Pydna, 168 BC. One load, two frames. -------------------------------
+  // ---- Pydna, 168 BC, morning. One load, four frames. ----------------------
   'press-pydna-line': {
     desc: 'PRESS: Pydna in the morning, telephoto along the Roman front rank',
     map: 'pydna', hour: 8.2, at: 2, weather: 'clear',
@@ -1483,6 +1707,101 @@ const PRESS_SHOTS = {
   'press-pydna-clash': {
     desc: 'PRESS: Pydna, the lines meeting on open Macedonian ground',
     map: 'pydna', hour: 8.2, at: 80, weather: 'clear',
+    follow: 'contact', zoom: 0.26,
+  },
+  'press-pydna-march': {
+    desc: 'PRESS: Pydna, the legions on the march across open ground',
+    map: 'pydna', hour: 8.2, at: 40, weather: 'clear',
+    follow: 'romanFront', zoom: 0.22,
+  },
+  'press-pydna-horizon': {
+    // `deck-pydna-horizon`'s camera, which is the answer to the one composition problem this
+    // set has: at zoom >= 0.6 the RTS camera's pitch fills the viewport with ground, so almost
+    // no frame in this repository contains sky. 0.12 is the only way to put a horizon in shot,
+    // and a menu whose type sits in the middle wants exactly that — sky as a band at the top.
+    desc: 'PRESS: Pydna at first light, low camera, the mountains on the horizon',
+    map: 'pydna', hour: 8.2, at: 2, weather: 'clear',
+    x: -420, z: -120, zoom: 0.12, yaw: Math.PI * 0.62,
+  },
+
+  /*
+   * ---- The weather, which the shipped nine had none of. --------------------
+   *
+   * Every frame above is `clear`, and the owner asked for range. `Weather` has three kinds and
+   * they are not a filter: `overcast` lifts mist to 0.45 and drops dust to 0.72, `rain` lifts
+   * mist to 0.8, kills dust to 0.16 and runs 2,600 drops a second. Each is a page load of its
+   * own, because rain and mist accumulate into a shared particle ring and a sky switched one
+   * frame before the shutter photographs an empty sky with four raindrops in it.
+   */
+  'press-rome-grey': {
+    // `ab2-rome-aftermath`'s camera and its hour. t+140 rather than t+190 for that shot's own
+    // measured reason: by 190 the lines have come apart on this map and `contact` frames men
+    // standing about in grass, where at 140 the ground is already littered and still fought over.
+    desc: 'PRESS: still fighting over ground already littered, under a flat grey sky',
+    hour: 12.8, at: 140, weather: 'overcast',
+    follow: 'contact',
+    cam: { eye: 2.40, aim: 1.05, dist: 18, fov: 38 },
+  },
+  'press-rome-mist': {
+    desc: 'PRESS: the legionary line under an overcast noon, no shadow to hide behind',
+    hour: 12.8, at: 6, weather: 'overcast',
+    follow: 'romanFront', zoom: 0.34,
+  },
+  'press-rome-hordegrey': {
+    desc: 'PRESS: the Juthungi host coming on out of the murk',
+    hour: 12.8, at: 45, weather: 'overcast',
+    follow: 'germanFront', zoom: 0.22,
+  },
+  'press-carth-rain': {
+    // `ab2-carth-parapet` verbatim — the only rain frame in the whole shot table, and the only
+    // `base: 'crest'` camera. The negative aim is what puts the ground far below in the frame.
+    desc: 'PRESS: the Punic garrison on the crest in rain, the ground far below',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 12.2, at: 96, weather: 'rain',
+    wall: { bay: -2, stand: 0.2, lift: 0, yaw: 'along', yawAdd: Math.PI },
+    cam: { base: 'crest', eye: 1.70, aim: -9.0, dist: 46, fov: 34 },
+  },
+  'press-carth-rainwall': {
+    // The same world, from `ab2-carth-wall`'s camera. 12.2 h is before the west face takes any
+    // sun, which is normally the reason not to shoot Carthage's curtain in the morning — under
+    // rain there is no direct sun to miss, so the hour that would veil a clear frame is the
+    // one that makes this one work.
+    desc: 'PRESS: the assault on Carthage in rain, from high above the curtain',
+    map: 'carthage', opponent: 2, scenario: 'assault', hour: 12.2, at: 170, weather: 'rain',
+    wall: { bay: 2, stand: 40, lift: 0, yaw: 'in', yawAdd: -0.35 },
+    cam: { eye: 45, aim: 5, dist: 200, fov: 32 },
+  },
+  'press-pydna-dusk': {
+    // `deck-pydna-horizon`'s camera at that shot's own measured hour. 16:00, not the 19:00
+    // preset: at 19:00 the frame came back at a few percent luminance with a blown sun blob on
+    // the skyline and nothing else legible.
+    desc: 'PRESS: Pydna in the late afternoon, low camera, sky and mountains',
+    map: 'pydna', hour: 16.0, at: 2, weather: 'overcast',
+    x: -420, z: -120, zoom: 0.12, yaw: Math.PI * 0.62,
+  },
+  'press-pydna-grey': {
+    desc: 'PRESS: Pydna, inside the melee under a shadowless sky',
+    map: 'pydna', hour: 16.0, at: 96, weather: 'overcast',
+    follow: 'contact', zoom: 0.13,
+  },
+
+  /*
+   * ---- The Aurelian parapet at the hour it can be photographed. ------------
+   *
+   * `ab2-rome-parapet` is at 11.0 h and this is the only frame in the set that stands ON
+   * Rome's wall looking down into the city, which is the one view a player never gets from the
+   * field. Its own hour rather than the assault group's 9.5, because that camera was tuned
+   * against the sun at 11.0 and the whole reason the Rome frames are morning frames is that
+   * this curtain is unforgiving about it.
+   */
+  'press-rome-embrasure': {
+    desc: 'PRESS: down the Aurelian wall-walk and out over the city, from the parapet',
+    scenario: 'assault', hour: 11.0, at: 96, weather: 'clear',
+    wall: { bay: -2, stand: 0.2, lift: 0, yaw: 'along', yawAdd: Math.PI },
+    cam: { base: 'walk', eye: 1.70, aim: -2.5, dist: 34, fov: 38 },
+  },
+  'press-rome-embrasure-wide': {
+    desc: 'PRESS: the assault reaching the parapet, from along the wall-walk',
+    scenario: 'assault', hour: 11.0, at: 150, weather: 'clear',
     follow: 'contact', zoom: 0.26,
   },
 };
@@ -2022,7 +2341,26 @@ try {
       if (shot.ui) {
         const info = await shootUi(name, shot);
         const file = path.join(OUT, `${name}.png`);
-        results.push({ name, file, ...info, ms: Date.now() - t0, desc: shot.desc });
+        /*
+       * `map` and `scenario` are recorded rather than left to be inferred downstream.
+       *
+       * `tools/make-brand.mjs` used to derive the scenario from whether the shot had a `wall`
+       * camera — `shot.wallDebug ? 'assault' : 'field'` — which is a fact about the *camera*
+       * standing in for a fact about the *battle*, and it is wrong for every assault frame
+       * that is not pointed at masonry. `press-rome-parapet` is `follow: 'contact'` inside a
+       * storm of the Aurelian Wall and was filed as a field battle, which put a picture of an
+       * assault into the menu's rotation for the field battle. The defaults here are the same
+       * ones `resolveConfig` applies, spelled once.
+       */
+      results.push({
+        name,
+        file,
+        map: shot.map ?? 'campus-martius',
+        scenario: shot.scenario ?? 'field',
+        ...info,
+        ms: Date.now() - t0,
+        desc: shot.desc,
+      });
         console.log(`  ✓ ${name.padEnd(20)} ui  ${((Date.now() - t0) / 1000).toFixed(1)} s  `
           + `${info.url}${info.consoleErrors ? `  ${info.consoleErrors} console error(s)` : ''}`);
         continue;
@@ -2888,7 +3226,26 @@ try {
       }
       const file = path.join(OUT, `${name}.png`);
       await page.screenshot({ path: file, type: 'png' });
-      results.push({ name, file, ...info, ms: Date.now() - t0, desc: shot.desc });
+      /*
+       * `map` and `scenario` are recorded rather than left to be inferred downstream.
+       *
+       * `tools/make-brand.mjs` used to derive the scenario from whether the shot had a `wall`
+       * camera — `shot.wallDebug ? 'assault' : 'field'` — which is a fact about the *camera*
+       * standing in for a fact about the *battle*, and it is wrong for every assault frame
+       * that is not pointed at masonry. `press-rome-parapet` is `follow: 'contact'` inside a
+       * storm of the Aurelian Wall and was filed as a field battle, which put a picture of an
+       * assault into the menu's rotation for the field battle. The defaults here are the same
+       * ones `resolveConfig` applies, spelled once.
+       */
+      results.push({
+        name,
+        file,
+        map: shot.map ?? 'campus-martius',
+        scenario: shot.scenario ?? 'field',
+        ...info,
+        ms: Date.now() - t0,
+        desc: shot.desc,
+      });
       console.log(
         `  ✓ ${name.padEnd(14)} t+${String(Math.round(info.simTime)).padStart(3)}s  ` +
         `${String(info.men).padStart(5)} men  ${String(info.units).padStart(2)} units  ` +

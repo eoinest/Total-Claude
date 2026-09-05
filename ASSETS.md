@@ -29,7 +29,7 @@ delete the files and run the generator.
 | | |
 | --- | --- |
 | Generator | `tools/make-brand.mjs` |
-| Frame source | `tools/shoot.mjs --set=press` — this project's own renderer |
+| Frame source | `tools/shoot-press.mjs` — this project's own renderer |
 | Verifier | `tools/qa-brand.mjs` (fetches every declared URL off a live server and decodes it) |
 | Licence | None applicable. Original work, generated, part of this repository. |
 | Attribution required | No |
@@ -65,22 +65,36 @@ it by the generator. No stock photography, no mock-up, no text on a gradient.
 
 ### The press stills — `public/press/`
 
-Nine frames of this game, two or three WebP renditions each, and
-`public/press/manifest.json` describing every one: which battle, where the camera stood, how
-many men were alive, each rendition's real dimensions and bytes, and a measurement of whether
-gold-on-near-black type stays readable on it. **2.94 MB total**, none of it on the cold load —
-nothing fetches any of it unless something asks. Regenerate with:
+**Twenty-three** frames of this game — the backdrop behind the menu, drawn at random per
+session — with **four AVIF renditions each at 960, 1440, 1920 and 2560**, plus one WebP at
+1440 for a browser that cannot decode AVIF. `public/press/manifest.json` describes every one:
+which battle, where the camera stood, how many men were alive, each rendition's real
+dimensions and bytes, and a measurement of whether gold-on-near-black type stays readable over
+the region the menu sheet actually covers.
+
+**20.1 MB total**, none of it on the cold load — nothing fetches any of it unless something
+asks, and `index.html` references none of it. What a visitor pays is **one rendition of one
+frame**: 41–116 kB at 960, 67–219 kB at 1440, 86–324 kB at 1920, 118–528 kB at 2560.
+
+It was 2.94 MB across nine frames with two or three WebP renditions each. The set grew because
+the menu now rotates and nine is too few to rotate through; the renditions grew because the
+old ladder was sized in CSS pixels and a 2x display was being served a 1,440 px picture across
+5,838 device pixels. Both arguments are written out at `PLATE_WIDTHS` in `tools/make-brand.mjs`
+with the measurements behind them, including which rung to cut first if this ever needs to be
+smaller: the 2560 rung is 7.1 MB of the 20.1, and the full division is a table there.
+
+Regenerate with:
 
 ```
-node tools/shoot.mjs --set=press --w=1920 --h=1080 --out=screenshots/press
+node tools/shoot-press.mjs     # shoots at 5120x2880, stores at 2560, nine page loads
 node tools/make-brand.mjs
 node tools/qa-brand.mjs
 ```
 
-The `.png` sources under `screenshots/` are gitignored and are not shipped; the WebP renditions
-in `public/press/` are. Hashes are not listed for these because the set is regenerated as a
-unit and `manifest.json` carries each file's exact byte count, which `tools/qa-brand.mjs`
-checks against the file on the server.
+The `.png` sources under `screenshots/` are gitignored and are not shipped; the renditions in
+`public/press/` are. Hashes are not listed for these because the set is regenerated as a unit
+and `manifest.json` carries each file's exact byte count, which `tools/qa-brand.mjs` checks
+against the file on the server.
 
 ## Re-fetching
 

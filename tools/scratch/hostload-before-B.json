@@ -1,0 +1,324 @@
+{
+  "tc": "qa-hostload",
+  "label": "prod",
+  "base": "http://192.168.1.77:5952",
+  "room": "DH5XD",
+  "served": "static",
+  "dev": false,
+  "node": "v24.13.0",
+  "at": "2026-09-05T02:30:00.407Z",
+  "results": [
+    {
+      "page": "lobby",
+      "url": "http://192.168.1.77:5952/?mp=1",
+      "profile": "off",
+      "profileLabel": "unthrottled",
+      "reps": 4,
+      "interactiveMs": 94.5,
+      "interactiveAll": [
+        141,
+        94,
+        95,
+        94
+      ],
+      "wireBytes": 860696,
+      "requests": 6,
+      "ttfbMs": 3.3500000089406967,
+      "fcpMs": 24,
+      "warmInteractiveMs": 54,
+      "warmWireBytes": 528,
+      "warmRequests": 6,
+      "warmCacheHits": 4,
+      "failures": [],
+      "consoleErrs": [],
+      "byDir": {
+        "/bundle": {
+          "bytes": 857334,
+          "count": 4
+        },
+        "(document & other)": {
+          "bytes": 3362,
+          "count": 2
+        }
+      },
+      "heaviest": [
+        {
+          "url": "/bundle/PostFX-CDCEW9bW.js",
+          "bytes": 490172,
+          "mime": "text/javascript",
+          "enc": "gzip"
+        },
+        {
+          "url": "/bundle/main-BWN1grtz.js",
+          "bytes": 283827,
+          "mime": "text/javascript",
+          "enc": "gzip"
+        },
+        {
+          "url": "/bundle/clips-DjfKLJDY.js",
+          "bytes": 69053,
+          "mime": "text/javascript",
+          "enc": "gzip"
+        },
+        {
+          "url": "/bundle/main-Du2gjFk9.css",
+          "bytes": 14282,
+          "mime": "text/css",
+          "enc": "gzip"
+        },
+        {
+          "url": "/?mp=1",
+          "bytes": 3046,
+          "mime": "text/html",
+          "enc": "gzip"
+        },
+        {
+          "url": "http://192.168.1.77:5953/health",
+          "bytes": 316,
+          "mime": "text/plain",
+          "enc": ""
+        }
+      ]
+    },
+    {
+      "page": "lobby",
+      "url": "http://192.168.1.77:5952/?mp=1",
+      "profile": "wifi",
+      "profileLabel": "30 Mbit/s down, 15 up, 20 ms RTT",
+      "reps": 4,
+      "interactiveMs": 347.5,
+      "interactiveAll": [
+        351,
+        348,
+        345,
+        347
+      ],
+      "wireBytes": 860696,
+      "requests": 6,
+      "ttfbMs": 3.1499999910593033,
+      "fcpMs": 90,
+      "warmInteractiveMs": 77,
+      "warmWireBytes": 528,
+      "warmRequests": 6,
+      "warmCacheHits": 4,
+      "failures": [],
+      "consoleErrs": [],
+      "byDir": {
+        "/bundle": {
+          "bytes": 857334,
+          "count": 4
+        },
+        "(document & other)": {
+          "bytes": 3362,
+          "count": 2
+        }
+      },
+      "heaviest": [
+        {
+          "url": "/bundle/PostFX-CDCEW9bW.js",
+          "bytes": 490172,
+          "mime": "text/javascript",
+          "enc": "gzip"
+        },
+        {
+          "url": "/bundle/main-BWN1grtz.js",
+          "bytes": 283827,
+          "mime": "text/javascript",
+          "enc": "gzip"
+        },
+        {
+          "url": "/bundle/clips-DjfKLJDY.js",
+          "bytes": 69053,
+          "mime": "text/javascript",
+          "enc": "gzip"
+        },
+        {
+          "url": "/bundle/main-Du2gjFk9.css",
+          "bytes": 14282,
+          "mime": "text/css",
+          "enc": "gzip"
+        },
+        {
+          "url": "/?mp=1",
+          "bytes": 3046,
+          "mime": "text/html",
+          "enc": "gzip"
+        },
+        {
+          "url": "http://192.168.1.77:5953/health",
+          "bytes": 316,
+          "mime": "text/plain",
+          "enc": ""
+        }
+      ]
+    },
+    {
+      "page": "menu",
+      "url": "http://192.168.1.77:5952/",
+      "profile": "off",
+      "profileLabel": "unthrottled",
+      "reps": 4,
+      "interactiveMs": 89.5,
+      "interactiveAll": [
+        101,
+        87,
+        89,
+        90
+      ],
+      "wireBytes": 1209022,
+      "requests": 8,
+      "ttfbMs": 3.500000014901161,
+      "fcpMs": 24,
+      "warmInteractiveMs": 55,
+      "warmWireBytes": 212,
+      "warmRequests": 8,
+      "warmCacheHits": 7,
+      "failures": [],
+      "consoleErrs": [],
+      "byDir": {
+        "/bundle": {
+          "bytes": 857334,
+          "count": 4
+        },
+        "(document & other)": {
+          "bytes": 351688,
+          "count": 4
+        }
+      },
+      "heaviest": [
+        {
+          "url": "/bundle/PostFX-CDCEW9bW.js",
+          "bytes": 490172,
+          "mime": "text/javascript",
+          "enc": "gzip"
+        },
+        {
+          "url": "/bundle/main-BWN1grtz.js",
+          "bytes": 283827,
+          "mime": "text/javascript",
+          "enc": "gzip"
+        },
+        {
+          "url": "/press/press-rome-line-1440.webp",
+          "bytes": 236552,
+          "mime": "image/webp",
+          "enc": ""
+        },
+        {
+          "url": "/press/press-rome-wall-1440.webp",
+          "bytes": 112090,
+          "mime": "image/webp",
+          "enc": ""
+        },
+        {
+          "url": "/bundle/clips-DjfKLJDY.js",
+          "bytes": 69053,
+          "mime": "text/javascript",
+          "enc": "gzip"
+        },
+        {
+          "url": "/bundle/main-Du2gjFk9.css",
+          "bytes": 14282,
+          "mime": "text/css",
+          "enc": "gzip"
+        },
+        {
+          "url": "/",
+          "bytes": 3046,
+          "mime": "text/html",
+          "enc": "gzip"
+        },
+        {
+          "url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='96' height='96' filter='url(%23n)'/%3E%3C/svg%3E",
+          "bytes": 0,
+          "mime": "image/svg+xml",
+          "enc": ""
+        }
+      ]
+    },
+    {
+      "page": "menu",
+      "url": "http://192.168.1.77:5952/",
+      "profile": "wifi",
+      "profileLabel": "30 Mbit/s down, 15 up, 20 ms RTT",
+      "reps": 4,
+      "interactiveMs": 342.5,
+      "interactiveAll": [
+        342,
+        345,
+        342,
+        343
+      ],
+      "wireBytes": 1209022,
+      "requests": 8,
+      "ttfbMs": 3.7000000029802322,
+      "fcpMs": 90,
+      "warmInteractiveMs": 79,
+      "warmWireBytes": 212,
+      "warmRequests": 8,
+      "warmCacheHits": 7,
+      "failures": [],
+      "consoleErrs": [],
+      "byDir": {
+        "/bundle": {
+          "bytes": 857334,
+          "count": 4
+        },
+        "(document & other)": {
+          "bytes": 351688,
+          "count": 4
+        }
+      },
+      "heaviest": [
+        {
+          "url": "/bundle/PostFX-CDCEW9bW.js",
+          "bytes": 490172,
+          "mime": "text/javascript",
+          "enc": "gzip"
+        },
+        {
+          "url": "/bundle/main-BWN1grtz.js",
+          "bytes": 283827,
+          "mime": "text/javascript",
+          "enc": "gzip"
+        },
+        {
+          "url": "/press/press-rome-line-1440.webp",
+          "bytes": 236552,
+          "mime": "image/webp",
+          "enc": ""
+        },
+        {
+          "url": "/press/press-rome-wall-1440.webp",
+          "bytes": 112090,
+          "mime": "image/webp",
+          "enc": ""
+        },
+        {
+          "url": "/bundle/clips-DjfKLJDY.js",
+          "bytes": 69053,
+          "mime": "text/javascript",
+          "enc": "gzip"
+        },
+        {
+          "url": "/bundle/main-Du2gjFk9.css",
+          "bytes": 14282,
+          "mime": "text/css",
+          "enc": "gzip"
+        },
+        {
+          "url": "/",
+          "bytes": 3046,
+          "mime": "text/html",
+          "enc": "gzip"
+        },
+        {
+          "url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='96' height='96' filter='url(%23n)'/%3E%3C/svg%3E",
+          "bytes": 0,
+          "mime": "image/svg+xml",
+          "enc": ""
+        }
+      ]
+    }
+  ]
+}

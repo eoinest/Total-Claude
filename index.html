@@ -53,10 +53,19 @@
       every unfurler there is, and this is the single most common way a card silently ships as
       a bare grey rectangle.
 
-      The image is a real frame of this game — `press-rome-wall` in `tools/shoot.mjs`, the
-      Aurelian curtain at 09:30 with the assault going in — cropped to 1200x630 and given a
-      scrim and a wordmark, because at the ~400 px a preview actually renders, a dark
-      battlefield full of four-pixel men is texture rather than a picture.
+      The image is a real frame of this game, cropped to 1200x630 and given a scrim and a
+      wordmark, because at the ~400 px a preview actually renders, a dark battlefield full of
+      four-pixel men is texture rather than a picture.
+
+      **Which frame is not named here on purpose.** This comment used to say `press-rome-wall`
+      and the card has been built from `press-rome-line` for as long as there has been a card:
+      `buildCard()` in `tools/make-brand.mjs` uses `PLATES[0]`, and that is the one place the
+      answer lives. A second copy of it in an HTML comment is a copy that goes stale, and this
+      one did.
+
+      Nothing in `public/press/` is referenced from this file, and that is a constraint rather
+      than an accident — the backdrop's plates must stay off the critical path. `og/` is a
+      different thing: it is fetched by an unfurler, never by a visitor.
     -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Total Claude" />

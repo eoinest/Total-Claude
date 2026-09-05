@@ -8,24 +8,26 @@
   "forTheMenu": {
     "import": "import { HERO, PRESS_PLATES } from './pressPlates';",
     "whereItGoes": "`.menu-bg` is a single empty div behind both sheets (front door and battle setup), created in MainMenu.build(). It is the natural mount point and covers both screens.",
-    "typeIsProtectedAlready": "The menu sheet is `--panel-bg`, a gradient from rgba(30,24,17,0.94) to rgba(16,12,9,0.97) — 94 to 97 % opaque. So text contrast on the sheet barely moves whatever is behind it. `scrimForGold` below is the number for type laid DIRECTLY on a frame, which is the harder case and the one to check if the sheet ever thins.",
-    "quietestFrames": "Measured, not guessed: press-rome-melee (5.25:1, scrim 0) and press-rome-cavalry (5.93:1, scrim 0) take gold type with no scrim at all. press-rome-city LOOKS like the calm one and is joint worst at 0.65 — the morning haze lifts its midtones.",
-    "firstPaintBytes": "HERO at 960w is 88.8 kB, at 1440w 230.7 kB, at 1920w 459.2 kB. Nothing in this directory is on the cold load; index.html references none of it.",
-    "ifYouRotate": "Fetch the next plate only once someone has lingered, not on mount — a visitor who clicks BATTLE in three seconds should pay for one image, not six. And honour prefers-reduced-motion by not rotating at all, which also costs nothing.",
+    "typeIsProtectedAlready": "This said the menu sheet was 94 to 97 % opaque, so what is behind it barely matters. It is no longer true: `src/ui/MenuBackdrop.ts` thinned the sheet to about 84 % so the picture behind it would be worth having, and re-derived what that is worth in scrim — a flat 0.30 subtracted from the numbers below, with the arithmetic in `scrimUnderSheet`. `scrimForGold` here is still the harder case: type laid DIRECTLY on the frame with no sheet at all.",
+    "quietestFrames": "Measured on every frame at the box the sheet actually covers, not guessed and not measured at the middle of the frame: press-rome-melee (4.35:1, scrim 0.05), press-rome-cavalry (4.14:1, scrim 0.1), press-rome-aftermath (3.66:1, scrim 0.2) are the quietest, and press-rome-grey is the worst at 0.7. The frame that LOOKS calm is reliably not the quiet one — haze lifts midtones and the genuinely quiet frames are the dark ones.",
+    "firstPaintBytes": "The hero in AVIF: 960w 93.0 kB, 1440w 187.3 kB, 1920w 285.7 kB, 2560w 478.2 kB, plus a 1440w WebP at 251.0 kB for a browser with no AVIF. Nothing in this directory is on the cold load; index.html references none of it and MenuBackdrop fetches none until arm().",
+    "ifYouRotate": "It rotates now, and the rules it settled on are worth keeping if it is ever rewritten. (1) Pick before the plate is assigned, once per screen, and memoise — a chooser that rolls on every refresh() changes the picture under a player who moved the mouse. (2) The front door may draw from the whole set; a screen that NAMES a battle must draw only from that battle`s frames, or the picture disagrees with the row that is lit. (3) Prefetch through the same memo the shower uses, or every hover pays twice. (4) Fetch the next plate only once someone has lingered, not on mount. (5) Honour prefers-reduced-motion by not moving, which also costs nothing.",
     "dontUseTheseFor": "The in-battle settings panel. That one sits over a live game and a screenshot behind it would be a picture of a different battle than the one being played.",
-    "frontDoorAsItStands": "Judged from tools/shoot.mjs --shots=menu-door at 1440x900, not from the source. What is good is genuinely good and should not be touched: the wordmark tracking, the serif, the single oxblood primary against three recessive plaques, and the plaque copy, which describes each destination by what is inside it rather than by its name. Four things are weak. (1) The background is an empty near-black field with a faint radial — this is a 3D game whose front door shows no 3D, and it is the whole reason this set exists. (2) The mark beside the title is an eight-pointed starburst described in the source as an eagle; at 46 px it reads as an asterisk. (3) In a tall viewport the sheet floats in the middle with large dead zones above and below, because it is `place-items: center` with nothing else on the page. (4) Nothing anywhere on the screen says nine thousand men, which is the only fact about this project that would make a stranger stay.",
+    "frontDoorAsItStands": "Judged from tools/shoot.mjs --shots=menu-door at 1440x900, not from the source. What is good is genuinely good and should not be touched: the wordmark tracking, the serif, the single oxblood primary against three recessive plaques, and the plaque copy, which describes each destination by what is inside it rather than by its name. Four things were weak when this was written. (1) The background was an empty near-black field with a faint radial — this is a 3D game whose front door showed no 3D, and it is the whole reason this set exists. DONE: `src/ui/MenuBackdrop.ts` puts these frames behind both sheets with a camera on them. (2) The mark beside the title is an eight-pointed starburst described in the source as an eagle; at 46 px it reads as an asterisk. (3) In a tall viewport the sheet floats in the middle with large dead zones above and below, because it is `place-items: center` with nothing else on the page. (4) Nothing anywhere on the screen says nine thousand men, which is the only fact about this project that would make a stranger stay.",
     "theEagle": "The `EAGLE` const in MainMenu.ts and the one in index.html's loading panel are the same eight-pointed starburst, which is not an eagle. The favicon now IS an aquila (markSvg() in tools/make-brand.mjs, and markInline() is the same bird with no tile, ready to drop into a template). Making the three agree is a real improvement and it is deliberately NOT done here, because it is a change to the established visual identity and that is the owner's call, not a side effect of adding a favicon."
   },
   "howToRead": {
     "type.scrimForGold": "the smallest black scrim alpha at which #d9b25f type clears 4.5:1 against the 95th percentile luminance inside `type.panelBox`. 0 means the frame needs no scrim; above ~0.45 it has stopped being a picture.",
     "type.quiet": "scrimForGold <= 0.25, i.e. gold type is readable on it without hiding it.",
     "grid": "row-major 3x3 mean relative luminance, for finding the quiet third of a frame.",
-    "renditions": "pick with `srcset`. Every frame has 960 and 1440; only the hero also has 1920, because three widths across nine frames was 5.79 MB in public/ and the third one buys almost nothing behind a menu. 1920 is the ceiling because 1920 is the capture size."
+    "renditions": "Every frame has the same AVIF ladder — 960, 1440, 1920, 2560 — plus exactly one WebP at 1440 for a browser with no AVIF. There is no longer a hero-only width: MenuBackdrop draws the front door at random from the whole set, so any frame can be the one a stranger sees full-bleed. The ladder stops at 2560 because it was measured to: on the densest frame, 1920 buys 12.5 points of detail over 1440 and 2560 buys 7.6 more, but 3200 buys 2.8 for 52 % more bytes. Put the AVIF srcset on a <source> and the WebP on the <img> inside it; do not mix them in one srcset."
   },
   "provenance": {
-    "commit": "4364c00",
-    "srcTree": "e344d3c9a1f261dd100d9452a7e8b044125a1194",
-    "capturedAt": "1920x1080",
+    "commit": "7a204aa",
+    "srcTree": "21b3b5a30417647478e1635586afbabdfc37f1af",
+    "capturedAt": "5120x2880",
+    "storedAt": "2560x1440",
+    "whyTwoSizes": "The renderer runs at one sample per pixel, so the frames are CAPTURED at 5120x2880 and immediately downsampled to the ladder top rung of 2560 before anything else looks at them. Every shipped rendition is therefore supersampled 2x2 or better, which is what resolves the aliasing on mail, shields and grass rather than encoding it. `storedAt` is what `screenshots/press/*.png` holds and what `source` on each frame below reports; `capturedAt` is what the GPU drew. Keeping the 5120 files was measured at 1.35 GB of scratch nothing reads twice, and it filled this machine.",
     "quality": "ultra",
     "dpr": 1,
     "hud": false,
@@ -35,20 +37,23 @@
       "vendor": "Google Inc. (Apple)"
     },
     "reports": [
-      "report-pass1.json",
       "report.json"
     ],
-    "tool": "node tools/shoot.mjs --set=press --w=1920 --h=1080 --out=screenshots/press"
+    "tool": "node tools/shoot-press.mjs"
   },
   "widths": [
     960,
-    1440
+    1440,
+    1920,
+    2560
   ],
-  "heroExtraWidths": [
-    1920
-  ],
+  "fallbackWidth": 1440,
+  "formats": {
+    "ladder": "avif",
+    "fallback": "webp"
+  },
   "hero": "press-rome-line",
-  "heroBecause": "The claim this project makes is nine thousand men simulated one at a time, and this is the frame that shows it without asking anything of the viewer: rank on rank of individually posed soldiers, every shield a different painted scutum, and — the part that decided it — the ranks read as ranks at 400 px, where the two denser candidates go to noise. It is also the only strong frame whose top third is empty ground, so a wordmark or a menu can sit on it.",
+  "heroBecause": "The claim this project makes is nine thousand men simulated one at a time, and this is the frame that shows it without asking anything of the viewer: rank on rank of individually posed soldiers, every shield a different painted scutum, and — the part that decided it — the ranks read as ranks at 400 px, where the two denser candidates go to noise. Still the hero, and the hero is now only the Open Graph card: the menu draws its front door at random from this whole list.",
   "frames": [
     {
       "id": "press-rome-line",
@@ -56,243 +61,337 @@
       "hero": true,
       "verdict": "hero",
       "alt": "Legionary cohorts drawn up in packed ranks at first light, painted shields and helmets catching the low sun, a vexillum among them.",
-      "note": "The claim this project makes is nine thousand men simulated one at a time, and this is the frame that shows it without asking anything of the viewer: rank on rank of individually posed soldiers, every shield a different painted scutum, and — the part that decided it — the ranks read as ranks at 400 px, where the two denser candidates go to noise. It is also the only strong frame whose top third is empty ground, so a wordmark or a menu can sit on it.",
+      "note": "The claim this project makes is nine thousand men simulated one at a time, and this is the frame that shows it without asking anything of the viewer: rank on rank of individually posed soldiers, every shield a different painted scutum, and — the part that decided it — the ranks read as ranks at 400 px, where the two denser candidates go to noise. Still the hero, and the hero is now only the Open Graph card: the menu draws its front door at random from this whole list.",
       "desc": "PRESS: the legionary front rank at battle zoom, ranks receding obliquely",
       "battle": {
         "map": "campus-martius",
         "era": "271 AD",
         "scenario": "field",
-        "simTime": 9.5,
+        "simTime": 17.6,
         "men": 8632,
         "units": 35,
         "weather": "clear",
         "sunElevationDeg": 17,
-        "sunAngleOffLensDeg": 17.9
+        "sunAngleOffLensDeg": 22.9
       },
       "camera": {
-        "focusX": 180,
-        "focusZ": 107,
-        "yaw": 6.88,
+        "focusX": 181,
+        "focusZ": 81,
+        "yaw": 6.79,
         "cam": null,
         "wall": null,
-        "nearestManM": 13.3,
-        "horizonFrac": -0.186
+        "nearestManM": 16.91,
+        "horizonFrac": -0.178
       },
       "source": {
         "file": "screenshots/press/press-rome-line.png",
-        "width": 1920,
-        "height": 1080,
+        "width": 2560,
+        "height": 1440,
         "shot": "press-rome-line",
         "report": "report.json"
       },
       "renditions": [
         {
-          "url": "/press/press-rome-line-960.webp",
+          "url": "/press/press-rome-line-960.avif",
           "w": 960,
           "h": 540,
-          "bytes": 90958
+          "bytes": 95191,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-line-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 191831,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-line-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 292575,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-line-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 489720,
+          "format": "avif"
         },
         {
           "url": "/press/press-rome-line-1440.webp",
           "w": 1440,
           "h": 810,
-          "bytes": 236246
-        },
-        {
-          "url": "/press/press-rome-line-1920.webp",
-          "w": 1920,
-          "h": 1080,
-          "bytes": 470246
+          "bytes": 257000,
+          "format": "webp"
         }
       ],
-      "srcset": "/press/press-rome-line-960.webp 960w, /press/press-rome-line-1440.webp 1440w, /press/press-rome-line-1920.webp 1920w",
+      "srcset": "/press/press-rome-line-960.avif 960w, /press/press-rome-line-1440.avif 1440w, /press/press-rome-line-1920.avif 1920w, /press/press-rome-line-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-line-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 257000,
+        "format": "webp"
+      },
       "luma": {
-        "mean": 0.073,
-        "p05": 0.005,
-        "p50": 0.019,
-        "p95": 0.306
+        "mean": 0.078,
+        "p05": 0.01,
+        "p50": 0.044,
+        "p95": 0.307
       },
       "grid": [
-        0.22,
-        0.204,
-        0.113,
-        0.027,
-        0.03,
-        0.026,
-        0.012,
-        0.012,
-        0.01
+        0.205,
+        0.14,
+        0.074,
+        0.063,
+        0.025,
+        0.02,
+        0.075,
+        0.054,
+        0.043
       ],
       "type": {
         "panelBox": {
-          "x": 0.25,
-          "y": 0.14,
-          "w": 0.5,
-          "h": 0.72
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
         },
-        "panelP95": 0.252,
-        "goldOnFrame": 1.73,
-        "scrimForGold": 0.5,
-        "quiet": false
+        "panelP95": 0.108,
+        "goldOnFrame": 3.31,
+        "scrimForGold": 0.25,
+        "quiet": true
       }
     },
     {
-      "id": "press-carth-elephants",
+      "id": "press-rome-parapet",
       "rank": 1,
       "hero": false,
       "verdict": "strong",
-      "alt": "A Carthaginian elephant line advancing in front of the Punic centre in late afternoon light, crews in the towers on their backs.",
-      "note": "The most arresting single frame in the set and the one nobody mistakes for another game. Not the hero for two reasons: the title of the site is the Siege of Rome, and at full size on a large display this is the roughest modelling in the game.",
-      "desc": "PRESS: the Punic elephant line advancing in front of the centre",
+      "alt": "The assault at its densest inside the Aurelian circuit, spears crossed above locked shields and a standard over the press.",
+      "note": "The frame this set was missing, and it was missing for a timing mistake this file recorded and has now fixed. It shipped as a cut at t+150, where `follow: contact` resolved to open ground; the ram's own measured schedule says why — the gate goes at t+220 — so t+230 is the first second at which there is reliably a fight to photograph.",
+      "desc": "PRESS: the densest fighting of the assault, wherever it has reached the stone",
       "battle": {
-        "map": "carthage",
-        "era": "146 BC",
-        "scenario": "field",
-        "simTime": 44.7,
-        "men": 8428,
-        "units": 36,
+        "map": "campus-martius",
+        "era": "271 AD",
+        "scenario": "assault",
+        "simTime": 230.7,
+        "men": 2384,
+        "units": 31,
         "weather": "clear",
-        "sunElevationDeg": 22.6,
-        "sunAngleOffLensDeg": 99
+        "sunElevationDeg": 24.3,
+        "sunAngleOffLensDeg": 111
       },
       "camera": {
-        "focusX": -205,
-        "focusZ": -76,
-        "yaw": 2.97,
+        "focusX": 116,
+        "focusZ": 565,
+        "yaw": -1.23,
         "cam": null,
         "wall": null,
-        "nearestManM": 5.18,
-        "horizonFrac": -0.33
+        "nearestManM": 4.16,
+        "horizonFrac": -0.316
       },
       "source": {
-        "file": "screenshots/press/press-carth-elephants.png",
-        "width": 1920,
-        "height": 1080,
-        "shot": "press-carth-elephants",
+        "file": "screenshots/press/press-rome-parapet.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-rome-parapet",
         "report": "report.json"
       },
       "renditions": [
         {
-          "url": "/press/press-carth-elephants-960.webp",
+          "url": "/press/press-rome-parapet-960.avif",
           "w": 960,
           "h": 540,
-          "bytes": 112002
+          "bytes": 74237,
+          "format": "avif"
         },
         {
-          "url": "/press/press-carth-elephants-1440.webp",
+          "url": "/press/press-rome-parapet-1440.avif",
           "w": 1440,
           "h": 810,
-          "bytes": 275798
+          "bytes": 130319,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-parapet-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 183841,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-parapet-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 282477,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-parapet-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 158416,
+          "format": "webp"
         }
       ],
-      "srcset": "/press/press-carth-elephants-960.webp 960w, /press/press-carth-elephants-1440.webp 1440w",
+      "srcset": "/press/press-rome-parapet-960.avif 960w, /press/press-rome-parapet-1440.avif 1440w, /press/press-rome-parapet-1920.avif 1920w, /press/press-rome-parapet-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-parapet-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 158416,
+        "format": "webp"
+      },
       "luma": {
-        "mean": 0.062,
-        "p05": 0.002,
-        "p50": 0.03,
-        "p95": 0.27
+        "mean": 0.186,
+        "p05": 0.007,
+        "p50": 0.132,
+        "p95": 0.525
       },
       "grid": [
-        0.05,
-        0.07,
-        0.124,
-        0.052,
-        0.022,
-        0.095,
-        0.027,
-        0.023,
-        0.091
+        0.361,
+        0.333,
+        0.3,
+        0.215,
+        0.137,
+        0.105,
+        0.112,
+        0.069,
+        0.04
       ],
       "type": {
         "panelBox": {
-          "x": 0.25,
-          "y": 0.14,
-          "w": 0.5,
-          "h": 0.72
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
         },
-        "panelP95": 0.18,
-        "goldOnFrame": 2.28,
-        "scrimForGold": 0.4,
+        "panelP95": 0.454,
+        "goldOnFrame": 1.04,
+        "scrimForGold": 0.6,
         "quiet": false
       }
     },
     {
-      "id": "press-pydna-clash",
+      "id": "press-rome-press",
       "rank": 2,
       "hero": false,
       "verdict": "strong",
-      "alt": "Thousands of men locked together on open Macedonian ground at Pydna, 168 BC, spears and standards above the press.",
-      "note": "The scale claim at its most literal — a wall of men to the horizon. Spectacular large, and it is texture rather than a picture below about 500 px, which is exactly the failure mode a link preview punishes.",
-      "desc": "PRESS: Pydna, the lines meeting on open Macedonian ground",
+      "alt": "The Roman line going in under a late sun, rank behind rank across the whole frame, the host beyond them and a band of evening cloud above.",
+      "note": "`ab2-rome-melee`'s camera — 2.55 m up, a head taller than the tallest man here, looking down into the press. That height is not taste: `contact` resolves to the densest 40 m cell of a melee eight thousand men deep, and that set measured 14 m of standoff putting the nearest man at 0.75 m against 17 m putting him at 0.88. Three metres bought thirteen centimetres; the only lever left is to get above the helmets.",
+      "desc": "PRESS: down into the melee from a head above the helmets",
       "battle": {
-        "map": "pydna",
-        "era": "168 BC",
+        "map": "campus-martius",
+        "era": "271 AD",
         "scenario": "field",
-        "simTime": 80.7,
-        "men": 8435,
+        "simTime": 96.8,
+        "men": 8305,
         "units": 35,
         "weather": "clear",
-        "sunElevationDeg": 39.6,
-        "sunAngleOffLensDeg": 170.6
+        "sunElevationDeg": 7.6,
+        "sunAngleOffLensDeg": 45.7
       },
       "camera": {
-        "focusX": -31,
-        "focusZ": -36,
-        "yaw": -1.76,
-        "cam": null,
+        "focusX": 506,
+        "focusZ": -7,
+        "yaw": -1.9,
+        "cam": {
+          "eye": 2.55,
+          "aim": 1.05,
+          "dist": 20,
+          "fov": 34,
+          "depressionDeg": 4.29,
+          "base": "terrain",
+          "radius": 20.23,
+          "pitchDeg": 8.67,
+          "groundY": 13.47
+        },
         "wall": null,
-        "nearestManM": 4.24,
-        "horizonFrac": -0.313
+        "nearestManM": 9.15,
+        "horizonFrac": 0.377
       },
       "source": {
-        "file": "screenshots/press/press-pydna-clash.png",
-        "width": 1920,
-        "height": 1080,
-        "shot": "press-pydna-clash",
+        "file": "screenshots/press/press-rome-press.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-rome-press",
         "report": "report.json"
       },
       "renditions": [
         {
-          "url": "/press/press-pydna-clash-960.webp",
+          "url": "/press/press-rome-press-960.avif",
           "w": 960,
           "h": 540,
-          "bytes": 159216
+          "bytes": 42464,
+          "format": "avif"
         },
         {
-          "url": "/press/press-pydna-clash-1440.webp",
+          "url": "/press/press-rome-press-1440.avif",
           "w": 1440,
           "h": 810,
-          "bytes": 346016
+          "bytes": 71987,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-press-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 98576,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-press-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 141871,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-press-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 76380,
+          "format": "webp"
         }
       ],
-      "srcset": "/press/press-pydna-clash-960.webp 960w, /press/press-pydna-clash-1440.webp 1440w",
+      "srcset": "/press/press-rome-press-960.avif 960w, /press/press-rome-press-1440.avif 1440w, /press/press-rome-press-1920.avif 1920w, /press/press-rome-press-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-press-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 76380,
+        "format": "webp"
+      },
       "luma": {
-        "mean": 0.104,
-        "p05": 0.001,
-        "p50": 0.054,
-        "p95": 0.429
+        "mean": 0.266,
+        "p05": 0.006,
+        "p50": 0.06,
+        "p95": 0.793
       },
       "grid": [
-        0.122,
-        0.124,
-        0.103,
-        0.098,
-        0.119,
-        0.084,
-        0.065,
-        0.132,
-        0.084
+        0.65,
+        0.718,
+        0.508,
+        0.198,
+        0.129,
+        0.091,
+        0.053,
+        0.024,
+        0.021
       ],
       "type": {
         "panelBox": {
-          "x": 0.25,
-          "y": 0.14,
-          "w": 0.5,
-          "h": 0.72
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
         },
-        "panelP95": 0.503,
-        "goldOnFrame": 1.06,
-        "scrimForGold": 0.65,
+        "panelP95": 0.813,
+        "goldOnFrame": 1.65,
+        "scrimForGold": 0.7,
         "quiet": false
       }
     },
@@ -301,84 +400,234 @@
       "rank": 3,
       "hero": false,
       "verdict": "strong",
-      "alt": "Inside the melee on the Campus Martius in late light: legionaries and Juthungi warriors at arm's length, spears crossed above them.",
-      "note": "The hardest thing this renderer does, photographed at the distance where you can see it is doing it.",
+      "alt": "Inside the melee on the Campus Martius in late light: helmets and crossed spears filling the frame, legionaries and Juthungi warriors at arm's length.",
+      "note": "The hardest thing this renderer does, photographed at the distance where you can see it is doing it. Also one of the darkest frames in the set, which is the same thing as saying gold type sits on it with almost no scrim.",
       "desc": "PRESS: inside the melee, close — the hardest thing this renderer does",
       "battle": {
         "map": "campus-martius",
         "era": "271 AD",
         "scenario": "field",
-        "simTime": 96.8,
-        "men": 8103,
-        "units": 34,
+        "simTime": 96.7,
+        "men": 8305,
+        "units": 35,
         "weather": "clear",
         "sunElevationDeg": 7.6,
-        "sunAngleOffLensDeg": 27
+        "sunAngleOffLensDeg": 45.7
       },
       "camera": {
-        "focusX": 497,
-        "focusZ": -6,
-        "yaw": -1.58,
+        "focusX": 506,
+        "focusZ": -7,
+        "yaw": -1.9,
         "cam": null,
         "wall": null,
-        "nearestManM": 1.8,
-        "horizonFrac": 0.009
+        "nearestManM": 1.76,
+        "horizonFrac": 0.019
       },
       "source": {
         "file": "screenshots/press/press-rome-melee.png",
-        "width": 1920,
-        "height": 1080,
+        "width": 2560,
+        "height": 1440,
         "shot": "press-rome-melee",
         "report": "report.json"
       },
       "renditions": [
         {
-          "url": "/press/press-rome-melee-960.webp",
+          "url": "/press/press-rome-melee-960.avif",
           "w": 960,
           "h": 540,
-          "bytes": 58400
+          "bytes": 44331,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-melee-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 68309,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-melee-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 88149,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-melee-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 120471,
+          "format": "avif"
         },
         {
           "url": "/press/press-rome-melee-1440.webp",
           "w": 1440,
           "h": 810,
-          "bytes": 119618
+          "bytes": 79034,
+          "format": "webp"
         }
       ],
-      "srcset": "/press/press-rome-melee-960.webp 960w, /press/press-rome-melee-1440.webp 1440w",
+      "srcset": "/press/press-rome-melee-960.avif 960w, /press/press-rome-melee-1440.avif 1440w, /press/press-rome-melee-1920.avif 1920w, /press/press-rome-melee-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-melee-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 79034,
+        "format": "webp"
+      },
       "luma": {
-        "mean": 0.042,
+        "mean": 0.04,
         "p05": 0.002,
-        "p50": 0.012,
-        "p95": 0.202
+        "p50": 0.013,
+        "p95": 0.158
       },
       "grid": [
-        0.165,
-        0.057,
-        0.044,
-        0.029,
-        0.016,
-        0.021,
-        0.019,
-        0.014,
-        0.013
+        0.08,
+        0.071,
+        0.074,
+        0.03,
+        0.015,
+        0.026,
+        0.034,
+        0.017,
+        0.014
       ],
       "type": {
         "panelBox": {
-          "x": 0.25,
-          "y": 0.14,
-          "w": 0.5,
-          "h": 0.72
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
         },
-        "panelP95": 0.05,
-        "goldOnFrame": 5.25,
-        "scrimForGold": 0,
+        "panelP95": 0.07,
+        "goldOnFrame": 4.35,
+        "scrimForGold": 0.05,
         "quiet": true
       }
     },
     {
-      "id": "press-rome-host",
+      "id": "press-rome-helmets",
       "rank": 4,
+      "hero": false,
+      "verdict": "strong",
+      "alt": "The legionary front rank from a man's own eye height, telephoto down the line, a vexillum above it and open sky beyond.",
+      "note": "`ab2-rome-line`'s camera: 2.05 m up, eight metres out, a thirty-degree lens, swung 1.2 rad off a sun that would otherwise be ten degrees off it. The only frame in the set shot from inside the line rather than across it, and one of the very few whose top third is sky — which is what a sheet of gold type wants behind it, and which almost no camera in this project produces, because above zoom 0.6 the rig fills the viewport with ground.",
+      "desc": "PRESS: the legionary front rank from helmet height, telephoto down the line",
+      "battle": {
+        "map": "campus-martius",
+        "era": "271 AD",
+        "scenario": "field",
+        "simTime": 6.7,
+        "men": 8632,
+        "units": 35,
+        "weather": "clear",
+        "sunElevationDeg": 17,
+        "sunAngleOffLensDeg": 53.2
+      },
+      "camera": {
+        "focusX": 180,
+        "focusZ": 116,
+        "yaw": 0.64,
+        "cam": {
+          "eye": 2.05,
+          "aim": 1.32,
+          "dist": 8,
+          "fov": 30,
+          "depressionDeg": 5.21,
+          "base": "terrain",
+          "radius": 8.32,
+          "pitchDeg": 15.91,
+          "groundY": 12.84
+        },
+        "wall": null,
+        "nearestManM": 4.7,
+        "horizonFrac": 0.33
+      },
+      "source": {
+        "file": "screenshots/press/press-rome-helmets.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-rome-helmets",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-rome-helmets-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 65080,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-helmets-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 122283,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-helmets-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 176850,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-helmets-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 276320,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-helmets-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 152860,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-rome-helmets-960.avif 960w, /press/press-rome-helmets-1440.avif 1440w, /press/press-rome-helmets-1920.avif 1920w, /press/press-rome-helmets-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-helmets-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 152860,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.254,
+        "p05": 0.005,
+        "p50": 0.058,
+        "p95": 0.821
+      },
+      "grid": [
+        0.55,
+        0.73,
+        0.661,
+        0.132,
+        0.077,
+        0.07,
+        0.022,
+        0.02,
+        0.023
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.811,
+        "goldOnFrame": 1.64,
+        "scrimForGold": 0.7,
+        "quiet": false
+      }
+    },
+    {
+      "id": "press-rome-host",
+      "rank": 5,
       "hero": false,
       "verdict": "strong",
       "alt": "A Juthungi warband coming on at eye level, painted round shields, no two men kitted the same.",
@@ -393,84 +642,240 @@
         "units": 35,
         "weather": "clear",
         "sunElevationDeg": 17,
-        "sunAngleOffLensDeg": 152.1
+        "sunAngleOffLensDeg": 159.5
       },
       "camera": {
-        "focusX": 517,
-        "focusZ": -102,
-        "yaw": 3.56,
+        "focusX": 522,
+        "focusZ": -98,
+        "yaw": 3.69,
         "cam": null,
         "wall": null,
-        "nearestManM": 4.59,
-        "horizonFrac": -0.255
+        "nearestManM": 9.55,
+        "horizonFrac": -0.249
       },
       "source": {
         "file": "screenshots/press/press-rome-host.png",
-        "width": 1920,
-        "height": 1080,
+        "width": 2560,
+        "height": 1440,
         "shot": "press-rome-host",
         "report": "report.json"
       },
       "renditions": [
         {
-          "url": "/press/press-rome-host-960.webp",
+          "url": "/press/press-rome-host-960.avif",
           "w": 960,
           "h": 540,
-          "bytes": 131464
+          "bytes": 110626,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-host-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 212247,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-host-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 311767,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-host-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 506797,
+          "format": "avif"
         },
         {
           "url": "/press/press-rome-host-1440.webp",
           "w": 1440,
           "h": 810,
-          "bytes": 293588
+          "bytes": 332078,
+          "format": "webp"
         }
       ],
-      "srcset": "/press/press-rome-host-960.webp 960w, /press/press-rome-host-1440.webp 1440w",
+      "srcset": "/press/press-rome-host-960.avif 960w, /press/press-rome-host-1440.avif 1440w, /press/press-rome-host-1920.avif 1920w, /press/press-rome-host-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-host-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 332078,
+        "format": "webp"
+      },
       "luma": {
-        "mean": 0.094,
-        "p05": 0.003,
-        "p50": 0.039,
-        "p95": 0.417
+        "mean": 0.092,
+        "p05": 0.011,
+        "p50": 0.051,
+        "p95": 0.367
       },
       "grid": [
-        0.137,
-        0.13,
-        0.1,
-        0.084,
-        0.155,
-        0.083,
+        0.174,
+        0.152,
+        0.094,
+        0.106,
+        0.088,
         0.07,
-        0.065,
-        0.025
+        0.045,
+        0.048,
+        0.049
       ],
       "type": {
         "panelBox": {
-          "x": 0.25,
-          "y": 0.14,
-          "w": 0.5,
-          "h": 0.72
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
         },
-        "panelP95": 0.525,
-        "goldOnFrame": 1.1,
-        "scrimForGold": 0.65,
+        "panelP95": 0.385,
+        "goldOnFrame": 1.21,
+        "scrimForGold": 0.6,
+        "quiet": false
+      }
+    },
+    {
+      "id": "press-rome-ram",
+      "rank": 6,
+      "hero": false,
+      "verdict": "strong",
+      "alt": "The ram at the Porta Flaminia mid-battery, the gatehouse drums above it and a column of men in the passage.",
+      "note": "The gate is the best single piece of modelling in the game and the shipped cut of this frame stood six metres from it, which made a picture of two brick cylinders. This file recorded the remedy — \"worth re-shooting from 40 m\" — and this is it at 46, with the eye lifted to 12 m so the depression holds. The frame is now the gate, the engine and the men rather than one of the three.",
+      "desc": "PRESS: the ram at the Porta Flaminia, mid-battery, from outside the gate",
+      "battle": {
+        "map": "campus-martius",
+        "era": "271 AD",
+        "scenario": "assault",
+        "simTime": 154.4,
+        "men": 2558,
+        "units": 31,
+        "weather": "clear",
+        "sunElevationDeg": 24.3,
+        "sunAngleOffLensDeg": 51
+      },
+      "camera": {
+        "focusX": 71,
+        "focusZ": 526,
+        "yaw": -0.19,
+        "cam": {
+          "eye": 12,
+          "aim": 5,
+          "dist": 46,
+          "fov": 34,
+          "depressionDeg": 8.65,
+          "base": "terrain",
+          "radius": 46.79,
+          "pitchDeg": 10.53,
+          "groundY": 13.96
+        },
+        "wall": {
+          "bayIndex": 1,
+          "stage": "finished",
+          "walkY": 20.35,
+          "crestY": 22.4,
+          "focusY": 13.96
+        },
+        "nearestManM": 18.32,
+        "horizonFrac": 0.251
+      },
+      "source": {
+        "file": "screenshots/press/press-rome-ram.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-rome-ram",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-rome-ram-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 42447,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-ram-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 76710,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-ram-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 111865,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-ram-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 181706,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-ram-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 84536,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-rome-ram-960.avif 960w, /press/press-rome-ram-1440.avif 1440w, /press/press-rome-ram-1920.avif 1920w, /press/press-rome-ram-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-ram-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 84536,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.126,
+        "p05": 0.006,
+        "p50": 0.022,
+        "p95": 0.675
+      },
+      "grid": [
+        0.321,
+        0.186,
+        0.291,
+        0.108,
+        0.021,
+        0.021,
+        0.103,
+        0.064,
+        0.02
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.164,
+        "goldOnFrame": 2.45,
+        "scrimForGold": 0.4,
         "quiet": false
       }
     },
     {
       "id": "press-rome-wall",
-      "rank": 5,
+      "rank": 7,
       "hero": false,
       "verdict": "strong",
       "alt": "The Aurelian Wall of Rome at mid-morning, its towers and gatehouse above the glacis, the city behind it.",
-      "note": "The subject of the whole product in one frame — a city wall, and ground in front of it to cross. Hazier than the rest because it is the only frame shot through 500 m of atmosphere, which is also why it is the calmest thing here to put type on.",
+      "note": "The subject of the whole product in one frame — a city wall, and ground in front of it to cross. Hazier than the rest because it is the only frame shot through 500 m of atmosphere, which is also why it wants more scrim than it looks like it should.",
       "desc": "PRESS: the Aurelian Wall from the field, mid-assault — gate, towers, host on the glacis",
       "battle": {
         "map": "campus-martius",
         "era": "271 AD",
         "scenario": "assault",
         "simTime": 150.7,
-        "men": 2561,
-        "units": 29,
+        "men": 2562,
+        "units": 31,
         "weather": "clear",
         "sunElevationDeg": 24.3,
         "sunAngleOffLensDeg": 48.2
@@ -502,229 +907,669 @@
       },
       "source": {
         "file": "screenshots/press/press-rome-wall.png",
-        "width": 1920,
-        "height": 1080,
+        "width": 2560,
+        "height": 1440,
         "shot": "press-rome-wall",
         "report": "report.json"
       },
       "renditions": [
         {
-          "url": "/press/press-rome-wall-960.webp",
+          "url": "/press/press-rome-wall-960.avif",
           "w": 960,
           "h": 540,
-          "bytes": 48984
+          "bytes": 49815,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-wall-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 89038,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-wall-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 127490,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-wall-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 200250,
+          "format": "avif"
         },
         {
           "url": "/press/press-rome-wall-1440.webp",
           "w": 1440,
           "h": 810,
-          "bytes": 111784
+          "bytes": 93348,
+          "format": "webp"
         }
       ],
-      "srcset": "/press/press-rome-wall-960.webp 960w, /press/press-rome-wall-1440.webp 1440w",
+      "srcset": "/press/press-rome-wall-960.avif 960w, /press/press-rome-wall-1440.avif 1440w, /press/press-rome-wall-1920.avif 1920w, /press/press-rome-wall-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-wall-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 93348,
+        "format": "webp"
+      },
       "luma": {
-        "mean": 0.232,
-        "p05": 0.028,
-        "p50": 0.157,
-        "p95": 0.664
+        "mean": 0.238,
+        "p05": 0.03,
+        "p50": 0.163,
+        "p95": 0.67
       },
       "grid": [
-        0.475,
-        0.477,
-        0.37,
-        0.151,
-        0.161,
-        0.165,
-        0.116,
-        0.087,
-        0.081
+        0.485,
+        0.487,
+        0.378,
+        0.157,
+        0.163,
+        0.173,
+        0.121,
+        0.093,
+        0.085
       ],
       "type": {
         "panelBox": {
-          "x": 0.25,
-          "y": 0.14,
-          "w": 0.5,
-          "h": 0.72
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
         },
-        "panelP95": 0.545,
-        "goldOnFrame": 1.14,
-        "scrimForGold": 0.65,
-        "quiet": false
-      }
-    },
-    {
-      "id": "press-carth-wall",
-      "rank": 6,
-      "hero": false,
-      "verdict": "strong",
-      "alt": "The wall of Carthage from the field in late afternoon, Roman assault columns drawn up on the plain before it.",
-      "note": "The second city, in the opposite end of the day from Rome's. Pale limestone against red earth, which is the only palette in the set that is not green and gold.",
-      "desc": "PRESS: the wall of Carthage from the field, Roman escalade against it",
-      "battle": {
-        "map": "carthage",
-        "era": "146 BC",
-        "scenario": "assault",
-        "simTime": 170.7,
-        "men": 2756,
-        "units": 33,
-        "weather": "clear",
-        "sunElevationDeg": 26.2,
-        "sunAngleOffLensDeg": 60
-      },
-      "camera": {
-        "focusX": 62,
-        "focusZ": 433,
-        "yaw": -0.49,
-        "cam": null,
-        "wall": {
-          "bayIndex": 34,
-          "stage": "finished",
-          "walkY": 26.5,
-          "crestY": 28.7,
-          "focusY": 33.02
-        },
-        "nearestManM": 67.31,
-        "horizonFrac": 0.011
-      },
-      "source": {
-        "file": "screenshots/press/press-carth-wall.png",
-        "width": 1920,
-        "height": 1080,
-        "shot": "press-carth-wall",
-        "report": "report.json"
-      },
-      "renditions": [
-        {
-          "url": "/press/press-carth-wall-960.webp",
-          "w": 960,
-          "h": 540,
-          "bytes": 55004
-        },
-        {
-          "url": "/press/press-carth-wall-1440.webp",
-          "w": 1440,
-          "h": 810,
-          "bytes": 149206
-        }
-      ],
-      "srcset": "/press/press-carth-wall-960.webp 960w, /press/press-carth-wall-1440.webp 1440w",
-      "luma": {
-        "mean": 0.13,
-        "p05": 0.025,
-        "p50": 0.121,
-        "p95": 0.255
-      },
-      "grid": [
-        0.152,
-        0.19,
-        0.186,
-        0.068,
-        0.108,
-        0.139,
-        0.063,
-        0.119,
-        0.148
-      ],
-      "type": {
-        "panelBox": {
-          "x": 0.25,
-          "y": 0.14,
-          "w": 0.5,
-          "h": 0.72
-        },
-        "panelP95": 0.189,
-        "goldOnFrame": 2.19,
-        "scrimForGold": 0.4,
+        "panelP95": 0.38,
+        "goldOnFrame": 1.22,
+        "scrimForGold": 0.6,
         "quiet": false
       }
     },
     {
       "id": "press-rome-cavalry",
-      "rank": 7,
+      "rank": 8,
       "hero": false,
-      "verdict": "fair",
-      "alt": "A wedge of Roman equites sweeping the flank at eye level in low sun.",
-      "note": "Eye level among the horses, and the only frame that sells motion. Dark and cramped, so it is a fallback rather than a first impression.",
+      "verdict": "strong",
+      "alt": "A wedge of horse sweeping the flank at eye level in low sun, painted shields against the light.",
+      "note": "Eye level among the horses, and the only frame that sells motion. Backlit and dark, which used to be the reason it was a fallback rather than a first impression and is now one of the reasons it is good: the darkest frames in the set are the ones gold type sits on with no scrim at all.",
       "desc": "PRESS: the equites wedge sweeping the flank in low sun and dust",
       "battle": {
         "map": "campus-martius",
         "era": "271 AD",
         "scenario": "field",
-        "simTime": 70.8,
-        "men": 8623,
+        "simTime": 78.8,
+        "men": 8512,
         "units": 35,
         "weather": "clear",
         "sunElevationDeg": 7.6,
-        "sunAngleOffLensDeg": 70.8
+        "sunAngleOffLensDeg": 53.2
       },
       "camera": {
-        "focusX": 142,
-        "focusZ": -92,
-        "yaw": 6.41,
+        "focusX": 174,
+        "focusZ": -156,
+        "yaw": 6.1,
         "cam": null,
         "wall": null,
-        "nearestManM": 9.3,
-        "horizonFrac": -0.272
+        "nearestManM": 9.44,
+        "horizonFrac": -0.27
       },
       "source": {
         "file": "screenshots/press/press-rome-cavalry.png",
-        "width": 1920,
-        "height": 1080,
+        "width": 2560,
+        "height": 1440,
         "shot": "press-rome-cavalry",
         "report": "report.json"
       },
       "renditions": [
         {
-          "url": "/press/press-rome-cavalry-960.webp",
+          "url": "/press/press-rome-cavalry-960.avif",
           "w": 960,
           "h": 540,
-          "bytes": 64282
+          "bytes": 69428,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-cavalry-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 124359,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-cavalry-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 172240,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-cavalry-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 256742,
+          "format": "avif"
         },
         {
           "url": "/press/press-rome-cavalry-1440.webp",
           "w": 1440,
           "h": 810,
-          "bytes": 161920
+          "bytes": 130708,
+          "format": "webp"
         }
       ],
-      "srcset": "/press/press-rome-cavalry-960.webp 960w, /press/press-rome-cavalry-1440.webp 1440w",
+      "srcset": "/press/press-rome-cavalry-960.avif 960w, /press/press-rome-cavalry-1440.avif 1440w, /press/press-rome-cavalry-1920.avif 1920w, /press/press-rome-cavalry-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-cavalry-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 130708,
+        "format": "webp"
+      },
       "luma": {
-        "mean": 0.014,
-        "p05": 0.002,
-        "p50": 0.008,
-        "p95": 0.04
+        "mean": 0.036,
+        "p05": 0.006,
+        "p50": 0.021,
+        "p95": 0.108
       },
       "grid": [
-        0.016,
-        0.022,
-        0.026,
-        0.014,
-        0.015,
-        0.013,
-        0.007,
-        0.007,
-        0.007
+        0.056,
+        0.063,
+        0.079,
+        0.025,
+        0.032,
+        0.028,
+        0.01,
+        0.012,
+        0.019
       ],
       "type": {
         "panelBox": {
-          "x": 0.25,
-          "y": 0.14,
-          "w": 0.5,
-          "h": 0.72
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
         },
-        "panelP95": 0.038,
-        "goldOnFrame": 5.93,
-        "scrimForGold": 0,
+        "panelP95": 0.077,
+        "goldOnFrame": 4.14,
+        "scrimForGold": 0.1,
         "quiet": true
       }
     },
     {
+      "id": "press-rome-grey",
+      "rank": 9,
+      "hero": false,
+      "verdict": "strong",
+      "alt": "The Juthungi line still fighting over ground already littered, under a flat overcast noon, a standard among them and cloud to the horizon.",
+      "note": "The first frame in the set with weather in it — all nine that shipped before were clear — and it turns out to be one of the best, for a reason that is about the menu rather than about the battle: `overcast` lifts mist to 0.45 and drops dust to 0.72, which puts a real horizon and a band of cloud across the top of a frame that at any other hour is filled with ground. `ab2-rome-aftermath`'s camera, at its t+140 rather than t+190 — by 190 the lines have come apart on this map and `contact` frames men standing about in grass.",
+      "desc": "PRESS: still fighting over ground already littered, under a flat grey sky",
+      "battle": {
+        "map": "campus-martius",
+        "era": "271 AD",
+        "scenario": "field",
+        "simTime": 140.7,
+        "men": 7662,
+        "units": 35,
+        "weather": "overcast",
+        "sunElevationDeg": 33,
+        "sunAngleOffLensDeg": 68.7
+      },
+      "camera": {
+        "focusX": 368,
+        "focusZ": -26,
+        "yaw": -1.44,
+        "cam": {
+          "eye": 2.4,
+          "aim": 1.05,
+          "dist": 18,
+          "fov": 38,
+          "depressionDeg": 4.29,
+          "base": "terrain",
+          "radius": 18.23,
+          "pitchDeg": 9.15,
+          "groundY": 12.89
+        },
+        "wall": null,
+        "nearestManM": 11.1,
+        "horizonFrac": 0.391
+      },
+      "source": {
+        "file": "screenshots/press/press-rome-grey.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-rome-grey",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-rome-grey-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 62159,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-grey-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 112634,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-grey-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 160223,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-grey-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 239195,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-grey-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 150520,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-rome-grey-960.avif 960w, /press/press-rome-grey-1440.avif 1440w, /press/press-rome-grey-1920.avif 1920w, /press/press-rome-grey-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-grey-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 150520,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.282,
+        "p05": 0.005,
+        "p50": 0.125,
+        "p95": 0.792
+      },
+      "grid": [
+        0.685,
+        0.605,
+        0.582,
+        0.155,
+        0.124,
+        0.102,
+        0.103,
+        0.1,
+        0.079
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.828,
+        "goldOnFrame": 1.67,
+        "scrimForGold": 0.7,
+        "quiet": false
+      }
+    },
+    {
+      "id": "press-rome-hordegrey",
+      "rank": 10,
+      "hero": false,
+      "verdict": "strong",
+      "alt": "The Juthungi host coming on under a shadowless sky, painted round shields filling the upper half of the frame.",
+      "note": "The same warband as `press-rome-host` in the other kind of light. Flat light is what the shield paint wants — in low sun half of them are in shadow — so this is the frame in which the \"no two men kitted the same\" claim is easiest to check.",
+      "desc": "PRESS: the Juthungi host coming on out of the murk",
+      "battle": {
+        "map": "campus-martius",
+        "era": "271 AD",
+        "scenario": "field",
+        "simTime": 45.7,
+        "men": 8632,
+        "units": 35,
+        "weather": "overcast",
+        "sunElevationDeg": 33,
+        "sunAngleOffLensDeg": 134.5
+      },
+      "camera": {
+        "focusX": 522,
+        "focusZ": -98,
+        "yaw": 3.69,
+        "cam": null,
+        "wall": null,
+        "nearestManM": 9.48,
+        "horizonFrac": -0.249
+      },
+      "source": {
+        "file": "screenshots/press/press-rome-hordegrey.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-rome-hordegrey",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-rome-hordegrey-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 118473,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-hordegrey-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 224058,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-hordegrey-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 331295,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-hordegrey-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 540416,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-hordegrey-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 356048,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-rome-hordegrey-960.avif 960w, /press/press-rome-hordegrey-1440.avif 1440w, /press/press-rome-hordegrey-1920.avif 1920w, /press/press-rome-hordegrey-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-hordegrey-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 356048,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.111,
+        "p05": 0.007,
+        "p50": 0.079,
+        "p95": 0.386
+      },
+      "grid": [
+        0.149,
+        0.144,
+        0.138,
+        0.123,
+        0.106,
+        0.098,
+        0.077,
+        0.079,
+        0.087
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.381,
+        "goldOnFrame": 1.21,
+        "scrimForGold": 0.6,
+        "quiet": false
+      }
+    },
+    {
+      "id": "press-rome-mist",
+      "rank": 11,
+      "hero": false,
+      "verdict": "fair",
+      "alt": "The legionary cohorts drawn up under an overcast noon, no shadow anywhere, the standard at the head of them.",
+      "note": "The uniform line under the one lighting condition that flatters nothing. It is in the set as the control: if the ranks read here, they read.",
+      "desc": "PRESS: the legionary line under an overcast noon, no shadow to hide behind",
+      "battle": {
+        "map": "campus-martius",
+        "era": "271 AD",
+        "scenario": "field",
+        "simTime": 6.7,
+        "men": 8632,
+        "units": 35,
+        "weather": "overcast",
+        "sunElevationDeg": 33,
+        "sunAngleOffLensDeg": 50.4
+      },
+      "camera": {
+        "focusX": 180,
+        "focusZ": 116,
+        "yaw": 0.64,
+        "cam": null,
+        "wall": null,
+        "nearestManM": 15.24,
+        "horizonFrac": -0.187
+      },
+      "source": {
+        "file": "screenshots/press/press-rome-mist.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-rome-mist",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-rome-mist-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 101537,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-mist-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 202449,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-mist-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 306313,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-mist-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 515487,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-mist-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 276152,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-rome-mist-960.avif 960w, /press/press-rome-mist-1440.avif 1440w, /press/press-rome-mist-1920.avif 1920w, /press/press-rome-mist-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-mist-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 276152,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.06,
+        "p05": 0.004,
+        "p50": 0.049,
+        "p95": 0.162
+      },
+      "grid": [
+        0.079,
+        0.078,
+        0.104,
+        0.028,
+        0.025,
+        0.02,
+        0.063,
+        0.073,
+        0.073
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.115,
+        "goldOnFrame": 3.18,
+        "scrimForGold": 0.25,
+        "quiet": true
+      }
+    },
+    {
+      "id": "press-rome-ladder",
+      "rank": 12,
+      "hero": false,
+      "verdict": "fair",
+      "alt": "The Aurelian curtain from above the glacis, a tower on the crest and the Tiber and the city behind it.",
+      "note": "It shipped as a cut, for framing \"the curtain with no ladders on it\". The escalade family had already measured the window on this bay — a man on a rung at t+13, nobody at the foot after t+45 — so t+60 was past the end of it rather than before the start, and t+34 is inside it. The ladders are still not the subject at this standoff. What this is now is the second view of the wall in the set, from closer than `press-rome-wall` and with the tower reading as a tower.",
+      "desc": "PRESS: ladders against the Aurelian curtain, the storm parties at their feet",
+      "battle": {
+        "map": "campus-martius",
+        "era": "271 AD",
+        "scenario": "assault",
+        "simTime": 34.7,
+        "men": 2992,
+        "units": 32,
+        "weather": "clear",
+        "sunElevationDeg": 24.3,
+        "sunAngleOffLensDeg": 49.4
+      },
+      "camera": {
+        "focusX": 21,
+        "focusZ": 540,
+        "yaw": -0.16,
+        "cam": {
+          "eye": 34,
+          "aim": 10,
+          "dist": 85,
+          "fov": 44,
+          "depressionDeg": 15.77,
+          "base": "terrain",
+          "radius": 88.76,
+          "pitchDeg": 16.73,
+          "groundY": 13.18
+        },
+        "wall": {
+          "bayIndex": 0,
+          "stage": "footing",
+          "walkY": 15.5,
+          "crestY": 15.5,
+          "focusY": 13.18
+        },
+        "nearestManM": 43.93,
+        "horizonFrac": 0.151
+      },
+      "source": {
+        "file": "screenshots/press/press-rome-ladder.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-rome-ladder",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-rome-ladder-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 50411,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-ladder-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 89113,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-ladder-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 128066,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-ladder-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 199991,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-ladder-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 94336,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-rome-ladder-960.avif 960w, /press/press-rome-ladder-1440.avif 1440w, /press/press-rome-ladder-1920.avif 1920w, /press/press-rome-ladder-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-ladder-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 94336,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.205,
+        "p05": 0.015,
+        "p50": 0.107,
+        "p95": 0.696
+      },
+      "grid": [
+        0.461,
+        0.468,
+        0.355,
+        0.113,
+        0.125,
+        0.135,
+        0.048,
+        0.085,
+        0.054
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.38,
+        "goldOnFrame": 1.22,
+        "scrimForGold": 0.6,
+        "quiet": false
+      }
+    },
+    {
       "id": "press-rome-city",
-      "rank": 8,
+      "rank": 13,
       "hero": false,
       "verdict": "fair",
       "alt": "Rome from above at first light: the Aurelian circuit along the crest, the Tiber below it, the fabric of the city inside.",
-      "note": "Quiet and atmospheric rather than arresting, and the only frame that shows the city as a city. It reads as the calm one and it is not: the morning haze puts its panel region at 0.65 scrim, joint worst in the set. Prose said otherwise here until the measurement was run.",
+      "note": "Quiet and atmospheric rather than arresting, and the only frame that shows the city as a city. It reads as the calm one and it is not: morning haze lifts its midtones and it measures among the worst in the set for type. Prose said otherwise here until the measurement was run, which is why every frame is measured and none is eyeballed.",
       "desc": "PRESS: the Aurelian circuit along the crest with the city behind it",
       "battle": {
         "map": "campus-martius",
@@ -743,58 +1588,1110 @@
         "yaw": 0.19,
         "cam": null,
         "wall": null,
-        "nearestManM": 370.69,
+        "nearestManM": 367.73,
         "horizonFrac": -0.672
       },
       "source": {
         "file": "screenshots/press/press-rome-city.png",
-        "width": 1920,
-        "height": 1080,
+        "width": 2560,
+        "height": 1440,
         "shot": "press-rome-city",
         "report": "report.json"
       },
       "renditions": [
         {
-          "url": "/press/press-rome-city-960.webp",
+          "url": "/press/press-rome-city-960.avif",
           "w": 960,
           "h": 540,
-          "bytes": 38924
+          "bytes": 42062,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-city-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 76842,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-city-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 112058,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-city-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 184039,
+          "format": "avif"
         },
         {
           "url": "/press/press-rome-city-1440.webp",
           "w": 1440,
           "h": 810,
-          "bytes": 89336
+          "bytes": 72210,
+          "format": "webp"
         }
       ],
-      "srcset": "/press/press-rome-city-960.webp 960w, /press/press-rome-city-1440.webp 1440w",
+      "srcset": "/press/press-rome-city-960.avif 960w, /press/press-rome-city-1440.avif 1440w, /press/press-rome-city-1920.avif 1920w, /press/press-rome-city-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-city-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 72210,
+        "format": "webp"
+      },
       "luma": {
-        "mean": 0.223,
-        "p05": 0.064,
-        "p50": 0.196,
-        "p95": 0.491
+        "mean": 0.23,
+        "p05": 0.068,
+        "p50": 0.203,
+        "p95": 0.497
       },
       "grid": [
-        0.353,
-        0.259,
-        0.19,
-        0.254,
-        0.254,
-        0.169,
-        0.197,
-        0.118,
-        0.216
+        0.359,
+        0.264,
+        0.192,
+        0.261,
+        0.255,
+        0.178,
+        0.203,
+        0.125,
+        0.232
       ],
       "type": {
         "panelBox": {
-          "x": 0.25,
-          "y": 0.14,
-          "w": 0.5,
-          "h": 0.72
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
         },
-        "panelP95": 0.558,
-        "goldOnFrame": 1.16,
+        "panelP95": 0.531,
+        "goldOnFrame": 1.11,
         "scrimForGold": 0.65,
+        "quiet": false
+      }
+    },
+    {
+      "id": "press-rome-march",
+      "rank": 14,
+      "hero": false,
+      "verdict": "fair",
+      "alt": "A vexillum at the head of the cohorts on the march, the standard against the grass with the ranks behind it.",
+      "note": "The one frame whose subject is an object rather than a crowd. `ab-rome-march`'s camera at t+40, which is after the lines have begun to move and before anything has touched — the part of a battle nothing else in this set photographs.",
+      "desc": "PRESS: the legionary cohorts on the march, before contact",
+      "battle": {
+        "map": "campus-martius",
+        "era": "271 AD",
+        "scenario": "field",
+        "simTime": 40.7,
+        "men": 8632,
+        "units": 35,
+        "weather": "clear",
+        "sunElevationDeg": 17,
+        "sunAngleOffLensDeg": 25.2
+      },
+      "camera": {
+        "focusX": 192,
+        "focusZ": 17,
+        "yaw": 6.75,
+        "cam": null,
+        "wall": null,
+        "nearestManM": 11.7,
+        "horizonFrac": -0.246
+      },
+      "source": {
+        "file": "screenshots/press/press-rome-march.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-rome-march",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-rome-march-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 97035,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-march-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 192089,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-march-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 294275,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-march-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 494433,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-march-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 293122,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-rome-march-960.avif 960w, /press/press-rome-march-1440.avif 1440w, /press/press-rome-march-1920.avif 1920w, /press/press-rome-march-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-march-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 293122,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.07,
+        "p05": 0.008,
+        "p50": 0.047,
+        "p95": 0.229
+      },
+      "grid": [
+        0.115,
+        0.047,
+        0.026,
+        0.154,
+        0.073,
+        0.039,
+        0.066,
+        0.059,
+        0.051
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.205,
+        "goldOnFrame": 2.05,
+        "scrimForGold": 0.45,
+        "quiet": false
+      }
+    },
+    {
+      "id": "press-rome-aftermath",
+      "rank": 15,
+      "hero": false,
+      "verdict": "fair",
+      "alt": "The field after the break in low sun: the dead in heaps, shields and spears among them, the grass dark around it.",
+      "note": "The only frame about what a battle costs, and it is here for two reasons rather than one. A rotation that is nothing but arresting frames has no range in it; and the dark frames are measurably the best in the set to put gold type on, which is the opposite of what anyone guesses by looking at them.",
+      "desc": "PRESS: the field after the break — corpses, routs, dust and blood in low sun",
+      "battle": {
+        "map": "campus-martius",
+        "era": "271 AD",
+        "scenario": "field",
+        "simTime": 200.7,
+        "men": 6720,
+        "units": 35,
+        "weather": "clear",
+        "sunElevationDeg": 7.6,
+        "sunAngleOffLensDeg": 23.3
+      },
+      "camera": {
+        "focusX": 368,
+        "focusZ": -23,
+        "yaw": -1.51,
+        "cam": null,
+        "wall": null,
+        "nearestManM": 31.7,
+        "horizonFrac": -0.258
+      },
+      "source": {
+        "file": "screenshots/press/press-rome-aftermath.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-rome-aftermath",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-rome-aftermath-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 54495,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-aftermath-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 91324,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-aftermath-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 125381,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-aftermath-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 184978,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-rome-aftermath-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 105918,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-rome-aftermath-960.avif 960w, /press/press-rome-aftermath-1440.avif 1440w, /press/press-rome-aftermath-1920.avif 1920w, /press/press-rome-aftermath-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-rome-aftermath-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 105918,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.071,
+        "p05": 0.003,
+        "p50": 0.016,
+        "p95": 0.349
+      },
+      "grid": [
+        0.202,
+        0.05,
+        0.027,
+        0.213,
+        0.017,
+        0.081,
+        0.017,
+        0.014,
+        0.013
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.093,
+        "goldOnFrame": 3.66,
+        "scrimForGold": 0.2,
+        "quiet": true
+      }
+    },
+    {
+      "id": "press-carth-elephants",
+      "rank": 16,
+      "hero": false,
+      "verdict": "strong",
+      "alt": "A Carthaginian elephant line advancing in front of the Punic centre in late afternoon light, crews in the towers on their backs.",
+      "note": "The most arresting single frame in the set and the one nobody mistakes for another game. Not the hero for two reasons: the title of the site is the Siege of Rome, and at full size on a large display this is the roughest modelling in the game.",
+      "desc": "PRESS: the Punic elephant line advancing in front of the centre",
+      "battle": {
+        "map": "carthage",
+        "era": "146 BC",
+        "scenario": "field",
+        "simTime": 44.7,
+        "men": 8428,
+        "units": 36,
+        "weather": "clear",
+        "sunElevationDeg": 22.6,
+        "sunAngleOffLensDeg": 100.6
+      },
+      "camera": {
+        "focusX": -200,
+        "focusZ": -75,
+        "yaw": 2.94,
+        "cam": null,
+        "wall": null,
+        "nearestManM": 8.76,
+        "horizonFrac": -0.342
+      },
+      "source": {
+        "file": "screenshots/press/press-carth-elephants.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-carth-elephants",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-carth-elephants-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 91203,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-elephants-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 184346,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-elephants-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 280200,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-elephants-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 470154,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-elephants-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 269180,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-carth-elephants-960.avif 960w, /press/press-carth-elephants-1440.avif 1440w, /press/press-carth-elephants-1920.avif 1920w, /press/press-carth-elephants-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-carth-elephants-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 269180,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.057,
+        "p05": 0.005,
+        "p50": 0.036,
+        "p95": 0.191
+      },
+      "grid": [
+        0.056,
+        0.077,
+        0.105,
+        0.038,
+        0.04,
+        0.076,
+        0.029,
+        0.031,
+        0.06
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.094,
+        "goldOnFrame": 3.63,
+        "scrimForGold": 0.2,
+        "quiet": true
+      }
+    },
+    {
+      "id": "press-carth-tusks",
+      "rank": 17,
+      "hero": false,
+      "verdict": "strong",
+      "alt": "The Punic elephants head-on from in front of the spear line, crews in the towers, a band of evening cloud above them.",
+      "note": "The same animals as `press-carth-elephants` from a quarter of the standoff and from the other side, on `ab2-carth-elephants`'s camera. Kept beside it rather than instead of it, because the two are not the same picture: one is a line arriving obliquely and this is the thing itself, coming at the lens, with sky above it — which also makes it one of the frames gold type sits on most easily. The owner named this subject: \"or perhaps watching an elephant's charge idk.\"",
+      "desc": "PRESS: under the elephants, from in front of the Punic spears",
+      "battle": {
+        "map": "carthage",
+        "era": "146 BC",
+        "scenario": "field",
+        "simTime": 49,
+        "men": 8428,
+        "units": 36,
+        "weather": "clear",
+        "sunElevationDeg": 22.6,
+        "sunAngleOffLensDeg": 100.6
+      },
+      "camera": {
+        "focusX": -207,
+        "focusZ": -64,
+        "yaw": 2.94,
+        "cam": {
+          "eye": 2.25,
+          "aim": 0.97,
+          "dist": 14,
+          "fov": 30,
+          "depressionDeg": 5.22,
+          "base": "terrain",
+          "radius": 14.28,
+          "pitchDeg": 11.43,
+          "groundY": 11.94
+        },
+        "wall": null,
+        "nearestManM": 18.15,
+        "horizonFrac": 0.329
+      },
+      "source": {
+        "file": "screenshots/press/press-carth-tusks.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-carth-tusks",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-carth-tusks-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 78972,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-tusks-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 156427,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-tusks-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 236545,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-tusks-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 391248,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-tusks-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 228476,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-carth-tusks-960.avif 960w, /press/press-carth-tusks-1440.avif 1440w, /press/press-carth-tusks-1920.avif 1920w, /press/press-carth-tusks-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-carth-tusks-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 228476,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.184,
+        "p05": 0.011,
+        "p50": 0.085,
+        "p95": 0.626
+      },
+      "grid": [
+        0.522,
+        0.355,
+        0.282,
+        0.109,
+        0.103,
+        0.098,
+        0.061,
+        0.063,
+        0.061
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.326,
+        "goldOnFrame": 1.39,
+        "scrimForGold": 0.55,
+        "quiet": false
+      }
+    },
+    {
+      "id": "press-carth-wall",
+      "rank": 18,
+      "hero": false,
+      "verdict": "strong",
+      "alt": "The wall of Carthage from the field in late afternoon, siege towers against the curtain and Roman assault columns drawn up on the red plain before it.",
+      "note": "The second city, in the opposite end of the day from Rome's — 16:30, because the Punic curtain is a west face and is in its own shade before mid-afternoon. Pale limestone against red earth against a white city, which is the only palette in the set that is not green and gold.",
+      "desc": "PRESS: the wall of Carthage from the field, Roman escalade against it",
+      "battle": {
+        "map": "carthage",
+        "era": "146 BC",
+        "scenario": "assault",
+        "simTime": 170.7,
+        "men": 2830,
+        "units": 33,
+        "weather": "clear",
+        "sunElevationDeg": 26.2,
+        "sunAngleOffLensDeg": 60
+      },
+      "camera": {
+        "focusX": 62,
+        "focusZ": 433,
+        "yaw": -0.49,
+        "cam": null,
+        "wall": {
+          "bayIndex": 34,
+          "stage": "finished",
+          "walkY": 26.5,
+          "crestY": 28.7,
+          "focusY": 33.02
+        },
+        "nearestManM": 66.44,
+        "horizonFrac": 0.011
+      },
+      "source": {
+        "file": "screenshots/press/press-carth-wall.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-carth-wall",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-carth-wall-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 58959,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-wall-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 109068,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-wall-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 160702,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-wall-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 260861,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-wall-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 116012,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-carth-wall-960.avif 960w, /press/press-carth-wall-1440.avif 1440w, /press/press-carth-wall-1920.avif 1920w, /press/press-carth-wall-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-carth-wall-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 116012,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.141,
+        "p05": 0.035,
+        "p50": 0.13,
+        "p95": 0.308
+      },
+      "grid": [
+        0.178,
+        0.215,
+        0.219,
+        0.077,
+        0.115,
+        0.142,
+        0.066,
+        0.117,
+        0.144
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.184,
+        "goldOnFrame": 2.24,
+        "scrimForGold": 0.4,
+        "quiet": false
+      }
+    },
+    {
+      "id": "press-carth-storm",
+      "rank": 19,
+      "hero": false,
+      "verdict": "strong",
+      "alt": "Carthage under assault from high above the curtain: the wall, the citadel on its hill behind, and the city filling the frame.",
+      "note": "`ab2-carth-wall`'s camera, and its note is the reasoning: 200 m out at 45 m up rather than 520 at 110, because the far version put the whole city in a strip across the middle of an empty plain. It is the only frame that shows a besieged city as a city rather than as a wall.",
+      "desc": "PRESS: Carthage being stormed, from high above the curtain",
+      "battle": {
+        "map": "carthage",
+        "era": "146 BC",
+        "scenario": "assault",
+        "simTime": 175.1,
+        "men": 2827,
+        "units": 33,
+        "weather": "clear",
+        "sunElevationDeg": 26.2,
+        "sunAngleOffLensDeg": 71.4
+      },
+      "camera": {
+        "focusX": 65,
+        "focusZ": 483,
+        "yaw": -0.29,
+        "cam": {
+          "eye": 45,
+          "aim": 5,
+          "dist": 200,
+          "fov": 32,
+          "depressionDeg": 11.31,
+          "base": "terrain",
+          "radius": 204.27,
+          "pitchDeg": 11.74,
+          "groundY": 12.78
+        },
+        "wall": {
+          "bayIndex": 34,
+          "stage": "finished",
+          "walkY": 26.5,
+          "crestY": 28.7,
+          "focusY": 12.78
+        },
+        "nearestManM": 78.06,
+        "horizonFrac": 0.151
+      },
+      "source": {
+        "file": "screenshots/press/press-carth-storm.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-carth-storm",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-carth-storm-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 47192,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-storm-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 87712,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-storm-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 127891,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-storm-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 207436,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-storm-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 90714,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-carth-storm-960.avif 960w, /press/press-carth-storm-1440.avif 1440w, /press/press-carth-storm-1920.avif 1920w, /press/press-carth-storm-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-carth-storm-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 90714,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.245,
+        "p05": 0.064,
+        "p50": 0.185,
+        "p95": 0.62
+      },
+      "grid": [
+        0.402,
+        0.449,
+        0.465,
+        0.143,
+        0.155,
+        0.181,
+        0.097,
+        0.155,
+        0.162
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.342,
+        "goldOnFrame": 1.34,
+        "scrimForGold": 0.55,
+        "quiet": false
+      }
+    },
+    {
+      "id": "press-carth-line",
+      "rank": 20,
+      "hero": false,
+      "verdict": "strong",
+      "alt": "The Punic front rank in late afternoon — Libyan spears and Iberian scutarii, every oval shield painted differently, a standard above them.",
+      "note": "It shipped as a cut for being \"good, and redundant beside press-rome-line and press-pydna-clash\". Redundancy was a real objection when the set was nine frames and one of them had to stand behind every screen; in a rotation it is close to the opposite of one.",
+      "desc": "PRESS: the Punic front rank — Libyan spears, Iberian scutarii, the city behind",
+      "battle": {
+        "map": "carthage",
+        "era": "146 BC",
+        "scenario": "field",
+        "simTime": 7.7,
+        "men": 8428,
+        "units": 36,
+        "weather": "clear",
+        "sunElevationDeg": 22.6,
+        "sunAngleOffLensDeg": 39.3
+      },
+      "camera": {
+        "focusX": -15,
+        "focusZ": -176,
+        "yaw": 4.01,
+        "cam": null,
+        "wall": null,
+        "nearestManM": 9.08,
+        "horizonFrac": -0.277
+      },
+      "source": {
+        "file": "screenshots/press/press-carth-line.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-carth-line",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-carth-line-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 105980,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-line-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 201728,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-line-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 298271,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-line-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 485992,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-carth-line-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 286968,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-carth-line-960.avif 960w, /press/press-carth-line-1440.avif 1440w, /press/press-carth-line-1920.avif 1920w, /press/press-carth-line-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-carth-line-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 286968,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.063,
+        "p05": 0.001,
+        "p50": 0.047,
+        "p95": 0.187
+      },
+      "grid": [
+        0.095,
+        0.064,
+        0.06,
+        0.062,
+        0.083,
+        0.068,
+        0.06,
+        0.039,
+        0.031
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.231,
+        "goldOnFrame": 1.87,
+        "scrimForGold": 0.45,
+        "quiet": false
+      }
+    },
+    {
+      "id": "press-pydna-clash",
+      "rank": 21,
+      "hero": false,
+      "verdict": "strong",
+      "alt": "Thousands of men locked together on open Macedonian ground at Pydna, 168 BC, spears and standards above the press.",
+      "note": "The scale claim at its most literal — a wall of men to the horizon. Spectacular large, and it is texture rather than a picture below about 500 px, which is exactly the failure mode a link preview punishes and is why it is not the hero.",
+      "desc": "PRESS: Pydna, the lines meeting on open Macedonian ground",
+      "battle": {
+        "map": "pydna",
+        "era": "168 BC",
+        "scenario": "field",
+        "simTime": 80.7,
+        "men": 8458,
+        "units": 35,
+        "weather": "clear",
+        "sunElevationDeg": 39.6,
+        "sunAngleOffLensDeg": 164.4
+      },
+      "camera": {
+        "focusX": -141,
+        "focusZ": -27,
+        "yaw": -1.87,
+        "cam": null,
+        "wall": null,
+        "nearestManM": 4.21,
+        "horizonFrac": -0.255
+      },
+      "source": {
+        "file": "screenshots/press/press-pydna-clash.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-pydna-clash",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-pydna-clash-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 90311,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-pydna-clash-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 146948,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-pydna-clash-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 196287,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-pydna-clash-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 280771,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-pydna-clash-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 211320,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-pydna-clash-960.avif 960w, /press/press-pydna-clash-1440.avif 1440w, /press/press-pydna-clash-1920.avif 1920w, /press/press-pydna-clash-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-pydna-clash-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 211320,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.109,
+        "p05": 0.001,
+        "p50": 0.054,
+        "p95": 0.437
+      },
+      "grid": [
+        0.13,
+        0.15,
+        0.142,
+        0.101,
+        0.099,
+        0.122,
+        0.084,
+        0.071,
+        0.084
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.518,
+        "goldOnFrame": 1.08,
+        "scrimForGold": 0.65,
+        "quiet": false
+      }
+    },
+    {
+      "id": "press-pydna-line",
+      "rank": 22,
+      "hero": false,
+      "verdict": "fair",
+      "alt": "Pydna in the morning: a block of legionaries with their standard on dry Macedonian grass, the Macedonian line a dark bar on the horizon.",
+      "note": "It shipped as a cut for being redundant beside `press-pydna-clash`, and it is here now for the same reason the two Punic line shots are. It is also the only frame in the set on dry yellow grass, which is Pydna's whole visual difference from the other two battlefields, and Pydna needs frames of its own: the menu draws each battle's backdrop only from that battle's frames, so a map with none would show the wrong war.",
+      "desc": "PRESS: Pydna in the morning, telephoto along the Roman front rank",
+      "battle": {
+        "map": "pydna",
+        "era": "168 BC",
+        "scenario": "field",
+        "simTime": 2.7,
+        "men": 8632,
+        "units": 35,
+        "weather": "clear",
+        "sunElevationDeg": 39.6,
+        "sunAngleOffLensDeg": 9.9
+      },
+      "camera": {
+        "focusX": -32,
+        "focusZ": 128,
+        "yaw": 1.72,
+        "cam": null,
+        "wall": null,
+        "nearestManM": 6.84,
+        "horizonFrac": -0.165
+      },
+      "source": {
+        "file": "screenshots/press/press-pydna-line.png",
+        "width": 2560,
+        "height": 1440,
+        "shot": "press-pydna-line",
+        "report": "report.json"
+      },
+      "renditions": [
+        {
+          "url": "/press/press-pydna-line-960.avif",
+          "w": 960,
+          "h": 540,
+          "bytes": 101728,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-pydna-line-1440.avif",
+          "w": 1440,
+          "h": 810,
+          "bytes": 200299,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-pydna-line-1920.avif",
+          "w": 1920,
+          "h": 1080,
+          "bytes": 305998,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-pydna-line-2560.avif",
+          "w": 2560,
+          "h": 1440,
+          "bytes": 512944,
+          "format": "avif"
+        },
+        {
+          "url": "/press/press-pydna-line-1440.webp",
+          "w": 1440,
+          "h": 810,
+          "bytes": 292872,
+          "format": "webp"
+        }
+      ],
+      "srcset": "/press/press-pydna-line-960.avif 960w, /press/press-pydna-line-1440.avif 1440w, /press/press-pydna-line-1920.avif 1920w, /press/press-pydna-line-2560.avif 2560w",
+      "fallback": {
+        "url": "/press/press-pydna-line-1440.webp",
+        "w": 1440,
+        "h": 810,
+        "bytes": 292872,
+        "format": "webp"
+      },
+      "luma": {
+        "mean": 0.12,
+        "p05": 0.003,
+        "p50": 0.115,
+        "p95": 0.278
+      },
+      "grid": [
+        0.204,
+        0.211,
+        0.173,
+        0.145,
+        0.096,
+        0.042,
+        0.108,
+        0.064,
+        0.034
+      ],
+      "type": {
+        "panelBox": {
+          "x": 0.19,
+          "y": 0.24,
+          "w": 0.6,
+          "h": 0.66
+        },
+        "panelP95": 0.225,
+        "goldOnFrame": 1.9,
+        "scrimForGold": 0.45,
         "quiet": false
       }
     }

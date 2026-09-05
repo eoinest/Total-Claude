@@ -11,124 +11,356 @@
  *
  * Intended uses, in the order they matter:
  *
- *   1. **The instant first paint.** A live scene has to boot the renderer; a still is on
- *      screen in milliseconds. `HERO` is the one to show, and `src`/`srcset` are sized so a
- *      phone does not fetch a desktop plate.
+ *   1. **The backdrop behind the menu**, `src/ui/MenuBackdrop.ts`. It draws the front door's
+ *      frame at random from this whole list, and each deeper screen's from the frames of the
+ *      battle that screen names — which is why `map` and `scenario` are on every entry, and
+ *      why no frame has a wider ladder than any other any more.
  *   2. **The fallback** for anything that cannot afford a live scene — a weak GPU, a small
  *      viewport, a device already told it is too narrow to play on.
  *   3. **The link preview**, which is `/og/total-claude.jpg`, cropped from `HERO`.
  *
+ * **`srcset` and `src` are two formats, not two sizes.** `srcset` is the AVIF ladder and
+ * belongs on a `<source type="image/avif">`; `src` is the single WebP and belongs on the
+ * `<img>` inside the same `<picture>`, for a browser that cannot decode AVIF. Merging them
+ * into one `srcset` would offer a browser a choice between two formats on one element, which
+ * `srcset` has no way to express — some visitors would then be handed the fallback at a rung
+ * it was never encoded for.
+ *
  * `scrimForGold` is the smallest black scrim alpha at which `--gold` (#d9b25f) type clears
- * 4.5:1 against the brightest part of the region a centred menu sheet covers. 0 means none is
- * needed. It is measured on every frame rather than eyeballed on one.
+ * 4.5:1 against the brightest part of the region the menu sheet actually covers — which is not
+ * the middle of the frame, because the backdrop scales the frame past the viewport and slides
+ * a chosen point of it under the sheet. See `PANEL_BOX` in `tools/make-brand.mjs`. 0 means
+ * none is needed. It is measured on every frame rather than eyeballed on one.
  */
 
 export interface PressPlate {
   /** The `press-*` shot in `tools/shoot.mjs` that produced it. */
   id: string;
   hero: boolean;
+  /** Which battlefield this is a picture of. The menu rotates within one battle at a time. */
+  map: string;
+  /** `field` or `assault`, recorded by the shoot rather than inferred from the camera. */
+  scenario: string;
   /** For a screen reader, and for `og:image:alt` on the hero. */
   alt: string;
-  /** Every rendition, for a `srcset` attribute. Widths: 960, 1440. */
+  /** The AVIF ladder, for a `<source srcset>`. Widths: 960, 1440, 1920, 2560. */
   srcset: string;
-  /** The middle rendition, for a plain `src` fallback. */
+  /** The one WebP rendition, for the `<img>` a browser without AVIF falls back to. */
   src: string;
   width: number;
   height: number;
-  /** Smallest black scrim alpha at which gold type clears 4.5:1 on this frame. */
+  /** Smallest black scrim alpha at which gold type clears 4.5:1 laid DIRECTLY on this frame. */
   scrimForGold: number;
+  /**
+   * The 95th-percentile relative luminance inside the region the menu sheet covers.
+   *
+   * This, not `scrimForGold`, is what `MenuBackdrop` scrims from: the type it protects is
+   * laid on an 84 %-opaque sheet rather than on the frame, so the sheet's own transmission
+   * belongs in the arithmetic. The 95th percentile and not the mean, because type is
+   * unreadable over its brightest patch, not over its average one.
+   */
+  panelP95: number;
 }
 
 export const PRESS_PLATES: readonly PressPlate[] = [
   {
     id: "press-rome-line",
     hero: true,
+    map: "campus-martius",
+    scenario: "field",
     alt: "Legionary cohorts drawn up in packed ranks at first light, painted shields and helmets catching the low sun, a vexillum among them.",
-    srcset: "/press/press-rome-line-960.webp 960w, /press/press-rome-line-1440.webp 1440w, /press/press-rome-line-1920.webp 1920w",
+    srcset: "/press/press-rome-line-960.avif 960w, /press/press-rome-line-1440.avif 1440w, /press/press-rome-line-1920.avif 1920w, /press/press-rome-line-2560.avif 2560w",
     src: "/press/press-rome-line-1440.webp",
     width: 1440,
     height: 810,
-    scrimForGold: 0.5,
+    scrimForGold: 0.25,
+    panelP95: 0.108,
   },
   {
-    id: "press-carth-elephants",
+    id: "press-rome-parapet",
     hero: false,
-    alt: "A Carthaginian elephant line advancing in front of the Punic centre in late afternoon light, crews in the towers on their backs.",
-    srcset: "/press/press-carth-elephants-960.webp 960w, /press/press-carth-elephants-1440.webp 1440w",
-    src: "/press/press-carth-elephants-1440.webp",
+    map: "campus-martius",
+    scenario: "assault",
+    alt: "The assault at its densest inside the Aurelian circuit, spears crossed above locked shields and a standard over the press.",
+    srcset: "/press/press-rome-parapet-960.avif 960w, /press/press-rome-parapet-1440.avif 1440w, /press/press-rome-parapet-1920.avif 1920w, /press/press-rome-parapet-2560.avif 2560w",
+    src: "/press/press-rome-parapet-1440.webp",
     width: 1440,
     height: 810,
-    scrimForGold: 0.4,
+    scrimForGold: 0.6,
+    panelP95: 0.454,
   },
   {
-    id: "press-pydna-clash",
+    id: "press-rome-press",
     hero: false,
-    alt: "Thousands of men locked together on open Macedonian ground at Pydna, 168 BC, spears and standards above the press.",
-    srcset: "/press/press-pydna-clash-960.webp 960w, /press/press-pydna-clash-1440.webp 1440w",
-    src: "/press/press-pydna-clash-1440.webp",
+    map: "campus-martius",
+    scenario: "field",
+    alt: "The Roman line going in under a late sun, rank behind rank across the whole frame, the host beyond them and a band of evening cloud above.",
+    srcset: "/press/press-rome-press-960.avif 960w, /press/press-rome-press-1440.avif 1440w, /press/press-rome-press-1920.avif 1920w, /press/press-rome-press-2560.avif 2560w",
+    src: "/press/press-rome-press-1440.webp",
     width: 1440,
     height: 810,
-    scrimForGold: 0.65,
+    scrimForGold: 0.7,
+    panelP95: 0.813,
   },
   {
     id: "press-rome-melee",
     hero: false,
-    alt: "Inside the melee on the Campus Martius in late light: legionaries and Juthungi warriors at arm's length, spears crossed above them.",
-    srcset: "/press/press-rome-melee-960.webp 960w, /press/press-rome-melee-1440.webp 1440w",
+    map: "campus-martius",
+    scenario: "field",
+    alt: "Inside the melee on the Campus Martius in late light: helmets and crossed spears filling the frame, legionaries and Juthungi warriors at arm's length.",
+    srcset: "/press/press-rome-melee-960.avif 960w, /press/press-rome-melee-1440.avif 1440w, /press/press-rome-melee-1920.avif 1920w, /press/press-rome-melee-2560.avif 2560w",
     src: "/press/press-rome-melee-1440.webp",
     width: 1440,
     height: 810,
-    scrimForGold: 0,
+    scrimForGold: 0.05,
+    panelP95: 0.07,
+  },
+  {
+    id: "press-rome-helmets",
+    hero: false,
+    map: "campus-martius",
+    scenario: "field",
+    alt: "The legionary front rank from a man's own eye height, telephoto down the line, a vexillum above it and open sky beyond.",
+    srcset: "/press/press-rome-helmets-960.avif 960w, /press/press-rome-helmets-1440.avif 1440w, /press/press-rome-helmets-1920.avif 1920w, /press/press-rome-helmets-2560.avif 2560w",
+    src: "/press/press-rome-helmets-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.7,
+    panelP95: 0.811,
   },
   {
     id: "press-rome-host",
     hero: false,
+    map: "campus-martius",
+    scenario: "field",
     alt: "A Juthungi warband coming on at eye level, painted round shields, no two men kitted the same.",
-    srcset: "/press/press-rome-host-960.webp 960w, /press/press-rome-host-1440.webp 1440w",
+    srcset: "/press/press-rome-host-960.avif 960w, /press/press-rome-host-1440.avif 1440w, /press/press-rome-host-1920.avif 1920w, /press/press-rome-host-2560.avif 2560w",
     src: "/press/press-rome-host-1440.webp",
     width: 1440,
     height: 810,
-    scrimForGold: 0.65,
+    scrimForGold: 0.6,
+    panelP95: 0.385,
+  },
+  {
+    id: "press-rome-ram",
+    hero: false,
+    map: "campus-martius",
+    scenario: "assault",
+    alt: "The ram at the Porta Flaminia mid-battery, the gatehouse drums above it and a column of men in the passage.",
+    srcset: "/press/press-rome-ram-960.avif 960w, /press/press-rome-ram-1440.avif 1440w, /press/press-rome-ram-1920.avif 1920w, /press/press-rome-ram-2560.avif 2560w",
+    src: "/press/press-rome-ram-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.4,
+    panelP95: 0.164,
   },
   {
     id: "press-rome-wall",
     hero: false,
+    map: "campus-martius",
+    scenario: "assault",
     alt: "The Aurelian Wall of Rome at mid-morning, its towers and gatehouse above the glacis, the city behind it.",
-    srcset: "/press/press-rome-wall-960.webp 960w, /press/press-rome-wall-1440.webp 1440w",
+    srcset: "/press/press-rome-wall-960.avif 960w, /press/press-rome-wall-1440.avif 1440w, /press/press-rome-wall-1920.avif 1920w, /press/press-rome-wall-2560.avif 2560w",
     src: "/press/press-rome-wall-1440.webp",
     width: 1440,
     height: 810,
-    scrimForGold: 0.65,
-  },
-  {
-    id: "press-carth-wall",
-    hero: false,
-    alt: "The wall of Carthage from the field in late afternoon, Roman assault columns drawn up on the plain before it.",
-    srcset: "/press/press-carth-wall-960.webp 960w, /press/press-carth-wall-1440.webp 1440w",
-    src: "/press/press-carth-wall-1440.webp",
-    width: 1440,
-    height: 810,
-    scrimForGold: 0.4,
+    scrimForGold: 0.6,
+    panelP95: 0.38,
   },
   {
     id: "press-rome-cavalry",
     hero: false,
-    alt: "A wedge of Roman equites sweeping the flank at eye level in low sun.",
-    srcset: "/press/press-rome-cavalry-960.webp 960w, /press/press-rome-cavalry-1440.webp 1440w",
+    map: "campus-martius",
+    scenario: "field",
+    alt: "A wedge of horse sweeping the flank at eye level in low sun, painted shields against the light.",
+    srcset: "/press/press-rome-cavalry-960.avif 960w, /press/press-rome-cavalry-1440.avif 1440w, /press/press-rome-cavalry-1920.avif 1920w, /press/press-rome-cavalry-2560.avif 2560w",
     src: "/press/press-rome-cavalry-1440.webp",
     width: 1440,
     height: 810,
-    scrimForGold: 0,
+    scrimForGold: 0.1,
+    panelP95: 0.077,
+  },
+  {
+    id: "press-rome-grey",
+    hero: false,
+    map: "campus-martius",
+    scenario: "field",
+    alt: "The Juthungi line still fighting over ground already littered, under a flat overcast noon, a standard among them and cloud to the horizon.",
+    srcset: "/press/press-rome-grey-960.avif 960w, /press/press-rome-grey-1440.avif 1440w, /press/press-rome-grey-1920.avif 1920w, /press/press-rome-grey-2560.avif 2560w",
+    src: "/press/press-rome-grey-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.7,
+    panelP95: 0.828,
+  },
+  {
+    id: "press-rome-hordegrey",
+    hero: false,
+    map: "campus-martius",
+    scenario: "field",
+    alt: "The Juthungi host coming on under a shadowless sky, painted round shields filling the upper half of the frame.",
+    srcset: "/press/press-rome-hordegrey-960.avif 960w, /press/press-rome-hordegrey-1440.avif 1440w, /press/press-rome-hordegrey-1920.avif 1920w, /press/press-rome-hordegrey-2560.avif 2560w",
+    src: "/press/press-rome-hordegrey-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.6,
+    panelP95: 0.381,
+  },
+  {
+    id: "press-rome-mist",
+    hero: false,
+    map: "campus-martius",
+    scenario: "field",
+    alt: "The legionary cohorts drawn up under an overcast noon, no shadow anywhere, the standard at the head of them.",
+    srcset: "/press/press-rome-mist-960.avif 960w, /press/press-rome-mist-1440.avif 1440w, /press/press-rome-mist-1920.avif 1920w, /press/press-rome-mist-2560.avif 2560w",
+    src: "/press/press-rome-mist-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.25,
+    panelP95: 0.115,
+  },
+  {
+    id: "press-rome-ladder",
+    hero: false,
+    map: "campus-martius",
+    scenario: "assault",
+    alt: "The Aurelian curtain from above the glacis, a tower on the crest and the Tiber and the city behind it.",
+    srcset: "/press/press-rome-ladder-960.avif 960w, /press/press-rome-ladder-1440.avif 1440w, /press/press-rome-ladder-1920.avif 1920w, /press/press-rome-ladder-2560.avif 2560w",
+    src: "/press/press-rome-ladder-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.6,
+    panelP95: 0.38,
   },
   {
     id: "press-rome-city",
     hero: false,
+    map: "campus-martius",
+    scenario: "field",
     alt: "Rome from above at first light: the Aurelian circuit along the crest, the Tiber below it, the fabric of the city inside.",
-    srcset: "/press/press-rome-city-960.webp 960w, /press/press-rome-city-1440.webp 1440w",
+    srcset: "/press/press-rome-city-960.avif 960w, /press/press-rome-city-1440.avif 1440w, /press/press-rome-city-1920.avif 1920w, /press/press-rome-city-2560.avif 2560w",
     src: "/press/press-rome-city-1440.webp",
     width: 1440,
     height: 810,
     scrimForGold: 0.65,
+    panelP95: 0.531,
+  },
+  {
+    id: "press-rome-march",
+    hero: false,
+    map: "campus-martius",
+    scenario: "field",
+    alt: "A vexillum at the head of the cohorts on the march, the standard against the grass with the ranks behind it.",
+    srcset: "/press/press-rome-march-960.avif 960w, /press/press-rome-march-1440.avif 1440w, /press/press-rome-march-1920.avif 1920w, /press/press-rome-march-2560.avif 2560w",
+    src: "/press/press-rome-march-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.45,
+    panelP95: 0.205,
+  },
+  {
+    id: "press-rome-aftermath",
+    hero: false,
+    map: "campus-martius",
+    scenario: "field",
+    alt: "The field after the break in low sun: the dead in heaps, shields and spears among them, the grass dark around it.",
+    srcset: "/press/press-rome-aftermath-960.avif 960w, /press/press-rome-aftermath-1440.avif 1440w, /press/press-rome-aftermath-1920.avif 1920w, /press/press-rome-aftermath-2560.avif 2560w",
+    src: "/press/press-rome-aftermath-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.2,
+    panelP95: 0.093,
+  },
+  {
+    id: "press-carth-elephants",
+    hero: false,
+    map: "carthage",
+    scenario: "field",
+    alt: "A Carthaginian elephant line advancing in front of the Punic centre in late afternoon light, crews in the towers on their backs.",
+    srcset: "/press/press-carth-elephants-960.avif 960w, /press/press-carth-elephants-1440.avif 1440w, /press/press-carth-elephants-1920.avif 1920w, /press/press-carth-elephants-2560.avif 2560w",
+    src: "/press/press-carth-elephants-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.2,
+    panelP95: 0.094,
+  },
+  {
+    id: "press-carth-tusks",
+    hero: false,
+    map: "carthage",
+    scenario: "field",
+    alt: "The Punic elephants head-on from in front of the spear line, crews in the towers, a band of evening cloud above them.",
+    srcset: "/press/press-carth-tusks-960.avif 960w, /press/press-carth-tusks-1440.avif 1440w, /press/press-carth-tusks-1920.avif 1920w, /press/press-carth-tusks-2560.avif 2560w",
+    src: "/press/press-carth-tusks-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.55,
+    panelP95: 0.326,
+  },
+  {
+    id: "press-carth-wall",
+    hero: false,
+    map: "carthage",
+    scenario: "assault",
+    alt: "The wall of Carthage from the field in late afternoon, siege towers against the curtain and Roman assault columns drawn up on the red plain before it.",
+    srcset: "/press/press-carth-wall-960.avif 960w, /press/press-carth-wall-1440.avif 1440w, /press/press-carth-wall-1920.avif 1920w, /press/press-carth-wall-2560.avif 2560w",
+    src: "/press/press-carth-wall-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.4,
+    panelP95: 0.184,
+  },
+  {
+    id: "press-carth-storm",
+    hero: false,
+    map: "carthage",
+    scenario: "assault",
+    alt: "Carthage under assault from high above the curtain: the wall, the citadel on its hill behind, and the city filling the frame.",
+    srcset: "/press/press-carth-storm-960.avif 960w, /press/press-carth-storm-1440.avif 1440w, /press/press-carth-storm-1920.avif 1920w, /press/press-carth-storm-2560.avif 2560w",
+    src: "/press/press-carth-storm-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.55,
+    panelP95: 0.342,
+  },
+  {
+    id: "press-carth-line",
+    hero: false,
+    map: "carthage",
+    scenario: "field",
+    alt: "The Punic front rank in late afternoon — Libyan spears and Iberian scutarii, every oval shield painted differently, a standard above them.",
+    srcset: "/press/press-carth-line-960.avif 960w, /press/press-carth-line-1440.avif 1440w, /press/press-carth-line-1920.avif 1920w, /press/press-carth-line-2560.avif 2560w",
+    src: "/press/press-carth-line-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.45,
+    panelP95: 0.231,
+  },
+  {
+    id: "press-pydna-clash",
+    hero: false,
+    map: "pydna",
+    scenario: "field",
+    alt: "Thousands of men locked together on open Macedonian ground at Pydna, 168 BC, spears and standards above the press.",
+    srcset: "/press/press-pydna-clash-960.avif 960w, /press/press-pydna-clash-1440.avif 1440w, /press/press-pydna-clash-1920.avif 1920w, /press/press-pydna-clash-2560.avif 2560w",
+    src: "/press/press-pydna-clash-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.65,
+    panelP95: 0.518,
+  },
+  {
+    id: "press-pydna-line",
+    hero: false,
+    map: "pydna",
+    scenario: "field",
+    alt: "Pydna in the morning: a block of legionaries with their standard on dry Macedonian grass, the Macedonian line a dark bar on the horizon.",
+    srcset: "/press/press-pydna-line-960.avif 960w, /press/press-pydna-line-1440.avif 1440w, /press/press-pydna-line-1920.avif 1920w, /press/press-pydna-line-2560.avif 2560w",
+    src: "/press/press-pydna-line-1440.webp",
+    width: 1440,
+    height: 810,
+    scrimForGold: 0.45,
+    panelP95: 0.225,
   },
 ];
 

@@ -243,7 +243,8 @@ async function armHead(base) {
        */
       const wantType = {
         '.png': /image\/png/, '.jpg': /image\/jpeg/, '.jpeg': /image\/jpeg/,
-        '.webp': /image\/webp/, '.svg': /image\/svg/, '.ico': /image\/(x-icon|vnd\.microsoft\.icon)/,
+        '.webp': /image\/webp/, '.avif': /image\/avif/, '.svg': /image\/svg/,
+        '.ico': /image\/(x-icon|vnd\.microsoft\.icon)/,
         '.webmanifest': /manifest\+json|application\/json/, '.json': /application\/json/,
       }[path.extname(u).toLowerCase()];
       if (wantType && !wantType.test(got.type)) {
@@ -252,7 +253,7 @@ async function armHead(base) {
           + 'index.html and a 200, so this is what a 404 looks like here');
         continue;
       }
-      if (/\.(png|jpg|jpeg|webp|ico|svg)$/.test(u)) {
+      if (/\.(png|jpg|jpeg|webp|avif|ico|svg)$/.test(u)) {
         try {
           // sharp has no ICO decoder, so an `.ico` is opened as the container it is and the
           // largest PNG inside it is what gets decoded. Skipping it instead would leave the
@@ -493,17 +494,49 @@ async function armSet(base) {
         fail(`${r.url} is ${m.width}x${m.height}, manifest says ${r.w}x${r.h}`);
       }
     }
-    if (!f.srcset.includes(f.renditions.at(-1).url)) fail(`${f.id} srcset omits its largest rendition`);
+    /*
+     * The two formats are two jobs, and asserting them separately is the point.
+     *
+     * `srcset` is the AVIF ladder and goes on a `<source>`; `fallback` is the single WebP and
+     * goes on the `<img>` inside the same `<picture>`. The old check here was "srcset includes
+     * the last rendition", which passed by accident while there was one format and would pass
+     * again, silently, if the WebP were ever appended to the ladder — offering a browser a
+     * choice between formats on one element, which `srcset` cannot express and which would
+     * hand some visitors the fallback at a rung it was never encoded for.
+     */
+    const avif = f.renditions.filter((r) => r.format === 'avif');
+    const webp = f.renditions.filter((r) => r.format === 'webp');
+    if (avif.length === 0) fail(`${f.id} has no AVIF rendition`);
+    if (webp.length !== 1) fail(`${f.id} has ${webp.length} WebP renditions, expected exactly 1`);
+    const widest = avif.reduce((a, b) => (b.w > a.w ? b : a), avif[0]);
+    if (avif.length && !f.srcset.includes(widest.url)) {
+      fail(`${f.id} srcset omits its widest AVIF (${widest.url})`);
+    }
+    for (const r of webp) {
+      if (f.srcset.includes(r.url)) fail(`${f.id} srcset carries the WebP fallback ${r.url}`);
+    }
+    if (webp.length === 1 && f.fallback?.url !== webp[0].url) {
+      fail(`${f.id} fallback is ${f.fallback?.url}, but its WebP rendition is ${webp[0].url}`);
+    }
+    if (webp.length === 1 && !mod.includes(`src: "${webp[0].url}"`)) {
+      fail(`${f.id}: pressPlates.ts does not use ${webp[0].url} as its src`);
+    }
+    for (const k of ['map', 'scenario']) {
+      if (!mod.includes(`${k}: ${JSON.stringify(f.battle[k])}`)) {
+        fail(`${f.id}: pressPlates.ts does not carry ${k} ${f.battle[k]} — `
+          + 'MenuBackdrop groups the rotation by battle and cannot without it');
+      }
+    }
     if (typeof f.type?.scrimForGold !== 'number') fail(`${f.id} has no measured scrimForGold`);
   }
 
   // No orphans: a file in the directory that nothing names is a file nobody will ever update.
   const onDisk = (await readdir(path.join(ROOT, 'public', 'press')))
-    .filter((f) => f.endsWith('.webp')).map((f) => `press/${f}`);
+    .filter((f) => /\.(webp|avif)$/.test(f)).map((f) => `press/${f}`);
   for (const f of onDisk) if (!named.has(f)) fail(`public/${f} is on disk and named by nothing`);
 
   // Every URL the app can reach must resolve, not just the ones the manifest lists.
-  for (const m of mod.matchAll(/"(\/press\/[^"\s]+\.webp)/g)) {
+  for (const m of mod.matchAll(/"(\/press\/[^"\s]+\.(?:webp|avif))/g)) {
     const got = await fetchOk(base, m[1]);
     if (got.status !== 200) fail(`pressPlates.ts names ${m[1]} → HTTP ${got.status}`);
   }

@@ -125,10 +125,27 @@
  * That matters because the scales multiply, and what they multiply is *resolution*. A 1,440-wide
  * plate on a 1,600 px window is already at 1.235 to satisfy `object-fit: cover`; the front door
  * then reaches 1.235 x 1.18 x 1.06 = 1.55, which is where the softness in a full-size screenshot
- * comes from. The two ways to buy it back are both worse: the 1,920 rendition is 470 kB for a
- * picture behind a scrim, and a smaller vantage offset is less travel, which is the feature.
- * So the scales are held at the geometric minimum and the softness is accepted — and anyone
- * lowering them to sharpen the frame will find an edge sliding into view instead.
+ * comes from.
+ *
+ * ## Sep 2026: that sum is right and its conclusion was wrong, by a factor of the pixel ratio
+ *
+ * This block used to end "so the scales are held at the geometric minimum and the softness is
+ * accepted", on the grounds that the only way to buy it back was a 470 kB rendition behind a
+ * scrim. **The whole sum is in CSS pixels.** On the 2x display this project is developed on,
+ * every one of those CSS pixels is two device pixels — so the 1.55 above is really 3.10, and on
+ * the setup screen, where `--bd-z` is 1.42 rather than 1.18, a 16-inch MacBook Pro paints the
+ * frame across **5,838 device pixels**. The plate it was given was 1,440 wide. That is 4.05x,
+ * not 1.55x, and it is why the owner said the menu art looked soft: it was.
+ *
+ * Measured by `tools/scratch/menu-density.mjs`, which inverts this exact chain in the live page
+ * rather than re-deriving it on paper. The fix is not in this file — the scales here really are
+ * at their geometric minimum and lowering one slides a frame edge into view — it is in `SIZES`
+ * and the rendition ladder, which now state the over-scale honestly and let `srcset` multiply
+ * by the pixel ratio itself. See the block above `SIZES` in `src/ui/MenuBackdrop.ts`.
+ *
+ * The lesson worth keeping: **an over-scale written in CSS pixels is half a measurement.** Any
+ * number in this file that is going to be compared against an image's real pixels has to be
+ * multiplied by `devicePixelRatio` first, and nothing here does that, because nothing here can.
  */
 .bd-drift {
   position: absolute;
@@ -139,6 +156,22 @@
 @keyframes bd-drift {
   from { transform: translate3d(-1.6%, 0.9%, 0) scale(1.035); }
   to { transform: translate3d(1.6%, -0.9%, 0) scale(1.06); }
+}
+
+/*
+ * The `<picture>` is laid out explicitly, not left to be an inline box.
+ *
+ * `MenuBackdrop` wraps the plate in a `<picture>` so an AVIF `<source>` can carry the density
+ * ladder and the `<img>` can carry the one WebP a browser without AVIF falls back to. A
+ * `<picture>` is `display: inline` by default and has no size of its own, so the `<img>`'s
+ * `width: 100%` would be resolving against whatever containing block the inline flow happened
+ * to give it. It works out to the right box here, which is exactly the kind of thing that
+ * works until a sibling is added — so it is stated rather than relied on.
+ */
+.bd-drift picture {
+  display: block;
+  position: absolute;
+  inset: 0;
 }
 
 .bd-img {
